@@ -1,4 +1,26 @@
 {
+  "name": "kauai",
+  "version": "1.0.0",
+  "description": "A simple HTTP server framework",
+  "main": "build/index.js",
+  "type": "module",
+  "types": "build/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b2broker/kauai.git"
+  },
+  "keywords": [
+    "HTTP",
+    "REST",
+    "web",
+    "framework"
+  ],
+  "author": "Sergey Bakulin <sbakulin@b2broker.net>",
+  "license": "AGPL-3.0-only",
+  "bugs": {
+    "url": "https://github.com/b2broker/kauai/issues"
+  },
+  "homepage": "https://github.com/b2broker/kauai#readme",
   "scripts": {
     "build": "npm run build:remove && tsc",
     "build:remove": "rm -rf ./build",
