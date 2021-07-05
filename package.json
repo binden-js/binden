@@ -39,6 +39,9 @@
     "publish:test": "npm publish --dry-run",
     "release": "semantic-release"
   },
+  "dependencies": {
+    "pino": "^6.11.3"
+  },
   "devDependencies": {
     "@b2broker/tsconfig": "^1.0.3",
     "@semantic-release/changelog": "^5.0.1",
