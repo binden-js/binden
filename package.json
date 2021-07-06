@@ -41,7 +41,8 @@
     "prettier": "prettier -c .",
     "prettier:write": "npm run prettier -- --write",
     "publish:test": "npm publish --dry-run",
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "ts-node": "node --loader ts-node/esm"
   },
   "dependencies": {
     "pino": "^6.11.3"
