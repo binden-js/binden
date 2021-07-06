@@ -5,6 +5,10 @@
   "main": "build/index.js",
   "type": "module",
   "types": "build/index.d.ts",
+  "engines": {
+    "node": ">=16.4.2",
+    "npm": ">=7.18.1"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/b2broker/kauai.git"
