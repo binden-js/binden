@@ -25,6 +25,9 @@
     "url": "https://github.com/b2broker/kauai/issues"
   },
   "homepage": "https://github.com/b2broker/kauai#readme",
+  "directories": {
+    "test": "test"
+  },
   "scripts": {
     "build": "npm run build:remove && tsc",
     "build:remove": "rm -rf ./build",
@@ -42,6 +45,8 @@
     "prettier:write": "npm run prettier -- --write",
     "publish:test": "npm publish --dry-run",
     "release": "semantic-release",
+    "test": "mocha build/test/**/*.spec.js --ui=tdd --full-trace --bail",
+    "test:ci": "npm run build && npm test && npm run build:remove",
     "ts-node": "node --loader ts-node/esm"
   },
   "dependencies": {
@@ -52,7 +57,7 @@
     "@semantic-release/changelog": "^5.0.1",
     "@semantic-release/exec": "^5.0.0",
     "@semantic-release/git": "^9.0.0",
-    "@types/mocha": "^8.2.2",
+    "@types/mocha": "^8.2.3",
     "@types/sinon": "^10.0.2",
     "commitlint-config-b2broker": "^1.0.4",
     "eslint-config-b2broker-ts": "^1.0.3",
