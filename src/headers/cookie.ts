@@ -136,7 +136,7 @@ export class Cookie implements ICookie {
       const value =
         rawValue.startsWith(`"`) && rawValue.endsWith(`"`)
           ? rawValue.length > 2
-            ? rawValue.slice(1, -1)
+            ? rawValue.substring(1, rawValue.length - 1)
             : ""
           : rawValue;
 
