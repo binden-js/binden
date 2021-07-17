@@ -45,13 +45,7 @@ suite("Cookie", () => {
     const domain = "example.com";
     const path = "/path";
 
-    const cookie = new Cookie({
-      key,
-      value,
-      expires,
-      domain,
-      path,
-    });
+    const cookie = new Cookie({ key, value, expires, domain, path });
     deepStrictEqual(cookie.key, key);
     deepStrictEqual(cookie.value, value);
     deepStrictEqual(cookie.expires, expires);
@@ -72,11 +66,7 @@ suite("Cookie", () => {
     const value = "Value";
     const same_site = "None";
 
-    const cookie = new Cookie({
-      key,
-      value,
-      same_site,
-    });
+    const cookie = new Cookie({ key, value, same_site });
     deepStrictEqual(cookie.key, key);
     deepStrictEqual(cookie.value, value);
     deepStrictEqual(cookie.expires, null);
@@ -97,11 +87,7 @@ suite("Cookie", () => {
     const value = "Value";
     const secure = false;
 
-    const cookie = new Cookie({
-      key,
-      value,
-      secure,
-    });
+    const cookie = new Cookie({ key, value, secure });
     deepStrictEqual(cookie.key, key);
     deepStrictEqual(cookie.value, value);
     deepStrictEqual(cookie.expires, null);
@@ -119,14 +105,14 @@ suite("Cookie", () => {
 
   test(".fromString()", () => {
     const input = ` Key1 = Value1 ; Key2   =  "Value2"  ; Key3 = " ; Key4=""`;
-    const cookie1 = new Cookie({ key: "Key1", value: "Value1" });
-    const cookie2 = new Cookie({ key: "Key2", value: "Value2" });
+    const one = new Cookie({ key: "Key1", value: "Value1" });
+    const two = new Cookie({ key: "Key2", value: "Value2" });
 
     const parsed = Cookie.fromString(input);
 
     deepStrictEqual(parsed.length, 2);
 
-    const [one, two] = parsed;
+    const [cookie1, cookie2] = parsed;
 
     deepStrictEqual(cookie1.key, one.key);
     deepStrictEqual(cookie1.value, one.value);

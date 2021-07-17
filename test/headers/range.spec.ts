@@ -2,7 +2,7 @@ import { deepStrictEqual } from "assert";
 
 import { Range } from "../../index.js";
 
-suite("Range (headers)", () => {
+suite("Range", () => {
   test("constructor", () => {
     const start = 0;
     const end = 499;
