@@ -4,6 +4,7 @@ import { TLSSocket } from "tls";
 
 import Cookie from "./headers/cookie.js";
 import Forwarded from "./headers/forwarded.js";
+import Range from "./headers/range.js";
 
 export type IProtocol = "http" | "https";
 
@@ -11,6 +12,7 @@ export class KauaiRequest extends IncomingMessage {
   #body?: unknown;
   #cookies?: readonly Cookie[];
   #forwarded?: readonly Forwarded[];
+  #range?: readonly Range[];
   #query?: ParsedUrlQuery;
 
   public get body(): unknown {
@@ -60,6 +62,13 @@ export class KauaiRequest extends IncomingMessage {
       const value = query[key];
       return { ...acc, [key]: Array.isArray(value) ? [...value] : value };
     }, {});
+  }
+
+  public get range(): Range[] {
+    if (typeof this.#range === "undefined") {
+      this.#range = Range.fromString(this.headers.range);
+    }
+    return [...this.#range];
   }
 
   public get secure(): boolean {
