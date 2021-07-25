@@ -2,6 +2,7 @@ import { IncomingMessage } from "http";
 import { parse, ParsedUrlQuery } from "querystring";
 import { TLSSocket } from "tls";
 
+import AcceptEncoding from "./headers/accept-encoding.js";
 import Cookie from "./headers/cookie.js";
 import Forwarded from "./headers/forwarded.js";
 import Range from "./headers/range.js";
@@ -9,11 +10,21 @@ import Range from "./headers/range.js";
 export type IProtocol = "http" | "https";
 
 export class KauaiRequest extends IncomingMessage {
+  #accept_encoding?: readonly AcceptEncoding[];
   #body?: unknown;
   #cookies?: readonly Cookie[];
   #forwarded?: readonly Forwarded[];
   #range?: readonly Range[];
   #query?: ParsedUrlQuery;
+
+  public get accept_encoding(): AcceptEncoding[] {
+    if (!this.#accept_encoding) {
+      const ae = this.headers["accept-encoding"];
+      const input = Array.isArray(ae) ? ae.join(",") : ae;
+      this.#accept_encoding = AcceptEncoding.fromString(input);
+    }
+    return [...this.#accept_encoding];
+  }
 
   public get body(): unknown {
     return this.#body;
