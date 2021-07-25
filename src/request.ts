@@ -3,6 +3,7 @@ import { parse, ParsedUrlQuery } from "querystring";
 import { TLSSocket } from "tls";
 
 import AcceptEncoding from "./headers/accept-encoding.js";
+import ContentEncoding from "./headers/content-encoding.js";
 import Cookie from "./headers/cookie.js";
 import Forwarded from "./headers/forwarded.js";
 import Range from "./headers/range.js";
@@ -12,6 +13,7 @@ export type IProtocol = "http" | "https";
 export class KauaiRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
   #body?: unknown;
+  #content_encoding?: readonly ContentEncoding[];
   #cookies?: readonly Cookie[];
   #forwarded?: readonly Forwarded[];
   #range?: readonly Range[];
@@ -34,6 +36,15 @@ export class KauaiRequest extends IncomingMessage {
     if (typeof this.#body === "undefined") {
       this.#body = body;
     }
+  }
+
+  public get content_encoding(): ContentEncoding[] {
+    if (!this.#content_encoding) {
+      this.#content_encoding = ContentEncoding.fromString(
+        this.headers["content-encoding"]
+      );
+    }
+    return [...this.#content_encoding];
   }
 
   public get cookies(): Cookie[] {

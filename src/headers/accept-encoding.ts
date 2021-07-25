@@ -12,7 +12,7 @@ export interface IAcceptEncoding {
   q_value?: number;
 }
 
-export class AcceptEncoding {
+export class AcceptEncoding implements IAcceptEncoding {
   readonly #encoding: IAcceptEncodings;
   readonly #q_value?: number;
 
