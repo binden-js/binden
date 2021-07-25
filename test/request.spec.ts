@@ -15,6 +15,44 @@ suite("KauaiRequest", () => {
     server = createServer({ IncomingMessage: KauaiRequest }).listen(port, done);
   });
 
+  test(".accept_encoding", async () => {
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: ServerResponse) => {
+          try {
+            deepStrictEqual(request.accept_encoding.length, 4);
+
+            deepStrictEqual(request.accept_encoding[0].encoding, "*");
+            deepStrictEqual(
+              typeof request.accept_encoding[0].q_value,
+              "undefined"
+            );
+
+            deepStrictEqual(request.accept_encoding[1].encoding, "x-gzip");
+            deepStrictEqual(request.accept_encoding[1].q_value, 0.3);
+
+            deepStrictEqual(request.accept_encoding[2].encoding, "br");
+            deepStrictEqual(request.accept_encoding[2].q_value, 0.2);
+
+            deepStrictEqual(request.accept_encoding[3].encoding, "compress");
+            deepStrictEqual(request.accept_encoding[3].q_value, 0.15);
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url, {
+      headers: {
+        "Accept-Encoding": "compress;q=0.15,br;q=0.2,x-gzip;q=0.3,*",
+      },
+    });
+    await serverPromise;
+  });
+
   test("secure", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
@@ -113,13 +151,16 @@ suite("KauaiRequest", () => {
         "request",
         (request: KauaiRequest, response: ServerResponse) => {
           try {
-            deepStrictEqual(typeof request.cookies, "undefined");
-            request.cookies = [cookie];
             deepStrictEqual(request.cookies, [cookie]);
             deepStrictEqual(request.cookies[0].key, cookie.key);
             deepStrictEqual(request.cookies[0].value, cookie.value);
-            request.cookies = [];
-            deepStrictEqual(request.cookies, [cookie]);
+            deepStrictEqual(request.cookies[0].secure, cookie.secure);
+            deepStrictEqual(request.cookies[0].domain, cookie.domain);
+            deepStrictEqual(request.cookies[0].expires, cookie.expires);
+            deepStrictEqual(request.cookies[0].http_only, cookie.http_only);
+            deepStrictEqual(request.cookies[0].max_age, cookie.max_age);
+            deepStrictEqual(request.cookies[0].path, cookie.path);
+            deepStrictEqual(request.cookies[0].same_site, cookie.same_site);
           } catch (error) {
             reject(error);
           } finally {
@@ -129,7 +170,7 @@ suite("KauaiRequest", () => {
       );
     });
 
-    await fetch(url);
+    await fetch(url, { headers: { Cookie: "key=value" } });
     await serverPromise;
   });
 
@@ -140,21 +181,14 @@ suite("KauaiRequest", () => {
         "request",
         (request: KauaiRequest, response: ServerResponse) => {
           try {
-            deepStrictEqual(request.protocol, "http");
-            ok(!request.secure);
-            deepStrictEqual(typeof request.forwarded, "undefined");
-            request.forwarded = [forwarded];
             deepStrictEqual(request.protocol, "https");
             ok(request.secure);
             deepStrictEqual(request.forwarded, [forwarded]);
             deepStrictEqual(request.forwarded[0].for, forwarded.for);
             deepStrictEqual(request.forwarded[0].proto, forwarded.proto);
-            request.forwarded = [];
-            deepStrictEqual(request.protocol, "https");
-            ok(request.secure);
-            deepStrictEqual(request.forwarded, [forwarded]);
-            deepStrictEqual(request.forwarded[0].for, forwarded.for);
-            deepStrictEqual(request.forwarded[0].proto, forwarded.proto);
+            deepStrictEqual(request.forwarded[0].by, forwarded.by);
+            deepStrictEqual(request.forwarded[0].secret, forwarded.secret);
+            deepStrictEqual(request.forwarded[0].host, forwarded.host);
           } catch (error) {
             reject(error);
           } finally {
@@ -164,7 +198,7 @@ suite("KauaiRequest", () => {
       );
     });
 
-    await fetch(url);
+    await fetch(url, { headers: { Forwarded: "for=8:8:8:8;proto=https" } });
     await serverPromise;
   });
 
