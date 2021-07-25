@@ -3,7 +3,7 @@ import { parse, ParsedUrlQuery } from "querystring";
 import { TLSSocket } from "tls";
 
 import type { Cookie } from "./headers/cookie.js";
-import type { Forwarded } from "./headers/forwarded.js";
+import { Forwarded } from "./headers/forwarded.js";
 
 export type IProtocol = "http" | "https";
 
@@ -33,14 +33,11 @@ export class KauaiRequest extends IncomingMessage {
     }
   }
 
-  public get forwarded(): Forwarded[] | undefined {
-    return this.#forwarded ? [...this.#forwarded] : this.#forwarded;
-  }
-
-  public set forwarded(forwarded: Forwarded[] | undefined) {
-    if (!this.#forwarded && forwarded) {
-      this.#forwarded = [...forwarded];
+  public get forwarded(): Forwarded[] {
+    if (!this.#forwarded) {
+      this.#forwarded = Forwarded.fromString(this.headers.forwarded);
     }
+    return [...this.#forwarded];
   }
 
   public header(name: string): string | string[] | undefined {

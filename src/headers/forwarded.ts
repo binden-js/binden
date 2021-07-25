@@ -42,25 +42,13 @@ export class Forwarded implements IForwarded {
   }
 
   public toString(): string {
-    const directives = [`for=${Forwarded.#formatDirective(this.for)}`];
-
-    if (this.by) {
-      directives.push(`by=${Forwarded.#formatDirective(this.by)}`);
-    }
-
-    if (this.host) {
-      directives.push(`host=${Forwarded.#formatDirective(this.host)}`);
-    }
-
-    if (this.secret) {
-      directives.push(`secret=${this.secret}`);
-    }
-
-    if (this.proto) {
-      directives.push(`proto=${this.proto}`);
-    }
-
-    return directives.join(";");
+    let output = `for=${Forwarded.#formatDirective(this.for)}`;
+    const { by, host, secret, proto } = this;
+    output += by ? `;by=${Forwarded.#formatDirective(by)}` : "";
+    output += host ? `;host=${Forwarded.#formatDirective(host)}` : "";
+    output += secret ? `;secret=${secret}` : "";
+    output += proto ? `;proto=${proto}` : "";
+    return output;
   }
 
   public static fromString(input?: string): Forwarded[] {
