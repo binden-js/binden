@@ -48,7 +48,7 @@ export class ContentRange extends Range implements IContentRange {
       : `${this.unit} */${this.size}`;
   }
 
-  public static fromString(input?: string): ContentRange[] {
+  public static fromString(input?: string): [ContentRange] | [] {
     if (!input) {
       return [];
     }

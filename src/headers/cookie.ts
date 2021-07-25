@@ -85,33 +85,18 @@ export class Cookie implements ICookie {
   }
 
   public toString(): string {
-    const attributes: string[] = [`${this.key}=${this.value}`];
-
-    if (this.max_age) {
-      attributes.push(`Max-Age=${this.max_age}`);
-    } else if (this.expires) {
-      attributes.push(`Expires=${this.expires.toUTCString()}`);
-    }
-
-    if (this.domain) {
-      attributes.push(`Domain=${this.domain}`);
-    }
-
-    if (this.path) {
-      attributes.push(`Path=${this.path}`);
-    }
-
-    if (this.secure) {
-      attributes.push("Secure");
-    }
-
-    if (this.http_only) {
-      attributes.push("HttpOnly");
-    }
-
-    attributes.push(`SameSite=${this.same_site}`);
-
-    return attributes.join("; ");
+    let output = `${this.key}=${this.value}`;
+    output += this.max_age
+      ? `; Max-Age=${this.max_age}`
+      : this.expires
+      ? `; Expires=${this.expires.toUTCString()}`
+      : "";
+    output += this.domain ? `; Domain=${this.domain}` : "";
+    output += this.path ? `; Path=${this.path}` : "";
+    output += this.secure ? `; Secure` : "";
+    output += this.http_only ? `; HttpOnly` : "";
+    output += `; SameSite=${this.same_site}`;
+    return output;
   }
 
   public static fromString(input?: string): Cookie[] {
