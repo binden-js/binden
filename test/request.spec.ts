@@ -82,6 +82,31 @@ suite("KauaiRequest", () => {
     await serverPromise;
   });
 
+  test(".content_type", async () => {
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: ServerResponse) => {
+          try {
+            const { content_type } = request;
+            ok(content_type);
+            deepStrictEqual(typeof content_type.charset, "undefined");
+            deepStrictEqual(content_type.type, "multipart/form-data");
+            deepStrictEqual(content_type.boundary, "something");
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url, {
+      headers: { "Content-Type": "multipart/form-data; boundary=something" },
+    });
+    await serverPromise;
+  });
+
   test("secure", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
