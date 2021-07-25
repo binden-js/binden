@@ -2,8 +2,8 @@ import { IncomingMessage } from "http";
 import { parse, ParsedUrlQuery } from "querystring";
 import { TLSSocket } from "tls";
 
-import type { Cookie } from "./headers/cookie.js";
-import { Forwarded } from "./headers/forwarded.js";
+import Cookie from "./headers/cookie.js";
+import Forwarded from "./headers/forwarded.js";
 
 export type IProtocol = "http" | "https";
 
@@ -23,14 +23,11 @@ export class KauaiRequest extends IncomingMessage {
     }
   }
 
-  public get cookies(): readonly Cookie[] | undefined {
-    return this.#cookies ? [...this.#cookies] : this.#cookies;
-  }
-
-  public set cookies(cookies: readonly Cookie[] | undefined) {
-    if (!this.#cookies && cookies) {
-      this.#cookies = [...cookies];
+  public get cookies(): Cookie[] {
+    if (!this.#cookies) {
+      this.#cookies = Cookie.fromString(this.headers.cookie);
     }
+    return [...this.#cookies];
   }
 
   public get forwarded(): Forwarded[] {
@@ -45,9 +42,9 @@ export class KauaiRequest extends IncomingMessage {
   }
 
   public get protocol(): IProtocol {
-    return (!this.forwarded?.length && this.socket instanceof TLSSocket) ||
-      (this.forwarded?.length &&
-        this.forwarded[0]?.proto?.toLowerCase() === "https")
+    const forwarded = this.forwarded.shift();
+    return (!forwarded && this.socket instanceof TLSSocket) ||
+      forwarded?.proto?.toLowerCase() === "https"
       ? "https"
       : "http";
   }
@@ -59,7 +56,7 @@ export class KauaiRequest extends IncomingMessage {
 
     const query = this.#query;
 
-    return Object.keys(query).reduce((acc, key) => {
+    return Object.keys(query).reduce<ParsedUrlQuery>((acc, key) => {
       const value = query[key];
       return { ...acc, [key]: Array.isArray(value) ? [...value] : value };
     }, {});
