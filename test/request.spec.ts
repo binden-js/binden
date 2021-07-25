@@ -132,7 +132,7 @@ suite("KauaiRequest", () => {
         "request",
         (request: KauaiRequest, response: ServerResponse) => {
           try {
-            deepStrictEqual(request.protocol, "http");
+            deepStrictEqual(request.protocol, "http:");
           } catch (error) {
             reject(error);
           } finally {
@@ -235,7 +235,7 @@ suite("KauaiRequest", () => {
         "request",
         (request: KauaiRequest, response: ServerResponse) => {
           try {
-            deepStrictEqual(request.protocol, "https");
+            deepStrictEqual(request.protocol, "https:");
             ok(request.secure);
             deepStrictEqual(request.forwarded, [forwarded]);
             deepStrictEqual(request.forwarded[0].for, forwarded.for);

@@ -9,7 +9,7 @@ import Cookie from "./headers/cookie.js";
 import Forwarded from "./headers/forwarded.js";
 import Range from "./headers/range.js";
 
-export type IProtocol = "http" | "https";
+export type IProtocol = "http:" | "https:";
 
 export class KauaiRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
@@ -78,8 +78,8 @@ export class KauaiRequest extends IncomingMessage {
     const forwarded = this.forwarded.shift();
     return (!forwarded && this.socket instanceof TLSSocket) ||
       forwarded?.proto?.toLowerCase() === "https"
-      ? "https"
-      : "http";
+      ? "https:"
+      : "http:";
   }
 
   public get query(): ParsedUrlQuery {
@@ -103,16 +103,13 @@ export class KauaiRequest extends IncomingMessage {
   }
 
   public get secure(): boolean {
-    return this.protocol === "https";
+    return this.URL.protocol === "https:";
   }
 
   public get URL(): URL {
-    const {
-      protocol,
-      url = "/",
-      headers: { host = "" },
-    } = this;
-    return new URL(url, `${protocol}://${host}`);
+    const { protocol, url = "/", headers } = this;
+    const { host = "" } = headers;
+    return new URL(url, `${protocol}//${host}`);
   }
 }
 
