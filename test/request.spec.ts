@@ -46,9 +46,38 @@ suite("KauaiRequest", () => {
       );
     });
     await fetch(url, {
-      headers: {
-        "Accept-Encoding": "compress;q=0.15,br;q=0.2,x-gzip;q=0.3,*",
-      },
+      headers: { "Accept-Encoding": "compress;q=0.15,br;q=0.2,x-gzip;q=0.3,*" },
+    });
+    await serverPromise;
+  });
+
+  test(".content_encoding", async () => {
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: ServerResponse) => {
+          try {
+            const { content_encoding } = request;
+            deepStrictEqual(content_encoding.length, 3);
+
+            deepStrictEqual(content_encoding[0].encoding, "x-gzip");
+            deepStrictEqual(typeof content_encoding[0].q_value, "undefined");
+
+            deepStrictEqual(content_encoding[1].encoding, "br");
+            deepStrictEqual(typeof content_encoding[1].q_value, "undefined");
+
+            deepStrictEqual(content_encoding[2].encoding, "compress");
+            deepStrictEqual(typeof content_encoding[2].q_value, "undefined");
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url, {
+      headers: { "Content-Encoding": "compress, br, x-gzip" },
     });
     await serverPromise;
   });
