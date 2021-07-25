@@ -1,9 +1,18 @@
 import Pino from "pino";
+import KauaiError from "./error.js";
 
 const ENV_VARIABLE_NAME = "KAUAI_LOG_LEVEL";
 
 const serializers = {
-  error: Pino.stdSerializers.err,
+  error: Pino.stdSerializers.wrapErrorSerializer(
+    (error: Pino.SerializedError) => {
+      if (error.raw instanceof KauaiError) {
+        const { status, expose, json } = error.raw;
+        return { status, expose, json, ...error };
+      }
+      return error;
+    }
+  ),
   request: Pino.stdSerializers.req,
   response: Pino.stdSerializers.res,
 };
