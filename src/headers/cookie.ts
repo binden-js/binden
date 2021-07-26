@@ -4,7 +4,7 @@ export interface ICookie {
   readonly expires?: Date | null;
   readonly max_age?: number | null;
   readonly domain?: string | null;
-  readonly path?: string;
+  readonly path?: string | null;
   readonly secure?: boolean;
   readonly http_only?: boolean;
   readonly same_site?: "Strict" | "Lax" | "None";
@@ -16,7 +16,7 @@ export class Cookie implements ICookie {
   readonly #expires: Date | null;
   readonly #max_age: number | null;
   readonly #domain: string | null;
-  readonly #path: string;
+  readonly #path: string | null;
   readonly #secure: boolean;
   readonly #http_only: boolean;
   readonly #same_site: "Strict" | "Lax" | "None";
@@ -63,7 +63,7 @@ export class Cookie implements ICookie {
     return !this.key.startsWith("__Host-") ? this.#domain : null;
   }
 
-  public get path(): string {
+  public get path(): string | null {
     return !this.key.startsWith("__Host-") ? this.#path : "/";
   }
 
