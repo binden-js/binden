@@ -63,10 +63,8 @@ export class Forwarded implements IForwarded {
       .map((e) => new Forwarded(e));
   }
 
-  static #formatDirective(input?: string): string {
-    return input?.startsWith("[") && input.includes("]")
-      ? `"${input}"`
-      : input ?? "";
+  static #formatDirective(input: string): string {
+    return input?.startsWith("[") && input.includes("]") ? `"${input}"` : input;
   }
 
   static #parseDirectives(input: string): IForwarded | null {
@@ -75,7 +73,7 @@ export class Forwarded implements IForwarded {
     const directives = input
       .split(";")
       .map((e) => e.split("="))
-      .map<[string, string]>(([k, v]) => [k?.trim() ?? "", v?.trim() ?? ""])
+      .map<[string, string]>(([k, v]) => [k.trim(), v?.trim() ?? ""])
       .map<[string, string]>(([k, v]) => [
         k.toLowerCase(),
         v.startsWith(`"`) && v.endsWith(`"`)

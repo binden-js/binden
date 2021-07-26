@@ -47,7 +47,7 @@ export class Range implements IRange {
       .substring(6)
       .split(",")
       .map((e) => e.trim().split("-", 2))
-      .map(([start, end]) => [start?.trim() ?? "", end?.trim() ?? ""])
+      .map(([start, end]) => [start.trim(), end?.trim() ?? ""])
       .map(([start, end]) => [
         !start ? NaN : Number(start),
         !end ? NaN : Number(end),
