@@ -36,7 +36,11 @@ export class AcceptEncoding implements IAcceptEncoding {
       : this.encoding;
   }
 
-  public static fromString(input?: string): AcceptEncoding[] {
+  public static fromString(input?: string | string[]): AcceptEncoding[] {
+    if (Array.isArray(input)) {
+      input = input.join(",");
+    }
+
     if (!input) {
       return [];
     }

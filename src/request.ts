@@ -26,8 +26,7 @@ export class KauaiRequest extends IncomingMessage {
   public get accept_encoding(): AcceptEncoding[] {
     if (!this.#accept_encoding) {
       const ae = this.headers["accept-encoding"];
-      const input = Array.isArray(ae) ? ae.join(",") : ae;
-      this.#accept_encoding = AcceptEncoding.fromString(input);
+      this.#accept_encoding = AcceptEncoding.fromString(ae);
     }
     return [...this.#accept_encoding];
   }
