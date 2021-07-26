@@ -82,7 +82,7 @@ suite("Cookie", () => {
     );
   });
 
-  test("constructor (Secure)", () => {
+  test("constructor (Secure = false)", () => {
     const key = "Key";
     const value = "Value";
     const secure = false;
@@ -103,7 +103,30 @@ suite("Cookie", () => {
     );
   });
 
+  test("constructor (Secure = true)", () => {
+    const key = "Key";
+    const value = "Value";
+    const secure = true;
+    const http_only = false;
+    const path = null;
+
+    const cookie = new Cookie({ key, value, secure, http_only, path });
+    deepStrictEqual(cookie.key, key);
+    deepStrictEqual(cookie.value, value);
+    deepStrictEqual(cookie.expires, null);
+    deepStrictEqual(cookie.max_age, null);
+    deepStrictEqual(cookie.path, path);
+    deepStrictEqual(cookie.domain, null);
+    deepStrictEqual(cookie.secure, secure);
+    deepStrictEqual(cookie.http_only, http_only);
+    deepStrictEqual(cookie.same_site, "Lax");
+    deepStrictEqual(cookie.toString(), `${key}=${value}; Secure; SameSite=Lax`);
+  });
+
   test(".fromString()", () => {
+    deepStrictEqual(Cookie.fromString(), []);
+    deepStrictEqual(Cookie.fromString("a="), []);
+
     const input = ` Key1 = Value1 ; Key2   =  "Value2"  ; Key3 = " ; Key4=""`;
     const one = new Cookie({ key: "Key1", value: "Value1" });
     const two = new Cookie({ key: "Key2", value: "Value2" });

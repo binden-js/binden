@@ -21,6 +21,9 @@ suite("AcceptEncoding", () => {
   });
 
   test("AcceptEncoding.fromString()", () => {
+    deepStrictEqual(AcceptEncoding.fromString(), []);
+    deepStrictEqual(AcceptEncoding.fromString(""), []);
+
     const input =
       " deflate , gzip;q=0.3,x-gzip ;q= 0.4 , *;q=0.54 , identity;q=0.1, br;q=1,compress;q=0.7, ignored;q=2";
     const parsed = AcceptEncoding.fromString(input);

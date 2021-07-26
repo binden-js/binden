@@ -81,9 +81,42 @@ suite("ContentRange", () => {
     deepStrictEqual(range.toString(), `bytes */${size}`);
   });
 
+  test(".fromString() (invalid input)", () => {
+    deepStrictEqual(ContentRange.fromString(), []);
+    deepStrictEqual(ContentRange.fromString(""), []);
+    deepStrictEqual(ContentRange.fromString("   "), []);
+    deepStrictEqual(ContentRange.fromString("bytes */*"), []);
+    deepStrictEqual(ContentRange.fromString("bytes 1-0/500"), []);
+    deepStrictEqual(ContentRange.fromString("bytes 1-1000/500"), []);
+  });
+
   test(".fromString()", () => {
     const input = "bytes  200  -  1000   /    67589   / 1 __ignored__ 1";
     const cr = new ContentRange({ start: 200, end: 1000, size: 67589 });
+    const parsed = ContentRange.fromString(input);
+    const [actual] = parsed;
+    ok(actual);
+    deepStrictEqual(actual.end, cr.end);
+    deepStrictEqual(actual.start, cr.start);
+    deepStrictEqual(actual.size, cr.size);
+    deepStrictEqual(actual.toString(), cr.toString());
+  });
+
+  test(".fromString() (unknown size)", () => {
+    const input = "bytes 200-1000/*";
+    const cr = new ContentRange({ start: 200, end: 1000, size: "*" });
+    const parsed = ContentRange.fromString(input);
+    const [actual] = parsed;
+    ok(actual);
+    deepStrictEqual(actual.end, cr.end);
+    deepStrictEqual(actual.start, cr.start);
+    deepStrictEqual(actual.size, cr.size);
+    deepStrictEqual(actual.toString(), cr.toString());
+  });
+
+  test(".fromString() (unknown range)", () => {
+    const input = "bytes */500";
+    const cr = new ContentRange({ size: 500 });
     const parsed = ContentRange.fromString(input);
     const [actual] = parsed;
     ok(actual);

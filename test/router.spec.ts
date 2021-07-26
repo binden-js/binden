@@ -1,6 +1,7 @@
 import { deepStrictEqual, throws } from "assert";
 
 import { Router, Middleware } from "../index.js";
+
 class CustomMiddleware extends Middleware {
   public i = 0;
   public run(): void {
@@ -104,6 +105,12 @@ suite("Router", () => {
     deepStrictEqual(router.middlewares("GET"), []);
     deepStrictEqual(router.middlewares("UNSUBSCRIBE"), []);
     deepStrictEqual(router.methods, new Set());
+
+    const method = "unsupported";
+
+    throws(() => {
+      router.off(method);
+    }, new TypeError(`Method ${method} is not supported`));
   });
 
   for (const method of methods) {

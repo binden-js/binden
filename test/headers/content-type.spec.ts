@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok } from "assert";
+import { deepStrictEqual, ok, throws } from "assert";
 
 import { ContentType } from "../../index.js";
 
@@ -10,6 +10,11 @@ suite("ContentType", () => {
     deepStrictEqual(typeof ct.charset, "undefined");
     deepStrictEqual(typeof ct.boundary, "undefined");
     deepStrictEqual(ct.toString(), type);
+
+    throws(
+      () => new ContentType({ type: "multipart/form-data" }),
+      new TypeError("`boundary` is missing")
+    );
   });
 
   test("constructor(with charset)", () => {
@@ -35,6 +40,26 @@ suite("ContentType", () => {
   });
 
   test("ContentType.fromString()", () => {
+    const input = ` text/html `;
+    const parsed = ContentType.fromString(input);
+    ok(parsed);
+    deepStrictEqual(parsed.type, "text/html");
+    deepStrictEqual(typeof parsed.charset, "undefined");
+    deepStrictEqual(typeof parsed.boundary, "undefined");
+    deepStrictEqual(parsed.toString(), "text/html");
+  });
+
+  test("ContentType.fromString() (charset)", () => {
+    const input = ` text/html ;   charset  =  utf-8  `;
+    const parsed = ContentType.fromString(input);
+    ok(parsed);
+    deepStrictEqual(parsed.type, "text/html");
+    deepStrictEqual(parsed.charset, "utf-8");
+    deepStrictEqual(typeof parsed.boundary, "undefined");
+    deepStrictEqual(parsed.toString(), "text/html; charset=utf-8");
+  });
+
+  test("ContentType.fromString() (with quoted charset)", () => {
     const input = ` text/html ;   charset  =  "UtF-8"  `;
     const parsed = ContentType.fromString(input);
     ok(parsed);
@@ -57,7 +82,20 @@ suite("ContentType", () => {
     );
   });
 
+  test("ContentType.fromString() (with empty charset)", () => {
+    const input = `plain/text; charset=""`;
+    const parsed = ContentType.fromString(input);
+    ok(parsed);
+    deepStrictEqual(parsed.type, "plain/text");
+    deepStrictEqual(typeof parsed.boundary, "undefined");
+    deepStrictEqual(typeof parsed.charset, "undefined");
+    deepStrictEqual(parsed.toString(), "plain/text");
+  });
+
   test("ContentType.fromString() (invalid input)", () => {
+    deepStrictEqual(ContentType.fromString(), null);
+    deepStrictEqual(ContentType.fromString(""), null);
+    deepStrictEqual(ContentType.fromString(";"), null);
     deepStrictEqual(ContentType.fromString(`  multipart/form-data   `), null);
   });
 });

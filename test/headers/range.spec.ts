@@ -34,6 +34,10 @@ suite("Range", () => {
   });
 
   test(".fromString()", () => {
+    deepStrictEqual(Range.fromString(), []);
+    deepStrictEqual(Range.fromString(" "), []);
+    deepStrictEqual(Range.fromString("bytes= -"), []);
+
     const input = "bytes= 200 - 1000 , 2000 - 6576 , 19000 - ,__unsupported__";
 
     const first = new Range({ start: 200, end: 1000 });
@@ -57,5 +61,21 @@ suite("Range", () => {
     deepStrictEqual(three.end, third.end);
     deepStrictEqual(three.start, third.start);
     deepStrictEqual(three.toString(), third.toString());
+  });
+
+  test(".fromString() (no start)", () => {
+    const input = "bytes= -500";
+
+    const range = new Range({ end: 500 });
+
+    const parsed = Range.fromString(input);
+
+    deepStrictEqual(parsed.length, 1);
+
+    const [actual] = parsed;
+
+    deepStrictEqual(actual.end, range.end);
+    deepStrictEqual(actual.start, range.start);
+    deepStrictEqual(actual.toString(), range.toString());
   });
 });

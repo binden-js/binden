@@ -3,7 +3,13 @@ import { Server, ServerResponse, createServer } from "http";
 import { stringify, parse } from "querystring";
 import fetch from "node-fetch";
 
-import { KauaiRequest, Forwarded, Cookie } from "../index.js";
+import {
+  Range,
+  KauaiRequest,
+  Forwarded,
+  Cookie,
+  IfModifiedSince,
+} from "../index.js";
 
 const port = 8080;
 const url = `http://localhost:${port}`;
@@ -253,6 +259,59 @@ suite("KauaiRequest", () => {
     });
 
     await fetch(url, { headers: { Forwarded: "for=8:8:8:8;proto=https" } });
+    await serverPromise;
+  });
+
+  test(".if_modified_since", async () => {
+    const ims = new IfModifiedSince({ date: new Date() });
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: ServerResponse) => {
+          try {
+            ok(request.if_modified_since);
+            deepStrictEqual(
+              request.if_modified_since.date,
+              new Date(ims.date.toUTCString())
+            );
+            deepStrictEqual(
+              request.if_modified_since.toString(),
+              ims.toString()
+            );
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url, { headers: { "If-Modified-Since": ims.toString() } });
+    await serverPromise;
+  });
+
+  test(".range", async () => {
+    const range = new Range({ start: 0, end: 499 });
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: ServerResponse) => {
+          try {
+            deepStrictEqual(request.range.length, 1);
+            const [actual] = request.range;
+            ok(actual instanceof Range);
+            deepStrictEqual(actual.start, range.start);
+            deepStrictEqual(actual.end, range.end);
+            deepStrictEqual(actual.toString(), range.toString());
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url, { headers: { Range: range.toString() } });
     await serverPromise;
   });
 

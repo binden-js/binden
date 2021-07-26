@@ -1,9 +1,12 @@
-import { deepStrictEqual } from "assert";
+import { deepStrictEqual, throws } from "assert";
 import { randomUUID } from "crypto";
+import { readFile } from "fs/promises";
+import { Agent } from "https";
 import { Server } from "http";
 import fetch from "node-fetch";
 
 import {
+  DefaultErrorCode,
   Kauai,
   KauaiError,
   IKauaiErrorOptions,
@@ -62,6 +65,42 @@ suite("Kauai", () => {
     server = app.createServer().listen(port, done);
   });
 
+  test(".createSecureServer()", async () => {
+    const newApp = new Kauai();
+    const path = new URL(url);
+    const agent = new Agent({
+      rejectUnauthorized: false,
+    });
+    path.port = `${Number(path.port) + 1}`;
+    path.protocol = "https:";
+
+    const key = await readFile("./test/cert/key.pem", {
+      encoding: "utf-8",
+    });
+    const cert = await readFile("./test/cert/cert.pem", {
+      encoding: "utf-8",
+    });
+
+    const newServer = await new Promise<Server>((resolve) => {
+      const s = newApp
+        .createSecureServer({ key, cert })
+        .listen(port + 1, () => {
+          resolve(s);
+        });
+    });
+
+    const m = new SendMiddleware();
+    newApp.use(m);
+    const response = await fetch(path.toString(), { agent });
+    deepStrictEqual(response.status, 200);
+    const data = await response.text();
+    deepStrictEqual(data, m.id);
+
+    await new Promise((resolve) => {
+      newServer.close(resolve);
+    });
+  });
+
   test("stack (use/off)", () => {
     const m1 = new CustomMiddleware();
     const m2 = new CustomMiddleware();
@@ -73,9 +112,18 @@ suite("Kauai", () => {
 
     deepStrictEqual(app.stack, []);
 
+    deepStrictEqual(app.use().stack, []);
+
     deepStrictEqual(app.use("/path", m1).stack, [[[m1], "/path"]]);
 
+    throws(() => {
+      app.use("/", {} as Router);
+    }, new TypeError("Unsupported Middleware/Router"));
+
     deepStrictEqual(app.use("/path", m2).stack, [[[m1, m2], "/path"]]);
+
+    deepStrictEqual(app.off(), []);
+    deepStrictEqual(app.stack, [[[m1, m2], "/path"]]);
 
     deepStrictEqual(app.use("/path", r2, m3).stack, [
       [[m1, m2, r2, m3], "/path"],
@@ -137,23 +185,30 @@ suite("Kauai", () => {
       [[m2, m3], null],
     ]);
 
-    deepStrictEqual(app.use("/path2", m3).stack, [
+    deepStrictEqual(app.use("/path3", m3).stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m2, m3], null],
-      [[m3], "/path2"],
+      [[m3], "/path3"],
     ]);
 
     deepStrictEqual(app.off(m2, m3), [m2, m3]);
     deepStrictEqual(app.stack, [
       [[m1, m2, r2, m3], "/path"],
-      [[r1, m3], "/path2"],
+      [[r1], "/path2"],
+      [[m3], "/path3"],
     ]);
 
     deepStrictEqual(app.off("/path", m1, m2, r2, m3), [m1, m2, r2, m3]);
-    deepStrictEqual(app.stack, [[[r1, m3], "/path2"]]);
+    deepStrictEqual(app.stack, [
+      [[r1], "/path2"],
+      [[m3], "/path3"],
+    ]);
 
-    deepStrictEqual(app.off("/path2", m3, r1), [m3, r1]);
+    deepStrictEqual(app.off("/path2", m3, r1), [r1]);
+    deepStrictEqual(app.stack, [[[m3], "/path3"]]);
+
+    deepStrictEqual(app.off("/path3", m3, r1), [m3]);
     deepStrictEqual(app.stack, []);
   });
 
@@ -165,6 +220,13 @@ suite("Kauai", () => {
     deepStrictEqual(response.status, 200);
     const text = await response.text();
     deepStrictEqual(text, m2.id);
+  });
+
+  test("auto_head", async () => {
+    const m = new SendMiddleware();
+    app.use("/", new Router().get(m));
+    const response = await fetch(url, { method: "HEAD" });
+    deepStrictEqual(response.status, 200);
   });
 
   test("Middleware `ignore_errors === true`", async () => {
@@ -255,6 +317,52 @@ suite("Kauai", () => {
       await new Promise((resolve) => {
         newServer.close(resolve);
       });
+    });
+
+    test("errorHadler (default error code when no `status`)", async () => {
+      const status = 405;
+      const message = "Hello World!";
+      const expose = true;
+
+      class EM extends ErrorMiddleware {
+        public run(): Promise<never> {
+          throw { expose, message };
+        }
+      }
+
+      app.use(new EM({}, status, { message, expose }));
+
+      const response = await fetch(url);
+
+      deepStrictEqual(response.status, DefaultErrorCode);
+      deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+
+      const received = await response.text();
+      deepStrictEqual(received, message);
+    });
+
+    test("errorHadler (`message` is not a string)", async () => {
+      const status = 405;
+      const message = 1;
+      const expose = true;
+
+      const regexp = new RegExp("/");
+
+      class EM extends ErrorMiddleware {
+        public run(): Promise<never> {
+          throw { expose, message };
+        }
+      }
+
+      app.use(regexp, new EM({}, status, { message: "2", expose }));
+
+      const response = await fetch(url);
+
+      deepStrictEqual(response.status, DefaultErrorCode);
+      deepStrictEqual(response.headers.get("Content-Type"), null);
+
+      const received = await response.text();
+      deepStrictEqual(received, "");
     });
 
     test("errorHadler (`expose === true`)", async () => {

@@ -11,6 +11,8 @@ suite("ContentEncoding", () => {
   });
 
   test("ContentEncoding.fromString()", () => {
+    deepStrictEqual(ContentEncoding.fromString(), []);
+    deepStrictEqual(ContentEncoding.fromString(""), []);
     const input = " x-gzip , br , deflate , ignored ";
     const parsed = ContentEncoding.fromString(input);
     deepStrictEqual(parsed.length, 3);

@@ -110,7 +110,8 @@ suite("KauaiResponse", () => {
     const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response: KauaiResponse) => {
-        response.cookies.add(cookie1).add(cookie2);
+        response.setHeader("Set-Cookie", [cookie1.toString()]);
+        response.cookies.add(cookie2);
         response.send().then(resolve).catch(reject);
       });
     });
@@ -126,12 +127,37 @@ suite("KauaiResponse", () => {
     ok(response.ok);
   });
 
+  test(".send() (`writableEnded === true`)", async () => {
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response.end(() => {
+          try {
+            deepStrictEqual(response.writableEnded, true);
+            response.send().then(resolve).catch(reject);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+    });
+    const response = await fetch(url);
+    await serverPromise;
+    await response.text();
+
+    deepStrictEqual(response.headers.get("Content-Type"), null);
+    ok(response.ok);
+  });
+
   test(".send() (with encoding)", async () => {
+    const cookie1 = new Cookie({ key: "__Secure-K1", value: "V1" });
+    const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
     const msg = "Hello World!";
     const encoding = "base64";
     const encoded = Buffer.from(msg).toString(encoding);
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response: KauaiResponse) => {
+        response.setHeader("Set-Cookie", cookie1.toString());
+        response.cookies.add(cookie2);
         response.send(encoded, encoding).then(resolve).catch(reject);
       });
     });
@@ -140,15 +166,22 @@ suite("KauaiResponse", () => {
     const data = await response.text();
 
     deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+    deepStrictEqual(
+      response.headers.get("Set-Cookie"),
+      [cookie1, cookie2].map((c) => c.toString()).join(", ")
+    );
     deepStrictEqual(data, msg);
   });
 
   test(".send() (Buffer)", async () => {
+    const cookie1 = new Cookie({ key: "__Secure-K1", value: "V1" });
+    const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
     const msg = "Hello World!";
     const buffer = Buffer.from(msg);
 
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response: KauaiResponse) => {
+        response.cookies.add(cookie1).add(cookie2);
         response.send(buffer).then(resolve).catch(reject);
       });
     });
@@ -158,6 +191,10 @@ suite("KauaiResponse", () => {
     const data = await response.buffer();
 
     deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+    deepStrictEqual(
+      response.headers.get("Set-Cookie"),
+      [cookie1, cookie2].map((c) => c.toString()).join(", ")
+    );
     deepStrictEqual(data, buffer);
   });
 
@@ -300,6 +337,43 @@ suite("KauaiResponse", () => {
 
     const data = await response.buffer();
     deepStrictEqual(data, msg);
+
+    const headers = { "If-Modified-Since": lm };
+    const response2 = await fetch(url, { headers });
+    deepStrictEqual(response2.status, 304);
+
+    const data2 = await response2.text();
+    deepStrictEqual(data2, "");
+
+    await serverPromise;
+    await rm(path);
+  });
+
+  test(".sendFile() (304 response with `If-Modified-Since` HEAD)", async () => {
+    const path = "./__temp.tmp";
+    const msg = Buffer.from(randomUUID({ disableEntropyCache: true }));
+    await writeFile(path, msg);
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response
+          .sendFile(path)
+          .then(() => {
+            server.once("request", (_request2, response2: KauaiResponse) => {
+              response2.sendFile(path).then(resolve).catch(reject);
+            });
+          })
+          .catch(reject);
+      });
+    });
+
+    const response = await fetch(url, { method: "HEAD" });
+    const lm = response.headers.get("Last-Modified");
+    ok(lm);
+    ok(!Number.isNaN(Date.parse(lm)));
+    deepStrictEqual(response.status, 200);
+
+    const data = await response.text();
+    deepStrictEqual(data, "");
 
     const headers = { "If-Modified-Since": lm };
     const response2 = await fetch(url, { headers });
