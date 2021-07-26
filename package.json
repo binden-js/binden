@@ -75,6 +75,6 @@
     "typedoc": "^0.21.4"
   },
   "peerDependencies": {
-    "@types/pino": "^6.3.9"
+    "@types/pino": "^6.3.10"
   }
 }
