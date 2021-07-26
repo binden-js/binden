@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    needs: [test]
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@main
+
+      - uses: actions/setup-node@main
+        with:
+          node-version: 16
+          check-latest: true
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Decrypt PGP key
+        run: ./.github/scripts/decrypt.sh
+        env:
+          PRIVATE_KEY_PASSPHRASE: ${{ secrets.PRIVATE_KEY_PASSPHRASE }}
+
+      - name: Setup git
+        run: ./.github/scripts/git.sh
+        env:
+          PGP_KEY_ID: ${{ secrets.PGP_KEY_ID }}
+
+      - name: Release
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIT_COMMITTER_EMAIL: ${{ secrets.GIT_COMMITTER_EMAIL }}
+          GIT_COMMITTER_NAME: ${{ secrets.GIT_COMMITTER_NAME }}
+          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Cleanup
+        run: ./.github/scripts/cleanup.sh
