@@ -4,6 +4,7 @@ export * from "./src/headers/content-range.js";
 export * from "./src/headers/content-type.js";
 export * from "./src/headers/cookie.js";
 export * from "./src/headers/forwarded.js";
+export * from "./src/headers/if-modified-since.js";
 export * from "./src/headers/range.js";
 export * from "./src/context.js";
 export * from "./src/error.js";

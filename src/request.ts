@@ -7,6 +7,7 @@ import ContentEncoding from "./headers/content-encoding.js";
 import ContentType from "./headers/content-type.js";
 import Cookie from "./headers/cookie.js";
 import Forwarded from "./headers/forwarded.js";
+import IfModifiedSince from "./headers/if-modified-since.js";
 import Range from "./headers/range.js";
 
 export type IProtocol = "http:" | "https:";
@@ -18,6 +19,7 @@ export class KauaiRequest extends IncomingMessage {
   #content_type?: ContentType | null;
   #cookies?: readonly Cookie[];
   #forwarded?: readonly Forwarded[];
+  #if_modified_since?: IfModifiedSince | null;
   #range?: readonly Range[];
   #query?: ParsedUrlQuery;
 
@@ -72,6 +74,14 @@ export class KauaiRequest extends IncomingMessage {
 
   public header(name: string): string | string[] | undefined {
     return this.headers[name.toLowerCase()];
+  }
+
+  public get if_modified_since(): IfModifiedSince | null {
+    if (typeof this.#if_modified_since === "undefined") {
+      const input = this.headers["if-modified-since"];
+      this.#if_modified_since = IfModifiedSince.fromString(input);
+    }
+    return this.#if_modified_since;
   }
 
   public get protocol(): IProtocol {
