@@ -1,9 +1,41 @@
 {
+  "name": "kauai",
+  "version": "1.0.0",
+  "description": "A simple HTTP server framework",
+  "main": "build/index.js",
+  "type": "module",
+  "types": "build/index.d.ts",
+  "engines": {
+    "node": ">=16.4.2",
+    "npm": ">=7.18.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b2broker/kauai.git"
+  },
+  "keywords": [
+    "HTTP",
+    "REST",
+    "web",
+    "framework"
+  ],
+  "author": "Sergey Bakulin <sbakulin@b2broker.net>",
+  "license": "AGPL-3.0-only",
+  "bugs": {
+    "url": "https://github.com/b2broker/kauai/issues"
+  },
+  "homepage": "https://github.com/b2broker/kauai#readme",
+  "directories": {
+    "test": "test"
+  },
   "scripts": {
     "build": "npm run build:remove && tsc",
     "build:remove": "rm -rf ./build",
+    "ci:all": "npm ci && npm run commitlint:all && npm run prettier && npm run lint && npm run test:ci && npm run publish:test && npm run docs:build && npm run coverage:ci",
     "commitlint": "commitlint --verbose",
     "commitlint:all": "npm run commitlint -- --from=$( git rev-list --max-parents=0 $( git rev-parse --abbrev-ref HEAD ) )",
+    "coverage": "c8 --exclude 'build/test/' --exclude 'build/src/logger.js' npm test && c8 report --reporter=lcov",
+    "coverage:ci": "npm run build && npm run coverage && npm run build:remove",
     "docs:build": "npm run docs:remove && typedoc && npm run prettier:write -- --ignore-path .prettierignore_docs",
     "docs:remove": "rm -rf ./docs",
     "install:clean": "rm -fr node_modules && rm -f package-lock.json && npm install",
@@ -15,22 +47,35 @@
     "prettier": "prettier -c .",
     "prettier:write": "npm run prettier -- --write",
     "publish:test": "npm publish --dry-run",
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "test": "mocha 'build/test/**/*.spec.js' --ui=tdd --full-trace --bail",
+    "test:ci": "npm run build && npm test && npm run build:remove",
+    "ts-node": "node --loader ts-node/esm"
+  },
+  "dependencies": {
+    "pino": "^6.13.0"
   },
   "devDependencies": {
     "@b2broker/tsconfig": "^1.0.3",
     "@semantic-release/changelog": "^5.0.1",
     "@semantic-release/exec": "^5.0.0",
     "@semantic-release/git": "^9.0.0",
-    "@types/mocha": "^8.2.2",
+    "@types/mocha": "^9.0.0",
+    "@types/sinon": "^10.0.2",
+    "c8": "^7.7.3",
     "commitlint-config-b2broker": "^1.0.4",
     "eslint-config-b2broker-ts": "^1.0.3",
-    "husky": "^7.0.0",
-    "lint-staged": "^11.0.0",
-    "mocha": "^9.0.2",
+    "husky": "^7.0.1",
+    "lint-staged": "^11.1.1",
+    "mocha": "^9.0.3",
+    "node-fetch": "^3.0.0-beta.10",
     "prettier": "^2.3.2",
     "semantic-release": "^17.4.4",
-    "ts-node": "^10.0.0",
-    "typedoc": "^0.21.2"
+    "sinon": "^11.1.1",
+    "ts-node": "^10.1.0",
+    "typedoc": "^0.21.4"
+  },
+  "peerDependencies": {
+    "@types/pino": "^6.3.10"
   }
 }
