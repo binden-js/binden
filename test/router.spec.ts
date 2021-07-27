@@ -14,7 +14,6 @@ const two = new CustomMiddleware();
 const three = new CustomMiddleware();
 
 const methods = [
-  "connect",
   "delete",
   "get",
   "head",

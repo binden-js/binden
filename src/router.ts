@@ -93,10 +93,6 @@ export class Router {
     return removed;
   }
 
-  public connect(...middlewares: Middleware[]): this {
-    return this.on("CONNECT", ...middlewares);
-  }
-
   public delete(...middlewares: Middleware[]): this {
     return this.on("DELETE", ...middlewares);
   }
