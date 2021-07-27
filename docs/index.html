@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html class="default no-js">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>kauai</title>
+    <meta name="description" content="Documentation for kauai" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="assets/css/main.css" />
+    <script async src="assets/js/search.js" id="search-script"></script>
+  </head>
+  <body>
+    <header>
+      <div class="tsd-page-toolbar">
+        <div class="container">
+          <div class="table-wrap">
+            <div
+              class="table-cell"
+              id="tsd-search"
+              data-index="assets/js/search.json"
+              data-base="."
+            >
+              <div class="field">
+                <label
+                  for="tsd-search-field"
+                  class="tsd-widget search no-caption"
+                  >Search</label
+                >
+                <input id="tsd-search-field" type="text" />
+              </div>
+              <ul class="results">
+                <li class="state loading">Preparing search index...</li>
+                <li class="state failure">The search index is not available</li>
+              </ul>
+              <a href="index.html" class="title">kauai</a>
+            </div>
+            <div class="table-cell" id="tsd-widgets">
+              <div id="tsd-filter">
+                <a
+                  href="#"
+                  class="tsd-widget options no-caption"
+                  data-toggle="options"
+                  >Options</a
+                >
+                <div class="tsd-filter-group">
+                  <div class="tsd-select" id="tsd-filter-visibility">
+                    <span class="tsd-select-label">All</span>
+                    <ul class="tsd-select-list">
+                      <li data-value="public">Public</li>
+                      <li data-value="protected">Public/Protected</li>
+                      <li data-value="private" class="selected">All</li>
+                    </ul>
+                  </div>
+                  <input type="checkbox" id="tsd-filter-inherited" checked />
+                  <label class="tsd-widget" for="tsd-filter-inherited"
+                    >Inherited</label
+                  >
+                  <input type="checkbox" id="tsd-filter-externals" checked />
+                  <label class="tsd-widget" for="tsd-filter-externals"
+                    >Externals</label
+                  >
+                </div>
+              </div>
+              <a href="#" class="tsd-widget menu no-caption" data-toggle="menu"
+                >Menu</a
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tsd-page-title">
+        <div class="container">
+          <h1>kauai</h1>
+        </div>
+      </div>
+    </header>
+    <div class="container container-main">
+      <div class="row">
+        <div class="col-8 col-content">
+          <div class="tsd-panel tsd-typography">
+            <a
+              href="#kauai-----------"
+              id="kauai-----------"
+              style="color: inherit; text-decoration: none"
+            >
+              <h1>
+                Kauai
+                <img
+                  src="https://github.com/b2broker/kauai/workflows/Test/badge.svg"
+                  alt="CI Status"
+                />
+                <a href="https://github.com/b2broker/kauai"
+                  ><img
+                    src="https://img.shields.io/github/package-json/v/b2broker/kauai?style=plastic"
+                    alt="version"
+                /></a>
+                <a href="https://snyk.io/test/github/b2broker/kauai"
+                  ><img
+                    src="https://snyk.io/test/github/b2broker/kauai/badge.svg"
+                    alt="Known Vulnerabilities"
+                /></a>
+                <a href="https://coveralls.io/github/b2broker/kauai?branch=main"
+                  ><img
+                    src="https://coveralls.io/repos/github/b2broker/kauai/badge.svg?branch=main"
+                    alt="Coverage Status"
+                /></a>
+                <a href="https://github.com/prettier/prettier"
+                  ><img
+                    src="https://img.shields.io/badge/code_style-prettier-ff69b4.svg"
+                    alt="code style: prettier"
+                /></a>
+                <a href="https://github.com/semantic-release/semantic-release"
+                  ><img
+                    src="https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg"
+                    alt="semantic-release"
+                /></a>
+                <a href="https://conventionalcommits.org"
+                  ><img
+                    src="https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg"
+                    alt="Conventional Commits"
+                /></a>
+                <img
+                  src="https://img.shields.io/github/languages/top/b2broker/kauai"
+                  alt="GitHub top language"
+                />
+                <img
+                  src="https://img.shields.io/node/v/kauai"
+                  alt="node version"
+                />
+                <img
+                  src="https://img.shields.io/npm/dt/kauai"
+                  alt="npm downloads"
+                />
+                <img
+                  src="https://img.shields.io/github/license/b2broker/kauai"
+                  alt="License"
+                />
+              </h1>
+            </a>
+            <p>
+              A simple server framework (written in
+              <a href="https://www.typescriptlang.org/">TypeScript</a>).
+            </p>
+            <a
+              href="#installation"
+              id="installation"
+              style="color: inherit; text-decoration: none"
+            >
+              <h2>Installation</h2>
+            </a>
+            <pre><code class="language-bash"><span style="color: #000000">npm install kauai</span>
+</code></pre>
+            <a
+              href="#usage"
+              id="usage"
+              style="color: inherit; text-decoration: none"
+            >
+              <h2>Usage</h2>
+            </a>
+            <a
+              href="#kauai"
+              id="kauai"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>Kauai</h3>
+            </a>
+            <ul>
+              <li>
+                <code>.use()</code> - Add a <code>Middleware/Router</code> to
+                the stack
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Kauai</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">app</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">Kauai</span><span style="color: #000000">().</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #001080">middleware1</span><span style="color: #000000">).</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #001080">router2</span><span style="color: #000000">);</span>
+<span style="color: #001080">app</span><span style="color: #000000">.</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;/path&quot;</span><span style="color: #000000">, </span><span style="color: #001080">middleware2</span><span style="color: #000000">, </span><span style="color: #001080">router2</span><span style="color: #000000">);</span>
+<span style="color: #001080">app</span><span style="color: #000000">.</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #267F99">RegExp</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;path&quot;</span><span style="color: #000000">), </span><span style="color: #001080">router3</span><span style="color: #000000">, </span><span style="color: #001080">middleware1</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.off()</code> - remove a
+                <code>Middleware/Router</code> form the stack
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Kauai</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">app</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">Kauai</span><span style="color: #000000">()</span>
+<span style="color: #000000">  .</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;/path&quot;</span><span style="color: #000000">, </span><span style="color: #001080">middleware1</span><span style="color: #000000">)</span>
+<span style="color: #000000">  .</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #001080">middleware2</span><span style="color: #000000">)</span>
+<span style="color: #000000">  .</span><span style="color: #795E26">off</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;/path&quot;</span><span style="color: #000000">, </span><span style="color: #001080">middleware1</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li><code>.createServer()</code> - create a server (HTTP)</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Kauai</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">app</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">Kauai</span><span style="color: #000000">()</span>
+<span style="color: #000000">  .</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #267F99">RegExp</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;path&quot;</span><span style="color: #000000">), </span><span style="color: #001080">middleware</span><span style="color: #000000">)</span>
+<span style="color: #000000">  .</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;/path2&quot;</span><span style="color: #000000">, </span><span style="color: #001080">router</span><span style="color: #000000">);</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">server</span><span style="color: #000000"> = </span><span style="color: #001080">app</span><span style="color: #000000">.</span><span style="color: #795E26">createServer</span><span style="color: #000000">();</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.createSecureServer()</code> - create a server (HTTPS)
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Kauai</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">app</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">Kauai</span><span style="color: #000000">().</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;/path&quot;</span><span style="color: #000000">, </span><span style="color: #001080">middleware</span><span style="color: #000000">).</span><span style="color: #795E26">use</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;/path2&quot;</span><span style="color: #000000">, </span><span style="color: #001080">router</span><span style="color: #000000">);</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">secureServer</span><span style="color: #000000"> = </span><span style="color: #001080">app</span><span style="color: #000000">.</span><span style="color: #795E26">createSecureServer</span><span style="color: #000000">({ </span><span style="color: #001080">key</span><span style="color: #000000">, </span><span style="color: #001080">cert</span><span style="color: #000000"> });</span>
+</code></pre>
+            <a
+              href="#context"
+              id="context"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>Context</h3>
+            </a>
+            <ul>
+              <li><code>.log</code> - get the logger</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">log</span><span style="color: #000000"> } = </span><span style="color: #001080">context</span><span style="color: #000000">;</span>
+<span style="color: #001080">log</span><span style="color: #000000">.</span><span style="color: #795E26">info</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;Hello World&quot;</span><span style="color: #000000">, { </span><span style="color: #001080">data:</span><span style="color: #000000"> </span><span style="color: #098658">100</span><span style="color: #000000"> });</span>
+</code></pre>
+            <ul>
+              <li><code>.status()</code> - set the response status</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">status</span><span style="color: #000000">(</span><span style="color: #098658">401</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.request</code> - get the original request object (<code
+                  >instanceof KauaiRequest</code
+                >)
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">request</span><span style="color: #000000"> } = </span><span style="color: #001080">context</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.response</code> - get the original response object (<code
+                  >instanceof KauaiResponse</code
+                >)
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">response</span><span style="color: #000000"> } = </span><span style="color: #001080">context</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.id</code> - get <code>id</code> of the context (generated
+                by the
+                <a
+                  href="https://nodejs.org/dist/latest/docs/api/crypto.html#crypto_crypto_randomuuid_options"
+                  >randomUUID()</a
+                >
+                function and logged as <code>trace_id</code> by the
+                <code>context.log</code>)
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">id</span><span style="color: #000000"> } = </span><span style="color: #001080">context</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li><code>.done</code></li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">class</span><span style="color: #000000"> </span><span style="color: #267F99">MyMiddleware</span><span style="color: #000000"> </span><span style="color: #0000FF">extends</span><span style="color: #000000"> </span><span style="color: #267F99">Middleware</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0000FF">public</span><span style="color: #000000"> </span><span style="color: #795E26">run</span><span style="color: #000000">(</span><span style="color: #001080">context</span><span style="color: #000000">: </span><span style="color: #267F99">Context</span><span style="color: #000000">): </span><span style="color: #267F99">void</span><span style="color: #000000"> {</span>
+<span style="color: #000000">    </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">done</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">; </span><span style="color: #008000">// Stop passing the `context` to other middlewares</span>
+<span style="color: #000000">  }</span>
+<span style="color: #000000">}</span>
+</code></pre>
+            <ul>
+              <li><code>.url</code> - parsed <code>URL</code> object</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0070C1">log</span><span style="color: #000000">,</span>
+<span style="color: #000000">  </span><span style="color: #001080">url</span><span style="color: #000000">: { </span><span style="color: #0070C1">search</span><span style="color: #000000"> },</span>
+<span style="color: #000000">} = </span><span style="color: #001080">context</span><span style="color: #000000">;</span>
+<span style="color: #001080">log</span><span style="color: #000000">.</span><span style="color: #795E26">trace</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;url search string&quot;</span><span style="color: #000000">, { </span><span style="color: #001080">search</span><span style="color: #000000"> });</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.send()</code> - execute
+                <code>context.response.send()</code> and set
+                <code>context.done</code> to <code>true</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">send</span><span style="color: #000000">(</span><span style="color: #001080">data</span><span style="color: #000000">);</span>
+<span style="color: #008000">// or</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">send</span><span style="color: #000000">(</span><span style="color: #001080">data</span><span style="color: #000000">);</span>
+<span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">done</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.json()</code> - execute
+                <code>context.response.json()</code> and set
+                <code>context.done</code> to <code>true</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">json</span><span style="color: #000000"> = { </span><span style="color: #001080">message:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;Hello World!&quot;</span><span style="color: #000000"> };</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">json</span><span style="color: #000000">(</span><span style="color: #001080">json</span><span style="color: #000000">);</span>
+<span style="color: #008000">// or</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">json</span><span style="color: #000000">(</span><span style="color: #001080">json</span><span style="color: #000000">);</span>
+<span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">done</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.text()</code> - execute
+                <code>context.response.text()</code> and set
+                <code>context.done</code> to <code>true</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">text</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;Hello World!&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">text</span><span style="color: #000000">(</span><span style="color: #001080">text</span><span style="color: #000000">);</span>
+<span style="color: #008000">// or</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">text</span><span style="color: #000000">(</span><span style="color: #001080">text</span><span style="color: #000000">);</span>
+<span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">done</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.html()</code> - execute
+                <code>context.response.html()</code> and set
+                <code>context.done</code> to <code>true</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">html</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;&lt;html&gt;&lt;/html&gt;&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">html</span><span style="color: #000000">(</span><span style="color: #001080">html</span><span style="color: #000000">);</span>
+<span style="color: #008000">// or</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">html</span><span style="color: #000000">(</span><span style="color: #001080">html</span><span style="color: #000000">);</span>
+<span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">done</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.form()</code> - execute
+                <code>context.response.form()</code> and set
+                <code>context.done</code> to <code>true</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">form</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">URLSearchParams</span><span style="color: #000000">({ </span><span style="color: #001080">a:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;1&quot;</span><span style="color: #000000"> });</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">form</span><span style="color: #000000">(</span><span style="color: #001080">form</span><span style="color: #000000">);</span>
+<span style="color: #008000">// or</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">form</span><span style="color: #000000">(</span><span style="color: #001080">form</span><span style="color: #000000">);</span>
+<span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">done</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.sendFile()</code> - execute
+                <code>context.response.sendFile()</code> and set
+                <code>context.done</code> to <code>true</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">path</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;&lt;path to file&gt;&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">sendFile</span><span style="color: #000000">(</span><span style="color: #001080">path</span><span style="color: #000000">);</span>
+<span style="color: #008000">// or</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">sendFile</span><span style="color: #000000">(</span><span style="color: #001080">path</span><span style="color: #000000">);</span>
+<span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">done</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li><code>.throw()</code> - throw <code>KauaiError</code></li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">throw</span><span style="color: #000000">(</span><span style="color: #098658">402</span><span style="color: #000000">, { </span><span style="color: #001080">json:</span><span style="color: #000000"> { </span><span style="color: #001080">error:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;Payment Required&quot;</span><span style="color: #000000"> }, </span><span style="color: #001080">expose:</span><span style="color: #000000"> </span><span style="color: #0000FF">true</span><span style="color: #000000"> });</span>
+</code></pre>
+            <a
+              href="#middleware"
+              id="middleware"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>Middleware</h3>
+            </a>
+            <p>
+              Any middleware should be extended from the abstract
+              <code>Middleware</code> class and implement the
+              <code>.run()</code> method
+            </p>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">randomInt</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;crypto&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Middleware</span><span style="color: #000000">, </span><span style="color: #001080">Context</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #AF00DB">export</span><span style="color: #000000"> </span><span style="color: #0000FF">class</span><span style="color: #000000"> </span><span style="color: #267F99">MyMiddleware</span><span style="color: #000000"> </span><span style="color: #0000FF">extends</span><span style="color: #000000"> </span><span style="color: #267F99">Middleware</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0000FF">public</span><span style="color: #000000"> </span><span style="color: #0000FF">async</span><span style="color: #000000"> </span><span style="color: #795E26">run</span><span style="color: #000000">(</span><span style="color: #001080">context</span><span style="color: #000000">: </span><span style="color: #267F99">Context</span><span style="color: #000000">): </span><span style="color: #267F99">Promise</span><span style="color: #000000">&lt;</span><span style="color: #267F99">void</span><span style="color: #000000">&gt; {</span>
+<span style="color: #000000">    </span><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">randomNumber</span><span style="color: #000000"> = </span><span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #267F99">Promise</span><span style="color: #000000">((</span><span style="color: #001080">resolve</span><span style="color: #000000">, </span><span style="color: #001080">reject</span><span style="color: #000000">) </span><span style="color: #0000FF">=&gt;</span><span style="color: #000000"> {</span>
+<span style="color: #000000">      </span><span style="color: #795E26">randomInt</span><span style="color: #000000">(</span><span style="color: #098658">1</span><span style="color: #000000">, </span><span style="color: #098658">100</span><span style="color: #000000">, (</span><span style="color: #001080">error</span><span style="color: #000000">, </span><span style="color: #001080">n</span><span style="color: #000000">) </span><span style="color: #0000FF">=&gt;</span><span style="color: #000000"> {</span>
+<span style="color: #000000">        </span><span style="color: #AF00DB">if</span><span style="color: #000000"> (</span><span style="color: #001080">error</span><span style="color: #000000">) {</span>
+<span style="color: #000000">          </span><span style="color: #795E26">reject</span><span style="color: #000000">(</span><span style="color: #001080">error</span><span style="color: #000000">);</span>
+<span style="color: #000000">        } </span><span style="color: #AF00DB">else</span><span style="color: #000000"> {</span>
+<span style="color: #000000">          </span><span style="color: #795E26">resolve</span><span style="color: #000000">(</span><span style="color: #001080">n</span><span style="color: #000000">);</span>
+<span style="color: #000000">        }</span>
+<span style="color: #000000">      });</span>
+<span style="color: #000000">    });</span>
+
+<span style="color: #000000">    </span><span style="color: #AF00DB">if</span><span style="color: #000000"> (</span><span style="color: #001080">randomNumber</span><span style="color: #000000"> &lt;= </span><span style="color: #098658">50</span><span style="color: #000000">) {</span>
+<span style="color: #000000">      </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">throw</span><span style="color: #000000">(</span><span style="color: #098658">400</span><span style="color: #000000">, {</span>
+<span style="color: #000000">        </span><span style="color: #001080">message:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;Generated number is less than or equal to 50&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">        </span><span style="color: #001080">expose:</span><span style="color: #000000"> </span><span style="color: #0000FF">true</span><span style="color: #000000">,</span>
+<span style="color: #000000">      });</span>
+<span style="color: #000000">    }</span>
+
+<span style="color: #000000">    </span><span style="color: #AF00DB">return</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">json</span><span style="color: #000000">({ </span><span style="color: #001080">message:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;Generated number is greater than 50&quot;</span><span style="color: #000000"> });</span>
+<span style="color: #000000">  }</span>
+<span style="color: #000000">}</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.disabled</code> - One can disable a middleware at any
+                time
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Middleware</span><span style="color: #000000">, </span><span style="color: #001080">Context</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #AF00DB">export</span><span style="color: #000000"> </span><span style="color: #0000FF">class</span><span style="color: #000000"> </span><span style="color: #267F99">MyMiddleware1</span><span style="color: #000000"> </span><span style="color: #0000FF">extends</span><span style="color: #000000"> </span><span style="color: #267F99">Middleware</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0000FF">public</span><span style="color: #000000"> </span><span style="color: #795E26">run</span><span style="color: #000000">(</span><span style="color: #001080">context</span><span style="color: #000000">: </span><span style="color: #267F99">Context</span><span style="color: #000000">): </span><span style="color: #267F99">Promise</span><span style="color: #000000">&lt;</span><span style="color: #267F99">void</span><span style="color: #000000">&gt; {</span>
+<span style="color: #000000">    </span><span style="color: #AF00DB">return</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">json</span><span style="color: #000000">({ </span><span style="color: #001080">message:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;Hello World&quot;</span><span style="color: #000000"> });</span>
+<span style="color: #000000">  }</span>
+<span style="color: #000000">}</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">mm1</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">MyMiddleware1</span><span style="color: #000000">({ </span><span style="color: #001080">disabled:</span><span style="color: #000000"> </span><span style="color: #0000FF">true</span><span style="color: #000000"> });</span>
+
+<span style="color: #AF00DB">export</span><span style="color: #000000"> </span><span style="color: #0000FF">class</span><span style="color: #000000"> </span><span style="color: #267F99">MyMiddleware2</span><span style="color: #000000"> </span><span style="color: #0000FF">extends</span><span style="color: #000000"> </span><span style="color: #267F99">Middleware</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0000FF">public</span><span style="color: #000000"> </span><span style="color: #0000FF">async</span><span style="color: #000000"> </span><span style="color: #795E26">run</span><span style="color: #000000">(): </span><span style="color: #267F99">Promise</span><span style="color: #000000">&lt;</span><span style="color: #267F99">void</span><span style="color: #000000">&gt; {</span>
+<span style="color: #000000">    </span><span style="color: #008000">// Disable `mm1` every hour</span>
+<span style="color: #000000">    </span><span style="color: #795E26">setInterval</span><span style="color: #000000">(() </span><span style="color: #0000FF">=&gt;</span><span style="color: #000000"> {</span>
+<span style="color: #000000">      </span><span style="color: #001080">mm1</span><span style="color: #000000">.</span><span style="color: #001080">disabled</span><span style="color: #000000"> = !</span><span style="color: #001080">mm1</span><span style="color: #000000">.</span><span style="color: #001080">disabled</span><span style="color: #000000">;</span>
+<span style="color: #000000">    }, </span><span style="color: #098658">1000</span><span style="color: #000000"> * </span><span style="color: #098658">60</span><span style="color: #000000"> * </span><span style="color: #098658">60</span><span style="color: #000000">);</span>
+<span style="color: #000000">  }</span>
+<span style="color: #000000">}</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.ignore_errors</code> - ignore errors from
+                <code>await this.run(context)</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Middleware</span><span style="color: #000000">, </span><span style="color: #001080">Context</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #AF00DB">export</span><span style="color: #000000"> </span><span style="color: #0000FF">class</span><span style="color: #000000"> </span><span style="color: #267F99">MyMiddleware1</span><span style="color: #000000"> </span><span style="color: #0000FF">extends</span><span style="color: #000000"> </span><span style="color: #267F99">Middleware</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0000FF">public</span><span style="color: #000000"> </span><span style="color: #795E26">run</span><span style="color: #000000">(</span><span style="color: #001080">context</span><span style="color: #000000">: </span><span style="color: #267F99">Context</span><span style="color: #000000">): </span><span style="color: #267F99">Promise</span><span style="color: #000000">&lt;</span><span style="color: #267F99">void</span><span style="color: #000000">&gt; {</span>
+<span style="color: #000000">    </span><span style="color: #AF00DB">if</span><span style="color: #000000"> (</span><span style="color: #0000FF">this</span><span style="color: #000000">.</span><span style="color: #001080">ignore_errors</span><span style="color: #000000">) {</span>
+<span style="color: #000000">      </span><span style="color: #AF00DB">return</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">json</span><span style="color: #000000">({ </span><span style="color: #001080">message:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;Hello World&quot;</span><span style="color: #000000"> });</span>
+<span style="color: #000000">    }</span>
+<span style="color: #000000">    </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">throw</span><span style="color: #000000">(</span><span style="color: #098658">400</span><span style="color: #000000">);</span>
+<span style="color: #000000">  }</span>
+<span style="color: #000000">}</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">mm1</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">MyMiddleware1</span><span style="color: #000000">({ </span><span style="color: #001080">ignore_errors:</span><span style="color: #000000"> </span><span style="color: #0000FF">true</span><span style="color: #000000"> });</span>
+
+<span style="color: #AF00DB">export</span><span style="color: #000000"> </span><span style="color: #0000FF">class</span><span style="color: #000000"> </span><span style="color: #267F99">MyMiddleware2</span><span style="color: #000000"> </span><span style="color: #0000FF">extends</span><span style="color: #000000"> </span><span style="color: #267F99">Middleware</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0000FF">public</span><span style="color: #000000"> </span><span style="color: #0000FF">async</span><span style="color: #000000"> </span><span style="color: #795E26">run</span><span style="color: #000000">(): </span><span style="color: #267F99">Promise</span><span style="color: #000000">&lt;</span><span style="color: #267F99">void</span><span style="color: #000000">&gt; {</span>
+<span style="color: #000000">    </span><span style="color: #008000">// Throw errors from `mm1.run()` every minute</span>
+<span style="color: #000000">    </span><span style="color: #795E26">setInterval</span><span style="color: #000000">(() </span><span style="color: #0000FF">=&gt;</span><span style="color: #000000"> {</span>
+<span style="color: #000000">      </span><span style="color: #001080">mm1</span><span style="color: #000000">.</span><span style="color: #001080">ignore_errors</span><span style="color: #000000"> = !</span><span style="color: #001080">mm1</span><span style="color: #000000">.</span><span style="color: #001080">ignore_errors</span><span style="color: #000000">;</span>
+<span style="color: #000000">    }, </span><span style="color: #098658">1000</span><span style="color: #000000"> * </span><span style="color: #098658">60</span><span style="color: #000000">);</span>
+<span style="color: #000000">  }</span>
+<span style="color: #000000">}</span>
+</code></pre>
+            <a
+              href="#kauaierror"
+              id="kauaierror"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>KauaiError</h3>
+            </a>
+            <p><code>KauaiError</code> represents an HTTP error</p>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Middleware</span><span style="color: #000000">, </span><span style="color: #001080">Context</span><span style="color: #000000">, </span><span style="color: #001080">KauaiError</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #AF00DB">export</span><span style="color: #000000"> </span><span style="color: #0000FF">class</span><span style="color: #000000"> </span><span style="color: #267F99">MyMiddleware</span><span style="color: #000000"> </span><span style="color: #0000FF">extends</span><span style="color: #000000"> </span><span style="color: #267F99">Middleware</span><span style="color: #000000"> {</span>
+<span style="color: #000000">  </span><span style="color: #0000FF">public</span><span style="color: #000000"> </span><span style="color: #795E26">run</span><span style="color: #000000">(</span><span style="color: #001080">context</span><span style="color: #000000">: </span><span style="color: #267F99">Context</span><span style="color: #000000">): </span><span style="color: #267F99">Promise</span><span style="color: #000000">&lt;</span><span style="color: #267F99">void</span><span style="color: #000000">&gt; {</span>
+<span style="color: #000000">    </span><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">length</span><span style="color: #000000"> } = </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">cookies</span><span style="color: #000000">;</span>
+
+<span style="color: #000000">    </span><span style="color: #AF00DB">if</span><span style="color: #000000"> (!</span><span style="color: #001080">length</span><span style="color: #000000">) {</span>
+<span style="color: #000000">      </span><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">status</span><span style="color: #000000"> = </span><span style="color: #098658">401</span><span style="color: #000000">;</span>
+<span style="color: #000000">      </span><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">expose</span><span style="color: #000000"> = </span><span style="color: #0000FF">true</span><span style="color: #000000">;</span>
+<span style="color: #000000">      </span><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">message</span><span style="color: #000000"> =</span>
+<span style="color: #000000">        </span><span style="color: #A31515">&quot;Text message to send (when `expose === true` and `json === null`)&quot;</span><span style="color: #000000">;</span>
+<span style="color: #000000">      </span><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">json</span><span style="color: #000000"> = {</span>
+<span style="color: #000000">        </span><span style="color: #001080">error:</span>
+<span style="color: #000000">          </span><span style="color: #A31515">&quot;Send `json` as application/json (when `expose === true`) instead of `message`&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">      };</span>
+<span style="color: #000000">      </span><span style="color: #AF00DB">throw</span><span style="color: #000000"> </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">KauaiError</span><span style="color: #000000">(</span><span style="color: #001080">status</span><span style="color: #000000">, { </span><span style="color: #001080">expose</span><span style="color: #000000">, </span><span style="color: #001080">message</span><span style="color: #000000">, </span><span style="color: #001080">json</span><span style="color: #000000"> });</span>
+<span style="color: #000000">    }</span>
+<span style="color: #000000">    </span><span style="color: #AF00DB">return</span><span style="color: #000000"> </span><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">json</span><span style="color: #000000">({ </span><span style="color: #001080">message:</span><span style="color: #000000"> </span><span style="color: #A31515">`Received </span><span style="color: #0000FF">${</span><span style="color: #001080">length</span><span style="color: #0000FF">}</span><span style="color: #A31515"> cookies`</span><span style="color: #000000"> });</span>
+<span style="color: #000000">  }</span>
+<span style="color: #000000">}</span>
+</code></pre>
+            <a
+              href="#kauairequest"
+              id="kauairequest"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>KauaiRequest</h3>
+            </a>
+            <p>Simple usage with <code>http</code></p>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">createServer</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;http&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">KauaiRequest</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+<span style="color: #001080">server</span><span style="color: #000000"> = </span><span style="color: #795E26">createServer</span><span style="color: #000000">({ </span><span style="color: #001080">IncomingMessage:</span><span style="color: #000000"> </span><span style="color: #001080">KauaiRequest</span><span style="color: #000000"> });</span>
+</code></pre>
+            <ul>
+              <li><code>.header()</code> - get a header by name</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">rawHeader</span><span style="color: #000000"> = </span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #795E26">header</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;X-Header&quot;</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.protocol</code> - respects the
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded"
+                  >Forwarded</a
+                >
+                header:
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">protocol</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">if</span><span style="color: #000000"> (</span><span style="color: #001080">protocol</span><span style="color: #000000"> !== </span><span style="color: #A31515">&quot;https:&quot;</span><span style="color: #000000">) {</span>
+<span style="color: #000000">  </span><span style="color: #001080">console</span><span style="color: #000000">.</span><span style="color: #795E26">error</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;The connection is not secure&quot;</span><span style="color: #000000">);</span>
+<span style="color: #000000">}</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.secure</code> - same as
+                <code>request.protocol === &quot;https:&quot;</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">secure</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">if</span><span style="color: #000000"> (!</span><span style="color: #001080">secure</span><span style="color: #000000">) {</span>
+<span style="color: #000000">  </span><span style="color: #001080">console</span><span style="color: #000000">.</span><span style="color: #795E26">error</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;The connection is not secure&quot;</span><span style="color: #000000">);</span>
+<span style="color: #000000">}</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.query</code> - A copy of <code>URL.search</code> parsed
+                by the <code>querystring.parse()</code> method
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">query</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+<span style="color: #008000">// same as</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">query</span><span style="color: #000000"> = { ...</span><span style="color: #795E26">parse</span><span style="color: #000000">(</span><span style="color: #0000FF">this</span><span style="color: #000000">.</span><span style="color: #0070C1">URL</span><span style="color: #000000">.</span><span style="color: #001080">search</span><span style="color: #000000">.</span><span style="color: #795E26">substring</span><span style="color: #000000">(</span><span style="color: #098658">1</span><span style="color: #000000">)) };</span>
+</code></pre>
+            <a
+              href="#kauairesponse"
+              id="kauairesponse"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>KauaiResponse</h3>
+            </a>
+            <p>Simple usage with <code>http</code></p>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">createServer</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;http&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">KauaiResponse</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+<span style="color: #001080">server</span><span style="color: #000000"> = </span><span style="color: #795E26">createServer</span><span style="color: #000000">({ </span><span style="color: #001080">ServerResponse:</span><span style="color: #000000"> </span><span style="color: #001080">KauaiResponse</span><span style="color: #000000"> });</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.cookies</code> - The <code>.send()</code> method will add
+                cookies to the response
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">randomUUID</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;crypto&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Cookie</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">key</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;__Secure-Random-UUID&quot;</span><span style="color: #000000">;</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">value</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;&lt;RANDOM-UUID-123&gt;&quot;</span><span style="color: #000000">;</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">cookie</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">Cookie</span><span style="color: #000000">({ </span><span style="color: #001080">key</span><span style="color: #000000">, </span><span style="color: #001080">value</span><span style="color: #000000"> });</span>
+<span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #001080">cookies</span><span style="color: #000000">.</span><span style="color: #795E26">add</span><span style="color: #000000">(</span><span style="color: #001080">cookie</span><span style="color: #000000">);</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">send</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;Check the `Set-Cookie` header for a random UUID&quot;</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.status()</code> - Set the status code of the response
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">status</span><span style="color: #000000">(</span><span style="color: #098658">400</span><span style="color: #000000">).</span><span style="color: #795E26">send</span><span style="color: #000000">();</span>
+</code></pre>
+            <ul>
+              <li><code>.set()</code> - Set the headers</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">headers</span><span style="color: #000000"> = {</span>
+<span style="color: #000000">  </span><span style="color: #A31515">&quot;X-AMOUNT&quot;</span><span style="color: #001080">:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;100.02 USD&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">  </span><span style="color: #A31515">&quot;X-MONTHS&quot;</span><span style="color: #001080">:</span><span style="color: #000000"> [</span><span style="color: #A31515">&quot;jan&quot;</span><span style="color: #000000">, </span><span style="color: #A31515">&quot;feb&quot;</span><span style="color: #000000">],</span>
+<span style="color: #000000">};</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">status</span><span style="color: #000000">(</span><span style="color: #098658">402</span><span style="color: #000000">).</span><span style="color: #795E26">set</span><span style="color: #000000">(</span><span style="color: #001080">headers</span><span style="color: #000000">).</span><span style="color: #795E26">send</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;Payment is required&quot;</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li><code>.send()</code> - send data</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">send</span><span style="color: #000000">(</span>
+<span style="color: #000000">  </span><span style="color: #A31515">&quot;Could be `number` | `string` | `Buffer` | `Readable` | `bigint` | `undefined`&quot;</span>
+<span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.json()</code> - send an object as
+                <code>application/json</code> using
+                <code>JSON.stringify()</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">json</span><span style="color: #000000"> = { </span><span style="color: #001080">k:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;v&quot;</span><span style="color: #000000">, </span><span style="color: #001080">k1:</span><span style="color: #000000"> </span><span style="color: #098658">1</span><span style="color: #000000">, </span><span style="color: #001080">m:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;message&quot;</span><span style="color: #000000">, </span><span style="color: #001080">f:</span><span style="color: #000000"> </span><span style="color: #0000FF">false</span><span style="color: #000000"> };</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">json</span><span style="color: #000000">(</span><span style="color: #001080">json</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.text()</code> - send text as <code>plain/text</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">text</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;Hello World!&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">text</span><span style="color: #000000">(</span><span style="color: #001080">text</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.html()</code> - send text as <code>text/html</code>
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">html</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;&lt;html&gt;&lt;/html&gt;&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">html</span><span style="color: #000000">(</span><span style="color: #001080">html</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li><code>.form()</code> - send <code>URLSearchParams</code>;</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">form</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">URLSearchParams</span><span style="color: #000000">({ </span><span style="color: #001080">a:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;1&quot;</span><span style="color: #000000">, </span><span style="color: #001080">b:</span><span style="color: #000000"> [</span><span style="color: #A31515">&quot;a&quot;</span><span style="color: #000000">, </span><span style="color: #A31515">&quot;c&quot;</span><span style="color: #000000">] });</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">form</span><span style="color: #000000">(</span><span style="color: #001080">form</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <code>.sendFile()</code> - Send a file (respects the
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since"
+                  >If-Modified-Since</a
+                >
+                header)
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">path</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;&lt;path to file&gt;&quot;</span><span style="color: #000000">;</span>
+<span style="color: #AF00DB">await</span><span style="color: #000000"> </span><span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">sendFile</span><span style="color: #000000">(</span><span style="color: #001080">path</span><span style="color: #000000">);</span>
+</code></pre>
+            <a
+              href="#headers"
+              id="headers"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>Headers</h3>
+            </a>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Encoding"
+                  >Accept-Encoding</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">AcceptEncoding</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">encodings</span><span style="color: #000000"> = </span><span style="color: #001080">AcceptEncoding</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">[</span><span style="color: #A31515">&quot;accept-encoding&quot;</span><span style="color: #000000">]);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">accept_encoding</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding"
+                  >Content-Encoding</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">ContentEncoding</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">encodings</span><span style="color: #000000"> = </span><span style="color: #001080">ContentEncoding</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span>
+<span style="color: #000000">  </span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">[</span><span style="color: #A31515">&quot;content-encoding&quot;</span><span style="color: #000000">]</span>
+<span style="color: #000000">);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">content_encoding</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range"
+                  >Content-Range</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">ContentRange</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">cr</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">ContentRange</span><span style="color: #000000">({ </span><span style="color: #001080">start:</span><span style="color: #000000"> </span><span style="color: #098658">0</span><span style="color: #000000">, </span><span style="color: #001080">end:</span><span style="color: #000000"> </span><span style="color: #098658">499</span><span style="color: #000000">, </span><span style="color: #001080">size:</span><span style="color: #000000"> </span><span style="color: #098658">1000</span><span style="color: #000000"> });</span>
+<span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #795E26">setHeader</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;Content-Range&quot;</span><span style="color: #000000">, </span><span style="color: #001080">cr</span><span style="color: #000000">.</span><span style="color: #795E26">toString</span><span style="color: #000000">());</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type"
+                  >Content-Type</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">ContentType</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">type</span><span style="color: #000000"> = </span><span style="color: #001080">ContentType</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">[</span><span style="color: #A31515">&quot;content-type&quot;</span><span style="color: #000000">]);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">content_type</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cookie"
+                  >Cookie</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Cookie</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">cookies</span><span style="color: #000000"> = </span><span style="color: #001080">Cookie</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">[</span><span style="color: #A31515">&quot;cookie&quot;</span><span style="color: #000000">]);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">cookies</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+<span style="color: #008000">// or using KauaiResponse</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">cookie1</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">Cookie</span><span style="color: #000000">({</span>
+<span style="color: #000000">  </span><span style="color: #001080">key:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;__Secure-K1&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">  </span><span style="color: #001080">value:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;v1&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">  </span><span style="color: #001080">http_only:</span><span style="color: #000000"> </span><span style="color: #0000FF">false</span><span style="color: #000000">,</span>
+<span style="color: #000000">});</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">cookie2</span><span style="color: #000000"> = </span><span style="color: #0000FF">new</span><span style="color: #000000"> </span><span style="color: #795E26">Cookie</span><span style="color: #000000">({</span>
+<span style="color: #000000">  </span><span style="color: #001080">key:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;K2&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">  </span><span style="color: #001080">value:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;v2&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">  </span><span style="color: #001080">same_site:</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;None&quot;</span><span style="color: #000000">,</span>
+<span style="color: #000000">  </span><span style="color: #001080">max_age:</span><span style="color: #000000"> </span><span style="color: #098658">1000</span><span style="color: #000000">,</span>
+<span style="color: #000000">});</span>
+<span style="color: #001080">response</span><span style="color: #000000">.</span><span style="color: #001080">cookies</span><span style="color: #000000">.</span><span style="color: #795E26">add</span><span style="color: #000000">(</span><span style="color: #001080">cookie1</span><span style="color: #000000">).</span><span style="color: #795E26">add</span><span style="color: #000000">(</span><span style="color: #001080">cookie2</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded"
+                  >Forwarded</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Forwarded</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">forwarded</span><span style="color: #000000"> = </span><span style="color: #001080">Forwarded</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">[</span><span style="color: #A31515">&quot;forwarded&quot;</span><span style="color: #000000">]);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">forwarded</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since"
+                  >If-Modified-Since</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">IfModifiedSince</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">if_modified_since</span><span style="color: #000000"> = </span><span style="color: #001080">IfModifiedSince</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span>
+<span style="color: #000000">  </span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">[</span><span style="color: #A31515">&quot;if-modified-since&quot;</span><span style="color: #000000">]</span>
+<span style="color: #000000">);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">if_modified_since</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range"
+                  >Range</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Range</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">range</span><span style="color: #000000"> = </span><span style="color: #001080">Range</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">.</span><span style="color: #001080">range</span><span style="color: #000000">);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">range</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+</code></pre>
+            <a
+              href="#test"
+              id="test"
+              style="color: inherit; text-decoration: none"
+            >
+              <h3>Test</h3>
+            </a>
+            <pre><code class="language-bash"><span style="color: #000000">npm run test:ci</span>
+</code></pre>
+          </div>
+        </div>
+        <div class="col-4 col-menu menu-sticky-wrap menu-highlight">
+          <nav class="tsd-navigation primary">
+            <ul>
+              <li class="">
+                <a href="modules.html">Exports</a>
+              </li>
+            </ul>
+          </nav>
+          <nav class="tsd-navigation secondary menu-sticky">
+            <ul class="before-current">
+              <li class="tsd-kind-class">
+                <a href="classes/AcceptEncoding.html" class="tsd-kind-icon"
+                  >Accept<wbr />Encoding</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/ContentEncoding.html" class="tsd-kind-icon"
+                  >Content<wbr />Encoding</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/ContentRange.html" class="tsd-kind-icon"
+                  >Content<wbr />Range</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/ContentType.html" class="tsd-kind-icon"
+                  >Content<wbr />Type</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/Context.html" class="tsd-kind-icon">Context</a>
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/Cookie.html" class="tsd-kind-icon">Cookie</a>
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/Forwarded.html" class="tsd-kind-icon"
+                  >Forwarded</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/IfModifiedSince.html" class="tsd-kind-icon"
+                  >If<wbr />Modified<wbr />Since</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/Kauai.html" class="tsd-kind-icon">Kauai</a>
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/KauaiError.html" class="tsd-kind-icon"
+                  >Kauai<wbr />Error</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/KauaiRequest.html" class="tsd-kind-icon"
+                  >Kauai<wbr />Request</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/KauaiResponse.html" class="tsd-kind-icon"
+                  >Kauai<wbr />Response</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/Middleware.html" class="tsd-kind-icon"
+                  >Middleware</a
+                >
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/Range.html" class="tsd-kind-icon">Range</a>
+              </li>
+              <li class="tsd-kind-class">
+                <a href="classes/Router.html" class="tsd-kind-icon">Router</a>
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IAcceptEncoding.html" class="tsd-kind-icon"
+                  >IAccept<wbr />Encoding</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IBaseContext.html" class="tsd-kind-icon"
+                  >IBase<wbr />Context</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IContentEncoding.html" class="tsd-kind-icon"
+                  >IContent<wbr />Encoding</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IContentRange.html" class="tsd-kind-icon"
+                  >IContent<wbr />Range</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IContentType.html" class="tsd-kind-icon"
+                  >IContent<wbr />Type</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/ICookie.html" class="tsd-kind-icon"
+                  >ICookie</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IForwarded.html" class="tsd-kind-icon"
+                  >IForwarded</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IIfModifiedSince.html" class="tsd-kind-icon"
+                  >IIf<wbr />Modified<wbr />Since</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a
+                  href="interfaces/IKauaiErrorOptions.html"
+                  class="tsd-kind-icon"
+                  >IKauai<wbr />Error<wbr />Options</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IKauaiOptions.html" class="tsd-kind-icon"
+                  >IKauai<wbr />Options</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IKauaiResponse.html" class="tsd-kind-icon"
+                  >IKauai<wbr />Response</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a
+                  href="interfaces/IMiddlewareParams.html"
+                  class="tsd-kind-icon"
+                  >IMiddleware<wbr />Params</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IRange.html" class="tsd-kind-icon"
+                  >IRange</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IRouterOptions.html" class="tsd-kind-icon"
+                  >IRouter<wbr />Options</a
+                >
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IAcceptEncodings" class="tsd-kind-icon"
+                  >IAccept<wbr />Encodings</a
+                >
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IEncodings" class="tsd-kind-icon"
+                  >IEncodings</a
+                >
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IProtocol" class="tsd-kind-icon"
+                  >IProtocol</a
+                >
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IStack" class="tsd-kind-icon">IStack</a>
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IStackItem" class="tsd-kind-icon"
+                  >IStack<wbr />Item</a
+                >
+              </li>
+              <li class="tsd-kind-variable">
+                <a href="modules.html#DefaultErrorCode" class="tsd-kind-icon"
+                  >Default<wbr />Error<wbr />Code</a
+                >
+              </li>
+              <li class="tsd-kind-variable">
+                <a href="modules.html#ct_form" class="tsd-kind-icon"
+                  >ct_<wbr />form</a
+                >
+              </li>
+              <li class="tsd-kind-variable">
+                <a href="modules.html#ct_html" class="tsd-kind-icon"
+                  >ct_<wbr />html</a
+                >
+              </li>
+              <li class="tsd-kind-variable">
+                <a href="modules.html#ct_json" class="tsd-kind-icon"
+                  >ct_<wbr />json</a
+                >
+              </li>
+              <li class="tsd-kind-variable">
+                <a href="modules.html#ct_text" class="tsd-kind-icon"
+                  >ct_<wbr />text</a
+                >
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <div class="container">
+        <h2>Legend</h2>
+        <div class="tsd-legend-group">
+          <ul class="tsd-legend">
+            <li class="tsd-kind-constructor tsd-parent-kind-class">
+              <span class="tsd-kind-icon">Constructor</span>
+            </li>
+            <li class="tsd-kind-property tsd-parent-kind-class">
+              <span class="tsd-kind-icon">Property</span>
+            </li>
+            <li class="tsd-kind-method tsd-parent-kind-class">
+              <span class="tsd-kind-icon">Method</span>
+            </li>
+            <li class="tsd-kind-accessor tsd-parent-kind-class">
+              <span class="tsd-kind-icon">Accessor</span>
+            </li>
+          </ul>
+          <ul class="tsd-legend">
+            <li class="tsd-kind-property tsd-parent-kind-interface">
+              <span class="tsd-kind-icon">Property</span>
+            </li>
+            <li class="tsd-kind-method tsd-parent-kind-interface">
+              <span class="tsd-kind-icon">Method</span>
+            </li>
+          </ul>
+          <ul class="tsd-legend">
+            <li
+              class="
+                tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited
+              "
+            >
+              <span class="tsd-kind-icon">Inherited constructor</span>
+            </li>
+            <li class="tsd-kind-method tsd-parent-kind-class tsd-is-inherited">
+              <span class="tsd-kind-icon">Inherited method</span>
+            </li>
+          </ul>
+          <ul class="tsd-legend">
+            <li class="tsd-kind-property tsd-parent-kind-class tsd-is-private">
+              <span class="tsd-kind-icon">Private property</span>
+            </li>
+            <li class="tsd-kind-method tsd-parent-kind-class tsd-is-private">
+              <span class="tsd-kind-icon">Private method</span>
+            </li>
+          </ul>
+          <ul class="tsd-legend">
+            <li class="tsd-kind-method tsd-parent-kind-class tsd-is-static">
+              <span class="tsd-kind-icon">Static method</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </footer>
+    <div class="overlay"></div>
+    <script src="assets/js/main.js"></script>
+  </body>
+</html>
