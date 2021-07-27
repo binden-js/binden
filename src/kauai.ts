@@ -73,7 +73,7 @@ export class Kauai {
         ServerResponse: KauaiResponse,
       },
       (request: KauaiRequest, response: IKauaiResponse) =>
-        this.requestListener(request, response)
+        this.#requestListener(request, response)
     );
   }
 
@@ -84,7 +84,7 @@ export class Kauai {
         IncomingMessage: KauaiRequest,
         ServerResponse: KauaiResponse,
       },
-      (request, response) => this.requestListener(request, response)
+      (request, response) => this.#requestListener(request, response)
     );
   }
 
@@ -185,10 +185,7 @@ export class Kauai {
     return removed;
   }
 
-  public requestListener(
-    request: KauaiRequest,
-    response: IKauaiResponse
-  ): void {
+  #requestListener(request: KauaiRequest, response: IKauaiResponse): void {
     const context = new Context({ request, response });
     this.#handle(context).catch((error: unknown) => {
       this.#errorHandler(context, error);
