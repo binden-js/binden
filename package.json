@@ -31,7 +31,7 @@
   "scripts": {
     "build": "npm run build:remove && tsc",
     "build:remove": "rm -rf ./build",
-    "ci:all": "npm ci && npm run commitlint:all && npm run prettier && npm run lint && npm run test:ci && npm run publish:test && npm run docs:build && npm run coverage:ci",
+    "ci:all": "npm ci && npm run commitlint:all && npm run prettier && npm run lint && npm run test:ci && npm run publish:test && npm run coverage:ci",
     "commitlint": "commitlint --verbose",
     "commitlint:all": "npm run commitlint -- --from=$( git rev-list --max-parents=0 $( git rev-parse --abbrev-ref HEAD ) )",
     "coverage": "c8 --exclude 'build/test/' --exclude 'build/src/logger.js' npm test && c8 report --reporter=lcov",
