@@ -3,6 +3,7 @@ import { parse, ParsedUrlQuery } from "querystring";
 import { TLSSocket } from "tls";
 
 import AcceptEncoding from "./headers/accept-encoding.js";
+import Authorization from "./headers/authorization.js";
 import ContentEncoding from "./headers/content-encoding.js";
 import ContentType from "./headers/content-type.js";
 import Cookie from "./headers/cookie.js";
@@ -14,6 +15,7 @@ export type IProtocol = "http:" | "https:";
 
 export class KauaiRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
+  #authorization?: Authorization | null;
   #body?: unknown;
   #content_encoding?: readonly ContentEncoding[];
   #content_type?: ContentType | null;
@@ -29,6 +31,14 @@ export class KauaiRequest extends IncomingMessage {
       this.#accept_encoding = AcceptEncoding.fromString(ae);
     }
     return [...this.#accept_encoding];
+  }
+
+  public get authorization(): Authorization | null {
+    if (typeof this.#authorization === "undefined") {
+      const { authorization } = this.headers;
+      this.#authorization = Authorization.fromString(authorization);
+    }
+    return this.#authorization;
   }
 
   public get body(): unknown {
