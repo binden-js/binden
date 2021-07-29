@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <title>IMiddlewareParams | kauai</title>
+    <title>IAuthorization | kauai</title>
     <meta name="description" content="Documentation for kauai" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="../assets/css/main.css" />
@@ -75,10 +75,10 @@
               <a href="../modules.html">kauai</a>
             </li>
             <li>
-              <a href="IMiddlewareParams.html">IMiddlewareParams</a>
+              <a href="IAuthorization.html">IAuthorization</a>
             </li>
           </ul>
-          <h1>Interface IMiddlewareParams</h1>
+          <h1>Interface IAuthorization</h1>
         </div>
       </div>
     </header>
@@ -89,7 +89,20 @@
             <h3>Hierarchy</h3>
             <ul class="tsd-hierarchy">
               <li>
-                <span class="target">IMiddlewareParams</span>
+                <span class="target">IAuthorization</span>
+              </li>
+            </ul>
+          </section>
+          <section class="tsd-panel">
+            <h3>Implemented by</h3>
+            <ul class="tsd-hierarchy">
+              <li>
+                <a
+                  href="../classes/Authorization.html"
+                  class="tsd-signature-type"
+                  data-tsd-kind="Class"
+                  >Authorization</a
+                >
               </li>
             </ul>
           </section>
@@ -102,16 +115,14 @@
                   <ul class="tsd-index-list">
                     <li class="tsd-kind-property tsd-parent-kind-interface">
                       <a
-                        href="IMiddlewareParams.html#disabled"
+                        href="IAuthorization.html#credentials"
                         class="tsd-kind-icon"
-                        >disabled</a
+                        >credentials</a
                       >
                     </li>
                     <li class="tsd-kind-property tsd-parent-kind-interface">
-                      <a
-                        href="IMiddlewareParams.html#ignore_errors"
-                        class="tsd-kind-icon"
-                        >ignore_<wbr />errors</a
+                      <a href="IAuthorization.html#type" class="tsd-kind-icon"
+                        >type</a
                       >
                     </li>
                   </ul>
@@ -126,21 +137,22 @@
                 tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
               "
             >
-              <a name="disabled" class="tsd-anchor"></a>
+              <a name="credentials" class="tsd-anchor"></a>
               <h3>
-                <span class="tsd-flag ts-flagOptional">Optional</span> disabled
+                <span class="tsd-flag ts-flagOptional">Optional</span>
+                credentials
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                disabled<span class="tsd-signature-symbol">:</span>
-                <span class="tsd-signature-type">boolean</span>
+                credentials<span class="tsd-signature-symbol">:</span>
+                <span class="tsd-signature-type">string</span>
               </div>
               <aside class="tsd-sources">
                 <ul>
                   <li>
                     Defined in
                     <a
-                      href="https://github.com/b2broker/kauai/blob/main/src/middleware.ts#L4"
-                      >src/middleware.ts:4</a
+                      href="https://github.com/b2broker/kauai/blob/main/src/headers/authorization.ts#L15"
+                      >src/headers/authorization.ts:15</a
                     >
                   </li>
                 </ul>
@@ -151,22 +163,24 @@
                 tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
               "
             >
-              <a name="ignore_errors" class="tsd-anchor"></a>
-              <h3>
-                <span class="tsd-flag ts-flagOptional">Optional</span>
-                ignore_<wbr />errors
-              </h3>
+              <a name="type" class="tsd-anchor"></a>
+              <h3>type</h3>
               <div class="tsd-signature tsd-kind-icon">
-                ignore_<wbr />errors<span class="tsd-signature-symbol">:</span>
-                <span class="tsd-signature-type">boolean</span>
+                type<span class="tsd-signature-symbol">:</span>
+                <a
+                  href="../modules.html#IAuthenticationType"
+                  class="tsd-signature-type"
+                  data-tsd-kind="Type alias"
+                  >IAuthenticationType</a
+                >
               </div>
               <aside class="tsd-sources">
                 <ul>
                   <li>
                     Defined in
                     <a
-                      href="https://github.com/b2broker/kauai/blob/main/src/middleware.ts#L5"
-                      >src/middleware.ts:5</a
+                      href="https://github.com/b2broker/kauai/blob/main/src/headers/authorization.ts#L14"
+                      >src/headers/authorization.ts:14</a
                     >
                   </li>
                 </ul>
@@ -186,22 +200,20 @@
             <ul class="before-current"></ul>
             <ul class="current">
               <li class="current tsd-kind-interface">
-                <a href="IMiddlewareParams.html" class="tsd-kind-icon"
-                  >IMiddleware<wbr />Params</a
+                <a href="IAuthorization.html" class="tsd-kind-icon"
+                  >IAuthorization</a
                 >
                 <ul>
                   <li class="tsd-kind-property tsd-parent-kind-interface">
                     <a
-                      href="IMiddlewareParams.html#disabled"
+                      href="IAuthorization.html#credentials"
                       class="tsd-kind-icon"
-                      >disabled</a
+                      >credentials</a
                     >
                   </li>
                   <li class="tsd-kind-property tsd-parent-kind-interface">
-                    <a
-                      href="IMiddlewareParams.html#ignore_errors"
-                      class="tsd-kind-icon"
-                      >ignore_<wbr />errors</a
+                    <a href="IAuthorization.html#type" class="tsd-kind-icon"
+                      >type</a
                     >
                   </li>
                 </ul>

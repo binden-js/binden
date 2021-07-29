@@ -1,5 +1,11 @@
 # Changelog
 
+### [1.0.1](https://github.com/b2broker/kauai/compare/v1.0.0...v1.0.1) (2021-07-29)
+
+### Performance Improvements
+
+- **Headers:** add the `Authorization` header ([dc53f28](https://github.com/b2broker/kauai/commit/dc53f28a5bd7267f8eca3cdf640993afb5c34a45))
+
 ## 1.0.0 (2021-07-27)
 
 ### Features

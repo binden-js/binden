@@ -86,7 +86,7 @@
               <h1>
                 Kauai
                 <img
-                  src="https://github.com/b2broker/kauai/workflows/Test/badge.svg"
+                  src="https://github.com/b2broker/kauai/workflows/CI/badge.svg"
                   alt="CI Status"
                 />
                 <a href="https://github.com/b2broker/kauai"
@@ -651,6 +651,22 @@
             <ul>
               <li>
                 <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization"
+                  >Authorization</a
+                >
+              </li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #AF00DB">import</span><span style="color: #000000"> { </span><span style="color: #001080">Authorization</span><span style="color: #000000"> } </span><span style="color: #AF00DB">from</span><span style="color: #000000"> </span><span style="color: #A31515">&quot;kauai&quot;</span><span style="color: #000000">;</span>
+
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">authorization</span><span style="color: #000000"> = </span><span style="color: #001080">AcceptEncoding</span><span style="color: #000000">.</span><span style="color: #795E26">fromString</span><span style="color: #000000">(</span>
+<span style="color: #000000">  </span><span style="color: #001080">request</span><span style="color: #000000">.</span><span style="color: #001080">headers</span><span style="color: #000000">[</span><span style="color: #A31515">&quot;Authorization&quot;</span><span style="color: #000000">]</span>
+<span style="color: #000000">);</span>
+<span style="color: #008000">// or using KauaiRequest</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> { </span><span style="color: #0070C1">authorization</span><span style="color: #000000"> } = </span><span style="color: #001080">request</span><span style="color: #000000">;</span>
+</code></pre>
+            <ul>
+              <li>
+                <a
                   href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding"
                   >Content-Encoding</a
                 >
@@ -789,6 +805,11 @@
                 >
               </li>
               <li class="tsd-kind-class">
+                <a href="classes/Authorization.html" class="tsd-kind-icon"
+                  >Authorization</a
+                >
+              </li>
+              <li class="tsd-kind-class">
                 <a href="classes/ContentEncoding.html" class="tsd-kind-icon"
                   >Content<wbr />Encoding</a
                 >
@@ -851,6 +872,11 @@
               <li class="tsd-kind-interface">
                 <a href="interfaces/IAcceptEncoding.html" class="tsd-kind-icon"
                   >IAccept<wbr />Encoding</a
+                >
+              </li>
+              <li class="tsd-kind-interface">
+                <a href="interfaces/IAuthorization.html" class="tsd-kind-icon"
+                  >IAuthorization</a
                 >
               </li>
               <li class="tsd-kind-interface">
@@ -925,6 +951,11 @@
               <li class="tsd-kind-type-alias">
                 <a href="modules.html#IAcceptEncodings" class="tsd-kind-icon"
                   >IAccept<wbr />Encodings</a
+                >
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IAuthenticationType" class="tsd-kind-icon"
+                  >IAuthentication<wbr />Type</a
                 >
               </li>
               <li class="tsd-kind-type-alias">
