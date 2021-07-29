@@ -1,4 +1,5 @@
 export * from "./src/headers/accept-encoding.js";
+export * from "./src/headers/authorization.js";
 export * from "./src/headers/content-encoding.js";
 export * from "./src/headers/content-range.js";
 export * from "./src/headers/content-type.js";

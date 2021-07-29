@@ -57,6 +57,31 @@ suite("KauaiRequest", () => {
     await serverPromise;
   });
 
+  test(".authorization", async () => {
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: ServerResponse) => {
+          try {
+            deepStrictEqual(request.authorization?.type, "Basic");
+            deepStrictEqual(
+              request.authorization?.credentials,
+              "YWxhZGRpbjpvcGVuc2VzYW1l"
+            );
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url, {
+      headers: { Authorization: "Basic YWxhZGRpbjpvcGVuc2VzYW1l" },
+    });
+    await serverPromise;
+  });
+
   test(".content_encoding", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(

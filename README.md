@@ -415,6 +415,18 @@ const encodings = AcceptEncoding.fromString(request.headers["accept-encoding"]);
 const { accept_encoding } = request;
 ```
 
+- [Authorization](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization)
+
+```typescript
+import { Authorization } from "kauai";
+
+const authorization = AcceptEncoding.fromString(
+  request.headers["Authorization"]
+);
+// or using KauaiRequest
+const { authorization } = request;
+```
+
 - [Content-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding)
 
 ```typescript
