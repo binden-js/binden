@@ -1,5 +1,11 @@
 # Changelog
 
+### [1.0.2](https://github.com/b2broker/kauai/compare/v1.0.1...v1.0.2) (2021-07-31)
+
+### Performance Improvements
+
+- add `id` to the `KauaiRequest` class ([8b2048c](https://github.com/b2broker/kauai/commit/8b2048cdda85dba7d3b05824b074b41ded8a1b2e))
+
 ### [1.0.1](https://github.com/b2broker/kauai/compare/v1.0.0...v1.0.1) (2021-07-29)
 
 ### Performance Improvements
