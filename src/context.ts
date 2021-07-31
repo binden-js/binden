@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto";
 import Logger from "./logger.js";
 import KauaiError, { IKauaiErrorOptions } from "./error.js";
 
@@ -19,15 +18,13 @@ export class Context implements IBaseContext {
   readonly #request: KauaiRequest;
   readonly #response: IKauaiResponse;
   readonly #logger: typeof Logger;
-  readonly #id: string;
   #done: boolean;
 
   public constructor({ request, response }: IBaseContext) {
     this.#request = request;
     this.#response = response;
     this.#done = false;
-    this.#id = randomUUID();
-    this.#logger = Logger.child({ trace_id: this.#id });
+    this.#logger = Logger.child({ trace_id: request.id });
   }
 
   public get log(): typeof Logger {
@@ -48,7 +45,7 @@ export class Context implements IBaseContext {
   }
 
   public get id(): string {
-    return this.#id;
+    return this.request.id;
   }
 
   public get done(): boolean {

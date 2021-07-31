@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { IncomingMessage } from "http";
 import { parse, ParsedUrlQuery } from "querystring";
 import { TLSSocket } from "tls";
@@ -21,6 +22,7 @@ export class KauaiRequest extends IncomingMessage {
   #content_type?: ContentType | null;
   #cookies?: readonly Cookie[];
   #forwarded?: readonly Forwarded[];
+  #id?: string;
   #if_modified_since?: IfModifiedSince | null;
   #range?: readonly Range[];
   #query?: ParsedUrlQuery;
@@ -83,6 +85,13 @@ export class KauaiRequest extends IncomingMessage {
 
   public header(name: string): string | string[] | undefined {
     return this.headers[name.toLowerCase()];
+  }
+
+  public get id(): string {
+    if (!this.#id) {
+      this.#id = randomUUID();
+    }
+    return this.#id;
   }
 
   public get if_modified_since(): IfModifiedSince | null {

@@ -138,6 +138,27 @@ suite("KauaiRequest", () => {
     await serverPromise;
   });
 
+  test(".id", async () => {
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: ServerResponse) => {
+          try {
+            const { id } = request;
+            ok(id);
+            ok(typeof id === "string");
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url);
+    await serverPromise;
+  });
+
   test("secure", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
