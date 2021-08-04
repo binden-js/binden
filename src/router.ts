@@ -36,10 +36,9 @@ export class Router {
   }
 
   public get middlewares(): (method: string) => Middleware[] {
-    return (method: string): Middleware[] => {
-      const middlewares = this.#middlewares.get(method.toUpperCase());
-      return middlewares ? [...middlewares] : [];
-    };
+    return (method: string): Middleware[] => [
+      ...(this.#middlewares.get(method.toUpperCase()) ?? []),
+    ];
   }
 
   public on(method: string, ..._middlewares: Middleware[]): this {

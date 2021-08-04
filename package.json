@@ -34,7 +34,7 @@
     "ci:all": "npm ci && npm run commitlint:all && npm run prettier && npm run lint && npm run test:ci && npm run publish:test && npm run coverage:ci",
     "commitlint": "commitlint --verbose",
     "commitlint:all": "npm run commitlint -- --from=$( git rev-list --max-parents=0 $( git rev-parse --abbrev-ref HEAD ) )",
-    "coverage": "c8 --exclude 'build/test/' --exclude 'build/src/logger.js' npm test && c8 report --reporter=lcov",
+    "coverage": "c8 --exclude 'build/test/' npm test && c8 report --reporter=lcov",
     "coverage:ci": "npm run build && npm run coverage && npm run build:remove",
     "docs:build": "npm run docs:remove && typedoc && npm run prettier:write -- --ignore-path .prettierignore_docs",
     "docs:remove": "rm -rf ./docs",
@@ -53,7 +53,7 @@
     "ts-node": "node --loader ts-node/esm"
   },
   "dependencies": {
-    "pino": "^6.13.0"
+    "@kauai/logger": "^1.0.0"
   },
   "devDependencies": {
     "@b2broker/tsconfig": "^1.0.3",
@@ -74,8 +74,5 @@
     "sinon": "^11.1.2",
     "ts-node": "^10.1.0",
     "typedoc": "^0.21.5"
-  },
-  "peerDependencies": {
-    "@types/pino": "^6.3.11"
   }
 }
