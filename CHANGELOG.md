@@ -1,5 +1,12 @@
 # Changelog
 
+### [1.0.3](https://github.com/b2broker/kauai/compare/v1.0.2...v1.0.3) (2021-08-04)
+
+### Dependencies
+
+- add `@kauai/logger` ([998056b](https://github.com/b2broker/kauai/commit/998056b3dc208ac2b84546bf3227af4cbf8f9a1b))
+- remove `pino` ([753452c](https://github.com/b2broker/kauai/commit/753452cbeb68ebab380d161ec84fd83714c0c3b0))
+
 ### [1.0.2](https://github.com/b2broker/kauai/compare/v1.0.1...v1.0.2) (2021-07-31)
 
 ### Performance Improvements
