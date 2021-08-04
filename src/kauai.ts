@@ -242,7 +242,7 @@ export class Kauai {
   /** Default error hanlder (uses the provided `error_handler`, if any) */
   #errorHandler(context: Context, error: unknown): void {
     const { response, request, log } = context;
-    const base = { error, response, request };
+    const base = { context, error };
     if (this.#error_handler) {
       log.trace("Passing error to the provided `error_handler`", base);
 
@@ -274,8 +274,8 @@ export class Kauai {
         try {
           const message = JSON.stringify(json);
           response.setHeader("Content-Type", ct_json).end(message);
-        } catch (err: unknown) {
-          log.warn("KauaiError: `JSON.stringify` failed", { json, error: err });
+        } catch {
+          log.warn("`JSON.stringify` failed", { ...base, json });
           response.end();
         }
         return;

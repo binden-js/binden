@@ -1,5 +1,6 @@
-import Logger from "./logger.js";
+import { Logger } from "@kauai/logger";
 import KauaiError, { IKauaiErrorOptions } from "./error.js";
+import { serializers, base } from "./logger.js";
 
 import type { Readable } from "stream";
 import type KauaiRequest from "./request.js";
@@ -17,17 +18,18 @@ export interface IBaseContext {
 export class Context implements IBaseContext {
   readonly #request: KauaiRequest;
   readonly #response: IKauaiResponse;
-  readonly #logger: typeof Logger;
+  readonly #logger: Logger;
   #done: boolean;
 
   public constructor({ request, response }: IBaseContext) {
     this.#request = request;
     this.#response = response;
     this.#done = false;
-    this.#logger = Logger.child({ trace_id: request.id });
+    const { id: trace_id } = request;
+    this.#logger = new Logger({ serializers, base: { ...base, trace_id } });
   }
 
-  public get log(): typeof Logger {
+  public get log(): Logger {
     return this.#logger;
   }
 
