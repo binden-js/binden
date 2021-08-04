@@ -52,6 +52,9 @@
     "test:ci": "npm run build && npm test && npm run build:remove",
     "ts-node": "node --loader ts-node/esm"
   },
+  "dependencies": {
+    "@kauai/logger": "^1.0.0"
+  },
   "devDependencies": {
     "@b2broker/tsconfig": "^1.0.3",
     "@semantic-release/changelog": "^5.0.1",
