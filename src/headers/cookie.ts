@@ -113,10 +113,7 @@ export class Cookie implements ICookie {
     const output: Cookie[] = [];
 
     for (const cookie of cookies) {
-      const [key, rawValue] = cookie
-        .split("=")
-        .map((a) => a.trim())
-        .filter((e) => e);
+      const [key, rawValue = ""] = cookie.split("=", 2).map((a) => a.trim());
 
       const value =
         rawValue.startsWith(`"`) && rawValue.endsWith(`"`)
