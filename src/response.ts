@@ -3,7 +3,11 @@ import { stat } from "fs/promises";
 import { ServerResponse, STATUS_CODES } from "http";
 import { Readable } from "stream";
 import { pathToFileURL } from "url";
+import ContentRange from "./headers/content-range.js";
 import Cookie from "./headers/cookie.js";
+import IfModifiedSince from "./headers/if-modified-since.js";
+import Range from "./headers/range.js";
+import KauaiRequest from "./request.js";
 
 export const ct_json = "application/json";
 export const ct_text = "plain/text";
@@ -137,25 +141,60 @@ export class KauaiResponse extends ServerResponse {
     }
 
     const { mtime, size } = stats;
-    const lm = mtime.toUTCString();
+    const lm = new Date(mtime.toUTCString());
 
-    this.setHeader("Last-Modified", lm);
+    this.set({ "Last-Modified": lm.toUTCString(), "Accept-Ranges": "bytes" });
 
-    const {
-      method = "GET",
-      headers: { "if-modified-since": ims },
-    } = this.req;
+    const ims =
+      this.req instanceof KauaiRequest
+        ? this.req.if_modified_since
+        : IfModifiedSince.fromString(this.req.headers["if-modified-since"]);
 
-    if (
-      (method === "GET" || method === "HEAD") &&
-      ims &&
-      new Date(ims) >= new Date(lm)
-    ) {
+    const { method = "GET" } = this.req;
+
+    if ((method === "GET" || method === "HEAD") && ims && ims.date >= lm) {
       return this.status(304).send();
     }
 
-    const stream = createReadStream(url);
-    return this.setHeader("Content-Length", size).send(stream);
+    const range =
+      this.req instanceof KauaiRequest
+        ? this.req.range.shift()
+        : Range.fromString(this.req.headers.range).shift();
+
+    const ifRange = new Date((this.req.headers["if-range"] ?? "") as string);
+
+    if (!range || ifRange < lm) {
+      const stream = createReadStream(url);
+      return this.setHeader("Content-Length", size).status(200).send(stream);
+    } else if (typeof range.start !== "undefined" && range.start >= size) {
+      const cr = new ContentRange({ size }).toString();
+      return this.setHeader("Content-Range", cr).status(416).send();
+    }
+
+    const opts = { start: range?.start ?? 0, end: size - 1 };
+
+    if (typeof range?.end !== "undefined") {
+      if (typeof range.start === "undefined") {
+        const suffix = size - range.end;
+        opts.start = suffix < 0 ? 0 : suffix;
+      } else if (range.end < opts.end) {
+        opts.end = range.end;
+      }
+    }
+
+    const { start, end } = opts;
+
+    if (end - start + 1 === size) {
+      const stream = createReadStream(url);
+      return this.setHeader("Content-Length", size).status(200).send(stream);
+    }
+
+    const stream = createReadStream(url, { start, end });
+    const cr = new ContentRange({ size, start, end }).toString();
+    return this.status(206)
+      .setHeader("Content-Range", cr)
+      .setHeader("Content-Length", `${end - start + 1}`)
+      .send(stream);
   }
 }
 
