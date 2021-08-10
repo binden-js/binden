@@ -55,7 +55,7 @@ const secureServer = app.createSecureServer({ key, cert });
 
 ### Context
 
-- `.log` - get the logger
+- `.log` - get the logger (see [`@kauai/logger`](https://github.com/b2broker/logger))
 
 ```typescript
 const { log } = context;
@@ -295,6 +295,12 @@ server = createServer({ IncomingMessage: KauaiRequest });
 const rawHeader = request.header("X-Header");
 ```
 
+- `.id` - get the request id
+
+```typescript
+const { id } = request;
+```
+
 - `.protocol` - respects the [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) header:
 
 ```typescript
@@ -338,7 +344,7 @@ import { randomUUID } from "crypto";
 import { Cookie } from "kauai";
 
 const key = "__Secure-Random-UUID";
-const value = "<RANDOM-UUID-123>";
+const value = randomUUID();
 const cookie = new Cookie({ key, value });
 response.cookies.add(cookie);
 await response.send("Check the `Set-Cookie` header for a random UUID");
@@ -396,7 +402,13 @@ const form = new URLSearchParams({ a: "1", b: ["a", "c"] });
 await response.form(form);
 ```
 
-- `.sendFile()` - Send a file (respects the [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since) header)
+- `.sendFile()` - Send a file. Respects the following headers
+
+  - [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since)
+
+  - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range)
+
+  - [If-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range)
 
 ```typescript
 const path = "<path to file>";
