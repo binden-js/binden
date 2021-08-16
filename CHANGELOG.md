@@ -1,5 +1,15 @@
 # Changelog
 
+### [1.0.4](https://github.com/b2broker/kauai/compare/v1.0.3...v1.0.4) (2021-08-16)
+
+### Bug Fixes
+
+- **KauaiResponse:** allow the `.json()` method to accept arrays ([8637ac8](https://github.com/b2broker/kauai/commit/8637ac8a527340eb411826000f7c33a5e81e2c0e))
+
+### Performance Improvements
+
+- **sendFile:** add partial request support ([b319879](https://github.com/b2broker/kauai/commit/b31987905e553393cf71d5a62930ecaa06d054a4))
+
 ### [1.0.3](https://github.com/b2broker/kauai/compare/v1.0.2...v1.0.3) (2021-08-04)
 
 ### Dependencies
