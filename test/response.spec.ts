@@ -244,6 +244,21 @@ suite("KauaiResponse", () => {
     deepStrictEqual(data, msg);
   });
 
+  test(".json() (an array)", async () => {
+    const msg = [1, "2", { currency: "💶" }];
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response.json(msg).then(resolve).catch(reject);
+      });
+    });
+    const response = await fetch(url);
+    await serverPromise;
+    const data = await response.json();
+
+    deepStrictEqual(response.headers.get("Content-Type"), ct_json);
+    deepStrictEqual(data, msg);
+  });
+
   test(".text()", async () => {
     const msg = "😀";
     const serverPromise = new Promise<void>((resolve, reject) => {
