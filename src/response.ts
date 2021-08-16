@@ -106,7 +106,7 @@ export class KauaiResponse extends ServerResponse {
   }
 
   /** Send response as `application/json` */
-  public async json(data: Record<string, unknown>): Promise<void> {
+  public async json(data: Record<string, unknown> | unknown[]): Promise<void> {
     const msg = JSON.stringify(data);
     await this.set({ "Content-Type": ct_json }).send(msg);
   }
