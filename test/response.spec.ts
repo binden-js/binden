@@ -1,12 +1,13 @@
 import { deepStrictEqual, ok, throws, rejects } from "assert";
 import { randomUUID } from "crypto";
-import { writeFile, rm, mkdir, rmdir } from "fs/promises";
+import { writeFile, rm, mkdir, rmdir, stat } from "fs/promises";
 import { Server, createServer } from "http";
 import { pathToFileURL } from "url";
 import fetch from "node-fetch";
 
 import {
   KauaiResponse,
+  KauaiRequest,
   Cookie,
   ct_json,
   ct_text,
@@ -243,6 +244,21 @@ suite("KauaiResponse", () => {
     deepStrictEqual(data, msg);
   });
 
+  test(".json() (an array)", async () => {
+    const msg = [1, "2", { currency: "💶" }];
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response.json(msg).then(resolve).catch(reject);
+      });
+    });
+    const response = await fetch(url);
+    await serverPromise;
+    const data = await response.json();
+
+    deepStrictEqual(response.headers.get("Content-Type"), ct_json);
+    deepStrictEqual(data, msg);
+  });
+
   test(".text()", async () => {
     const msg = "😀";
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -293,7 +309,7 @@ suite("KauaiResponse", () => {
 
   test(".sendFile()", async () => {
     const path = "./__temp.tmp";
-    const msg = Buffer.from(randomUUID({ disableEntropyCache: true }));
+    const msg = Buffer.from(randomUUID());
     await writeFile(path, msg);
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response: KauaiResponse) => {
@@ -314,7 +330,7 @@ suite("KauaiResponse", () => {
 
   test(".sendFile() (304 response with `If-Modified-Since`)", async () => {
     const path = "./__temp.tmp";
-    const msg = Buffer.from(randomUUID({ disableEntropyCache: true }));
+    const msg = Buffer.from(randomUUID());
     await writeFile(path, msg);
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response: KauaiResponse) => {
@@ -351,7 +367,7 @@ suite("KauaiResponse", () => {
 
   test(".sendFile() (304 response with `If-Modified-Since` HEAD)", async () => {
     const path = "./__temp.tmp";
-    const msg = Buffer.from(randomUUID({ disableEntropyCache: true }));
+    const msg = Buffer.from(randomUUID());
     await writeFile(path, msg);
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response: KauaiResponse) => {
@@ -386,9 +402,164 @@ suite("KauaiResponse", () => {
     await rm(path);
   });
 
+  test(".sendFile() (416 response with invalid `Range`)", async () => {
+    const path = "./__temp.tmp";
+    const msg = Buffer.from(randomUUID());
+    await writeFile(path, msg);
+
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response
+          .sendFile(path)
+          .catch(reject)
+          .finally(() => response.end(resolve));
+      });
+    });
+
+    const range = `bytes=${msg.byteLength}-`;
+    const response = await fetch(url, { headers: { Range: range } });
+    deepStrictEqual(response.status, 416);
+    const cr = response.headers.get("Content-Range");
+    deepStrictEqual(cr, `bytes */${msg.byteLength}`);
+
+    await serverPromise;
+    const data = await response.text();
+    await rm(path);
+
+    deepStrictEqual(data, "");
+  });
+
+  test(".sendFile() (Partial response with `Range`)", async () => {
+    const path = "./__temp.tmp";
+    const msg = Buffer.from(randomUUID());
+    await writeFile(path, msg);
+
+    const start = 10;
+    const end = 20;
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response
+          .sendFile(path)
+          .catch(reject)
+          .finally(() => response.end(resolve));
+      });
+    });
+    const headers = { Range: `bytes= ${start} - ${end} ` };
+    const response = await fetch(url, { headers });
+    const cr = response.headers.get("Content-Range");
+    deepStrictEqual(cr, `bytes ${start}-${end}/${msg.byteLength}`);
+    deepStrictEqual(response.status, 206);
+
+    await serverPromise;
+    const data = await response.buffer();
+    await rm(path);
+    deepStrictEqual(data, msg.slice(start, end + 1));
+  });
+
+  test(".sendFile() (Full response with invalid `If-Range`)", async () => {
+    const path = "./__temp.tmp";
+    const msg = Buffer.from(randomUUID());
+    await writeFile(path, msg);
+
+    const stats = await stat(path);
+
+    const start = 10;
+    const end = 20;
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response
+          .sendFile(path)
+          .catch(reject)
+          .finally(() => response.end(resolve));
+      });
+    });
+    const headers = {
+      Range: `bytes= ${start} - ${end} `,
+      "If-Range": `${new Date(stats.mtimeMs - 10000).toUTCString()}`,
+    };
+    const response = await fetch(url, { headers });
+    deepStrictEqual(response.headers.get("Content-Range"), null);
+    deepStrictEqual(response.status, 200);
+
+    await serverPromise;
+    const data = await response.buffer();
+    await rm(path);
+    deepStrictEqual(data, msg);
+  });
+
+  test(".sendFile() (Partial response with suffix length)", async () => {
+    const path = "./__temp.tmp";
+    const msg = Buffer.from(randomUUID());
+    await writeFile(path, msg);
+
+    const end = 20;
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response: KauaiResponse) => {
+        response
+          .sendFile(path)
+          .catch(reject)
+          .finally(() => response.end(resolve));
+      });
+    });
+    const headers = { Range: `bytes=  - ${end} ` };
+    const response = await fetch(url, { headers });
+    await serverPromise;
+    const data = await response.buffer();
+    await rm(path);
+    const cr = response.headers.get("Content-Range");
+    deepStrictEqual(
+      cr,
+      `bytes ${msg.byteLength - end}-${msg.byteLength - 1}/${msg.byteLength}`
+    );
+    deepStrictEqual(response.status, 206);
+    deepStrictEqual(data, msg.slice(msg.byteLength - end));
+  });
+
+  test(".sendFile() (`this.req instanceof KauaiRequest`)", async () => {
+    const path = "./__temp.tmp";
+    const msg = Buffer.from(randomUUID());
+    await writeFile(path, msg);
+
+    const newServer = await new Promise<Server>((resolve) => {
+      const s = createServer({
+        ServerResponse: KauaiResponse,
+        IncomingMessage: KauaiRequest,
+      }).listen(port + 1, () => {
+        resolve(s);
+      });
+    });
+
+    const end = 100;
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      newServer.once("request", (_request, response: KauaiResponse) => {
+        response
+          .sendFile(path)
+          .catch(reject)
+          .finally(() => response.end(resolve));
+      });
+    });
+    const headers = { Range: `bytes=  - ${end} ` };
+    const response = await fetch(`http://localhost:${port + 1}`, { headers });
+    await serverPromise;
+    const data = await response.buffer();
+    await rm(path);
+    deepStrictEqual(response.headers.get("Content-Range"), null);
+    deepStrictEqual(response.status, 200);
+    deepStrictEqual(data, msg.slice(msg.byteLength - end));
+    await new Promise<void>((resolve, reject) => {
+      newServer.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
+
   test(".sendFile() (with `URL`)", async () => {
     const path = pathToFileURL("./__temp.tmp");
-    const msg = randomUUID({ disableEntropyCache: true });
+    const msg = randomUUID();
     await writeFile(path, msg);
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response: KauaiResponse) => {
