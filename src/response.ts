@@ -14,7 +14,9 @@ export const ct_text = "plain/text";
 export const ct_html = "text/html";
 export const ct_form = "application/x-www-form-urlencoded";
 
-type IHeaders = Record<string, string | number | readonly string[]>;
+export type IHeadersValue = string | number | readonly string[];
+
+export type IHeaders = Record<string, IHeadersValue>;
 
 export class KauaiResponse extends ServerResponse {
   #cookies?: Set<Cookie>;
