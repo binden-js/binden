@@ -62,6 +62,14 @@ const { log } = context;
 log.info("Hello World", { data: 100 });
 ```
 
+- `.setHeader()` - Set a response header
+
+```typescript
+const name = "X-HEADER";
+const value = ["value1", "value2"];
+context.setHeader(name, value);
+```
+
 - `.status()` - set the response status
 
 ```typescript
