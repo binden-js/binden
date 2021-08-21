@@ -55,6 +55,35 @@ suite("Context", () => {
     await serverPromise;
   });
 
+  test(".setHeader()", async () => {
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once(
+        "request",
+        (request: KauaiRequest, response: IKauaiResponse) => {
+          try {
+            const context = new Context({ request, response });
+            const name = "name";
+            const value = ["value1", "value2"];
+            const mock = sinon
+              .mock(response)
+              .expects("setHeader")
+              .once()
+              .withExactArgs(name, value);
+
+            deepStrictEqual(context.setHeader(name, value), context);
+            mock.verify();
+          } catch (error) {
+            reject(error);
+          } finally {
+            response.end(resolve);
+          }
+        }
+      );
+    });
+    await fetch(url);
+    await serverPromise;
+  });
+
   test("status", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
