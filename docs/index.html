@@ -228,6 +228,13 @@
 <span style="color: #001080">log</span><span style="color: #000000">.</span><span style="color: #795E26">info</span><span style="color: #000000">(</span><span style="color: #A31515">&quot;Hello World&quot;</span><span style="color: #000000">, { </span><span style="color: #001080">data:</span><span style="color: #000000"> </span><span style="color: #098658">100</span><span style="color: #000000"> });</span>
 </code></pre>
             <ul>
+              <li><code>.setHeader()</code> - Set a response header</li>
+            </ul>
+            <pre><code class="language-typescript"><span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">name</span><span style="color: #000000"> = </span><span style="color: #A31515">&quot;X-HEADER&quot;</span><span style="color: #000000">;</span>
+<span style="color: #0000FF">const</span><span style="color: #000000"> </span><span style="color: #0070C1">value</span><span style="color: #000000"> = [</span><span style="color: #A31515">&quot;value1&quot;</span><span style="color: #000000">, </span><span style="color: #A31515">&quot;value2&quot;</span><span style="color: #000000">];</span>
+<span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">setHeader</span><span style="color: #000000">(</span><span style="color: #001080">name</span><span style="color: #000000">, </span><span style="color: #001080">value</span><span style="color: #000000">);</span>
+</code></pre>
+            <ul>
               <li><code>.status()</code> - set the response status</li>
             </ul>
             <pre><code class="language-typescript"><span style="color: #001080">context</span><span style="color: #000000">.</span><span style="color: #795E26">status</span><span style="color: #000000">(</span><span style="color: #098658">401</span><span style="color: #000000">);</span>
@@ -995,6 +1002,16 @@
               <li class="tsd-kind-type-alias">
                 <a href="modules.html#IEncodings" class="tsd-kind-icon"
                   >IEncodings</a
+                >
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IHeaders" class="tsd-kind-icon"
+                  >IHeaders</a
+                >
+              </li>
+              <li class="tsd-kind-type-alias">
+                <a href="modules.html#IHeadersValue" class="tsd-kind-icon"
+                  >IHeaders<wbr />Value</a
                 >
               </li>
               <li class="tsd-kind-type-alias">

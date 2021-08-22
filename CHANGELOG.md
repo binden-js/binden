@@ -1,5 +1,11 @@
 # Changelog
 
+### [1.0.5](https://github.com/b2broker/kauai/compare/v1.0.4...v1.0.5) (2021-08-22)
+
+### Performance Improvements
+
+- **Context:** add the `.setHeader()` method ([4e48d2e](https://github.com/b2broker/kauai/commit/4e48d2e2cde9dd0deb7c9805a2feea962d78a7db))
+
 ### [1.0.4](https://github.com/b2broker/kauai/compare/v1.0.3...v1.0.4) (2021-08-16)
 
 ### Bug Fixes
