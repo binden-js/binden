@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "assert";
+import { deepStrictEqual } from "node:assert";
 
 import { AcceptEncoding } from "../../index.js";
 

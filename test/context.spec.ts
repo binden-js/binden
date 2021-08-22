@@ -1,5 +1,5 @@
-import { ok, deepStrictEqual } from "assert";
-import { Server, createServer } from "http";
+import { ok, deepStrictEqual } from "node:assert";
+import { Server, createServer } from "node:http";
 import fetch from "node-fetch";
 import sinon from "sinon";
 

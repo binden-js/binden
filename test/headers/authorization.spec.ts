@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok } from "assert";
+import { deepStrictEqual, ok } from "node:assert";
 
 import { Authorization } from "../../index.js";
 

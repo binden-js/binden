@@ -1,6 +1,6 @@
-import http, { STATUS_CODES } from "http";
-import https from "https";
-import { isDeepStrictEqual } from "util";
+import http, { STATUS_CODES } from "node:http";
+import https from "node:https";
+import { isDeepStrictEqual } from "node:util";
 import Context, { IKauaiResponse } from "./context.js";
 import KauaiError from "./error.js";
 import Middleware from "./middleware.js";

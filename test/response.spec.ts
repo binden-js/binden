@@ -1,8 +1,8 @@
-import { deepStrictEqual, ok, throws, rejects } from "assert";
-import { randomUUID } from "crypto";
-import { writeFile, rm, mkdir, rmdir, stat } from "fs/promises";
-import { Server, createServer } from "http";
-import { pathToFileURL } from "url";
+import { deepStrictEqual, ok, throws, rejects } from "node:assert";
+import { randomUUID } from "node:crypto";
+import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
+import { Server, createServer } from "node:http";
+import { pathToFileURL } from "node:url";
 import fetch from "node-fetch";
 
 import {

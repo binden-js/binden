@@ -1,4 +1,4 @@
-import os from "os";
+import os from "node:os";
 import Pino from "pino";
 import KauaiError from "./error.js";
 import Context from "./context.js";
