@@ -76,7 +76,7 @@ jobs:
         run: npm run docs:build
 
   release:
-    needs: [test, docs]
+    needs: [test, docs, coverage]
 
     runs-on: ubuntu-latest
 
