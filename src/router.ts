@@ -1,4 +1,4 @@
-import { METHODS } from "http";
+import { METHODS } from "node:http";
 import Middleware from "./middleware.js";
 
 export interface IRouterOptions {

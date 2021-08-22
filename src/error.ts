@@ -1,4 +1,4 @@
-import { STATUS_CODES } from "http";
+import { STATUS_CODES } from "node:http";
 
 export interface IKauaiErrorOptions {
   json?: Record<string, unknown>;

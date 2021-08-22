@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok, throws } from "assert";
+import { deepStrictEqual, ok, throws } from "node:assert";
 
 import { ContentType } from "../../index.js";
 

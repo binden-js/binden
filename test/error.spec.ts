@@ -1,5 +1,5 @@
-import { deepStrictEqual, throws } from "assert";
-import { STATUS_CODES } from "http";
+import { deepStrictEqual, throws } from "node:assert";
+import { STATUS_CODES } from "node:http";
 
 import { KauaiError } from "../index.js";
 

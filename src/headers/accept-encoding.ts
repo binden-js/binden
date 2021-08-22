@@ -30,19 +30,17 @@ export class AcceptEncoding implements IAcceptEncoding {
   }
 
   public toString(): string {
-    const { q_value } = this;
+    const { q_value, encoding } = this;
     return typeof q_value !== "undefined"
-      ? `${this.encoding};q=${q_value}`
-      : this.encoding;
+      ? `${encoding};q=${q_value}`
+      : encoding;
   }
 
   public static fromString(input?: string | string[]): AcceptEncoding[] {
-    if (Array.isArray(input)) {
-      input = input.join(",");
-    }
-
     if (!input) {
       return [];
+    } else if (Array.isArray(input)) {
+      input = input.join(",");
     }
 
     const encodings = [

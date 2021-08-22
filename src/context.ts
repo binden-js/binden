@@ -2,9 +2,9 @@ import { Logger } from "@kauai/logger";
 import KauaiError, { IKauaiErrorOptions } from "./error.js";
 import { serializers, base } from "./logger.js";
 
-import type { Readable } from "stream";
+import type { Readable } from "node:stream";
 import type KauaiRequest from "./request.js";
-import type KauaiResponse from "./response.js";
+import type { IHeadersValue, KauaiResponse } from "./response.js";
 
 export interface IKauaiResponse extends KauaiResponse {
   req: KauaiRequest;
@@ -31,6 +31,11 @@ export class Context implements IBaseContext {
 
   public get log(): Logger {
     return this.#logger;
+  }
+
+  public setHeader(name: string, value: IHeadersValue): this {
+    this.response.setHeader(name, value);
+    return this;
   }
 
   public status(code: number): this {

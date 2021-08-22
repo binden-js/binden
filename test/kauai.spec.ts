@@ -1,8 +1,8 @@
-import { deepStrictEqual, throws } from "assert";
-import { randomUUID } from "crypto";
-import { readFile } from "fs/promises";
-import { Agent } from "https";
-import { Server } from "http";
+import { deepStrictEqual, throws } from "node:assert";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { Server } from "node:http";
+import { Agent } from "node:https";
 import fetch from "node-fetch";
 
 import {

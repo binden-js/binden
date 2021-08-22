@@ -1,6 +1,6 @@
-import { deepStrictEqual, ok } from "assert";
-import { Server, ServerResponse, createServer } from "http";
-import { stringify, parse } from "querystring";
+import { deepStrictEqual, ok } from "node:assert";
+import { Server, ServerResponse, createServer } from "node:http";
+import { stringify, parse } from "node:querystring";
 import fetch from "node-fetch";
 
 import {

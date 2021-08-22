@@ -1,8 +1,8 @@
-import { createReadStream } from "fs";
-import { stat } from "fs/promises";
-import { ServerResponse, STATUS_CODES } from "http";
-import { Readable } from "stream";
-import { pathToFileURL } from "url";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { ServerResponse, STATUS_CODES } from "node:http";
+import { Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
 import ContentRange from "./headers/content-range.js";
 import Cookie from "./headers/cookie.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
@@ -14,7 +14,9 @@ export const ct_text = "plain/text";
 export const ct_html = "text/html";
 export const ct_form = "application/x-www-form-urlencoded";
 
-type IHeaders = Record<string, string | number | readonly string[]>;
+export type IHeadersValue = string | number | readonly string[];
+
+export type IHeaders = Record<string, IHeadersValue>;
 
 export class KauaiResponse extends ServerResponse {
   #cookies?: Set<Cookie>;
