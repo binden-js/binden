@@ -137,8 +137,29 @@ suite("Context", () => {
               .withExactArgs(args);
 
             try {
-              /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-              context[method](args as any)
+              let promise: Promise<void>;
+
+              if (method === "send") {
+                deepStrictEqual(args, params[0][1]);
+                promise = context.send(args);
+              } else if (method === "sendFile") {
+                deepStrictEqual(args, params[1][1]);
+                promise = context.sendFile(args);
+              } else if (method === "form") {
+                deepStrictEqual(args, params[2][1]);
+                promise = context.form(args);
+              } else if (method === "html") {
+                deepStrictEqual(args, params[3][1]);
+                promise = context.html(args);
+              } else if (method === "json") {
+                deepStrictEqual(args, params[4][1]);
+                promise = context.json(args);
+              } else {
+                deepStrictEqual(args, params[5][1]);
+                promise = context.text(args);
+              }
+
+              promise
                 .then(() => {
                   mock.verify();
                   deepStrictEqual(context.done, true);

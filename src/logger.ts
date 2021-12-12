@@ -12,6 +12,7 @@ export const serializers = {
     return error;
   }),
   request: Pino.stdSerializers.wrapRequestSerializer(
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
     ({ id: _id, ...rest }) => rest
   ),
   response: Pino.stdSerializers.res,
@@ -20,6 +21,7 @@ export const serializers = {
       return {
         ...input,
         request: Pino.stdSerializers.wrapRequestSerializer(
+          /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
           ({ id: _id, ...rest }) => rest
         )(input.request),
         response: Pino.stdSerializers.res(input.response),
