@@ -1,32 +1,30 @@
 <!DOCTYPE html>
-<html class="default no-js">
+<html class="default">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
     <title>kauai</title>
     <meta name="description" content="Documentation for kauai" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="assets/css/main.css" />
-    <script async src="assets/js/search.js" id="search-script"></script>
+    <link rel="stylesheet" href="assets/style.css" />
+    <link rel="stylesheet" href="assets/highlight.css" />
+    <script async src="assets/search.js" id="search-script"></script>
   </head>
   <body>
+    <script>
+      document.body.classList.add(localStorage.getItem("tsd-theme") || "os");
+    </script>
     <header>
       <div class="tsd-page-toolbar">
         <div class="container">
           <div class="table-wrap">
-            <div
-              class="table-cell"
-              id="tsd-search"
-              data-index="assets/js/search.json"
-              data-base="."
-            >
+            <div class="table-cell" id="tsd-search" data-base=".">
               <div class="field">
                 <label
                   for="tsd-search-field"
                   class="tsd-widget search no-caption"
                   >Search</label
-                >
-                <input id="tsd-search-field" type="text" />
+                ><input type="text" id="tsd-search-field" />
               </div>
               <ul class="results">
                 <li class="state loading">Preparing search index...</li>
@@ -51,12 +49,17 @@
                       <li data-value="private" class="selected">All</li>
                     </ul>
                   </div>
-                  <input type="checkbox" id="tsd-filter-inherited" checked />
-                  <label class="tsd-widget" for="tsd-filter-inherited"
+                  <input
+                    type="checkbox"
+                    id="tsd-filter-inherited"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-inherited"
                     >Inherited</label
-                  >
-                  <input type="checkbox" id="tsd-filter-externals" checked />
-                  <label class="tsd-widget" for="tsd-filter-externals"
+                  ><input
+                    type="checkbox"
+                    id="tsd-filter-externals"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-externals"
                     >Externals</label
                   >
                 </div>
@@ -69,9 +72,7 @@
         </div>
       </div>
       <div class="tsd-page-title">
-        <div class="container">
-          <h1>kauai</h1>
-        </div>
+        <div class="container"><h1>kauai</h1></div>
       </div>
     </header>
     <div class="container container-main">
@@ -363,7 +364,7 @@
           <section class="tsd-panel-group tsd-member-group">
             <h2>Type aliases</h2>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IAcceptEncodings" class="tsd-anchor"></a>
+              <a id="IAcceptEncodings" class="tsd-anchor"></a>
               <h3>IAccept<wbr />Encodings</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IAccept<wbr />Encodings<span class="tsd-signature-symbol"
@@ -396,7 +397,7 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IAuthenticationType" class="tsd-anchor"></a>
+              <a id="IAuthenticationType" class="tsd-anchor"></a>
               <h3>IAuthentication<wbr />Type</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IAuthentication<wbr />Type<span class="tsd-signature-symbol"
@@ -438,7 +439,7 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IEncodings" class="tsd-anchor"></a>
+              <a id="IEncodings" class="tsd-anchor"></a>
               <h3>IEncodings</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IEncodings<span class="tsd-signature-symbol">:</span>
@@ -465,7 +466,7 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IHeaders" class="tsd-anchor"></a>
+              <a id="IHeaders" class="tsd-anchor"></a>
               <h3>IHeaders</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IHeaders<span class="tsd-signature-symbol">:</span>
@@ -493,7 +494,7 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IHeadersValue" class="tsd-anchor"></a>
+              <a id="IHeadersValue" class="tsd-anchor"></a>
               <h3>IHeaders<wbr />Value</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IHeaders<wbr />Value<span class="tsd-signature-symbol">:</span>
@@ -518,7 +519,7 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IProtocol" class="tsd-anchor"></a>
+              <a id="IProtocol" class="tsd-anchor"></a>
               <h3>IProtocol</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IProtocol<span class="tsd-signature-symbol">:</span>
@@ -539,7 +540,7 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IStack" class="tsd-anchor"></a>
+              <a id="IStack" class="tsd-anchor"></a>
               <h3>IStack</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IStack<span class="tsd-signature-symbol">:</span>
@@ -571,7 +572,7 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-type-alias">
-              <a name="IStackItem" class="tsd-anchor"></a>
+              <a id="IStackItem" class="tsd-anchor"></a>
               <h3>IStack<wbr />Item</h3>
               <div class="tsd-signature tsd-kind-icon">
                 IStack<wbr />Item<span class="tsd-signature-symbol">:</span>
@@ -604,11 +605,8 @@
           <section class="tsd-panel-group tsd-member-group">
             <h2>Variables</h2>
             <section class="tsd-panel tsd-member tsd-kind-variable">
-              <a name="DefaultErrorCode" class="tsd-anchor"></a>
-              <h3>
-                <span class="tsd-flag ts-flagConst">Const</span>
-                Default<wbr />Error<wbr />Code
-              </h3>
+              <a id="DefaultErrorCode" class="tsd-anchor"></a>
+              <h3>Default<wbr />Error<wbr />Code</h3>
               <div class="tsd-signature tsd-kind-icon">
                 Default<wbr />Error<wbr />Code<span class="tsd-signature-symbol"
                   >:</span
@@ -629,10 +627,8 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-variable">
-              <a name="ct_form" class="tsd-anchor"></a>
-              <h3>
-                <span class="tsd-flag ts-flagConst">Const</span> ct_<wbr />form
-              </h3>
+              <a id="ct_form" class="tsd-anchor"></a>
+              <h3>ct_<wbr />form</h3>
               <div class="tsd-signature tsd-kind-icon">
                 ct_<wbr />form<span class="tsd-signature-symbol">:</span>
                 <span class="tsd-signature-type"
@@ -654,10 +650,8 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-variable">
-              <a name="ct_html" class="tsd-anchor"></a>
-              <h3>
-                <span class="tsd-flag ts-flagConst">Const</span> ct_<wbr />html
-              </h3>
+              <a id="ct_html" class="tsd-anchor"></a>
+              <h3>ct_<wbr />html</h3>
               <div class="tsd-signature tsd-kind-icon">
                 ct_<wbr />html<span class="tsd-signature-symbol">:</span>
                 <span class="tsd-signature-type">&quot;text/html&quot;</span
@@ -678,10 +672,8 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-variable">
-              <a name="ct_json" class="tsd-anchor"></a>
-              <h3>
-                <span class="tsd-flag ts-flagConst">Const</span> ct_<wbr />json
-              </h3>
+              <a id="ct_json" class="tsd-anchor"></a>
+              <h3>ct_<wbr />json</h3>
               <div class="tsd-signature tsd-kind-icon">
                 ct_<wbr />json<span class="tsd-signature-symbol">:</span>
                 <span class="tsd-signature-type"
@@ -703,10 +695,8 @@
               </aside>
             </section>
             <section class="tsd-panel tsd-member tsd-kind-variable">
-              <a name="ct_text" class="tsd-anchor"></a>
-              <h3>
-                <span class="tsd-flag ts-flagConst">Const</span> ct_<wbr />text
-              </h3>
+              <a id="ct_text" class="tsd-anchor"></a>
+              <h3>ct_<wbr />text</h3>
               <div class="tsd-signature tsd-kind-icon">
                 ct_<wbr />text<span class="tsd-signature-symbol">:</span>
                 <span class="tsd-signature-type">&quot;plain/text&quot;</span
@@ -731,13 +721,11 @@
         <div class="col-4 col-menu menu-sticky-wrap menu-highlight">
           <nav class="tsd-navigation primary">
             <ul>
-              <li class="current">
-                <a href="modules.html">Exports</a>
-              </li>
+              <li class="current"><a href="modules.html">Exports</a></li>
             </ul>
           </nav>
           <nav class="tsd-navigation secondary menu-sticky">
-            <ul class="before-current">
+            <ul>
               <li class="tsd-kind-class">
                 <a href="classes/AcceptEncoding.html" class="tsd-kind-icon"
                   >Accept<wbr />Encoding</a
@@ -955,7 +943,7 @@
         </div>
       </div>
     </div>
-    <footer>
+    <footer class="">
       <div class="container">
         <h2>Legend</h2>
         <div class="tsd-legend-group">
@@ -983,9 +971,7 @@
           </ul>
           <ul class="tsd-legend">
             <li
-              class="
-                tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited
-              "
+              class="tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited"
             >
               <span class="tsd-kind-icon">Inherited constructor</span>
             </li>
@@ -1007,9 +993,18 @@
             </li>
           </ul>
         </div>
+        <h2>Settings</h2>
+        <p>
+          Theme
+          <select id="theme">
+            <option value="os">OS</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </p>
       </div>
     </footer>
     <div class="overlay"></div>
-    <script src="assets/js/main.js"></script>
+    <script src="assets/main.js"></script>
   </body>
 </html>

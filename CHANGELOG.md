@@ -1,5 +1,11 @@
 # Changelog
 
+### [1.0.6](https://github.com/b2broker/kauai/compare/v1.0.5...v1.0.6) (2021-12-12)
+
+### Dependencies
+
+- upgrade `@kauai/logger` to `v1.0.1` ([5d500df](https://github.com/b2broker/kauai/commit/5d500df1aeec5b3303a163ec6b5ff3bf945014b2))
+
 ### [1.0.5](https://github.com/b2broker/kauai/compare/v1.0.4...v1.0.5) (2021-08-22)
 
 ### Performance Improvements

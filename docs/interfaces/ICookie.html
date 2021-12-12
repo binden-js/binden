@@ -1,32 +1,30 @@
 <!DOCTYPE html>
-<html class="default no-js">
+<html class="default">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
     <title>ICookie | kauai</title>
     <meta name="description" content="Documentation for kauai" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="../assets/css/main.css" />
-    <script async src="../assets/js/search.js" id="search-script"></script>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <link rel="stylesheet" href="../assets/highlight.css" />
+    <script async src="../assets/search.js" id="search-script"></script>
   </head>
   <body>
+    <script>
+      document.body.classList.add(localStorage.getItem("tsd-theme") || "os");
+    </script>
     <header>
       <div class="tsd-page-toolbar">
         <div class="container">
           <div class="table-wrap">
-            <div
-              class="table-cell"
-              id="tsd-search"
-              data-index="../assets/js/search.json"
-              data-base=".."
-            >
+            <div class="table-cell" id="tsd-search" data-base="..">
               <div class="field">
                 <label
                   for="tsd-search-field"
                   class="tsd-widget search no-caption"
                   >Search</label
-                >
-                <input id="tsd-search-field" type="text" />
+                ><input type="text" id="tsd-search-field" />
               </div>
               <ul class="results">
                 <li class="state loading">Preparing search index...</li>
@@ -51,12 +49,17 @@
                       <li data-value="private" class="selected">All</li>
                     </ul>
                   </div>
-                  <input type="checkbox" id="tsd-filter-inherited" checked />
-                  <label class="tsd-widget" for="tsd-filter-inherited"
+                  <input
+                    type="checkbox"
+                    id="tsd-filter-inherited"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-inherited"
                     >Inherited</label
-                  >
-                  <input type="checkbox" id="tsd-filter-externals" checked />
-                  <label class="tsd-widget" for="tsd-filter-externals"
+                  ><input
+                    type="checkbox"
+                    id="tsd-filter-externals"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-externals"
                     >Externals</label
                   >
                 </div>
@@ -71,12 +74,8 @@
       <div class="tsd-page-title">
         <div class="container">
           <ul class="tsd-breadcrumb">
-            <li>
-              <a href="../modules.html">kauai</a>
-            </li>
-            <li>
-              <a href="ICookie.html">ICookie</a>
-            </li>
+            <li><a href="../modules.html">kauai</a></li>
+            <li><a href="ICookie.html">ICookie</a></li>
           </ul>
           <h1>Interface ICookie</h1>
         </div>
@@ -88,9 +87,7 @@
           <section class="tsd-panel tsd-hierarchy">
             <h3>Hierarchy</h3>
             <ul class="tsd-hierarchy">
-              <li>
-                <span class="target">ICookie</span>
-              </li>
+              <li><span class="target">ICookie</span></li>
             </ul>
           </section>
           <section class="tsd-panel">
@@ -162,17 +159,15 @@
           <section class="tsd-panel-group tsd-member-group">
             <h2>Properties</h2>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="domain" class="tsd-anchor"></a>
+              <a id="domain" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> domain
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                domain<span class="tsd-signature-symbol">:</span>
+                domain<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">null</span
                 ><span class="tsd-signature-symbol"> | </span
                 ><span class="tsd-signature-type">string</span>
@@ -190,17 +185,15 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="expires" class="tsd-anchor"></a>
+              <a id="expires" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> expires
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                expires<span class="tsd-signature-symbol">:</span>
+                expires<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">null</span
                 ><span class="tsd-signature-symbol"> | </span
                 ><span class="tsd-signature-type">Date</span>
@@ -218,18 +211,16 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="http_only" class="tsd-anchor"></a>
+              <a id="http_only" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span>
                 http_<wbr />only
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                http_<wbr />only<span class="tsd-signature-symbol">:</span>
+                http_<wbr />only<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">boolean</span>
               </div>
               <aside class="tsd-sources">
@@ -245,11 +236,9 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="key" class="tsd-anchor"></a>
+              <a id="key" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> key
               </h3>
@@ -270,18 +259,16 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="max_age" class="tsd-anchor"></a>
+              <a id="max_age" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span>
                 max_<wbr />age
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                max_<wbr />age<span class="tsd-signature-symbol">:</span>
+                max_<wbr />age<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">null</span
                 ><span class="tsd-signature-symbol"> | </span
                 ><span class="tsd-signature-type">number</span>
@@ -299,17 +286,15 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="path" class="tsd-anchor"></a>
+              <a id="path" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> path
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                path<span class="tsd-signature-symbol">:</span>
+                path<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">null</span
                 ><span class="tsd-signature-symbol"> | </span
                 ><span class="tsd-signature-type">string</span>
@@ -327,18 +312,16 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="same_site" class="tsd-anchor"></a>
+              <a id="same_site" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span>
                 same_<wbr />site
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                same_<wbr />site<span class="tsd-signature-symbol">:</span>
+                same_<wbr />site<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">&quot;Strict&quot;</span
                 ><span class="tsd-signature-symbol"> | </span
                 ><span class="tsd-signature-type">&quot;Lax&quot;</span
@@ -358,17 +341,15 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="secure" class="tsd-anchor"></a>
+              <a id="secure" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> secure
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                secure<span class="tsd-signature-symbol">:</span>
+                secure<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">boolean</span>
               </div>
               <aside class="tsd-sources">
@@ -384,11 +365,9 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="value" class="tsd-anchor"></a>
+              <a id="value" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> value
               </h3>
@@ -413,14 +392,11 @@
         <div class="col-4 col-menu menu-sticky-wrap menu-highlight">
           <nav class="tsd-navigation primary">
             <ul>
-              <li class="">
-                <a href="../modules.html">Exports</a>
-              </li>
+              <li class=""><a href="../modules.html">Exports</a></li>
             </ul>
           </nav>
           <nav class="tsd-navigation secondary menu-sticky">
-            <ul class="before-current"></ul>
-            <ul class="current">
+            <ul>
               <li class="current tsd-kind-interface">
                 <a href="ICookie.html" class="tsd-kind-icon">ICookie</a>
                 <ul>
@@ -466,12 +442,11 @@
                 </ul>
               </li>
             </ul>
-            <ul class="after-current"></ul>
           </nav>
         </div>
       </div>
     </div>
-    <footer>
+    <footer class="">
       <div class="container">
         <h2>Legend</h2>
         <div class="tsd-legend-group">
@@ -499,9 +474,7 @@
           </ul>
           <ul class="tsd-legend">
             <li
-              class="
-                tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited
-              "
+              class="tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited"
             >
               <span class="tsd-kind-icon">Inherited constructor</span>
             </li>
@@ -523,9 +496,18 @@
             </li>
           </ul>
         </div>
+        <h2>Settings</h2>
+        <p>
+          Theme
+          <select id="theme">
+            <option value="os">OS</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </p>
       </div>
     </footer>
     <div class="overlay"></div>
-    <script src="../assets/js/main.js"></script>
+    <script src="../assets/main.js"></script>
   </body>
 </html>

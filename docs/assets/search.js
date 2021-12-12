@@ -256,7 +256,7 @@ window.searchData = {
       kind: 262144,
       name: "encoding",
       url: "classes/ContentEncoding.html#encoding",
-      classes: "tsd-kind-get-signature tsd-parent-kind-class tsd-is-inherited",
+      classes: "tsd-kind-get-signature tsd-parent-kind-class tsd-is-overwrite",
       parent: "ContentEncoding",
     },
     {

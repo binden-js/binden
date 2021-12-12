@@ -1,32 +1,30 @@
 <!DOCTYPE html>
-<html class="default no-js">
+<html class="default">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
     <title>Context | kauai</title>
     <meta name="description" content="Documentation for kauai" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="../assets/css/main.css" />
-    <script async src="../assets/js/search.js" id="search-script"></script>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <link rel="stylesheet" href="../assets/highlight.css" />
+    <script async src="../assets/search.js" id="search-script"></script>
   </head>
   <body>
+    <script>
+      document.body.classList.add(localStorage.getItem("tsd-theme") || "os");
+    </script>
     <header>
       <div class="tsd-page-toolbar">
         <div class="container">
           <div class="table-wrap">
-            <div
-              class="table-cell"
-              id="tsd-search"
-              data-index="../assets/js/search.json"
-              data-base=".."
-            >
+            <div class="table-cell" id="tsd-search" data-base="..">
               <div class="field">
                 <label
                   for="tsd-search-field"
                   class="tsd-widget search no-caption"
                   >Search</label
-                >
-                <input id="tsd-search-field" type="text" />
+                ><input type="text" id="tsd-search-field" />
               </div>
               <ul class="results">
                 <li class="state loading">Preparing search index...</li>
@@ -51,12 +49,17 @@
                       <li data-value="private" class="selected">All</li>
                     </ul>
                   </div>
-                  <input type="checkbox" id="tsd-filter-inherited" checked />
-                  <label class="tsd-widget" for="tsd-filter-inherited"
+                  <input
+                    type="checkbox"
+                    id="tsd-filter-inherited"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-inherited"
                     >Inherited</label
-                  >
-                  <input type="checkbox" id="tsd-filter-externals" checked />
-                  <label class="tsd-widget" for="tsd-filter-externals"
+                  ><input
+                    type="checkbox"
+                    id="tsd-filter-externals"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-externals"
                     >Externals</label
                   >
                 </div>
@@ -71,12 +74,8 @@
       <div class="tsd-page-title">
         <div class="container">
           <ul class="tsd-breadcrumb">
-            <li>
-              <a href="../modules.html">kauai</a>
-            </li>
-            <li>
-              <a href="Context.html">Context</a>
-            </li>
+            <li><a href="../modules.html">kauai</a></li>
+            <li><a href="Context.html">Context</a></li>
           </ul>
           <h1>Class Context</h1>
         </div>
@@ -88,9 +87,7 @@
           <section class="tsd-panel tsd-hierarchy">
             <h3>Hierarchy</h3>
             <ul class="tsd-hierarchy">
-              <li>
-                <span class="target">Context</span>
-              </li>
+              <li><span class="target">Context</span></li>
             </ul>
           </section>
           <section class="tsd-panel">
@@ -121,43 +118,33 @@
                   </ul>
                 </section>
                 <section
-                  class="
-                    tsd-index-section tsd-is-private tsd-is-private-protected
-                  "
+                  class="tsd-index-section tsd-is-private tsd-is-private-protected"
                 >
                   <h3>Properties</h3>
                   <ul class="tsd-index-list">
                     <li
-                      class="
-                        tsd-kind-property tsd-parent-kind-class tsd-is-private
-                      "
+                      class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                     >
                       <a href="Context.html#_done" class="tsd-kind-icon"
                         >#done</a
                       >
                     </li>
                     <li
-                      class="
-                        tsd-kind-property tsd-parent-kind-class tsd-is-private
-                      "
+                      class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                     >
                       <a href="Context.html#_logger" class="tsd-kind-icon"
                         >#logger</a
                       >
                     </li>
                     <li
-                      class="
-                        tsd-kind-property tsd-parent-kind-class tsd-is-private
-                      "
+                      class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                     >
                       <a href="Context.html#_request" class="tsd-kind-icon"
                         >#request</a
                       >
                     </li>
                     <li
-                      class="
-                        tsd-kind-property tsd-parent-kind-class tsd-is-private
-                      "
+                      class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                     >
                       <a href="Context.html#_response" class="tsd-kind-icon"
                         >#response</a
@@ -238,16 +225,12 @@
           <section class="tsd-panel-group tsd-member-group">
             <h2>Constructors</h2>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-constructor tsd-parent-kind-class
-              "
+              class="tsd-panel tsd-member tsd-kind-constructor tsd-parent-kind-class"
             >
-              <a name="constructor" class="tsd-anchor"></a>
+              <a id="constructor" class="tsd-anchor"></a>
               <h3>constructor</h3>
               <ul
-                class="
-                  tsd-signatures tsd-kind-constructor tsd-parent-kind-class
-                "
+                class="tsd-signatures tsd-kind-constructor tsd-parent-kind-class"
               >
                 <li class="tsd-signature tsd-kind-icon">
                   new <wbr />Context<span class="tsd-signature-symbol">(</span
@@ -308,24 +291,13 @@
             </section>
           </section>
           <section
-            class="
-              tsd-panel-group
-              tsd-member-group
-              tsd-is-private
-              tsd-is-private-protected
-            "
+            class="tsd-panel-group tsd-member-group tsd-is-private tsd-is-private-protected"
           >
             <h2>Properties</h2>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-property
-                tsd-parent-kind-class
-                tsd-is-private
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-class tsd-is-private"
             >
-              <a name="_done" class="tsd-anchor"></a>
+              <a id="_done" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagPrivate">Private</span> #done
               </h3>
@@ -346,15 +318,9 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-property
-                tsd-parent-kind-class
-                tsd-is-private
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-class tsd-is-private"
             >
-              <a name="_logger" class="tsd-anchor"></a>
+              <a id="_logger" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagPrivate">Private</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> #logger
@@ -376,15 +342,9 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-property
-                tsd-parent-kind-class
-                tsd-is-private
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-class tsd-is-private"
             >
-              <a name="_request" class="tsd-anchor"></a>
+              <a id="_request" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagPrivate">Private</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> #request
@@ -411,15 +371,9 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-property
-                tsd-parent-kind-class
-                tsd-is-private
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-class tsd-is-private"
             >
-              <a name="_response" class="tsd-anchor"></a>
+              <a id="_response" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagPrivate">Private</span>
                 <span class="tsd-flag ts-flagReadonly">Readonly</span> #response
@@ -449,11 +403,9 @@
           <section class="tsd-panel-group tsd-member-group">
             <h2>Accessors</h2>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-accessor tsd-parent-kind-class
-              "
+              class="tsd-panel tsd-member tsd-kind-accessor tsd-parent-kind-class"
             >
-              <a name="done" class="tsd-anchor"></a>
+              <a id="done" class="tsd-anchor"></a>
               <h3>done</h3>
               <ul
                 class="tsd-signatures tsd-kind-accessor tsd-parent-kind-class"
@@ -521,19 +473,12 @@
               </ul>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-get-signature
-                tsd-parent-kind-class
-              "
+              class="tsd-panel tsd-member tsd-kind-get-signature tsd-parent-kind-class"
             >
-              <a name="id" class="tsd-anchor"></a>
+              <a id="id" class="tsd-anchor"></a>
               <h3>id</h3>
               <ul
-                class="
-                  tsd-signatures tsd-kind-get-signature tsd-parent-kind-class
-                "
+                class="tsd-signatures tsd-kind-get-signature tsd-parent-kind-class"
               >
                 <li class="tsd-signature tsd-kind-icon">
                   <span class="tsd-signature-symbol">get</span> id<span
@@ -564,19 +509,12 @@
               </ul>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-get-signature
-                tsd-parent-kind-class
-              "
+              class="tsd-panel tsd-member tsd-kind-get-signature tsd-parent-kind-class"
             >
-              <a name="log" class="tsd-anchor"></a>
+              <a id="log" class="tsd-anchor"></a>
               <h3>log</h3>
               <ul
-                class="
-                  tsd-signatures tsd-kind-get-signature tsd-parent-kind-class
-                "
+                class="tsd-signatures tsd-kind-get-signature tsd-parent-kind-class"
               >
                 <li class="tsd-signature tsd-kind-icon">
                   <span class="tsd-signature-symbol">get</span> log<span
@@ -607,19 +545,12 @@
               </ul>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-get-signature
-                tsd-parent-kind-class
-              "
+              class="tsd-panel tsd-member tsd-kind-get-signature tsd-parent-kind-class"
             >
-              <a name="request" class="tsd-anchor"></a>
+              <a id="request" class="tsd-anchor"></a>
               <h3>request</h3>
               <ul
-                class="
-                  tsd-signatures tsd-kind-get-signature tsd-parent-kind-class
-                "
+                class="tsd-signatures tsd-kind-get-signature tsd-parent-kind-class"
               >
                 <li class="tsd-signature tsd-kind-icon">
                   <span class="tsd-signature-symbol">get</span> request<span
@@ -668,19 +599,12 @@
               </ul>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-get-signature
-                tsd-parent-kind-class
-              "
+              class="tsd-panel tsd-member tsd-kind-get-signature tsd-parent-kind-class"
             >
-              <a name="response" class="tsd-anchor"></a>
+              <a id="response" class="tsd-anchor"></a>
               <h3>response</h3>
               <ul
-                class="
-                  tsd-signatures tsd-kind-get-signature tsd-parent-kind-class
-                "
+                class="tsd-signatures tsd-kind-get-signature tsd-parent-kind-class"
               >
                 <li class="tsd-signature tsd-kind-icon">
                   <span class="tsd-signature-symbol">get</span> response<span
@@ -729,19 +653,12 @@
               </ul>
             </section>
             <section
-              class="
-                tsd-panel
-                tsd-member
-                tsd-kind-get-signature
-                tsd-parent-kind-class
-              "
+              class="tsd-panel tsd-member tsd-kind-get-signature tsd-parent-kind-class"
             >
-              <a name="url" class="tsd-anchor"></a>
+              <a id="url" class="tsd-anchor"></a>
               <h3>url</h3>
               <ul
-                class="
-                  tsd-signatures tsd-kind-get-signature tsd-parent-kind-class
-                "
+                class="tsd-signatures tsd-kind-get-signature tsd-parent-kind-class"
               >
                 <li class="tsd-signature tsd-kind-icon">
                   <span class="tsd-signature-symbol">get</span> url<span
@@ -777,7 +694,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="form" class="tsd-anchor"></a>
+              <a id="form" class="tsd-anchor"></a>
               <h3>form</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -827,7 +744,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="html" class="tsd-anchor"></a>
+              <a id="html" class="tsd-anchor"></a>
               <h3>html</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -876,7 +793,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="json" class="tsd-anchor"></a>
+              <a id="json" class="tsd-anchor"></a>
               <h3>json</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -941,7 +858,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="send" class="tsd-anchor"></a>
+              <a id="send" class="tsd-anchor"></a>
               <h3>send</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -1007,7 +924,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="sendFile" class="tsd-anchor"></a>
+              <a id="sendFile" class="tsd-anchor"></a>
               <h3>send<wbr />File</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -1064,7 +981,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="setHeader" class="tsd-anchor"></a>
+              <a id="setHeader" class="tsd-anchor"></a>
               <h3>set<wbr />Header</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -1135,7 +1052,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="status" class="tsd-anchor"></a>
+              <a id="status" class="tsd-anchor"></a>
               <h3>status</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -1189,7 +1106,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="text" class="tsd-anchor"></a>
+              <a id="text" class="tsd-anchor"></a>
               <h3>text</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -1238,7 +1155,7 @@
             <section
               class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class"
             >
-              <a name="throw" class="tsd-anchor"></a>
+              <a id="throw" class="tsd-anchor"></a>
               <h3>throw</h3>
               <ul class="tsd-signatures tsd-kind-method tsd-parent-kind-class">
                 <li class="tsd-signature tsd-kind-icon">
@@ -1302,14 +1219,11 @@
         <div class="col-4 col-menu menu-sticky-wrap menu-highlight">
           <nav class="tsd-navigation primary">
             <ul>
-              <li class="">
-                <a href="../modules.html">Exports</a>
-              </li>
+              <li class=""><a href="../modules.html">Exports</a></li>
             </ul>
           </nav>
           <nav class="tsd-navigation secondary menu-sticky">
-            <ul class="before-current"></ul>
-            <ul class="current">
+            <ul>
               <li class="current tsd-kind-class">
                 <a href="Context.html" class="tsd-kind-icon">Context</a>
                 <ul>
@@ -1319,34 +1233,26 @@
                     >
                   </li>
                   <li
-                    class="
-                      tsd-kind-property tsd-parent-kind-class tsd-is-private
-                    "
+                    class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                   >
                     <a href="Context.html#_done" class="tsd-kind-icon">#done</a>
                   </li>
                   <li
-                    class="
-                      tsd-kind-property tsd-parent-kind-class tsd-is-private
-                    "
+                    class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                   >
                     <a href="Context.html#_logger" class="tsd-kind-icon"
                       >#logger</a
                     >
                   </li>
                   <li
-                    class="
-                      tsd-kind-property tsd-parent-kind-class tsd-is-private
-                    "
+                    class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                   >
                     <a href="Context.html#_request" class="tsd-kind-icon"
                       >#request</a
                     >
                   </li>
                   <li
-                    class="
-                      tsd-kind-property tsd-parent-kind-class tsd-is-private
-                    "
+                    class="tsd-kind-property tsd-parent-kind-class tsd-is-private"
                   >
                     <a href="Context.html#_response" class="tsd-kind-icon"
                       >#response</a
@@ -1410,12 +1316,11 @@
                 </ul>
               </li>
             </ul>
-            <ul class="after-current"></ul>
           </nav>
         </div>
       </div>
     </div>
-    <footer>
+    <footer class="">
       <div class="container">
         <h2>Legend</h2>
         <div class="tsd-legend-group">
@@ -1443,9 +1348,7 @@
           </ul>
           <ul class="tsd-legend">
             <li
-              class="
-                tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited
-              "
+              class="tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited"
             >
               <span class="tsd-kind-icon">Inherited constructor</span>
             </li>
@@ -1467,9 +1370,18 @@
             </li>
           </ul>
         </div>
+        <h2>Settings</h2>
+        <p>
+          Theme
+          <select id="theme">
+            <option value="os">OS</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </p>
       </div>
     </footer>
     <div class="overlay"></div>
-    <script src="../assets/js/main.js"></script>
+    <script src="../assets/main.js"></script>
   </body>
 </html>

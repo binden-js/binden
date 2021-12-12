@@ -1,32 +1,30 @@
 <!DOCTYPE html>
-<html class="default no-js">
+<html class="default">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
     <title>IAuthorization | kauai</title>
     <meta name="description" content="Documentation for kauai" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="../assets/css/main.css" />
-    <script async src="../assets/js/search.js" id="search-script"></script>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <link rel="stylesheet" href="../assets/highlight.css" />
+    <script async src="../assets/search.js" id="search-script"></script>
   </head>
   <body>
+    <script>
+      document.body.classList.add(localStorage.getItem("tsd-theme") || "os");
+    </script>
     <header>
       <div class="tsd-page-toolbar">
         <div class="container">
           <div class="table-wrap">
-            <div
-              class="table-cell"
-              id="tsd-search"
-              data-index="../assets/js/search.json"
-              data-base=".."
-            >
+            <div class="table-cell" id="tsd-search" data-base="..">
               <div class="field">
                 <label
                   for="tsd-search-field"
                   class="tsd-widget search no-caption"
                   >Search</label
-                >
-                <input id="tsd-search-field" type="text" />
+                ><input type="text" id="tsd-search-field" />
               </div>
               <ul class="results">
                 <li class="state loading">Preparing search index...</li>
@@ -51,12 +49,17 @@
                       <li data-value="private" class="selected">All</li>
                     </ul>
                   </div>
-                  <input type="checkbox" id="tsd-filter-inherited" checked />
-                  <label class="tsd-widget" for="tsd-filter-inherited"
+                  <input
+                    type="checkbox"
+                    id="tsd-filter-inherited"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-inherited"
                     >Inherited</label
-                  >
-                  <input type="checkbox" id="tsd-filter-externals" checked />
-                  <label class="tsd-widget" for="tsd-filter-externals"
+                  ><input
+                    type="checkbox"
+                    id="tsd-filter-externals"
+                    checked
+                  /><label class="tsd-widget" for="tsd-filter-externals"
                     >Externals</label
                   >
                 </div>
@@ -71,12 +74,8 @@
       <div class="tsd-page-title">
         <div class="container">
           <ul class="tsd-breadcrumb">
-            <li>
-              <a href="../modules.html">kauai</a>
-            </li>
-            <li>
-              <a href="IAuthorization.html">IAuthorization</a>
-            </li>
+            <li><a href="../modules.html">kauai</a></li>
+            <li><a href="IAuthorization.html">IAuthorization</a></li>
           </ul>
           <h1>Interface IAuthorization</h1>
         </div>
@@ -88,9 +87,7 @@
           <section class="tsd-panel tsd-hierarchy">
             <h3>Hierarchy</h3>
             <ul class="tsd-hierarchy">
-              <li>
-                <span class="target">IAuthorization</span>
-              </li>
+              <li><span class="target">IAuthorization</span></li>
             </ul>
           </section>
           <section class="tsd-panel">
@@ -133,17 +130,15 @@
           <section class="tsd-panel-group tsd-member-group">
             <h2>Properties</h2>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="credentials" class="tsd-anchor"></a>
+              <a id="credentials" class="tsd-anchor"></a>
               <h3>
                 <span class="tsd-flag ts-flagOptional">Optional</span>
                 credentials
               </h3>
               <div class="tsd-signature tsd-kind-icon">
-                credentials<span class="tsd-signature-symbol">:</span>
+                credentials<span class="tsd-signature-symbol">?:</span>
                 <span class="tsd-signature-type">string</span>
               </div>
               <aside class="tsd-sources">
@@ -159,11 +154,9 @@
               </aside>
             </section>
             <section
-              class="
-                tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface
-              "
+              class="tsd-panel tsd-member tsd-kind-property tsd-parent-kind-interface"
             >
-              <a name="type" class="tsd-anchor"></a>
+              <a id="type" class="tsd-anchor"></a>
               <h3>type</h3>
               <div class="tsd-signature tsd-kind-icon">
                 type<span class="tsd-signature-symbol">:</span>
@@ -191,14 +184,11 @@
         <div class="col-4 col-menu menu-sticky-wrap menu-highlight">
           <nav class="tsd-navigation primary">
             <ul>
-              <li class="">
-                <a href="../modules.html">Exports</a>
-              </li>
+              <li class=""><a href="../modules.html">Exports</a></li>
             </ul>
           </nav>
           <nav class="tsd-navigation secondary menu-sticky">
-            <ul class="before-current"></ul>
-            <ul class="current">
+            <ul>
               <li class="current tsd-kind-interface">
                 <a href="IAuthorization.html" class="tsd-kind-icon"
                   >IAuthorization</a
@@ -219,12 +209,11 @@
                 </ul>
               </li>
             </ul>
-            <ul class="after-current"></ul>
           </nav>
         </div>
       </div>
     </div>
-    <footer>
+    <footer class="">
       <div class="container">
         <h2>Legend</h2>
         <div class="tsd-legend-group">
@@ -252,9 +241,7 @@
           </ul>
           <ul class="tsd-legend">
             <li
-              class="
-                tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited
-              "
+              class="tsd-kind-constructor tsd-parent-kind-class tsd-is-inherited"
             >
               <span class="tsd-kind-icon">Inherited constructor</span>
             </li>
@@ -276,9 +263,18 @@
             </li>
           </ul>
         </div>
+        <h2>Settings</h2>
+        <p>
+          Theme
+          <select id="theme">
+            <option value="os">OS</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </p>
       </div>
     </footer>
     <div class="overlay"></div>
-    <script src="../assets/js/main.js"></script>
+    <script src="../assets/main.js"></script>
   </body>
 </html>
