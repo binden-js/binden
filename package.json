@@ -2,9 +2,9 @@
   "name": "binden",
   "version": "1.0.0",
   "description": "A simple HTTP server framework",
-  "main": "build/index.js",
+  "main": "dist/index.js",
   "type": "module",
-  "types": "build/index.d.ts",
+  "types": "dist/index.d.ts",
   "engines": {
     "node": ">=16.4.2",
     "npm": ">=7.18.1"
@@ -30,7 +30,7 @@
   },
   "scripts": {
     "build": "npm run build:remove && tsc",
-    "build:remove": "rm -rf ./build",
+    "build:remove": "rm -rf ./dist",
     "ci:all": "npm ci && npm run commitlint:all && npm run prettier && npm run lint && npm run test:ci && npm run publish:test && npm run coverage:ci",
     "commitlint": "commitlint --verbose",
     "commitlint:all": "npm run commitlint -- --from=$( git rev-list --max-parents=0 $( git rev-parse --abbrev-ref HEAD ) )",
@@ -48,16 +48,16 @@
     "prettier:write": "npm run prettier -- --write",
     "publish:test": "npm publish --dry-run",
     "release": "semantic-release",
-    "test": "mocha 'build/test/**/*.spec.js' --ui=tdd --full-trace --bail",
+    "test": "mocha 'dist/test/**/*.spec.js' --ui=tdd --full-trace --bail",
     "test:ci": "npm run prepublishOnly && npm test && npm run postpublish"
   },
   "dependencies": {
     "@kauai/logger": "^1.0.1"
   },
   "devDependencies": {
-    "@b2broker/tsconfig": "^1.0.3",
     "@binden/commitlint-config": "^1.0.0",
     "@binden/semantic-release-config": "^1.1.0",
+    "@binden/tsconfig": "^1.0.0",
     "@types/mocha": "^9.1.1",
     "@types/sinon": "^10.0.13",
     "c8": "^7.12.0",
