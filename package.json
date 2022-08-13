@@ -49,8 +49,7 @@
     "publish:test": "npm publish --dry-run",
     "release": "semantic-release",
     "test": "mocha 'build/test/**/*.spec.js' --ui=tdd --full-trace --bail",
-    "test:ci": "npm run prepublishOnly && npm test && npm run postpublish",
-    "ts-node": "node --loader ts-node/esm"
+    "test:ci": "npm run prepublishOnly && npm test && npm run postpublish"
   },
   "dependencies": {
     "@kauai/logger": "^1.0.1"
@@ -72,7 +71,7 @@
     "prettier": "^2.5.1",
     "semantic-release": "^18.0.1",
     "sinon": "^12.0.1",
-    "ts-node": "^10.4.0",
+    "ts-node": "^10.9.1",
     "typedoc": "^0.23.10"
   }
 }
