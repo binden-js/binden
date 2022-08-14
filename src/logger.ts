@@ -2,7 +2,7 @@ import os from "node:os";
 import Pino from "pino";
 import KauaiError from "./error.js";
 import Context from "./context.js";
-
+/* c8 ignore start */
 export const serializers = {
   error: Pino.stdSerializers.wrapErrorSerializer((error) => {
     if (error.raw instanceof KauaiError) {
@@ -27,9 +27,9 @@ export const serializers = {
         response: Pino.stdSerializers.res(input.response),
       };
     }
-    /* c8 ignore next */
     return input;
   },
 };
+/* c8 ignore stop */
 
 export const base = { pid: process.pid, hostname: os.hostname() };
