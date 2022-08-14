@@ -16,7 +16,7 @@ suite("AcceptEncoding", () => {
     const encoding = "br";
     const ac = new AcceptEncoding({ encoding });
     deepStrictEqual(ac.encoding, encoding);
-    deepStrictEqual(typeof ac.q_value, "undefined");
+    deepStrictEqual(ac.q_value, null);
     deepStrictEqual(ac.toString(), encoding);
   });
 
@@ -33,7 +33,7 @@ suite("AcceptEncoding", () => {
     deepStrictEqual(parsed.length, 7);
 
     deepStrictEqual(parsed[0].encoding, "deflate");
-    deepStrictEqual(typeof parsed[0].q_value, "undefined");
+    deepStrictEqual(parsed[0].q_value, null);
     deepStrictEqual(parsed[0].toString(), "deflate");
 
     deepStrictEqual(parsed[1].encoding, "br");

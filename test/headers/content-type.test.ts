@@ -7,8 +7,8 @@ suite("ContentType", () => {
     const type = "video/mp4";
     const ct = new ContentType({ type });
     deepStrictEqual(ct.type, type);
-    deepStrictEqual(typeof ct.charset, "undefined");
-    deepStrictEqual(typeof ct.boundary, "undefined");
+    deepStrictEqual(ct.charset, null);
+    deepStrictEqual(ct.boundary, null);
     deepStrictEqual(ct.toString(), type);
 
     throws(
@@ -24,7 +24,7 @@ suite("ContentType", () => {
     const ct = new ContentType({ type, charset, boundary });
     deepStrictEqual(ct.type, type);
     deepStrictEqual(ct.charset, charset);
-    deepStrictEqual(typeof ct.boundary, "undefined");
+    deepStrictEqual(ct.boundary, null);
     deepStrictEqual(ct.toString(), `${type}; charset=${charset}`);
   });
 
@@ -34,7 +34,7 @@ suite("ContentType", () => {
     const boundary = "__boundary";
     const ct = new ContentType({ type, charset, boundary });
     deepStrictEqual(ct.type, type);
-    deepStrictEqual(typeof ct.charset, "undefined");
+    deepStrictEqual(ct.charset, null);
     deepStrictEqual(ct.boundary, boundary);
     deepStrictEqual(ct.toString(), `${type}; boundary=${boundary}`);
   });
@@ -44,8 +44,8 @@ suite("ContentType", () => {
     const parsed = ContentType.fromString(input);
     ok(parsed);
     deepStrictEqual(parsed.type, "text/html");
-    deepStrictEqual(typeof parsed.charset, "undefined");
-    deepStrictEqual(typeof parsed.boundary, "undefined");
+    deepStrictEqual(parsed.charset, null);
+    deepStrictEqual(parsed.boundary, null);
     deepStrictEqual(parsed.toString(), "text/html");
   });
 
@@ -55,7 +55,7 @@ suite("ContentType", () => {
     ok(parsed);
     deepStrictEqual(parsed.type, "text/html");
     deepStrictEqual(parsed.charset, "utf-8");
-    deepStrictEqual(typeof parsed.boundary, "undefined");
+    deepStrictEqual(parsed.boundary, null);
     deepStrictEqual(parsed.toString(), "text/html; charset=utf-8");
   });
 
@@ -65,7 +65,7 @@ suite("ContentType", () => {
     ok(parsed);
     deepStrictEqual(parsed.type, "text/html");
     deepStrictEqual(parsed.charset, "utf-8");
-    deepStrictEqual(typeof parsed.boundary, "undefined");
+    deepStrictEqual(parsed.boundary, null);
     deepStrictEqual(parsed.toString(), "text/html; charset=utf-8");
   });
 
@@ -74,7 +74,7 @@ suite("ContentType", () => {
     const parsed = ContentType.fromString(input);
     ok(parsed);
     deepStrictEqual(parsed.type, "multipart/form-data");
-    deepStrictEqual(typeof parsed.charset, "undefined");
+    deepStrictEqual(parsed.charset, null);
     deepStrictEqual(parsed.boundary, "something");
     deepStrictEqual(
       parsed.toString(),
@@ -87,8 +87,8 @@ suite("ContentType", () => {
     const parsed = ContentType.fromString(input);
     ok(parsed);
     deepStrictEqual(parsed.type, "plain/text");
-    deepStrictEqual(typeof parsed.boundary, "undefined");
-    deepStrictEqual(typeof parsed.charset, "undefined");
+    deepStrictEqual(parsed.boundary, null);
+    deepStrictEqual(parsed.charset, null);
     deepStrictEqual(parsed.toString(), "plain/text");
   });
 

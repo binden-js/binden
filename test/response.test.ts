@@ -197,7 +197,7 @@ suite("KauaiResponse", () => {
     const response = await fetch(url);
     await serverPromise;
 
-    const data = await response.buffer();
+    const data = Buffer.from(await response.arrayBuffer());
 
     deepStrictEqual(response.headers.get("Content-Type"), ct_text);
     deepStrictEqual(
@@ -327,7 +327,7 @@ suite("KauaiResponse", () => {
     const response = await fetch(url);
     deepStrictEqual(response.status, 200);
     await serverPromise;
-    const data = await response.buffer();
+    const data = Buffer.from(await response.arrayBuffer());
 
     deepStrictEqual(data, msg);
   });
@@ -352,7 +352,7 @@ suite("KauaiResponse", () => {
     ok(!Number.isNaN(Date.parse(lm)));
     deepStrictEqual(response.status, 200);
 
-    const data = await response.buffer();
+    const data = Buffer.from(await response.arrayBuffer());
     deepStrictEqual(data, msg);
 
     const headers = { "If-Modified-Since": lm };
@@ -437,7 +437,7 @@ suite("KauaiResponse", () => {
     deepStrictEqual(response.status, 206);
 
     await serverPromise;
-    const data = await response.buffer();
+    const data = Buffer.from(await response.arrayBuffer());
     deepStrictEqual(data, msg.slice(start, end + 1));
   });
 
@@ -462,7 +462,7 @@ suite("KauaiResponse", () => {
     deepStrictEqual(response.status, 200);
 
     await serverPromise;
-    const data = await response.buffer();
+    const data = Buffer.from(await response.arrayBuffer());
     deepStrictEqual(data, msg);
   });
 
@@ -479,7 +479,7 @@ suite("KauaiResponse", () => {
     const headers = { Range: `bytes=  - ${end} ` };
     const response = await fetch(url, { headers });
     await serverPromise;
-    const data = await response.buffer();
+    const data = Buffer.from(await response.arrayBuffer());
     const cr = response.headers.get("Content-Range");
     deepStrictEqual(
       cr,
@@ -511,7 +511,7 @@ suite("KauaiResponse", () => {
     const headers = { Range: `bytes=  - ${end} ` };
     const response = await fetch(`http://localhost:${port + 1}`, { headers });
     await serverPromise;
-    const data = await response.buffer();
+    const data = Buffer.from(await response.arrayBuffer());
     deepStrictEqual(response.headers.get("Content-Range"), null);
     deepStrictEqual(response.status, 200);
     deepStrictEqual(data, msg.slice(msg.byteLength - end));

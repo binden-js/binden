@@ -18,7 +18,7 @@ suite("Range", () => {
     const end = 500;
     const range = new Range({ start, end });
     deepStrictEqual(range.end, end);
-    deepStrictEqual(typeof range.start, "undefined");
+    deepStrictEqual(range.start, null);
     deepStrictEqual(range.unit, "bytes");
     deepStrictEqual(range.toString(), `bytes=-${end}`);
   });
@@ -28,7 +28,7 @@ suite("Range", () => {
     const start = 0;
     const range = new Range({ start, end });
     deepStrictEqual(range.start, start);
-    deepStrictEqual(typeof range.end, "undefined");
+    deepStrictEqual(range.end, null);
     deepStrictEqual(range.unit, "bytes");
     deepStrictEqual(range.toString(), `bytes=${start}-`);
   });

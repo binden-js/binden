@@ -30,10 +30,7 @@ suite("KauaiRequest", () => {
             deepStrictEqual(request.accept_encoding.length, 4);
 
             deepStrictEqual(request.accept_encoding[0].encoding, "*");
-            deepStrictEqual(
-              typeof request.accept_encoding[0].q_value,
-              "undefined"
-            );
+            deepStrictEqual(request.accept_encoding[0].q_value, null);
 
             deepStrictEqual(request.accept_encoding[1].encoding, "x-gzip");
             deepStrictEqual(request.accept_encoding[1].q_value, 0.3);
@@ -92,13 +89,13 @@ suite("KauaiRequest", () => {
             deepStrictEqual(content_encoding.length, 3);
 
             deepStrictEqual(content_encoding[0].encoding, "x-gzip");
-            deepStrictEqual(typeof content_encoding[0].q_value, "undefined");
+            deepStrictEqual(content_encoding[0].q_value, null);
 
             deepStrictEqual(content_encoding[1].encoding, "br");
-            deepStrictEqual(typeof content_encoding[1].q_value, "undefined");
+            deepStrictEqual(content_encoding[1].q_value, null);
 
             deepStrictEqual(content_encoding[2].encoding, "compress");
-            deepStrictEqual(typeof content_encoding[2].q_value, "undefined");
+            deepStrictEqual(content_encoding[2].q_value, null);
           } catch (error) {
             reject(error);
           } finally {
@@ -121,7 +118,7 @@ suite("KauaiRequest", () => {
           try {
             const { content_type } = request;
             ok(content_type);
-            deepStrictEqual(typeof content_type.charset, "undefined");
+            deepStrictEqual(content_type.charset, null);
             deepStrictEqual(content_type.type, "multipart/form-data");
             deepStrictEqual(content_type.boundary, "something");
           } catch (error) {

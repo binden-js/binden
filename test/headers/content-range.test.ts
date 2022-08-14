@@ -74,8 +74,8 @@ suite("ContentRange", () => {
   test("constructor (no range)", () => {
     const size = 500;
     const range = new ContentRange({ size });
-    deepStrictEqual(typeof range.end, "undefined");
-    deepStrictEqual(typeof range.start, "undefined");
+    deepStrictEqual(range.end, null);
+    deepStrictEqual(range.start, null);
     deepStrictEqual(range.size, size);
     deepStrictEqual(range.unit, "bytes");
     deepStrictEqual(range.toString(), `bytes */${size}`);

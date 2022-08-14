@@ -16,7 +16,7 @@ suite("Authorization", () => {
     const type = "AWS4-HMAC-SHA256";
     const authorization = new Authorization({ type });
     deepStrictEqual(authorization.type, type);
-    deepStrictEqual(typeof authorization.credentials, "undefined");
+    deepStrictEqual(authorization.credentials, null);
     deepStrictEqual(authorization.toString(), type);
   });
 
