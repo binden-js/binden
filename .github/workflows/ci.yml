@@ -19,20 +19,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Commitlint
-        run: npm run commitlint:all
-
       - name: Prettier
         run: npm run prettier
 
       - name: ESLint
         run: npm run eslint
 
+      - name: commitlint
+        run: npm run commitlint
+
       - name: Tests
-        run: npm run test:ci
+        run: npm run test
 
       - name: Publish (test)
-        run: npm run publish:test
+        run: npm publish --dry-run
 
   coverage:
     needs: [test]
@@ -51,7 +51,7 @@ jobs:
         run: npm ci
 
       - name: Coverage
-        run: npm run coverage:ci
+        run: npm run coverage
 
       - name: Coveralls
         uses: coverallsapp/github-action@master
@@ -104,7 +104,7 @@ jobs:
           PGP_KEY_ID: ${{ secrets.PGP_KEY_ID }}
 
       - name: Release
-        run: npm run release
+        run: npx semantic-release
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIT_COMMITTER_EMAIL: ${{ secrets.GIT_COMMITTER_EMAIL }}
