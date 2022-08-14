@@ -51,11 +51,11 @@ export class Range implements IRange {
       .map((e) => e.trim().split("-", 2))
       .map(([start, end]) => [
         start.trim(),
-        (end as string | undefined)?.trim(),
+        (end as string | undefined)?.trim() ?? "",
       ])
       .map(([start, end]) => [
-        Number.isSafeInteger(Number(start)) ? Number(start) : NaN,
-        Number.isSafeInteger(Number(end)) ? Number(end) : NaN,
+        start ? Number(start) : NaN,
+        end ? Number(end) : NaN,
       ])
       .filter(
         ([start, end]) =>

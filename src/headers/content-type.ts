@@ -10,15 +10,17 @@ export class ContentType implements IContentType {
   readonly #boundary: string | null;
 
   public constructor({ type, charset = null, boundary = null }: IContentType) {
-    if (
-      type === "multipart/form-data" &&
-      (typeof boundary !== "string" || !boundary)
-    ) {
-      throw new TypeError("`boundary` is missing");
-    }
     this.#type = type;
-    this.#boundary = boundary;
-    this.#charset = charset;
+    this.#boundary = null;
+    this.#charset = null;
+    if (type === "multipart/form-data") {
+      if (typeof boundary !== "string" || !boundary) {
+        throw new TypeError("`boundary` is missing");
+      }
+      this.#boundary = boundary;
+    } else if (typeof charset === "string" && charset) {
+      this.#charset = charset;
+    }
   }
 
   public get type(): string {
@@ -36,7 +38,7 @@ export class ContentType implements IContentType {
   public toString(): string {
     return typeof this.boundary === "string"
       ? `${this.type}; boundary=${this.boundary}`
-      : typeof this.charset === "string"
+      : typeof this.charset === "string" && this.charset
       ? `${this.type}; charset=${this.charset}`
       : this.type;
   }

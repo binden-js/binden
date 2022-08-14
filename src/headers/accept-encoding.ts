@@ -56,7 +56,10 @@ export class AcceptEncoding implements IAcceptEncoding {
     return input
       .split(",")
       .map((e) => e.trim().split(";q="))
-      .map<[string, number]>(([e, q]) => [e.trim(), Number(q.trim())])
+      .map<[string, number]>(([e, q]) => [
+        e.trim(),
+        Number((q as string | undefined)?.trim()),
+      ])
       .filter((e): e is [IAcceptEncodings, number] => encodings.includes(e[0]))
       .map(([encoding, q_value]) => {
         if (isNaN(q_value)) {

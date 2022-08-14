@@ -293,7 +293,7 @@ export class Kauai {
         log.debug("`message` is not a valid string", { ...base, message });
         response.end();
         return;
-      } else if (response.getHeader("Content-Type") === "undefined") {
+      } else if (typeof response.getHeader("Content-Type") === "undefined") {
         response.setHeader("Content-Type", ct_text);
       }
 
