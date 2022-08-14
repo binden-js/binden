@@ -7,7 +7,7 @@ export interface ICookie {
   readonly path?: string | null;
   readonly secure?: boolean;
   readonly http_only?: boolean;
-  readonly same_site?: "Strict" | "Lax" | "None";
+  readonly same_site?: "Lax" | "None" | "Strict";
 }
 
 export class Cookie implements ICookie {
@@ -19,7 +19,7 @@ export class Cookie implements ICookie {
   readonly #path: string | null;
   readonly #secure: boolean;
   readonly #http_only: boolean;
-  readonly #same_site: "Strict" | "Lax" | "None";
+  readonly #same_site: "Lax" | "None" | "Strict";
 
   public constructor({
     key,
@@ -37,8 +37,8 @@ export class Cookie implements ICookie {
     this.#max_age = max_age;
     this.#domain = domain;
     this.#path = path;
-    this.#secure = secure ? true : false;
-    this.#http_only = http_only ? true : false;
+    this.#secure = Boolean(secure);
+    this.#http_only = Boolean(http_only);
     this.#same_site = same_site;
     this.#expires = expires instanceof Date ? new Date(expires) : null;
   }
@@ -60,11 +60,11 @@ export class Cookie implements ICookie {
   }
 
   public get domain(): string | null {
-    return !this.key.startsWith("__Host-") ? this.#domain : null;
+    return this.key.startsWith("__Host-") ? null : this.#domain;
   }
 
   public get path(): string | null {
-    return !this.key.startsWith("__Host-") ? this.#path : "/";
+    return this.key.startsWith("__Host-") ? "/" : this.#path;
   }
 
   public get secure(): boolean {
@@ -80,19 +80,20 @@ export class Cookie implements ICookie {
     return this.#http_only;
   }
 
-  public get same_site(): "Strict" | "Lax" | "None" {
+  public get same_site(): "Lax" | "None" | "Strict" {
     return this.#same_site;
   }
 
   public toString(): string {
     let output = `${this.key}=${this.value}`;
-    output += this.max_age
-      ? `; Max-Age=${this.max_age}`
-      : this.expires
-      ? `; Expires=${this.expires.toUTCString()}`
-      : "";
-    output += this.domain ? `; Domain=${this.domain}` : "";
-    output += this.path ? `; Path=${this.path}` : "";
+    output +=
+      typeof this.max_age === "number"
+        ? `; Max-Age=${this.max_age}`
+        : this.expires
+        ? `; Expires=${this.expires.toUTCString()}`
+        : "";
+    output += typeof this.domain === "string" ? `; Domain=${this.domain}` : "";
+    output += typeof this.path === "string" ? `; Path=${this.path}` : "";
     output += this.secure ? `; Secure` : "";
     output += this.http_only ? `; HttpOnly` : "";
     output += `; SameSite=${this.same_site}`;
@@ -100,7 +101,7 @@ export class Cookie implements ICookie {
   }
 
   public static fromString(input?: string): Cookie[] {
-    if (!input || input.length < 3) {
+    if (typeof input !== "string" || input.length < 3) {
       return [];
     }
 

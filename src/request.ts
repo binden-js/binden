@@ -83,12 +83,12 @@ export class KauaiRequest extends IncomingMessage {
     return [...this.#forwarded];
   }
 
-  public header(name: string): string | string[] | undefined {
+  public header(name: string): string[] | string | undefined {
     return this.headers[name.toLowerCase()];
   }
 
   public get id(): string {
-    if (!this.#id) {
+    if (typeof this.#id === "undefined") {
       this.#id = randomUUID();
     }
     return this.#id;

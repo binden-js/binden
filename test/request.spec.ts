@@ -65,7 +65,7 @@ suite("KauaiRequest", () => {
           try {
             deepStrictEqual(request.authorization?.type, "Basic");
             deepStrictEqual(
-              request.authorization?.credentials,
+              request.authorization.credentials,
               "YWxhZGRpbjpvcGVuc2VzYW1l"
             );
           } catch (error) {
@@ -206,7 +206,7 @@ suite("KauaiRequest", () => {
         (request: KauaiRequest, response: ServerResponse) => {
           try {
             ok(Array.isArray(request.query.b));
-            deepStrictEqual(request.query.b?.pop(), "3");
+            deepStrictEqual(request.query.b.pop(), "3");
             deepStrictEqual(request.query, expected);
           } catch (error) {
             reject(error);

@@ -17,7 +17,7 @@ export class KauaiError extends Error {
   ) {
     if (status > 599) {
       throw new RangeError("Status code is greater than 599");
-    } else if (!STATUS_CODES[status]) {
+    } else if (typeof STATUS_CODES[status] === "undefined") {
       throw new TypeError("Invalid status code");
     } else if (status < 400) {
       throw new RangeError("Status code is less than 400");
@@ -26,7 +26,7 @@ export class KauaiError extends Error {
     super(message);
 
     this.name = "KauaiError";
-    this.#expose = expose ? true : false;
+    this.#expose = Boolean(expose);
     this.#json = json ?? null;
     this.#status = status;
   }

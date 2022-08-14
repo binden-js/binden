@@ -123,6 +123,7 @@ suite("Context", () => {
   ] as const;
 
   for (const [method, args] of params) {
+    // eslint-disable-next-line @typescript-eslint/no-loop-func
     test(`.${method}()`, async () => {
       const serverPromise = new Promise<void>((resolve, reject) => {
         server.once(
@@ -167,7 +168,9 @@ suite("Context", () => {
                 .catch(reject)
                 .finally(() => context.response.end(resolve));
             } catch (error) {
-              context.response.end(() => reject(error));
+              context.response.end(() => {
+                reject(error);
+              });
             }
           }
         );

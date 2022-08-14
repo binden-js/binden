@@ -14,7 +14,7 @@ export const ct_text = "plain/text";
 export const ct_html = "text/html";
 export const ct_form = "application/x-www-form-urlencoded";
 
-export type IHeadersValue = string | number | readonly string[];
+export type IHeadersValue = number | string | readonly string[];
 
 export type IHeaders = Record<string, IHeadersValue>;
 
@@ -30,7 +30,7 @@ export class KauaiResponse extends ServerResponse {
 
   /** Set the status code */
   public status(code: number): this {
-    if (!STATUS_CODES[code]) {
+    if (typeof STATUS_CODES[code] === "undefined") {
       throw new TypeError(`Status code ${code} is invalid`);
     }
 
@@ -55,22 +55,22 @@ export class KauaiResponse extends ServerResponse {
 
   /** Send a response */
   public send(
-    data?: string | number | Buffer | bigint | Readable
+    data?: Buffer | Readable | bigint | number | string
   ): Promise<void>;
   public send(data: string, encoding: BufferEncoding): Promise<void>;
   public send(
-    data?: string | number | Buffer | bigint | Readable,
+    data?: Buffer | Readable | bigint | number | string,
     encoding?: BufferEncoding
   ): Promise<void> {
     if (this.writableEnded) {
       return Promise.resolve();
-    } else if (!this.headersSent && this.cookies?.size) {
+    } else if (!this.headersSent && this.cookies.size) {
       const setCookie = this.getHeader("Set-Cookie");
       const values = [...this.cookies].map((c) => c.toString());
 
       this.setHeader(
         "Set-Cookie",
-        !setCookie
+        typeof setCookie === "undefined"
           ? values
           : Array.isArray(setCookie)
           ? [...setCookie, ...values]
@@ -88,7 +88,10 @@ export class KauaiResponse extends ServerResponse {
       });
     }
 
-    if (!this.headersSent && !this.getHeader("Content-Type")) {
+    if (
+      !this.headersSent &&
+      typeof this.getHeader("Content-Type") === "undefined"
+    ) {
       this.setHeader("Content-Type", ct_text);
     }
 
@@ -103,7 +106,7 @@ export class KauaiResponse extends ServerResponse {
     }
 
     return new Promise<void>((resolve) => {
-      this.end(data?.toString(), resolve);
+      this.end(data.toString(), resolve);
     });
   }
 
@@ -168,15 +171,15 @@ export class KauaiResponse extends ServerResponse {
     if (!range || ifRange < lm) {
       const stream = createReadStream(url);
       return this.setHeader("Content-Length", size).status(200).send(stream);
-    } else if (typeof range.start !== "undefined" && range.start >= size) {
+    } else if (typeof range.start === "number" && range.start >= size) {
       const cr = new ContentRange({ size }).toString();
       return this.setHeader("Content-Range", cr).status(416).send();
     }
 
-    const opts = { start: range?.start ?? 0, end: size - 1 };
+    const opts = { start: range.start ?? 0, end: size - 1 };
 
-    if (typeof range?.end !== "undefined") {
-      if (typeof range.start === "undefined") {
+    if (typeof range.end === "number") {
+      if (typeof range.start !== "number") {
         const suffix = size - range.end;
         opts.start = suffix < 0 ? 0 : suffix;
       } else if (range.end < opts.end) {
@@ -185,8 +188,9 @@ export class KauaiResponse extends ServerResponse {
     }
 
     const { start, end } = opts;
+    const cl = end - start + 1;
 
-    if (end - start + 1 === size) {
+    if (cl === size) {
       const stream = createReadStream(url);
       return this.setHeader("Content-Length", size).status(200).send(stream);
     }
@@ -195,7 +199,7 @@ export class KauaiResponse extends ServerResponse {
     const cr = new ContentRange({ size, start, end }).toString();
     return this.status(206)
       .setHeader("Content-Range", cr)
-      .setHeader("Content-Length", `${end - start + 1}`)
+      .setHeader("Content-Length", cl)
       .send(stream);
   }
 }

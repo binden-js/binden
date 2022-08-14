@@ -10,7 +10,7 @@ export class Router {
   #guarded: boolean;
 
   public constructor({ guarded = false }: IRouterOptions = {}) {
-    this.#guarded = guarded ? true : false;
+    this.#guarded = Boolean(guarded);
     this.#middlewares = new Map<string, Middleware[]>();
   }
 
@@ -19,7 +19,7 @@ export class Router {
   }
 
   public set guarded(guarded: unknown) {
-    this.#guarded = guarded ? true : false;
+    this.#guarded = Boolean(guarded);
   }
 
   /** Get all supported methods by the router */
@@ -54,10 +54,10 @@ export class Router {
 
     const middlewares = this.#middlewares.get(method);
 
-    if (!middlewares) {
-      this.#middlewares.set(method, [..._middlewares]);
-    } else {
+    if (middlewares) {
       middlewares.push(..._middlewares);
+    } else {
+      this.#middlewares.set(method, [..._middlewares]);
     }
 
     return this;
@@ -68,11 +68,10 @@ export class Router {
       throw new TypeError(`Method ${method} is not supported`);
     }
 
-    const middlewares = this.#middlewares.get(method);
+    const middlewares = this.#middlewares.get(method) ?? [];
+    const removed: Middleware[] = [];
 
-    const removed = [] as Middleware[];
-
-    if (!middlewares?.length) {
+    if (!middlewares.length) {
       return removed;
     }
 

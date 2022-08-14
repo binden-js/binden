@@ -60,7 +60,7 @@ export class Context implements IBaseContext {
   }
 
   public set done(done: unknown) {
-    if (!this.#done && done) {
+    if (!this.#done && Boolean(done)) {
       this.#done = true;
     }
   }
@@ -70,7 +70,7 @@ export class Context implements IBaseContext {
   }
 
   public async send(
-    data?: string | number | Buffer | bigint | Readable
+    data?: Buffer | Readable | bigint | number | string
   ): Promise<void> {
     await this.response.send(data);
     this.done = true;
@@ -102,6 +102,7 @@ export class Context implements IBaseContext {
     this.done = true;
   }
 
+  // eslint-disable-next-line class-methods-use-this
   public throw(status: number, opts?: IKauaiErrorOptions): never {
     throw new KauaiError(status, opts);
   }

@@ -13,6 +13,8 @@ type KauaiRequestListener = (
   response: IKauaiResponse
 ) => void;
 
+type IUseOptions = IStackItem | RegExp | string | null | undefined;
+
 interface IKauaiServerOptions extends http.ServerOptions {
   IncomingMessage: typeof KauaiRequest;
   ServerResponse: typeof KauaiResponse;
@@ -38,7 +40,7 @@ declare module "https" {
 }
 
 export type IStackItem = Middleware | Router;
-export type IStack = [IStackItem[], string | RegExp | null];
+export type IStack = [IStackItem[], RegExp | string | null];
 
 export const DefaultErrorCode = 500;
 
@@ -50,18 +52,18 @@ export interface IKauaiOptions {
 export class Kauai {
   readonly #stack: IStack[];
   readonly #auto_head: boolean;
-  readonly #error_handler?: (context: Context, error: unknown) => void;
+  readonly #error_handler: ((context: Context, error: unknown) => void) | null;
 
   public constructor({ error_handler, auto_head = true }: IKauaiOptions = {}) {
     this.#stack = [];
-    this.#error_handler = error_handler;
-    this.#auto_head = auto_head ? true : false;
+    this.#error_handler = error_handler ?? null;
+    this.#auto_head = auto_head;
   }
 
   public get stack(): IStack[] {
     return this.#stack.map(([r, p]) => [
       [...r],
-      p instanceof RegExp ? new RegExp(p) : p,
+      p instanceof RegExp ? new RegExp(p, "u") : p,
     ]);
   }
 
@@ -72,8 +74,9 @@ export class Kauai {
         IncomingMessage: KauaiRequest,
         ServerResponse: KauaiResponse,
       },
-      (request: KauaiRequest, response: IKauaiResponse) =>
-        this.#requestListener(request, response)
+      (request: KauaiRequest, response: IKauaiResponse) => {
+        this.#requestListener(request, response);
+      }
     );
   }
 
@@ -84,16 +87,15 @@ export class Kauai {
         IncomingMessage: KauaiRequest,
         ServerResponse: KauaiResponse,
       },
-      (request, response) => this.#requestListener(request, response)
+      (request, response) => {
+        this.#requestListener(request, response);
+      }
     );
   }
 
   public use(...items: IStackItem[]): this;
-  public use(path: string | RegExp, ...items: IStackItem[]): this;
-  public use(
-    _path: null | undefined | string | RegExp | IStackItem,
-    ...items: IStackItem[]
-  ): this {
+  public use(path: RegExp | string, ...items: IStackItem[]): this;
+  public use(_path: IUseOptions, ...items: IStackItem[]): this {
     if (_path instanceof Middleware || _path instanceof Router) {
       items.unshift(_path);
     } else if (!items.length) {
@@ -102,8 +104,8 @@ export class Kauai {
 
     const path =
       _path instanceof RegExp
-        ? new RegExp(_path)
-        : _path && typeof _path === "string"
+        ? new RegExp(_path, "u")
+        : typeof _path === "string" && _path
         ? _path
         : null;
 
@@ -127,11 +129,8 @@ export class Kauai {
   }
 
   public off(...items: IStackItem[]): IStackItem[];
-  public off(path: string | RegExp, ...items: IStackItem[]): IStackItem[];
-  public off(
-    _path: null | undefined | string | RegExp | IStackItem,
-    ...items: IStackItem[]
-  ): IStackItem[] {
+  public off(path: RegExp | string, ...items: IStackItem[]): IStackItem[];
+  public off(_path: IUseOptions, ...items: IStackItem[]): IStackItem[] {
     if (_path instanceof Middleware || _path instanceof Router) {
       items.unshift(_path);
     } else if (!items.length || !this.#stack.length) {
@@ -140,8 +139,8 @@ export class Kauai {
 
     const path =
       _path instanceof RegExp
-        ? new RegExp(_path)
-        : _path && typeof _path === "string"
+        ? new RegExp(_path, "u")
+        : typeof _path === "string" && _path
         ? _path
         : null;
 
@@ -150,7 +149,7 @@ export class Kauai {
     for (const item of items) {
       const { length } = this.#stack;
 
-      for (let i = length - 1; i >= 0; i--) {
+      for (let i = length - 1; i >= 0; i -= 1) {
         const [arr, p] = this.#stack[i];
 
         if (isDeepStrictEqual(p, path)) {
@@ -193,15 +192,17 @@ export class Kauai {
   }
 
   async #handle(context: Context): Promise<void> {
+    let next = context;
+
     for (const [items, path] of this.#stack) {
-      const regExp = path instanceof RegExp && path.test(context.url.pathname);
-      const str = typeof path === "string" && path === context.url.pathname;
+      const regExp = path instanceof RegExp && path.test(next.url.pathname);
+      const str = typeof path === "string" && path === next.url.pathname;
 
       if (path === null || regExp || str) {
         for (const item of items) {
           if (item instanceof Router) {
             const { guarded, middlewares, methods } = item;
-            const { method = "GET" } = context.request;
+            const { method = "GET" } = next.request;
 
             if (guarded && methods.size) {
               if (methods.has("GET") && this.#auto_head) {
@@ -209,7 +210,7 @@ export class Kauai {
               }
 
               if (!methods.has(method)) {
-                context.response.set({ Allow: `${[...methods].join(", ")}` });
+                next.response.set({ Allow: `${[...methods].join(", ")}` });
 
                 throw new KauaiError(405);
               }
@@ -219,16 +220,16 @@ export class Kauai {
             const methodMiddlewares = middlewares(m);
 
             for (const mw of methodMiddlewares) {
-              context = await Kauai.#runMiddleware(mw, context);
+              next = await Kauai.#runMiddleware(mw, next);
 
-              if (context.done) {
+              if (next.done) {
                 return;
               }
             }
           } else {
-            context = await Kauai.#runMiddleware(item, context);
+            next = await Kauai.#runMiddleware(item, next);
 
-            if (context.done) {
+            if (next.done) {
               return;
             }
           }
@@ -256,19 +257,24 @@ export class Kauai {
 
       response.end();
     } else {
-      const errorStatus = Number((error as { status?: unknown })?.status);
+      const errorStatus = Number((error as { status?: unknown }).status);
 
-      const status = STATUS_CODES[errorStatus] ? errorStatus : DefaultErrorCode;
+      const status =
+        typeof STATUS_CODES[errorStatus] === "undefined"
+          ? DefaultErrorCode
+          : errorStatus;
 
       response.status(status);
 
-      if (!(error as { expose?: unknown })?.expose) {
+      const expose = Boolean((error as { expose?: unknown }).expose);
+
+      if (!expose) {
         log.debug("Error should not be exposed", base);
         response.end();
         return;
       }
 
-      const json = (error as { json?: Record<string, unknown> })?.json;
+      const { json } = error as { json?: Record<string, unknown> };
 
       if (json) {
         try {
@@ -281,13 +287,13 @@ export class Kauai {
         return;
       }
 
-      const message = (error as { message?: unknown })?.message;
+      const { message } = error as { message?: unknown };
 
-      if (!message || typeof message !== "string") {
-        log.debug("`message` is not a string", { ...base, message });
+      if (typeof message !== "string" || !message) {
+        log.debug("`message` is not a valid string", { ...base, message });
         response.end();
         return;
-      } else if (!response.getHeader("Content-Type")) {
+      } else if (response.getHeader("Content-Type") === "undefined") {
         response.setHeader("Content-Type", ct_text);
       }
 

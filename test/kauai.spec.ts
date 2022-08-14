@@ -25,6 +25,7 @@ class CustomMiddleware extends Middleware {
     super(params);
     this.id = randomUUID();
   }
+  // eslint-disable-next-line class-methods-use-this
   public run(context: Context): Context | Promise<Context> | Promise<void> {
     return context;
   }
@@ -108,7 +109,7 @@ suite("Kauai", () => {
     const r1 = new Router();
     const r2 = new Router();
 
-    const reg = new RegExp("Something");
+    const reg = new RegExp("Something", "u");
 
     deepStrictEqual(app.stack, []);
 
@@ -325,7 +326,9 @@ suite("Kauai", () => {
       const expose = true;
 
       class EM extends ErrorMiddleware {
+        // eslint-disable-next-line class-methods-use-this
         public run(): Promise<never> {
+          // eslint-disable-next-line @typescript-eslint/no-throw-literal
           throw { expose, message };
         }
       }
@@ -346,10 +349,12 @@ suite("Kauai", () => {
       const message = 1;
       const expose = true;
 
-      const regexp = new RegExp("/");
+      const regexp = new RegExp("/", "u");
 
       class EM extends ErrorMiddleware {
+        // eslint-disable-next-line class-methods-use-this
         public run(): Promise<never> {
+          // eslint-disable-next-line @typescript-eslint/no-throw-literal
           throw { expose, message };
         }
       }
@@ -419,6 +424,7 @@ suite("Kauai", () => {
       const message = "<html></html>";
       const expose = true;
       class CTMiddleware extends Middleware {
+        // eslint-disable-next-line class-methods-use-this
         public run(context: Context): void {
           context.response.setHeader("Content-Type", ct_html);
         }
@@ -478,7 +484,7 @@ suite("Kauai", () => {
       class EM extends ErrorMiddleware {
         public run(context?: Context): Promise<never> {
           deepStrictEqual(context?.response.writableEnded, false);
-          deepStrictEqual(context?.response.headersSent, true);
+          deepStrictEqual(context.response.headersSent, true);
           throw this.error;
         }
       }

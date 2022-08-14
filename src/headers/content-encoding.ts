@@ -1,6 +1,6 @@
 import AcceptEncoding from "./accept-encoding.js";
 
-export type IEncodings = "br" | "gzip" | "x-gzip" | "compress" | "deflate";
+export type IEncodings = "br" | "compress" | "deflate" | "gzip" | "x-gzip";
 
 export interface IContentEncoding {
   encoding: IEncodings;
@@ -19,7 +19,7 @@ export class ContentEncoding
   }
 
   public static fromString(input?: string): ContentEncoding[] {
-    if (!input) {
+    if (typeof input === "undefined") {
       return [];
     }
 

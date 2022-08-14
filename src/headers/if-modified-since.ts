@@ -18,7 +18,7 @@ export class IfModifiedSince implements IIfModifiedSince {
   }
 
   public static fromString(input?: string): IfModifiedSince | null {
-    if (!input) {
+    if (typeof input !== "string" || !input) {
       return null;
     }
 

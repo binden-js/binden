@@ -5,7 +5,7 @@ import { Middleware } from "../index.js";
 class CustomMiddleware extends Middleware {
   public i = 0;
   public run(): void {
-    this.i++;
+    this.i += 1;
   }
 }
 

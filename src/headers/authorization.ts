@@ -1,4 +1,5 @@
 export type IAuthenticationType =
+  | "AWS4-HMAC-SHA256"
   | "Basic"
   | "Bearer"
   | "Digest"
@@ -7,19 +8,18 @@ export type IAuthenticationType =
   | "OAuth"
   | "SCRAM-SHA-1"
   | "SCRAM-SHA-256"
-  | "vapid"
-  | "AWS4-HMAC-SHA256";
+  | "vapid";
 
 export interface IAuthorization {
   type: IAuthenticationType;
-  credentials?: string;
+  credentials?: string | null;
 }
 
 export class Authorization implements IAuthorization {
   readonly #type: IAuthenticationType;
-  readonly #credentials?: string;
+  readonly #credentials: string | null;
 
-  public constructor({ type, credentials }: IAuthorization) {
+  public constructor({ type, credentials = null }: IAuthorization) {
     this.#type = type;
     this.#credentials = credentials;
   }
@@ -28,26 +28,26 @@ export class Authorization implements IAuthorization {
     return this.#type;
   }
 
-  public get credentials(): string | undefined {
+  public get credentials(): string | null {
     return this.#credentials;
   }
 
   public toString(): string {
-    return this.#credentials
+    return typeof this.#credentials === "string"
       ? `${this.#type} ${this.#credentials}`
       : this.#type;
   }
 
   public static fromString(input?: string): Authorization | null {
-    if (!input?.length) {
+    if (typeof input === "undefined" || !input.length) {
       return null;
     }
 
     const [type, credentials = ""] = input.trim().split(" ");
 
-    return !Authorization.isValidType(type)
-      ? null
-      : new Authorization({ type, credentials });
+    return Authorization.isValidType(type)
+      ? new Authorization({ type, credentials })
+      : null;
   }
 
   public static isValidType(input?: string): input is IAuthenticationType {
