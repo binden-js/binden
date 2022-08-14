@@ -9,25 +9,6 @@
     "node": ">=16.4.2",
     "npm": ">=7.18.1"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/binden-js/binden.git"
-  },
-  "keywords": [
-    "HTTP",
-    "REST",
-    "web",
-    "framework"
-  ],
-  "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
-  "license": "AGPL-3.0-only",
-  "bugs": {
-    "url": "https://github.com/binden-js/binden/issues"
-  },
-  "homepage": "https://github.com/binden-js/binden#readme",
-  "directories": {
-    "test": "test"
-  },
   "scripts": {
     "build": "tsc",
     "build:remove": "rm -rf dist",
@@ -51,6 +32,26 @@
     "preversion": "npm run docs:build",
     "test": "mocha 'dist/test/**/*.test.js' --ui=tdd --full-trace --bail"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/binden-js/binden.git"
+  },
+  "keywords": [
+    "HTTP",
+    "REST",
+    "web",
+    "framework"
+  ],
+  "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
+  "license": "AGPL-3.0-only",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "bugs": {
+    "url": "https://github.com/binden-js/binden/issues"
+  },
+  "homepage": "https://github.com/binden-js/binden#readme",
   "dependencies": {
     "@kauai/logger": "^1.0.1"
   },
@@ -70,5 +71,9 @@
     "sinon": "^14.0.0",
     "ts-node": "^10.9.1",
     "typedoc": "^0.23.10"
+  },
+  "funding": {
+    "type": "Coinbase Commerce",
+    "url": "https://commerce.coinbase.com/checkout/eddfb0f7-20e7-4e0d-8e04-232bbdf0b397"
   }
 }
