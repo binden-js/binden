@@ -1,1 +1,1 @@
-{ "exclude": ["dist/test/*", "dist/src/logger.js"] }
+{ "exclude": ["dist/src/logger.js"] }
