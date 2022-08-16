@@ -1,4 +1,4 @@
-import { Logger } from "@kauai/logger";
+import { Logger } from "@binden/logger";
 import KauaiError, { IKauaiErrorOptions } from "./error.js";
 import { serializers, base } from "./logger.js";
 

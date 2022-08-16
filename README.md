@@ -55,7 +55,7 @@ const secureServer = app.createSecureServer({ key, cert });
 
 ### Context
 
-- `.log` - get the logger (see [`@kauai/logger`](https://github.com/b2broker/logger))
+- `.log` - get the logger (see [`@binden/logger`](https://github.com/binden-js/logger))
 
 ```typescript
 const { log } = context;
