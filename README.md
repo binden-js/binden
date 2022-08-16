@@ -1,23 +1,23 @@
-# Kauai ![CI Status](https://github.com/b2broker/kauai/workflows/CI/badge.svg) [![version](https://img.shields.io/github/package-json/v/b2broker/kauai?style=plastic)](https://github.com/b2broker/kauai) [![Known Vulnerabilities](https://snyk.io/test/github/b2broker/kauai/badge.svg)](https://snyk.io/test/github/b2broker/kauai) [![Coverage Status](https://coveralls.io/repos/github/b2broker/kauai/badge.svg?branch=main)](https://coveralls.io/github/b2broker/kauai?branch=main) [![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://github.com/prettier/prettier) [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org) ![GitHub top language](https://img.shields.io/github/languages/top/b2broker/kauai) ![node version](https://img.shields.io/node/v/kauai) ![npm downloads](https://img.shields.io/npm/dt/kauai) ![License](https://img.shields.io/github/license/b2broker/kauai)
+# Binden ![CI Status](https://github.com/binden-js/binden/workflows/CI/badge.svg) [![version](https://img.shields.io/github/package-json/v/binden-js/binden?style=plastic)](https://github.com/binden-js/binden) [![Known Vulnerabilities](https://snyk.io/test/github/binden-js/binden/badge.svg)](https://snyk.io/test/github/binden-js/binden) [![Coverage Status](https://coveralls.io/repos/github/binden-js/binden/badge.svg?branch=main)](https://coveralls.io/github/binden-js/binden?branch=main) [![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://github.com/prettier/prettier) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md) [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org) ![GitHub top language](https://img.shields.io/github/languages/top/binden-js/binden) ![node version](https://img.shields.io/node/v/binden) ![npm downloads](https://img.shields.io/npm/dt/binden) ![License](https://img.shields.io/github/license/binden-js/binden)
 
 A simple server framework (written in [TypeScript](https://www.typescriptlang.org/)).
 
 ## Installation
 
 ```bash
-npm install kauai
+npm install binden
 ```
 
 ## Usage
 
-### Kauai
+### Binden
 
 - `.use()` - Add a `Middleware/Router` to the stack
 
 ```typescript
-import { Kauai } from "kauai";
+import { Binden } from "binden";
 
-const app = new Kauai().use(middleware1).use(router2);
+const app = new Binden().use(middleware1).use(router2);
 app.use("/path", middleware2, router2);
 app.use(new RegExp("path"), router3, middleware1);
 ```
@@ -25,9 +25,9 @@ app.use(new RegExp("path"), router3, middleware1);
 - `.off()` - remove a `Middleware/Router` form the stack
 
 ```typescript
-import { Kauai } from "kauai";
+import { Binden } from "binden";
 
-const app = new Kauai()
+const app = new Binden()
   .use("/path", middleware1)
   .use(middleware2)
   .off("/path", middleware1);
@@ -36,9 +36,9 @@ const app = new Kauai()
 - `.createServer()` - create a server (HTTP)
 
 ```typescript
-import { Kauai } from "kauai";
+import { Binden } from "binden";
 
-const app = new Kauai()
+const app = new Binden()
   .use(new RegExp("path"), middleware)
   .use("/path2", router);
 const server = app.createServer();
@@ -47,15 +47,15 @@ const server = app.createServer();
 - `.createSecureServer()` - create a server (HTTPS)
 
 ```typescript
-import { Kauai } from "kauai";
+import { Binden } from "binden";
 
-const app = new Kauai().use("/path", middleware).use("/path2", router);
+const app = new Binden().use("/path", middleware).use("/path2", router);
 const secureServer = app.createSecureServer({ key, cert });
 ```
 
 ### Context
 
-- `.log` - get the logger (see [`@kauai/logger`](https://github.com/b2broker/logger))
+- `.log` - get the logger (see [`@binden/logger`](https://github.com/binden-js/logger))
 
 ```typescript
 const { log } = context;
@@ -76,13 +76,13 @@ context.setHeader(name, value);
 context.status(401);
 ```
 
-- `.request` - get the original request object (`instanceof KauaiRequest`)
+- `.request` - get the original request object (`instanceof BindenRequest`)
 
 ```typescript
 const { request } = context;
 ```
 
-- `.response` - get the original response object (`instanceof KauaiResponse`)
+- `.response` - get the original response object (`instanceof BindenResponse`)
 
 ```typescript
 const { response } = context;
@@ -173,7 +173,7 @@ await context.response.sendFile(path);
 context.done = true;
 ```
 
-- `.throw()` - throw `KauaiError`
+- `.throw()` - throw `BindenError`
 
 ```typescript
 context.throw(402, { json: { error: "Payment Required" }, expose: true });
@@ -185,7 +185,7 @@ Any middleware should be extended from the abstract `Middleware` class and imple
 
 ```typescript
 import { randomInt } from "crypto";
-import { Middleware, Context } from "kauai";
+import { Middleware, Context } from "binden";
 
 export class MyMiddleware extends Middleware {
   public async run(context: Context): Promise<void> {
@@ -214,7 +214,7 @@ export class MyMiddleware extends Middleware {
 - `.disabled` - One can disable a middleware at any time
 
 ```typescript
-import { Middleware, Context } from "kauai";
+import { Middleware, Context } from "binden";
 
 export class MyMiddleware1 extends Middleware {
   public run(context: Context): Promise<void> {
@@ -237,7 +237,7 @@ export class MyMiddleware2 extends Middleware {
 - `.ignore_errors` - ignore errors from `await this.run(context)`
 
 ```typescript
-import { Middleware, Context } from "kauai";
+import { Middleware, Context } from "binden";
 
 export class MyMiddleware1 extends Middleware {
   public run(context: Context): Promise<void> {
@@ -260,12 +260,12 @@ export class MyMiddleware2 extends Middleware {
 }
 ```
 
-### KauaiError
+### BindenError
 
-`KauaiError` represents an HTTP error
+`BindenError` represents an HTTP error
 
 ```typescript
-import { Middleware, Context, KauaiError } from "kauai";
+import { Middleware, Context, BindenError } from "binden";
 
 export class MyMiddleware extends Middleware {
   public run(context: Context): Promise<void> {
@@ -280,21 +280,21 @@ export class MyMiddleware extends Middleware {
         error:
           "Send `json` as application/json (when `expose === true`) instead of `message`",
       };
-      throw new KauaiError(status, { expose, message, json });
+      throw new BindenError(status, { expose, message, json });
     }
     return context.json({ message: `Received ${length} cookies` });
   }
 }
 ```
 
-### KauaiRequest
+### BindenRequest
 
 Simple usage with `http`
 
 ```typescript
 import { createServer } from "http";
-import { KauaiRequest } from "kauai";
-server = createServer({ IncomingMessage: KauaiRequest });
+import { BindenRequest } from "binden";
+server = createServer({ IncomingMessage: BindenRequest });
 ```
 
 - `.header()` - get a header by name
@@ -335,21 +335,21 @@ const { query } = request;
 const query = { ...parse(this.URL.search.substring(1)) };
 ```
 
-### KauaiResponse
+### BindenResponse
 
 Simple usage with `http`
 
 ```typescript
 import { createServer } from "http";
-import { KauaiResponse } from "kauai";
-server = createServer({ ServerResponse: KauaiResponse });
+import { BindenResponse } from "binden";
+server = createServer({ ServerResponse: BindenResponse });
 ```
 
 - `.cookies` - The `.send()` method will add cookies to the response
 
 ```typescript
 import { randomUUID } from "crypto";
-import { Cookie } from "kauai";
+import { Cookie } from "binden";
 
 const key = "__Secure-Random-UUID";
 const value = randomUUID();
@@ -428,41 +428,41 @@ await response.sendFile(path);
 - [Accept-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Encoding)
 
 ```typescript
-import { AcceptEncoding } from "kauai";
+import { AcceptEncoding } from "binden";
 
 const encodings = AcceptEncoding.fromString(request.headers["accept-encoding"]);
-// or using KauaiRequest
+// or using BindenRequest
 const { accept_encoding } = request;
 ```
 
 - [Authorization](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization)
 
 ```typescript
-import { Authorization } from "kauai";
+import { Authorization } from "binden";
 
 const authorization = AcceptEncoding.fromString(
   request.headers["Authorization"]
 );
-// or using KauaiRequest
+// or using BindenRequest
 const { authorization } = request;
 ```
 
 - [Content-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding)
 
 ```typescript
-import { ContentEncoding } from "kauai";
+import { ContentEncoding } from "binden";
 
 const encodings = ContentEncoding.fromString(
   request.headers["content-encoding"]
 );
-// or using KauaiRequest
+// or using BindenRequest
 const { content_encoding } = request;
 ```
 
 - [Content-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range)
 
 ```typescript
-import { ContentRange } from "kauai";
+import { ContentRange } from "binden";
 
 const cr = new ContentRange({ start: 0, end: 499, size: 1000 });
 response.setHeader("Content-Range", cr.toString());
@@ -471,22 +471,22 @@ response.setHeader("Content-Range", cr.toString());
 - [Content-Type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type)
 
 ```typescript
-import { ContentType } from "kauai";
+import { ContentType } from "binden";
 
 const type = ContentType.fromString(request.headers["content-type"]);
-// or using KauaiRequest
+// or using BindenRequest
 const { content_type } = request;
 ```
 
 - [Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cookie)
 
 ```typescript
-import { Cookie } from "kauai";
+import { Cookie } from "binden";
 
 const cookies = Cookie.fromString(request.headers["cookie"]);
-// or using KauaiRequest
+// or using BindenRequest
 const { cookies } = request;
-// or using KauaiResponse
+// or using BindenResponse
 const cookie1 = new Cookie({
   key: "__Secure-K1",
   value: "v1",
@@ -504,32 +504,32 @@ response.cookies.add(cookie1).add(cookie2);
 - [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded)
 
 ```typescript
-import { Forwarded } from "kauai";
+import { Forwarded } from "binden";
 
 const forwarded = Forwarded.fromString(request.headers["forwarded"]);
-// or using KauaiRequest
+// or using BindenRequest
 const { forwarded } = request;
 ```
 
 - [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since)
 
 ```typescript
-import { IfModifiedSince } from "kauai";
+import { IfModifiedSince } from "binden";
 
 const if_modified_since = IfModifiedSince.fromString(
   request.headers["if-modified-since"]
 );
-// or using KauaiRequest
+// or using BindenRequest
 const { if_modified_since } = request;
 ```
 
 - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range)
 
 ```typescript
-import { Range } from "kauai";
+import { Range } from "binden";
 
 const range = Range.fromString(request.headers.range);
-// or using KauaiRequest
+// or using BindenRequest
 const { range } = request;
 ```
 

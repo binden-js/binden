@@ -1,22 +1,24 @@
 export interface IContentType {
   type: string;
-  charset?: string;
-  boundary?: string;
+  charset?: string | null;
+  boundary?: string | null;
 }
 
 export class ContentType implements IContentType {
   readonly #type: string;
-  readonly #charset?: string;
-  readonly #boundary?: string;
+  readonly #charset: string | null;
+  readonly #boundary: string | null;
 
-  public constructor({ type, charset, boundary }: IContentType) {
+  public constructor({ type, charset = null, boundary = null }: IContentType) {
     this.#type = type;
-    if (this.#type === "multipart/form-data") {
-      if (!boundary) {
+    this.#boundary = null;
+    this.#charset = null;
+    if (type === "multipart/form-data") {
+      if (typeof boundary !== "string" || !boundary) {
         throw new TypeError("`boundary` is missing");
       }
       this.#boundary = boundary;
-    } else if (charset) {
+    } else if (typeof charset === "string" && charset) {
       this.#charset = charset;
     }
   }
@@ -25,24 +27,24 @@ export class ContentType implements IContentType {
     return this.#type;
   }
 
-  public get charset(): string | undefined {
+  public get charset(): string | null {
     return this.#charset;
   }
 
-  public get boundary(): string | undefined {
+  public get boundary(): string | null {
     return this.#boundary;
   }
 
   public toString(): string {
-    return this.boundary
+    return typeof this.boundary === "string"
       ? `${this.type}; boundary=${this.boundary}`
-      : this.charset
+      : typeof this.charset === "string" && this.charset
       ? `${this.type}; charset=${this.charset}`
       : this.type;
   }
 
   public static fromString(input?: string): ContentType | null {
-    if (!input?.length) {
+    if (typeof input === "undefined" || !input.length) {
       return null;
     }
 

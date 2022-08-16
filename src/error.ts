@@ -1,23 +1,23 @@
 import { STATUS_CODES } from "node:http";
 
-export interface IKauaiErrorOptions {
+export interface IBindenErrorOptions {
   json?: Record<string, unknown>;
   message?: string;
   expose?: boolean;
 }
 
-export class KauaiError extends Error {
+export class BindenError extends Error {
   readonly #expose: boolean;
   readonly #json: Record<string, unknown> | null;
   readonly #status: number;
 
   public constructor(
     status: number,
-    { message = STATUS_CODES[status], expose, json }: IKauaiErrorOptions = {}
+    { message = STATUS_CODES[status], expose, json }: IBindenErrorOptions = {}
   ) {
     if (status > 599) {
       throw new RangeError("Status code is greater than 599");
-    } else if (!STATUS_CODES[status]) {
+    } else if (typeof STATUS_CODES[status] === "undefined") {
       throw new TypeError("Invalid status code");
     } else if (status < 400) {
       throw new RangeError("Status code is less than 400");
@@ -25,8 +25,8 @@ export class KauaiError extends Error {
 
     super(message);
 
-    this.name = "KauaiError";
-    this.#expose = expose ? true : false;
+    this.name = "BindenError";
+    this.#expose = Boolean(expose);
     this.#json = json ?? null;
     this.#status = status;
   }
@@ -43,5 +43,3 @@ export class KauaiError extends Error {
     return this.#json ? { ...this.#json } : null;
   }
 }
-
-export default KauaiError;

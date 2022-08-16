@@ -1,22 +1,22 @@
 export type IAcceptEncodings =
+  | "*"
   | "br"
-  | "gzip"
-  | "x-gzip"
   | "compress"
   | "deflate"
-  | "*"
-  | "identity";
+  | "gzip"
+  | "identity"
+  | "x-gzip";
 
 export interface IAcceptEncoding {
   encoding: IAcceptEncodings;
-  q_value?: number;
+  q_value?: number | null;
 }
 
 export class AcceptEncoding implements IAcceptEncoding {
   readonly #encoding: IAcceptEncodings;
-  readonly #q_value?: number;
+  readonly #q_value: number | null;
 
-  public constructor({ encoding, q_value }: IAcceptEncoding) {
+  public constructor({ encoding, q_value = null }: IAcceptEncoding) {
     this.#encoding = encoding;
     this.#q_value = q_value;
   }
@@ -25,19 +25,19 @@ export class AcceptEncoding implements IAcceptEncoding {
     return this.#encoding;
   }
 
-  public get q_value(): number | undefined {
+  public get q_value(): number | null {
     return this.#q_value;
   }
 
   public toString(): string {
     const { q_value, encoding } = this;
-    return typeof q_value !== "undefined"
-      ? `${encoding};q=${q_value}`
-      : encoding;
+    return typeof q_value === "number" ? `${encoding};q=${q_value}` : encoding;
   }
 
-  public static fromString(input?: string | string[]): AcceptEncoding[] {
-    if (!input) {
+  public static fromString(string?: string[] | string): AcceptEncoding[] {
+    let input = string;
+
+    if (typeof input === "undefined") {
       return [];
     } else if (Array.isArray(input)) {
       input = input.join(",");
@@ -56,7 +56,10 @@ export class AcceptEncoding implements IAcceptEncoding {
     return input
       .split(",")
       .map((e) => e.trim().split(";q="))
-      .map<[string, number]>(([e, q]) => [e.trim(), Number(q?.trim())])
+      .map<[string, number]>(([e, q]) => [
+        e.trim(),
+        Number((q as string | undefined)?.trim()),
+      ])
       .filter((e): e is [IAcceptEncodings, number] => encodings.includes(e[0]))
       .map(([encoding, q_value]) => {
         if (isNaN(q_value)) {

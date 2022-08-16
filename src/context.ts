@@ -1,23 +1,23 @@
-import { Logger } from "@kauai/logger";
-import KauaiError, { IKauaiErrorOptions } from "./error.js";
+import { Logger } from "@binden/logger";
+import { BindenError, IBindenErrorOptions } from "./error.js";
 import { serializers, base } from "./logger.js";
 
 import type { Readable } from "node:stream";
-import type KauaiRequest from "./request.js";
-import type { IHeadersValue, KauaiResponse } from "./response.js";
+import type { BindenRequest } from "./request.js";
+import type { IHeadersValue, BindenResponse } from "./response.js";
 
-export interface IKauaiResponse extends KauaiResponse {
-  req: KauaiRequest;
+export interface IBindenResponse extends BindenResponse {
+  req: BindenRequest;
 }
 
 export interface IBaseContext {
-  readonly request: KauaiRequest;
-  readonly response: IKauaiResponse;
+  readonly request: BindenRequest;
+  readonly response: IBindenResponse;
 }
 
 export class Context implements IBaseContext {
-  readonly #request: KauaiRequest;
-  readonly #response: IKauaiResponse;
+  readonly #request: BindenRequest;
+  readonly #response: IBindenResponse;
   readonly #logger: Logger;
   #done: boolean;
 
@@ -43,11 +43,11 @@ export class Context implements IBaseContext {
     return this;
   }
 
-  public get request(): KauaiRequest {
+  public get request(): BindenRequest {
     return this.#request;
   }
 
-  public get response(): IKauaiResponse {
+  public get response(): IBindenResponse {
     return this.#response;
   }
 
@@ -60,7 +60,7 @@ export class Context implements IBaseContext {
   }
 
   public set done(done: unknown) {
-    if (!this.#done && done) {
+    if (!this.#done && Boolean(done)) {
       this.#done = true;
     }
   }
@@ -70,7 +70,7 @@ export class Context implements IBaseContext {
   }
 
   public async send(
-    data?: string | number | Buffer | bigint | Readable
+    data?: Buffer | Readable | bigint | number | string
   ): Promise<void> {
     await this.response.send(data);
     this.done = true;
@@ -102,9 +102,8 @@ export class Context implements IBaseContext {
     this.done = true;
   }
 
-  public throw(status: number, opts?: IKauaiErrorOptions): never {
-    throw new KauaiError(status, opts);
+  // eslint-disable-next-line class-methods-use-this
+  public throw(status: number, opts?: IBindenErrorOptions): never {
+    throw new BindenError(status, opts);
   }
 }
-
-export default Context;

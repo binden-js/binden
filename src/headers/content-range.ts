@@ -7,7 +7,7 @@ export interface IContentRange extends IRange {
 export class ContentRange extends Range implements IContentRange {
   readonly #size: number | "*";
 
-  public constructor({ start, end, size }: IContentRange) {
+  public constructor({ start = null, end = null, size }: IContentRange) {
     if (typeof start === "number" && !Number.isSafeInteger(start)) {
       throw new TypeError("`start` is not an integer");
     } else if (typeof start === "number" && start < 0) {
@@ -48,8 +48,8 @@ export class ContentRange extends Range implements IContentRange {
       : `${this.unit} */${this.size}`;
   }
 
-  public static fromString(input?: string): [ContentRange] | [] {
-    if (!input) {
+  public static fromString(input?: string): [] | [ContentRange] {
+    if (typeof input === "undefined") {
       return [];
     }
 
@@ -80,7 +80,7 @@ export class ContentRange extends Range implements IContentRange {
       .map((e) => Number(e));
 
     try {
-      const size = rawSize !== "*" ? Number(rawSize) : "*";
+      const size = rawSize === "*" ? rawSize : Number(rawSize);
       return [new ContentRange({ start, end, size })];
     } catch {
       return [];

@@ -20,7 +20,5 @@ export abstract class Middleware {
   public abstract run(
     context: Context
   ): /* eslint-disable-next-line @typescript-eslint/no-invalid-void-type */
-  Promise<Context> | Promise<void> | Context | void;
+  Context | Promise<Context> | Promise<void> | void;
 }
-
-export default Middleware;

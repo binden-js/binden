@@ -1,30 +1,32 @@
 export interface IRange {
-  readonly start?: number;
-  readonly end?: number;
+  readonly start?: number | null;
+  readonly end?: number | null;
 }
 
+export type IUnit = "bytes";
+
 export class Range implements IRange {
-  readonly #start?: number;
-  readonly #end?: number;
+  readonly #start: number | null;
+  readonly #end: number | null;
+  readonly #unit: IUnit;
 
-  public constructor({ start, end }: IRange) {
-    if (Number.isSafeInteger(start)) {
-      this.#start = start;
-    }
-    if (Number.isSafeInteger(end)) {
-      this.#end = Number(end);
-    }
+  public constructor({ start = null, end = null }: IRange) {
+    this.#unit = "bytes";
+    this.#start =
+      typeof start === "number" && Number.isSafeInteger(start) ? start : null;
+    this.#end =
+      typeof end === "number" && Number.isSafeInteger(end) ? end : null;
   }
 
-  public get unit(): "bytes" {
-    return "bytes";
+  public get unit(): IUnit {
+    return this.#unit;
   }
 
-  public get start(): number | undefined {
+  public get start(): number | null {
     return this.#start;
   }
 
-  public get end(): number | undefined {
+  public get end(): number | null {
     return this.#end;
   }
 
@@ -33,7 +35,7 @@ export class Range implements IRange {
   }
 
   public static fromString(input?: string): Range[] {
-    if (!input) {
+    if (typeof input !== "string" || !input) {
       return [];
     }
 
@@ -47,21 +49,19 @@ export class Range implements IRange {
       .substring(6)
       .split(",")
       .map((e) => e.trim().split("-", 2))
-      .map(([start, end]) => [start.trim(), end?.trim() ?? ""])
       .map(([start, end]) => [
-        !start ? NaN : Number(start),
-        !end ? NaN : Number(end),
+        start.trim(),
+        (end as string | undefined)?.trim() ?? "",
+      ])
+      .map(([start, end]) => [
+        start ? Number(start) : NaN,
+        end ? Number(end) : NaN,
       ])
       .filter(
         ([start, end]) =>
-          (Number.isSafeInteger(start) &&
-            Number.isSafeInteger(end) &&
-            start >= 0 &&
-            start <= end) ||
-          (Number.isSafeInteger(start) &&
-            !Number.isSafeInteger(end) &&
-            start >= 0) ||
-          (!Number.isSafeInteger(start) && Number.isSafeInteger(end) && end > 0)
+          (!isNaN(start) && !isNaN(end) && start >= 0 && start <= end) ||
+          (!isNaN(start) && isNaN(end) && start >= 0) ||
+          (isNaN(start) && !isNaN(end) && end > 0)
       )
       .map(([start, end]) => new Range({ start, end }));
   }
