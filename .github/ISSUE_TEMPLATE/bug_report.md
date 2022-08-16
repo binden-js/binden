@@ -12,7 +12,7 @@ A clear and concise description of what the bug is.
 Steps to reproduce the behavior (add some code):
 
 ```typescript
-import * as Kauai from "kauai";
+import * as binden from "binden";
 // more code to reproduce the problem
 ```
 
@@ -23,7 +23,7 @@ A clear and concise description of what you expected to happen.
 
 - Node.js version: [e.g. v16.4.2]
 - NPM version: [e.g. 16.4.2]
-- `kauai` version [e.g. 1.0.0]
+- `binden` version [e.g. 1.0.0]
 
 **Additional context**
 Add any other context about the problem here.
