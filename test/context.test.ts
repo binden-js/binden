@@ -5,10 +5,10 @@ import sinon from "sinon";
 
 import {
   Context,
-  KauaiError,
-  KauaiRequest,
-  KauaiResponse,
-  IKauaiResponse,
+  BindenError,
+  BindenRequest,
+  BindenResponse,
+  IBindenResponse,
 } from "../index.js";
 
 const port = 8080;
@@ -19,8 +19,8 @@ suite("Context", () => {
 
   setup((done) => {
     server = createServer({
-      IncomingMessage: KauaiRequest,
-      ServerResponse: KauaiResponse,
+      IncomingMessage: BindenRequest,
+      ServerResponse: BindenResponse,
     }).listen(port, done);
   });
 
@@ -28,7 +28,7 @@ suite("Context", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: IKauaiResponse) => {
+        (request: BindenRequest, response: IBindenResponse) => {
           try {
             const context = new Context({ request, response });
             ok(context instanceof Context);
@@ -59,7 +59,7 @@ suite("Context", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: IKauaiResponse) => {
+        (request: BindenRequest, response: IBindenResponse) => {
           try {
             const context = new Context({ request, response });
             const name = "name";
@@ -88,7 +88,7 @@ suite("Context", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: IKauaiResponse) => {
+        (request: BindenRequest, response: IBindenResponse) => {
           try {
             const status = 401;
             const context = new Context({ request, response });
@@ -128,7 +128,7 @@ suite("Context", () => {
       const serverPromise = new Promise<void>((resolve, reject) => {
         server.once(
           "request",
-          (request: KauaiRequest, response: IKauaiResponse) => {
+          (request: BindenRequest, response: IBindenResponse) => {
             const context = new Context({ request, response });
 
             const mock = sinon
@@ -184,7 +184,7 @@ suite("Context", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: IKauaiResponse) => {
+        (request: BindenRequest, response: IBindenResponse) => {
           const status = 401;
           const message = "Text";
           const expose = true;
@@ -192,10 +192,10 @@ suite("Context", () => {
           const json = { message };
           try {
             context.throw(status, { message, expose, json });
-            reject(new Error("Should throw `KauaiError`"));
+            reject(new Error("Should throw `BindenError`"));
           } catch (error: unknown) {
             try {
-              ok(error instanceof KauaiError);
+              ok(error instanceof BindenError);
               deepStrictEqual(error.expose, expose);
               deepStrictEqual(error.message, message);
               deepStrictEqual(error.json, json);

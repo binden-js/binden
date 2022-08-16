@@ -7,9 +7,9 @@ import fetch from "node-fetch";
 
 import {
   DefaultErrorCode,
-  Kauai,
-  KauaiError,
-  IKauaiErrorOptions,
+  Binden,
+  BindenError,
+  IBindenErrorOptions,
   Middleware,
   IMiddlewareParams,
   Context,
@@ -36,16 +36,16 @@ class SendMiddleware extends CustomMiddleware {
   }
 }
 class ErrorMiddleware extends CustomMiddleware {
-  #error: KauaiError;
+  #error: BindenError;
   public constructor(
     params?: IMiddlewareParams,
     status = 401,
-    error_params: IKauaiErrorOptions = {}
+    error_params: IBindenErrorOptions = {}
   ) {
     super(params);
-    this.#error = new KauaiError(status, error_params);
+    this.#error = new BindenError(status, error_params);
   }
-  public get error(): KauaiError {
+  public get error(): BindenError {
     return this.#error;
   }
   public run(context: Context | undefined): Promise<never>;
@@ -57,17 +57,17 @@ class ErrorMiddleware extends CustomMiddleware {
 const port = 8080;
 const url = `http://localhost:${port}`;
 
-suite("Kauai", () => {
-  let app: Kauai;
+suite("Binden", () => {
+  let app: Binden;
   let server: Server;
 
   setup((done) => {
-    app = new Kauai();
+    app = new Binden();
     server = app.createServer().listen(port, done);
   });
 
   test(".createSecureServer()", async () => {
-    const newApp = new Kauai();
+    const newApp = new Binden();
     const path = new URL(url);
     const agent = new Agent({
       rejectUnauthorized: false,
@@ -263,7 +263,7 @@ suite("Kauai", () => {
   });
 
   test("405 error (`guarded` router `auto_head === false`)", async () => {
-    const newApp = new Kauai({ auto_head: false });
+    const newApp = new Binden({ auto_head: false });
     const path = new URL(url);
     path.port = `${Number(path.port) + 1}`;
 
@@ -293,7 +293,7 @@ suite("Kauai", () => {
           .setHeader("X-HEADER", "Value")
           .end("Secret");
       }
-      const newApp = new Kauai({ error_handler });
+      const newApp = new Binden({ error_handler });
       const path = new URL(url);
       path.port = `${Number(path.port) + 1}`;
 
@@ -506,7 +506,7 @@ suite("Kauai", () => {
       const status = 200;
       const message = "<html></html>";
       const html = "text/html";
-      const error = new KauaiError(500, { expose, message });
+      const error = new BindenError(500, { expose, message });
 
       class WM extends Middleware {
         public run(context: Context): Promise<void> {

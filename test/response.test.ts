@@ -5,8 +5,8 @@ import { Server, createServer } from "node:http";
 import fetch from "node-fetch";
 
 import {
-  KauaiResponse,
-  KauaiRequest,
+  BindenResponse,
+  BindenRequest,
   Cookie,
   ct_json,
   ct_text,
@@ -17,7 +17,7 @@ import {
 const port = 8080;
 const url = `http://localhost:${port}`;
 
-suite("KauaiResponse", () => {
+suite("BindenResponse", () => {
   const filePath = "./__temp.file";
   const dirPath = "./__temp_dir";
   let msg: Buffer;
@@ -30,14 +30,17 @@ suite("KauaiResponse", () => {
   });
 
   setup((done) => {
-    server = createServer({ ServerResponse: KauaiResponse }).listen(port, done);
+    server = createServer({ ServerResponse: BindenResponse }).listen(
+      port,
+      done
+    );
   });
 
   test("ServerResponse", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         try {
-          deepStrictEqual(response instanceof KauaiResponse, true);
+          deepStrictEqual(response instanceof BindenResponse, true);
         } catch (error) {
           reject(error);
         } finally {
@@ -52,9 +55,9 @@ suite("KauaiResponse", () => {
   test(".status()", async () => {
     const status = 401;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         try {
-          ok(response.status(status) instanceof KauaiResponse);
+          ok(response.status(status) instanceof BindenResponse);
           deepStrictEqual(response.statusCode, status);
         } catch (error) {
           reject(error);
@@ -72,7 +75,7 @@ suite("KauaiResponse", () => {
   test(".status() (throws TypeError with unsupported code)", async () => {
     const status = 499;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         try {
           throws(
             () => response.status(status),
@@ -96,9 +99,9 @@ suite("KauaiResponse", () => {
     const z = "Z-Header";
     const headers = { [x]: 0, [y]: "0", [z]: ["0", "1"] };
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         try {
-          ok(response.set(headers) instanceof KauaiResponse);
+          ok(response.set(headers) instanceof BindenResponse);
         } catch (error) {
           reject(error);
         } finally {
@@ -118,7 +121,7 @@ suite("KauaiResponse", () => {
     const cookie1 = new Cookie({ key: "__Secure-K1", value: "V1" });
     const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.setHeader("Set-Cookie", [cookie1.toString()]);
         response.cookies.add(cookie2);
         response.send().then(resolve).catch(reject);
@@ -138,7 +141,7 @@ suite("KauaiResponse", () => {
 
   test(".send() (`writableEnded === true`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.end(() => {
           try {
             deepStrictEqual(response.writableEnded, true);
@@ -164,7 +167,7 @@ suite("KauaiResponse", () => {
     const encoding = "base64";
     const encoded = Buffer.from(string).toString(encoding);
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.setHeader("Set-Cookie", cookie1.toString());
         response.cookies.add(cookie2);
         response.send(encoded, encoding).then(resolve).catch(reject);
@@ -189,7 +192,7 @@ suite("KauaiResponse", () => {
     const buffer = Buffer.from(string);
 
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.cookies.add(cookie1).add(cookie2);
         response.send(buffer).then(resolve).catch(reject);
       });
@@ -210,7 +213,7 @@ suite("KauaiResponse", () => {
   test(".send() (number)", async () => {
     const number = 1;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.send(number).then(resolve).catch(reject);
       });
     });
@@ -225,7 +228,7 @@ suite("KauaiResponse", () => {
   test(".send() (bigint)", async () => {
     const bigint = 1n;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.send(bigint).then(resolve).catch(reject);
       });
     });
@@ -240,7 +243,7 @@ suite("KauaiResponse", () => {
   test(".json()", async () => {
     const json = { currency: "💶" };
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.json(json).then(resolve).catch(reject);
       });
     });
@@ -255,7 +258,7 @@ suite("KauaiResponse", () => {
   test(".json() (an array)", async () => {
     const json = [1, "2", { currency: "💶" }];
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.json(json).then(resolve).catch(reject);
       });
     });
@@ -270,7 +273,7 @@ suite("KauaiResponse", () => {
   test(".text()", async () => {
     const text = "😀";
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.text(text).then(resolve).catch(reject);
       });
     });
@@ -285,7 +288,7 @@ suite("KauaiResponse", () => {
   test(".html()", async () => {
     const html = "<html></html>";
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.html(html).then(resolve).catch(reject);
       });
     });
@@ -303,7 +306,7 @@ suite("KauaiResponse", () => {
     form.set("0", "1");
     form.append("1", "3");
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response.form(form).then(resolve).catch(reject);
       });
     });
@@ -317,7 +320,7 @@ suite("KauaiResponse", () => {
 
   test(".sendFile()", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .catch(reject)
@@ -334,11 +337,11 @@ suite("KauaiResponse", () => {
 
   test(".sendFile() (304 response with `If-Modified-Since`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .then(() => {
-            server.once("request", (_request2, response2: KauaiResponse) => {
+            server.once("request", (_request2, response2: BindenResponse) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
             });
           })
@@ -367,11 +370,11 @@ suite("KauaiResponse", () => {
 
   test(".sendFile() (304 response with `If-Modified-Since` HEAD)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .then(() => {
-            server.once("request", (_request2, response2: KauaiResponse) => {
+            server.once("request", (_request2, response2: BindenResponse) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
             });
           })
@@ -400,7 +403,7 @@ suite("KauaiResponse", () => {
 
   test(".sendFile() (416 response with invalid `Range`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .catch(reject)
@@ -423,7 +426,7 @@ suite("KauaiResponse", () => {
     const start = 10;
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .catch(reject)
@@ -446,7 +449,7 @@ suite("KauaiResponse", () => {
     const start = 10;
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .catch(reject)
@@ -469,7 +472,7 @@ suite("KauaiResponse", () => {
   test(".sendFile() (Partial response with suffix length)", async () => {
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .catch(reject)
@@ -489,11 +492,11 @@ suite("KauaiResponse", () => {
     deepStrictEqual(data, msg.slice(msg.byteLength - end));
   });
 
-  test(".sendFile() (`this.req instanceof KauaiRequest`)", async () => {
+  test(".sendFile() (`this.req instanceof BindenRequest`)", async () => {
     const newServer = await new Promise<Server>((resolve) => {
       const s = createServer({
-        ServerResponse: KauaiResponse,
-        IncomingMessage: KauaiRequest,
+        ServerResponse: BindenResponse,
+        IncomingMessage: BindenRequest,
       }).listen(port + 1, () => {
         resolve(s);
       });
@@ -501,7 +504,7 @@ suite("KauaiResponse", () => {
 
     const end = 100;
     const serverPromise = new Promise<void>((resolve, reject) => {
-      newServer.once("request", (_request, response: KauaiResponse) => {
+      newServer.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .catch(reject)
@@ -528,7 +531,7 @@ suite("KauaiResponse", () => {
 
   test(".sendFile() (with `URL`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         response
           .sendFile(filePath)
           .catch(reject)
@@ -544,7 +547,7 @@ suite("KauaiResponse", () => {
   test(".sendFile() (with invalid protocol)", async () => {
     const path = new URL("https:/www.example.com/");
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         rejects(
           () => response.sendFile(path),
           new TypeError(`Protocol ${path.protocol} is not supported`)
@@ -559,7 +562,7 @@ suite("KauaiResponse", () => {
 
   test(".sendFile() (not a regular file)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response: KauaiResponse) => {
+      server.once("request", (_request, response: BindenResponse) => {
         rejects(
           () => response.sendFile(dirPath),
           new Error(`Provided path does not correspond to a regular file`)

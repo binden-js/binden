@@ -14,7 +14,7 @@ import Range from "./headers/range.js";
 
 export type IProtocol = "http:" | "https:";
 
-export class KauaiRequest extends IncomingMessage {
+export class BindenRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
   #authorization?: Authorization | null;
   #body?: unknown;
@@ -140,5 +140,3 @@ export class KauaiRequest extends IncomingMessage {
     return new URL(url, `${protocol}//${host}`);
   }
 }
-
-export default KauaiRequest;

@@ -1,41 +1,41 @@
 import http, { STATUS_CODES } from "node:http";
 import https from "node:https";
 import { isDeepStrictEqual } from "node:util";
-import Context, { IKauaiResponse } from "./context.js";
-import KauaiError from "./error.js";
-import Middleware from "./middleware.js";
-import KauaiRequest from "./request.js";
-import KauaiResponse, { ct_text, ct_json } from "./response.js";
-import Router from "./router.js";
+import { Context, IBindenResponse } from "./context.js";
+import { BindenError } from "./error.js";
+import { Middleware } from "./middleware.js";
+import { BindenRequest } from "./request.js";
+import { BindenResponse, ct_text, ct_json } from "./response.js";
+import { Router } from "./router.js";
 
-type KauaiRequestListener = (
-  request: KauaiRequest,
-  response: IKauaiResponse
+type BindenRequestListener = (
+  request: BindenRequest,
+  response: IBindenResponse
 ) => void;
 
 type IUseOptions = IStackItem | RegExp | string | null | undefined;
 
-interface IKauaiServerOptions extends http.ServerOptions {
-  IncomingMessage: typeof KauaiRequest;
-  ServerResponse: typeof KauaiResponse;
+interface IBindenServerOptions extends http.ServerOptions {
+  IncomingMessage: typeof BindenRequest;
+  ServerResponse: typeof BindenResponse;
 }
 
-interface IKauaiSecureServerOptions extends https.ServerOptions {
-  IncomingMessage: typeof KauaiRequest;
-  ServerResponse: typeof KauaiResponse;
+interface IBindenSecureServerOptions extends https.ServerOptions {
+  IncomingMessage: typeof BindenRequest;
+  ServerResponse: typeof BindenResponse;
 }
 
 declare module "http" {
   export function createServer(
-    options: IKauaiServerOptions,
-    requestListener?: KauaiRequestListener
+    options: IBindenServerOptions,
+    requestListener?: BindenRequestListener
   ): Server;
 }
 
 declare module "https" {
   function createServer(
-    options: IKauaiSecureServerOptions,
-    requestListener?: KauaiRequestListener
+    options: IBindenSecureServerOptions,
+    requestListener?: BindenRequestListener
   ): Server;
 }
 
@@ -44,17 +44,17 @@ export type IStack = [IStackItem[], RegExp | string | null];
 
 export const DefaultErrorCode = 500;
 
-export interface IKauaiOptions {
+export interface IBindenOptions {
   auto_head?: boolean;
   error_handler?: (context: Context, error: unknown) => void;
 }
 
-export class Kauai {
+export class Binden {
   readonly #stack: IStack[];
   readonly #auto_head: boolean;
   readonly #error_handler: ((context: Context, error: unknown) => void) | null;
 
-  public constructor({ error_handler, auto_head = true }: IKauaiOptions = {}) {
+  public constructor({ error_handler, auto_head = true }: IBindenOptions = {}) {
     this.#stack = [];
     this.#error_handler = error_handler ?? null;
     this.#auto_head = auto_head;
@@ -71,10 +71,10 @@ export class Kauai {
     return http.createServer(
       {
         ...options,
-        IncomingMessage: KauaiRequest,
-        ServerResponse: KauaiResponse,
+        IncomingMessage: BindenRequest,
+        ServerResponse: BindenResponse,
       },
-      (request: KauaiRequest, response: IKauaiResponse) => {
+      (request: BindenRequest, response: IBindenResponse) => {
         this.#requestListener(request, response);
       }
     );
@@ -84,8 +84,8 @@ export class Kauai {
     return https.createServer(
       {
         ...options,
-        IncomingMessage: KauaiRequest,
-        ServerResponse: KauaiResponse,
+        IncomingMessage: BindenRequest,
+        ServerResponse: BindenResponse,
       },
       (request, response) => {
         this.#requestListener(request, response);
@@ -184,7 +184,7 @@ export class Kauai {
     return removed;
   }
 
-  #requestListener(request: KauaiRequest, response: IKauaiResponse): void {
+  #requestListener(request: BindenRequest, response: IBindenResponse): void {
     const context = new Context({ request, response });
     this.#handle(context).catch((error: unknown) => {
       this.#errorHandler(context, error);
@@ -212,7 +212,7 @@ export class Kauai {
               if (!methods.has(method)) {
                 next.response.set({ Allow: `${[...methods].join(", ")}` });
 
-                throw new KauaiError(405);
+                throw new BindenError(405);
               }
             }
 
@@ -220,14 +220,14 @@ export class Kauai {
             const methodMiddlewares = middlewares(m);
 
             for (const mw of methodMiddlewares) {
-              next = await Kauai.#runMiddleware(mw, next);
+              next = await Binden.#runMiddleware(mw, next);
 
               if (next.done) {
                 return;
               }
             }
           } else {
-            next = await Kauai.#runMiddleware(item, next);
+            next = await Binden.#runMiddleware(item, next);
 
             if (next.done) {
               return;
@@ -237,7 +237,7 @@ export class Kauai {
       }
     }
 
-    throw new KauaiError(404);
+    throw new BindenError(404);
   }
 
   /** Default error hanlder (uses the provided `error_handler`, if any) */
@@ -326,4 +326,4 @@ export class Kauai {
   }
 }
 
-export default Kauai;
+export default Binden;

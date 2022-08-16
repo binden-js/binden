@@ -5,7 +5,7 @@ import fetch from "node-fetch";
 
 import {
   Range,
-  KauaiRequest,
+  BindenRequest,
   Forwarded,
   Cookie,
   IfModifiedSince,
@@ -14,18 +14,21 @@ import {
 const port = 8080;
 const url = `http://localhost:${port}`;
 
-suite("KauaiRequest", () => {
+suite("BindenRequest", () => {
   let server: Server;
 
   setup((done) => {
-    server = createServer({ IncomingMessage: KauaiRequest }).listen(port, done);
+    server = createServer({ IncomingMessage: BindenRequest }).listen(
+      port,
+      done
+    );
   });
 
   test(".accept_encoding", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.accept_encoding.length, 4);
 
@@ -58,7 +61,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.authorization?.type, "Basic");
             deepStrictEqual(
@@ -83,7 +86,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             const { content_encoding } = request;
             deepStrictEqual(content_encoding.length, 3);
@@ -114,7 +117,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             const { content_type } = request;
             ok(content_type);
@@ -139,7 +142,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             const { id } = request;
             ok(id);
@@ -160,7 +163,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.secure, false);
           } catch (error) {
@@ -179,7 +182,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.protocol, "http:");
           } catch (error) {
@@ -200,7 +203,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             ok(Array.isArray(request.query.b));
             deepStrictEqual(request.query.b.pop(), "3");
@@ -225,7 +228,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(typeof request.body, "undefined");
             request.body = body;
@@ -252,7 +255,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.cookies, [cookie]);
             deepStrictEqual(request.cookies[0].key, cookie.key);
@@ -282,7 +285,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.protocol, "https:");
             ok(request.secure);
@@ -310,7 +313,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             ok(request.if_modified_since);
             deepStrictEqual(
@@ -338,7 +341,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.range.length, 1);
             const [actual] = request.range;
@@ -363,7 +366,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.URL, newUrl);
           } catch (error) {
@@ -385,7 +388,7 @@ suite("KauaiRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once(
         "request",
-        (request: KauaiRequest, response: ServerResponse) => {
+        (request: BindenRequest, response: ServerResponse) => {
           try {
             deepStrictEqual(request.header("X-CUSTOM-HEADER"), value);
             deepStrictEqual(request.header("x-custom-header"), value);

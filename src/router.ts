@@ -1,5 +1,5 @@
 import { METHODS } from "node:http";
-import Middleware from "./middleware.js";
+import { Middleware } from "./middleware.js";
 
 export interface IRouterOptions {
   guarded?: boolean;
@@ -123,5 +123,3 @@ export class Router {
     return this.on("TRACE", ...middlewares);
   }
 }
-
-export default Router;
