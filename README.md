@@ -282,6 +282,15 @@ export class MyMiddleware extends Middleware {
       };
       throw new BindenError(status, { expose, message, json });
     }
+
+    try {
+      await validateBody();
+    } catch (cause) {
+      const message = "Invalid body";
+      const expose = true;
+      throw new BindenError(400, { expose, message, json: { message }, cause });
+    }
+
     return context.json({ message: `Received ${length} cookies` });
   }
 }
