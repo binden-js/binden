@@ -1,4 +1,4 @@
-import { deepStrictEqual, throws } from "node:assert";
+import { deepStrictEqual, ok, throws } from "node:assert";
 import { STATUS_CODES } from "node:http";
 
 import { BindenError } from "../index.js";
@@ -14,6 +14,21 @@ suite("BindenError", () => {
     deepStrictEqual(error.json, null);
     deepStrictEqual(error.message, message);
     deepStrictEqual(error.name, "BindenError");
+    ok(typeof error.cause === "undefined");
+  });
+
+  test("constructor (with `cause`)", () => {
+    const expose = false;
+    const message = "Something bad happened";
+    const status = 500;
+    const cause = new Error("Socket has been closed");
+    const error = new BindenError(status, { message, cause });
+    deepStrictEqual(error.expose, expose);
+    deepStrictEqual(error.status, status);
+    deepStrictEqual(error.json, null);
+    deepStrictEqual(error.message, message);
+    deepStrictEqual(error.name, "BindenError");
+    deepStrictEqual(error.cause, cause);
   });
 
   test("constructor (json)", () => {

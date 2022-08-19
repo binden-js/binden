@@ -1,6 +1,6 @@
 import { STATUS_CODES } from "node:http";
 
-export interface IBindenErrorOptions {
+export interface IBindenErrorOptions extends ErrorOptions {
   json?: Record<string, unknown>;
   message?: string;
   expose?: boolean;
@@ -13,7 +13,12 @@ export class BindenError extends Error {
 
   public constructor(
     status: number,
-    { message = STATUS_CODES[status], expose, json }: IBindenErrorOptions = {}
+    {
+      message = STATUS_CODES[status],
+      expose = false,
+      json,
+      cause,
+    }: IBindenErrorOptions = {}
   ) {
     if (status > 599) {
       throw new RangeError("Status code is greater than 599");
@@ -23,7 +28,7 @@ export class BindenError extends Error {
       throw new RangeError("Status code is less than 400");
     }
 
-    super(message);
+    super(message, cause ? { cause } : {});
 
     this.name = "BindenError";
     this.#expose = Boolean(expose);
