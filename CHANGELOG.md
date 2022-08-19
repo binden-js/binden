@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0](https://github.com/binden-js/binden/compare/v1.0.0...v1.1.0) (2022-08-19)
+
+### Features
+
+- **BindenError:** add the `cause` option ([986a52c](https://github.com/binden-js/binden/commit/986a52cf797568a3ef9aca6cc9aefcf74e8d2bd7))
+
 ## 1.0.0 (2022-08-16)
 
 ### ⚠ BREAKING CHANGES
