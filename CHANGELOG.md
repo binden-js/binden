@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.2](https://github.com/binden-js/binden/compare/v1.1.1...v1.1.2) (2022-09-06)
+
+### Dependencies
+
+- bump @binden/logger from 1.0.2 to 1.0.3 ([3c5c20b](https://github.com/binden-js/binden/commit/3c5c20bdc12dade5237ab22de5e54407a8ceb79c))
+
 ## [1.1.1](https://github.com/binden-js/binden/compare/v1.1.0...v1.1.1) (2022-08-30)
 
 ### Dependencies
