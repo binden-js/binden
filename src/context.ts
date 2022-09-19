@@ -6,18 +6,14 @@ import type { Readable } from "node:stream";
 import type { BindenRequest } from "./request.js";
 import type { IHeadersValue, BindenResponse } from "./response.js";
 
-export interface IBindenResponse extends BindenResponse {
-  req: BindenRequest;
-}
-
 export interface IBaseContext {
   readonly request: BindenRequest;
-  readonly response: IBindenResponse;
+  readonly response: BindenResponse<BindenRequest>;
 }
 
 export class Context implements IBaseContext {
   readonly #request: BindenRequest;
-  readonly #response: IBindenResponse;
+  readonly #response: BindenResponse<BindenRequest>;
   readonly #logger: Logger;
   #done: boolean;
 
@@ -47,7 +43,7 @@ export class Context implements IBaseContext {
     return this.#request;
   }
 
-  public get response(): IBindenResponse {
+  public get response(): BindenResponse<BindenRequest> {
     return this.#response;
   }
 
