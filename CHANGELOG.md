@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.3](https://github.com/binden-js/binden/compare/v1.1.2...v1.1.3) (2022-09-19)
+
+### Performance Improvements
+
+- add generics to the `BindenResponse` class ([8315288](https://github.com/binden-js/binden/commit/8315288246d57a97dfecf20f120ac1b8c01adeba))
+
 ## [1.1.2](https://github.com/binden-js/binden/compare/v1.1.1...v1.1.2) (2022-09-06)
 
 ### Dependencies

@@ -72,32 +72,33 @@
             <li><a href="../modules.html">binden</a></li>
             <li><a href="BindenResponse.html">BindenResponse</a></li>
           </ul>
-          <h1>Class BindenResponse</h1>
+          <h1>Class BindenResponse&lt;Request&gt;</h1>
         </div>
+        <section class="tsd-panel tsd-type-parameters">
+          <h4>Type Parameters</h4>
+          <ul class="tsd-type-parameters">
+            <li>
+              <h4>
+                Request<span class="tsd-signature-symbol"> extends </span
+                ><span class="tsd-signature-type">IncomingMessage</span> =
+                <span class="tsd-signature-type">IncomingMessage</span>
+              </h4>
+            </li>
+          </ul>
+        </section>
         <section class="tsd-panel tsd-hierarchy">
           <h4>Hierarchy</h4>
           <ul class="tsd-hierarchy">
             <li>
-              <span class="tsd-signature-type">ServerResponse</span>
+              <span class="tsd-signature-type">ServerResponse</span
+              ><span class="tsd-signature-symbol">&lt;</span
+              ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                >Request</span
+              ><span class="tsd-signature-symbol">&gt;</span>
               <section class="tsd-panel tsd-hierarchy">
                 <h4>Hierarchy</h4>
                 <ul class="tsd-hierarchy">
-                  <li>
-                    <span class="target">BindenResponse</span>
-                    <section class="tsd-panel tsd-hierarchy">
-                      <h4>Hierarchy</h4>
-                      <ul class="tsd-hierarchy">
-                        <li>
-                          <a
-                            href="../interfaces/IBindenResponse.html"
-                            class="tsd-signature-type"
-                            data-tsd-kind="Interface"
-                            >IBindenResponse</a
-                          >
-                        </li>
-                      </ul>
-                    </section>
-                  </li>
+                  <li><span class="target">BindenResponse</span></li>
                 </ul>
               </section>
             </li>
@@ -1369,9 +1370,15 @@
               >
                 new <wbr />Binden<wbr />Response<span
                   class="tsd-signature-symbol"
-                  >(</span
-                >req<span class="tsd-signature-symbol">: </span
-                ><span class="tsd-signature-type">IncomingMessage</span
+                  >&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
+                ><span class="tsd-signature-symbol">(</span>req<span
+                  class="tsd-signature-symbol"
+                  >: </span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
                 ><span class="tsd-signature-symbol">)</span
                 ><span class="tsd-signature-symbol">: </span
                 ><a
@@ -1379,6 +1386,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#constructor.new_BindenResponse"
                   aria-label="Permalink"
@@ -1398,13 +1409,42 @@
                 ></a>
               </li>
               <li class="tsd-description">
+                <div class="tsd-type-parameters">
+                  <h4 class="tsd-type-parameters-title">Type Parameters</h4>
+                  <section class="tsd-panel tsd-type-parameters">
+                    <h4>Type Parameters</h4>
+                    <ul class="tsd-type-parameters">
+                      <li>
+                        <h4>
+                          Request<span class="tsd-signature-symbol">
+                            extends </span
+                          ><span class="tsd-signature-type"
+                            >IncomingMessage</span
+                          ><span class="tsd-signature-symbol">&lt;</span
+                          ><span
+                            class="tsd-signature-type"
+                            data-tsd-kind="Type parameter"
+                            >Request</span
+                          ><span class="tsd-signature-symbol">&gt;</span> =
+                          <span class="tsd-signature-type"
+                            >IncomingMessage</span
+                          >
+                        </h4>
+                      </li>
+                    </ul>
+                  </section>
+                </div>
                 <div class="tsd-parameters">
                   <h4 class="tsd-parameters-title">Parameters</h4>
                   <ul class="tsd-parameter-list">
                     <li>
                       <h5>
                         req:
-                        <span class="tsd-signature-type">IncomingMessage</span>
+                        <span
+                          class="tsd-signature-type"
+                          data-tsd-kind="Type parameter"
+                          >Request</span
+                        >
                       </h5>
                     </li>
                   </ul>
@@ -1416,12 +1456,19 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
-                  <p>Inherited from ServerResponse.constructor</p>
+                  <p>
+                    Inherited from ServerResponse&lt;Request&gt;.constructor
+                  </p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:503</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:569</li>
                   </ul>
                 </aside>
               </li>
@@ -1472,8 +1519,8 @@
                 <li>
                   Defined in
                   <a
-                    href="https://github.com/binden-js/binden/blob/main/src/response.ts#L22"
-                    >src/response.ts:22</a
+                    href="https://github.com/binden-js/binden/blob/main/src/response.ts#L24"
+                    >src/response.ts:24</a
                   >
                 </li>
               </ul>
@@ -1510,7 +1557,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.chunkedEncoding</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:336</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:402</li>
               </ul>
             </aside>
           </section>
@@ -1596,7 +1643,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.connection</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:354</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:420</li>
               </ul>
             </aside>
           </section>
@@ -1722,7 +1769,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.finished</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:343</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:409</li>
               </ul>
             </aside>
           </section>
@@ -1767,7 +1814,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.headersSent</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:348</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:414</li>
               </ul>
             </aside>
           </section>
@@ -1795,12 +1842,14 @@
             </h3>
             <div class="tsd-signature">
               req<span class="tsd-signature-symbol">:</span>
-              <span class="tsd-signature-type">IncomingMessage</span>
+              <span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                >Request</span
+              >
             </div>
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.req</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:335</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:401</li>
               </ul>
             </aside>
           </section>
@@ -1835,7 +1884,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.sendDate</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:339</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:405</li>
               </ul>
             </aside>
           </section>
@@ -1872,7 +1921,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.shouldKeepAlive</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:337</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:403</li>
               </ul>
             </aside>
           </section>
@@ -1920,7 +1969,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.socket</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:362</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:428</li>
               </ul>
             </aside>
           </section>
@@ -1972,7 +2021,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.statusCode</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:487</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:553</li>
               </ul>
             </aside>
           </section>
@@ -2026,7 +2075,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.statusMessage</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:502</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:568</li>
               </ul>
             </aside>
           </section>
@@ -2065,7 +2114,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.useChunkedEncodingByDefault</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:338</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:404</li>
               </ul>
             </aside>
           </section>
@@ -2683,8 +2732,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L24"
-                        >src/response.ts:24</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L26"
+                        >src/response.ts:26</a
                       >
                     </li>
                   </ul>
@@ -3495,6 +3544,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#addListener.addListener-1"
                   aria-label="Permalink"
@@ -3577,7 +3630,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
@@ -3607,6 +3665,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#addListener.addListener-2"
                   aria-label="Permalink"
@@ -3676,7 +3738,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
@@ -3709,6 +3776,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#addListener.addListener-3"
                   aria-label="Permalink"
@@ -3796,7 +3867,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
@@ -3826,6 +3902,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#addListener.addListener-4"
                   aria-label="Permalink"
@@ -3895,7 +3975,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
@@ -3928,6 +4013,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#addListener.addListener-5"
                   aria-label="Permalink"
@@ -4013,7 +4102,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
@@ -4046,6 +4140,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#addListener.addListener-6"
                   aria-label="Permalink"
@@ -4133,7 +4231,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
@@ -4171,6 +4274,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#addListener.addListener-7"
                   aria-label="Permalink"
@@ -4267,7 +4374,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
@@ -4394,7 +4506,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addTrailers</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:453</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:519</li>
                   </ul>
                 </aside>
               </li>
@@ -4472,7 +4584,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.assignSocket</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:504</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:570</li>
                   </ul>
                 </aside>
               </li>
@@ -4607,6 +4719,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#destroy.destroy-1"
                   aria-label="Permalink"
@@ -4681,7 +4797,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.destroy</p>
@@ -4764,7 +4885,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.detachSocket</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:505</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:571</li>
                   </ul>
                 </aside>
               </li>
@@ -5220,6 +5341,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#end.end-1"
                   aria-label="Permalink"
@@ -5303,7 +5428,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.end</p>
@@ -5332,6 +5462,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#end.end-2"
                   aria-label="Permalink"
@@ -5399,7 +5533,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.end</p>
@@ -5431,6 +5570,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#end.end-3"
                   aria-label="Permalink"
@@ -5504,7 +5647,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.end</p>
@@ -5681,7 +5829,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.flushHeaders</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:466</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:532</li>
                   </ul>
                 </aside>
               </li>
@@ -5767,8 +5915,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L130"
-                        >src/response.ts:130</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L132"
+                        >src/response.ts:132</a
                       >
                     </li>
                   </ul>
@@ -5875,7 +6023,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:383</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:449</li>
                   </ul>
                 </aside>
               </li>
@@ -5953,7 +6101,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getHeaderNames</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:411</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:477</li>
                   </ul>
                 </aside>
               </li>
@@ -6044,7 +6192,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getHeaders</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:405</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:471</li>
                   </ul>
                 </aside>
               </li>
@@ -6214,7 +6362,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.hasHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:421</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:487</li>
                   </ul>
                 </aside>
               </li>
@@ -6296,8 +6444,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L125"
-                        >src/response.ts:125</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L127"
+                        >src/response.ts:127</a
                       >
                     </li>
                   </ul>
@@ -6397,8 +6545,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L114"
-                        >src/response.ts:114</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L116"
+                        >src/response.ts:116</a
                       >
                     </li>
                   </ul>
@@ -6646,6 +6794,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#off.off-1"
                   aria-label="Permalink"
@@ -6748,7 +6900,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.off</p>
@@ -6802,6 +6959,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#on.on-1"
                   aria-label="Permalink"
@@ -6871,7 +7032,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
@@ -6899,6 +7065,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#on.on-2"
                   aria-label="Permalink"
@@ -6968,7 +7138,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
@@ -6999,6 +7174,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#on.on-3"
                   aria-label="Permalink"
@@ -7086,7 +7265,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
@@ -7114,6 +7298,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#on.on-4"
                   aria-label="Permalink"
@@ -7183,7 +7371,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
@@ -7214,6 +7407,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#on.on-5"
                   aria-label="Permalink"
@@ -7299,7 +7496,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
@@ -7330,6 +7532,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#on.on-6"
                   aria-label="Permalink"
@@ -7417,7 +7623,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
@@ -7453,6 +7664,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#on.on-7"
                   aria-label="Permalink"
@@ -7549,7 +7764,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
@@ -7603,6 +7823,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#once.once-1"
                   aria-label="Permalink"
@@ -7672,7 +7896,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
@@ -7700,6 +7929,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#once.once-2"
                   aria-label="Permalink"
@@ -7769,7 +8002,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
@@ -7800,6 +8038,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#once.once-3"
                   aria-label="Permalink"
@@ -7887,7 +8129,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
@@ -7915,6 +8162,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#once.once-4"
                   aria-label="Permalink"
@@ -7984,7 +8235,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
@@ -8015,6 +8271,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#once.once-5"
                   aria-label="Permalink"
@@ -8100,7 +8360,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
@@ -8131,6 +8396,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#once.once-6"
                   aria-label="Permalink"
@@ -8218,7 +8487,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
@@ -8254,6 +8528,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#once.once-7"
                   aria-label="Permalink"
@@ -8350,7 +8628,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
@@ -8546,6 +8829,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependListener.prependListener-1"
                   aria-label="Permalink"
@@ -8615,7 +8902,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
@@ -8645,6 +8937,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependListener.prependListener-2"
                   aria-label="Permalink"
@@ -8714,7 +9010,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
@@ -8747,6 +9048,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependListener.prependListener-3"
                   aria-label="Permalink"
@@ -8834,7 +9139,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
@@ -8864,6 +9174,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependListener.prependListener-4"
                   aria-label="Permalink"
@@ -8933,7 +9247,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
@@ -8966,6 +9285,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependListener.prependListener-5"
                   aria-label="Permalink"
@@ -9051,7 +9374,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
@@ -9084,6 +9412,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependListener.prependListener-6"
                   aria-label="Permalink"
@@ -9171,7 +9503,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
@@ -9209,6 +9546,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependListener.prependListener-7"
                   aria-label="Permalink"
@@ -9305,7 +9646,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
@@ -9366,6 +9712,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependOnceListener.prependOnceListener-1"
                   aria-label="Permalink"
@@ -9435,7 +9785,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
@@ -9467,6 +9822,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependOnceListener.prependOnceListener-2"
                   aria-label="Permalink"
@@ -9536,7 +9895,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
@@ -9571,6 +9935,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependOnceListener.prependOnceListener-3"
                   aria-label="Permalink"
@@ -9658,7 +10026,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
@@ -9690,6 +10063,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependOnceListener.prependOnceListener-4"
                   aria-label="Permalink"
@@ -9759,7 +10136,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
@@ -9794,6 +10176,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependOnceListener.prependOnceListener-5"
                   aria-label="Permalink"
@@ -9879,7 +10265,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
@@ -9914,6 +10305,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependOnceListener.prependOnceListener-6"
                   aria-label="Permalink"
@@ -10001,7 +10396,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
@@ -10041,6 +10441,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#prependOnceListener.prependOnceListener-7"
                   aria-label="Permalink"
@@ -10137,7 +10541,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
@@ -10289,6 +10698,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeAllListeners.removeAllListeners-1"
                   aria-label="Permalink"
@@ -10347,7 +10760,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeAllListeners</p>
@@ -10441,7 +10859,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:431</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:497</li>
                   </ul>
                 </aside>
               </li>
@@ -10495,6 +10913,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeListener.removeListener-1"
                   aria-label="Permalink"
@@ -10564,7 +10986,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
@@ -10594,6 +11021,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeListener.removeListener-2"
                   aria-label="Permalink"
@@ -10663,7 +11094,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
@@ -10696,6 +11132,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeListener.removeListener-3"
                   aria-label="Permalink"
@@ -10783,7 +11223,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
@@ -10813,6 +11258,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeListener.removeListener-4"
                   aria-label="Permalink"
@@ -10882,7 +11331,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
@@ -10915,6 +11369,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeListener.removeListener-5"
                   aria-label="Permalink"
@@ -11000,7 +11458,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
@@ -11033,6 +11496,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeListener.removeListener-6"
                   aria-label="Permalink"
@@ -11120,7 +11587,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
@@ -11158,6 +11630,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#removeListener.removeListener-7"
                   aria-label="Permalink"
@@ -11254,7 +11730,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
@@ -11358,8 +11839,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L57"
-                        >src/response.ts:57</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L59"
+                        >src/response.ts:59</a
                       >
                     </li>
                   </ul>
@@ -11425,8 +11906,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L60"
-                        >src/response.ts:60</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L62"
+                        >src/response.ts:62</a
                       >
                     </li>
                   </ul>
@@ -11517,8 +11998,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L135"
-                        >src/response.ts:135</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L137"
+                        >src/response.ts:137</a
                       >
                     </li>
                   </ul>
@@ -11564,6 +12045,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#set.set-1"
                   aria-label="Permalink"
@@ -11607,15 +12092,20 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <ul>
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L42"
-                        >src/response.ts:42</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L44"
+                        >src/response.ts:44</a
                       >
                     </li>
                   </ul>
@@ -11666,6 +12156,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#setDefaultEncoding.setDefaultEncoding-1"
                   aria-label="Permalink"
@@ -11716,7 +12210,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setDefaultEncoding</p>
@@ -11777,6 +12276,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#setHeader.setHeader-1"
                   aria-label="Permalink"
@@ -11836,12 +12339,17 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:376</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:442</li>
                   </ul>
                 </aside>
               </li>
@@ -11889,6 +12397,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#setMaxListeners.setMaxListeners-1"
                   aria-label="Permalink"
@@ -11943,7 +12455,12 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setMaxListeners</p>
@@ -12003,6 +12520,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#setTimeout.setTimeout-1"
                   aria-label="Permalink"
@@ -12086,12 +12607,17 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setTimeout</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:369</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:435</li>
                   </ul>
                 </aside>
               </li>
@@ -12131,6 +12657,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#status.status-1"
                   aria-label="Permalink"
@@ -12170,15 +12700,20 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <ul>
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L32"
-                        >src/response.ts:32</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L34"
+                        >src/response.ts:34</a
                       >
                     </li>
                   </ul>
@@ -12262,8 +12797,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L120"
-                        >src/response.ts:120</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L122"
+                        >src/response.ts:122</a
                       >
                     </li>
                   </ul>
@@ -12847,7 +13382,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeContinue</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:511</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:577</li>
                   </ul>
                 </aside>
               </li>
@@ -12902,6 +13437,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#writeHead.writeHead-1"
                   aria-label="Permalink"
@@ -13025,12 +13564,17 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeHead</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:569</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:635</li>
                   </ul>
                 </aside>
               </li>
@@ -13054,6 +13598,10 @@
                   class="tsd-signature-type"
                   data-tsd-kind="Class"
                   >BindenResponse</a
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type" data-tsd-kind="Type parameter"
+                  >Request</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><a
                   href="#writeHead.writeHead-2"
                   aria-label="Permalink"
@@ -13103,12 +13651,17 @@
                     class="tsd-signature-type"
                     data-tsd-kind="Class"
                     >BindenResponse</a
-                  >
+                  ><span class="tsd-signature-symbol">&lt;</span
+                  ><span
+                    class="tsd-signature-type"
+                    data-tsd-kind="Type parameter"
+                    >Request</span
+                  ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeHead</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:570</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:640</li>
                   </ul>
                 </aside>
               </li>
@@ -13183,7 +13736,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeProcessing</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:576</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:646</li>
                   </ul>
                 </aside>
               </li>
