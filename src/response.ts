@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { ServerResponse, STATUS_CODES } from "node:http";
+import { IncomingMessage, ServerResponse, STATUS_CODES } from "node:http";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import ContentRange from "./headers/content-range.js";
@@ -18,7 +18,9 @@ export type IHeadersValue = number | string | readonly string[];
 
 export type IHeaders = Record<string, IHeadersValue>;
 
-export class BindenResponse extends ServerResponse {
+export class BindenResponse<
+  Request extends IncomingMessage = IncomingMessage
+> extends ServerResponse<Request> {
   #cookies?: Set<Cookie>;
 
   public get cookies(): Set<Cookie> {

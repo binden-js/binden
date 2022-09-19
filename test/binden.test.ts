@@ -69,25 +69,17 @@ suite("Binden", () => {
   test(".createSecureServer()", async () => {
     const newApp = new Binden();
     const path = new URL(url);
-    const agent = new Agent({
-      rejectUnauthorized: false,
-    });
+    const agent = new Agent({ rejectUnauthorized: false });
     path.port = `${Number(path.port) + 1}`;
     path.protocol = "https:";
 
-    const key = await readFile("./test/cert/key.pem", {
-      encoding: "utf-8",
-    });
-    const cert = await readFile("./test/cert/cert.pem", {
-      encoding: "utf-8",
-    });
+    const key = await readFile("./test/cert/key.pem", { encoding: "utf-8" });
+    const cert = await readFile("./test/cert/cert.pem", { encoding: "utf-8" });
 
-    const newServer = await new Promise<Server>((resolve) => {
-      const s = newApp
-        .createSecureServer({ key, cert })
-        .listen(port + 1, () => {
-          resolve(s);
-        });
+    const newServer = newApp.createSecureServer({ key, cert });
+
+    await new Promise<void>((resolve) => {
+      newServer.listen(port + 1, resolve);
     });
 
     const m = new SendMiddleware();
@@ -267,10 +259,10 @@ suite("Binden", () => {
     const path = new URL(url);
     path.port = `${Number(path.port) + 1}`;
 
-    const newServer = await new Promise<Server>((resolve) => {
-      const s = newApp.createServer().listen(port + 1, () => {
-        resolve(s);
-      });
+    const newServer = newApp.createServer();
+
+    await new Promise<void>((resolve) => {
+      newServer.listen(port + 1, resolve);
     });
 
     const m = new CustomMiddleware();
@@ -297,10 +289,10 @@ suite("Binden", () => {
       const path = new URL(url);
       path.port = `${Number(path.port) + 1}`;
 
-      const newServer = await new Promise<Server>((resolve) => {
-        const s = newApp.createServer().listen(port + 1, () => {
-          resolve(s);
-        });
+      const newServer = newApp.createServer();
+
+      await new Promise<void>((resolve) => {
+        newServer.listen(port + 1, resolve);
       });
 
       const status = 405;

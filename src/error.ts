@@ -28,7 +28,11 @@ export class BindenError extends Error {
       throw new RangeError("Status code is less than 400");
     }
 
-    super(message, cause ? { cause } : {});
+    if (typeof cause === "undefined") {
+      super(message);
+    } else {
+      super(message, { cause });
+    }
 
     this.name = "BindenError";
     this.#expose = Boolean(expose);

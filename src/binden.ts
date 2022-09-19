@@ -1,43 +1,14 @@
 import http, { STATUS_CODES } from "node:http";
 import https from "node:https";
 import { isDeepStrictEqual } from "node:util";
-import { Context, IBindenResponse } from "./context.js";
+import { Context } from "./context.js";
 import { BindenError } from "./error.js";
 import { Middleware } from "./middleware.js";
 import { BindenRequest } from "./request.js";
 import { BindenResponse, ct_text, ct_json } from "./response.js";
 import { Router } from "./router.js";
 
-type BindenRequestListener = (
-  request: BindenRequest,
-  response: IBindenResponse
-) => void;
-
 type IUseOptions = IStackItem | RegExp | string | null | undefined;
-
-interface IBindenServerOptions extends http.ServerOptions {
-  IncomingMessage: typeof BindenRequest;
-  ServerResponse: typeof BindenResponse;
-}
-
-interface IBindenSecureServerOptions extends https.ServerOptions {
-  IncomingMessage: typeof BindenRequest;
-  ServerResponse: typeof BindenResponse;
-}
-
-declare module "http" {
-  export function createServer(
-    options: IBindenServerOptions,
-    requestListener?: BindenRequestListener
-  ): Server;
-}
-
-declare module "https" {
-  function createServer(
-    options: IBindenSecureServerOptions,
-    requestListener?: BindenRequestListener
-  ): Server;
-}
 
 export type IStackItem = Middleware | Router;
 export type IStack = [IStackItem[], RegExp | string | null];
@@ -67,20 +38,24 @@ export class Binden {
     ]);
   }
 
-  public createServer(options: http.ServerOptions = {}): http.Server {
+  public createServer(
+    options: http.ServerOptions = {}
+  ): http.Server<typeof BindenRequest, typeof BindenResponse> {
     return http.createServer(
       {
         ...options,
         IncomingMessage: BindenRequest,
         ServerResponse: BindenResponse,
       },
-      (request: BindenRequest, response: IBindenResponse) => {
+      (request, response) => {
         this.#requestListener(request, response);
       }
     );
   }
 
-  public createSecureServer(options: https.ServerOptions = {}): https.Server {
+  public createSecureServer(
+    options: https.ServerOptions = {}
+  ): https.Server<typeof BindenRequest, typeof BindenResponse> {
     return https.createServer(
       {
         ...options,
@@ -184,7 +159,10 @@ export class Binden {
     return removed;
   }
 
-  #requestListener(request: BindenRequest, response: IBindenResponse): void {
+  #requestListener(
+    request: BindenRequest,
+    response: BindenResponse<BindenRequest>
+  ): void {
     const context = new Context({ request, response });
     this.#handle(context).catch((error: unknown) => {
       this.#errorHandler(context, error);
