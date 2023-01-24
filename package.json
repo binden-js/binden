@@ -70,7 +70,7 @@
     "prettier": "^2.8.3",
     "sinon": "^15.0.1",
     "ts-node": "^10.9.1",
-    "typedoc": "^0.23.23"
+    "typedoc": "^0.23.24"
   },
   "funding": {
     "type": "Coinbase Commerce",
