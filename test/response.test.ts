@@ -1,7 +1,9 @@
+/* eslint-disable init-declarations */
 import { deepStrictEqual, ok, throws, rejects } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer } from "node:http";
+import { tmpdir } from "node:os";
 import fetch from "node-fetch";
 
 import {
@@ -18,22 +20,25 @@ const port = 8080;
 const url = `http://localhost:${port}`;
 
 suite("BindenResponse", () => {
-  const filePath = "./__temp.file";
-  const dirPath = "./__temp_dir";
+  const filePath = `${tmpdir()}/__binden.test.file`;
+  const dirPath = `${tmpdir()}/__binden.test.dir`;
   let msg: Buffer;
   let server: Server<typeof IncomingMessage, typeof BindenResponse>;
+  let last_time: number;
 
-  suiteSetup(async () => {
+  setup(async () => {
     msg = Buffer.from(randomUUID());
     await mkdir(dirPath);
     await writeFile(filePath, msg);
-  });
-
-  setup((done) => {
-    server = createServer({ ServerResponse: BindenResponse }).listen(
-      port,
-      done
-    );
+    await new Promise<void>((resolve) => {
+      server = createServer<typeof IncomingMessage, typeof BindenResponse>({
+        ServerResponse: BindenResponse,
+      }).listen(port, () => {
+        resolve();
+      });
+    });
+    const { mtimeMs } = await stat(dirPath);
+    last_time = mtimeMs;
   });
 
   test("ServerResponse", async () => {
@@ -441,11 +446,10 @@ suite("BindenResponse", () => {
 
     await serverPromise;
     const data = Buffer.from(await response.arrayBuffer());
-    deepStrictEqual(data, msg.slice(start, end + 1));
+    deepStrictEqual(data, msg.subarray(start, end + 1));
   });
 
   test(".sendFile() (Full response with invalid `If-Range`)", async () => {
-    const stats = await stat(filePath);
     const start = 10;
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -458,7 +462,7 @@ suite("BindenResponse", () => {
     });
     const headers = {
       Range: `bytes= ${start} - ${end} `,
-      "If-Range": `${new Date(stats.mtimeMs - 10000).toUTCString()}`,
+      "If-Range": `${new Date(last_time - 10000).toUTCString()}`,
     };
     const response = await fetch(url, { headers });
     deepStrictEqual(response.headers.get("Content-Range"), null);
@@ -489,7 +493,7 @@ suite("BindenResponse", () => {
       `bytes ${msg.byteLength - end}-${msg.byteLength - 1}/${msg.byteLength}`
     );
     deepStrictEqual(response.status, 206);
-    deepStrictEqual(data, msg.slice(msg.byteLength - end));
+    deepStrictEqual(data, msg.subarray(msg.byteLength - end));
   });
 
   test(".sendFile() (`this.req instanceof BindenRequest`)", async () => {
@@ -517,7 +521,7 @@ suite("BindenResponse", () => {
     const data = Buffer.from(await response.arrayBuffer());
     deepStrictEqual(response.headers.get("Content-Range"), null);
     deepStrictEqual(response.status, 200);
-    deepStrictEqual(data, msg.slice(msg.byteLength - end));
+    deepStrictEqual(data, msg.subarray(msg.byteLength - end));
     await new Promise<void>((resolve, reject) => {
       newServer.close((error) => {
         if (error) {
@@ -575,10 +579,17 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  suiteTeardown(async () => {
+  teardown(async () => {
     await rmdir(dirPath);
     await rm(filePath);
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
   });
-
-  teardown((done) => server.close(done));
 });

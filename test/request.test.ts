@@ -1,3 +1,4 @@
+/* eslint-disable init-declarations */
 import { deepStrictEqual, ok } from "node:assert";
 import { Server, createServer } from "node:http";
 import { stringify, parse } from "node:querystring";
