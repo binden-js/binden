@@ -6,6 +6,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        node-version: [18, 19]
+
     steps:
       - uses: actions/checkout@v3
         with:
@@ -13,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: ${{ matrix.node-version }}
           check-latest: true
 
       - name: Install dependencies
@@ -25,11 +29,11 @@ jobs:
       - name: ESLint
         run: npm run eslint
 
-      - name: commitlint
+      - name: Commitlint
         run: npm run commitlint
 
       - name: Tests
-        run: npm run test
+        run: npm test
 
       - name: Publish (test)
         run: npm publish --dry-run
@@ -43,12 +47,26 @@ jobs:
       - name: Coveralls
         uses: coverallsapp/github-action@master
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.github_token }}
+          flag-name: Node.js v${{ matrix.node-version }}
+          parallel: true
+
+  coverage:
+    needs: [test]
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Coveralls Finished
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.github_token }}
+          parallel-finished: true
 
   release:
     if: ${{ github.ref == 'refs/heads/main' }}
 
-    needs: [test]
+    needs: [test, coverage]
 
     runs-on: ubuntu-latest
 
