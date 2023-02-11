@@ -35,7 +35,6 @@ export class BindenResponse<
     if (typeof STATUS_CODES[code] === "undefined") {
       throw new TypeError(`Status code ${code} is invalid`);
     }
-
     this.statusCode = code;
     return this;
   }
@@ -43,15 +42,8 @@ export class BindenResponse<
   /** Set headers */
   public set(headers: IHeaders): this {
     for (const name in headers) {
-      const value = headers[name];
-      this.setHeader(
-        name,
-        typeof value === "string" || typeof value === "number"
-          ? value
-          : [...value]
-      );
+      this.setHeader(name, headers[name]);
     }
-
     return this;
   }
 
@@ -113,9 +105,9 @@ export class BindenResponse<
   }
 
   /** Send response as `application/json` */
-  public async json(data: Record<string, unknown> | unknown[]): Promise<void> {
+  public json(data: Record<string, unknown> | unknown[]): Promise<void> {
     const msg = JSON.stringify(data);
-    await this.setHeader("Content-Type", ct_json).send(msg);
+    return this.setHeader("Content-Type", ct_json).send(msg);
   }
 
   /** Send response as `plain/text` */
@@ -172,10 +164,10 @@ export class BindenResponse<
 
     if (!range || ifRange < lm) {
       const stream = createReadStream(url);
-      return this.status(200).setHeader("Content-Length", size).send(stream);
+      return this.setHeader("Content-Length", size).send(stream);
     } else if (typeof range.start === "number" && range.start >= size) {
       const cr = new ContentRange({ size }).toString();
-      return this.status(416).setHeader("Content-Range", cr).send();
+      return this.setHeader("Content-Range", cr).status(416).send();
     }
 
     const opts = { start: range.start ?? 0, end: size - 1 };
@@ -196,11 +188,11 @@ export class BindenResponse<
 
     if (cl === size) {
       const stream = createReadStream(url);
-      return this.status(200).send(stream);
+      return this.send(stream);
     }
 
     const stream = createReadStream(url, { start, end });
     const cr = new ContentRange({ size, start, end }).toString();
-    return this.status(206).setHeader("Content-Range", cr).send(stream);
+    return this.setHeader("Content-Range", cr).status(206).send(stream);
   }
 }
