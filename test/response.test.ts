@@ -6,6 +6,7 @@ import { IncomingMessage, Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import fetch from "node-fetch";
 import fastJSON from "fast-json-stringify";
+import { Stats } from "node:fs";
 
 import {
   BindenResponse,
@@ -25,7 +26,8 @@ suite("BindenResponse", () => {
   const dirPath = `${tmpdir()}/__binden.test.dir`;
   let msg: Buffer;
   let server: Server<typeof IncomingMessage, typeof BindenResponse>;
-  let last_time: number;
+  let file_stats: Stats;
+  let dir_stats: Stats;
 
   setup(async () => {
     msg = Buffer.from(randomUUID());
@@ -38,8 +40,8 @@ suite("BindenResponse", () => {
         resolve();
       });
     });
-    const { mtimeMs } = await stat(dirPath);
-    last_time = mtimeMs;
+    dir_stats = await stat(dirPath);
+    file_stats = await stat(filePath);
   });
 
   test("ServerResponse", async () => {
@@ -357,7 +359,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -374,7 +376,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .then(() => {
             server.once("request", (_request2, response2) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
@@ -407,7 +409,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .then(() => {
             server.once("request", (_request2, response2) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
@@ -440,7 +442,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -463,7 +465,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -485,14 +487,14 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
     });
     const headers = {
       Range: `bytes= ${start} - ${end} `,
-      "If-Range": `${new Date(last_time - 10000).toUTCString()}`,
+      "If-Range": `${new Date(file_stats.mtimeMs - 10000).toUTCString()}`,
     };
     const response = await fetch(url, { headers });
     deepStrictEqual(response.headers.get("Content-Range"), null);
@@ -508,7 +510,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -567,7 +569,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -583,7 +585,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         rejects(
-          () => response.sendFile(path),
+          () => response.sendFile(path, file_stats),
           new TypeError(`Protocol ${path.protocol} is not supported`)
         )
           .catch(reject)
@@ -598,7 +600,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         rejects(
-          () => response.sendFile(dirPath),
+          () => response.sendFile(dirPath, dir_stats),
           new Error(`Provided path does not correspond to a regular file`)
         )
           .catch(reject)

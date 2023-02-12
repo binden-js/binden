@@ -456,6 +456,10 @@ await response.form(form);
 ```typescript
 const path = "<path to file>";
 await response.sendFile(path);
+// Or with custom Stats
+import { stat } from "node:fs/promises";
+const stats = await stat("<PATH>");
+await response.sendFile(path, stats);
 ```
 
 ### Headers

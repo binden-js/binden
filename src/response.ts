@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, Stats } from "node:fs";
 import { stat } from "node:fs/promises";
 import { IncomingMessage, ServerResponse, STATUS_CODES } from "node:http";
 import { Readable } from "node:stream";
@@ -130,14 +130,17 @@ export class BindenResponse<
   }
 
   /** Send a file */
-  public async sendFile(path: URL | string): Promise<void> {
+  public async sendFile(
+    path: URL | string,
+    options?: Pick<Stats, "isFile" | "mtime" | "size">
+  ): Promise<void> {
     const url = path instanceof URL ? new URL(path.href) : pathToFileURL(path);
 
     if (url.protocol !== "file:") {
       throw new TypeError(`Protocol ${url.protocol} is not supported`);
     }
 
-    const stats = await stat(url);
+    const stats = options ?? (await stat(path));
 
     if (!stats.isFile()) {
       throw new Error(`Provided path does not correspond to a regular file`);
