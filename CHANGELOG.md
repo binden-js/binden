@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.7](https://github.com/binden-js/binden/compare/v1.1.6...v1.1.7) (2023-02-12)
+
+### Bug Fixes
+
+- **Context:** allow to pass a custom `stringify` function to `.json()` ([f9317b9](https://github.com/binden-js/binden/commit/f9317b9c217c08c9d2db8cf623d7da5179a10463))
+
 ## [1.1.6](https://github.com/binden-js/binden/compare/v1.1.5...v1.1.6) (2023-02-12)
 
 ### Performance Improvements
