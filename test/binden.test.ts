@@ -1,3 +1,4 @@
+/* eslint-disable init-declarations, class-methods-use-this, @typescript-eslint/no-throw-literal */
 import { deepStrictEqual, throws } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -25,7 +26,6 @@ class CustomMiddleware extends Middleware {
     super(params);
     this.id = randomUUID();
   }
-  // eslint-disable-next-line class-methods-use-this
   public run(context: Context): Context | Promise<Context> | Promise<void> {
     return context;
   }
@@ -318,9 +318,7 @@ suite("Binden", () => {
       const expose = true;
 
       class EM extends ErrorMiddleware {
-        // eslint-disable-next-line class-methods-use-this
         public run(): Promise<never> {
-          // eslint-disable-next-line @typescript-eslint/no-throw-literal
           throw { expose, message };
         }
       }
@@ -344,9 +342,7 @@ suite("Binden", () => {
       const regexp = new RegExp("/", "u");
 
       class EM extends ErrorMiddleware {
-        // eslint-disable-next-line class-methods-use-this
         public run(): Promise<never> {
-          // eslint-disable-next-line @typescript-eslint/no-throw-literal
           throw { expose, message };
         }
       }
@@ -416,7 +412,6 @@ suite("Binden", () => {
       const message = "<html></html>";
       const expose = true;
       class CTMiddleware extends Middleware {
-        // eslint-disable-next-line class-methods-use-this
         public run(context: Context): void {
           context.response.setHeader("Content-Type", ct_html);
         }

@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, Stats } from "node:fs";
 import { stat } from "node:fs/promises";
 import { IncomingMessage, ServerResponse, STATUS_CODES } from "node:http";
 import { Readable } from "node:stream";
@@ -35,7 +35,6 @@ export class BindenResponse<
     if (typeof STATUS_CODES[code] === "undefined") {
       throw new TypeError(`Status code ${code} is invalid`);
     }
-
     this.statusCode = code;
     return this;
   }
@@ -43,15 +42,8 @@ export class BindenResponse<
   /** Set headers */
   public set(headers: IHeaders): this {
     for (const name in headers) {
-      const value = headers[name];
-      this.setHeader(
-        name,
-        typeof value === "string" || typeof value === "number"
-          ? value
-          : [...value]
-      );
+      this.setHeader(name, headers[name]);
     }
-
     return this;
   }
 
@@ -113,9 +105,13 @@ export class BindenResponse<
   }
 
   /** Send response as `application/json` */
-  public async json(data: Record<string, unknown> | unknown[]): Promise<void> {
-    const msg = JSON.stringify(data);
-    await this.setHeader("Content-Type", ct_json).send(msg);
+  public async json(
+    data: Record<string, unknown> | unknown[],
+    stringify = (input: Record<string, unknown> | unknown[]): string =>
+      JSON.stringify(input)
+  ): Promise<void> {
+    const msg = stringify(data);
+    return this.setHeader("Content-Type", ct_json).send(msg);
   }
 
   /** Send response as `plain/text` */
@@ -134,14 +130,17 @@ export class BindenResponse<
   }
 
   /** Send a file */
-  public async sendFile(path: URL | string): Promise<void> {
+  public async sendFile(
+    path: URL | string,
+    options?: Pick<Stats, "isFile" | "mtime" | "size">
+  ): Promise<void> {
     const url = path instanceof URL ? new URL(path.href) : pathToFileURL(path);
 
     if (url.protocol !== "file:") {
       throw new TypeError(`Protocol ${url.protocol} is not supported`);
     }
 
-    const stats = await stat(url);
+    const stats = options ?? (await stat(path));
 
     if (!stats.isFile()) {
       throw new Error(`Provided path does not correspond to a regular file`);
@@ -172,10 +171,10 @@ export class BindenResponse<
 
     if (!range || ifRange < lm) {
       const stream = createReadStream(url);
-      return this.status(200).setHeader("Content-Length", size).send(stream);
+      return this.setHeader("Content-Length", size).send(stream);
     } else if (typeof range.start === "number" && range.start >= size) {
       const cr = new ContentRange({ size }).toString();
-      return this.status(416).setHeader("Content-Range", cr).send();
+      return this.setHeader("Content-Range", cr).status(416).send();
     }
 
     const opts = { start: range.start ?? 0, end: size - 1 };
@@ -196,11 +195,11 @@ export class BindenResponse<
 
     if (cl === size) {
       const stream = createReadStream(url);
-      return this.status(200).send(stream);
+      return this.send(stream);
     }
 
     const stream = createReadStream(url, { start, end });
     const cr = new ContentRange({ size, start, end }).toString();
-    return this.status(206).setHeader("Content-Range", cr).send(stream);
+    return this.setHeader("Content-Range", cr).status(206).send(stream);
   }
 }

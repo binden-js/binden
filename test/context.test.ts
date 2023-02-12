@@ -1,3 +1,4 @@
+/* eslint-disable init-declarations, @typescript-eslint/no-loop-func */
 import { ok, deepStrictEqual } from "node:assert";
 import { Server, createServer } from "node:http";
 import fetch from "node-fetch";
@@ -113,7 +114,6 @@ suite("Context", () => {
   ] as const;
 
   for (const [method, args] of params) {
-    // eslint-disable-next-line @typescript-eslint/no-loop-func
     test(`.${method}()`, async () => {
       const serverPromise = new Promise<void>((resolve, reject) => {
         server.once("request", (request, response) => {

@@ -1,8 +1,12 @@
+/* eslint-disable init-declarations */
 import { deepStrictEqual, ok, throws, rejects } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer } from "node:http";
+import { tmpdir } from "node:os";
 import fetch from "node-fetch";
+import fastJSON from "fast-json-stringify";
+import { Stats } from "node:fs";
 
 import {
   BindenResponse,
@@ -18,22 +22,26 @@ const port = 8080;
 const url = `http://localhost:${port}`;
 
 suite("BindenResponse", () => {
-  const filePath = "./__temp.file";
-  const dirPath = "./__temp_dir";
+  const filePath = `${tmpdir()}/__binden.test.file`;
+  const dirPath = `${tmpdir()}/__binden.test.dir`;
   let msg: Buffer;
   let server: Server<typeof IncomingMessage, typeof BindenResponse>;
+  let file_stats: Stats;
+  let dir_stats: Stats;
 
-  suiteSetup(async () => {
+  setup(async () => {
     msg = Buffer.from(randomUUID());
     await mkdir(dirPath);
     await writeFile(filePath, msg);
-  });
-
-  setup((done) => {
-    server = createServer({ ServerResponse: BindenResponse }).listen(
-      port,
-      done
-    );
+    await new Promise<void>((resolve) => {
+      server = createServer<typeof IncomingMessage, typeof BindenResponse>({
+        ServerResponse: BindenResponse,
+      }).listen(port, () => {
+        resolve();
+      });
+    });
+    dir_stats = await stat(dirPath);
+    file_stats = await stat(filePath);
   });
 
   test("ServerResponse", async () => {
@@ -270,6 +278,35 @@ suite("BindenResponse", () => {
     deepStrictEqual(data, json);
   });
 
+  test(".json() (with a custom `stringify`)", async () => {
+    const json = { currency: "💶", value: 120 };
+    const stringify = fastJSON({
+      title: "Example Schema",
+      type: "object",
+      properties: {
+        currency: {
+          type: "string",
+        },
+        value: {
+          type: "integer",
+        },
+      },
+      required: ["currency", "value"],
+      additionalProperties: false,
+    });
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response) => {
+        response.json(json, stringify).then(resolve).catch(reject);
+      });
+    });
+    const response = await fetch(url);
+    await serverPromise;
+    const data = await response.json();
+
+    deepStrictEqual(response.headers.get("Content-Type"), ct_json);
+    deepStrictEqual(data, json);
+  });
+
   test(".text()", async () => {
     const text = "😀";
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -322,7 +359,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -339,7 +376,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .then(() => {
             server.once("request", (_request2, response2) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
@@ -372,7 +409,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .then(() => {
             server.once("request", (_request2, response2) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
@@ -405,7 +442,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -428,7 +465,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -441,24 +478,23 @@ suite("BindenResponse", () => {
 
     await serverPromise;
     const data = Buffer.from(await response.arrayBuffer());
-    deepStrictEqual(data, msg.slice(start, end + 1));
+    deepStrictEqual(data, msg.subarray(start, end + 1));
   });
 
   test(".sendFile() (Full response with invalid `If-Range`)", async () => {
-    const stats = await stat(filePath);
     const start = 10;
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
     });
     const headers = {
       Range: `bytes= ${start} - ${end} `,
-      "If-Range": `${new Date(stats.mtimeMs - 10000).toUTCString()}`,
+      "If-Range": `${new Date(file_stats.mtimeMs - 10000).toUTCString()}`,
     };
     const response = await fetch(url, { headers });
     deepStrictEqual(response.headers.get("Content-Range"), null);
@@ -474,7 +510,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -489,7 +525,7 @@ suite("BindenResponse", () => {
       `bytes ${msg.byteLength - end}-${msg.byteLength - 1}/${msg.byteLength}`
     );
     deepStrictEqual(response.status, 206);
-    deepStrictEqual(data, msg.slice(msg.byteLength - end));
+    deepStrictEqual(data, msg.subarray(msg.byteLength - end));
   });
 
   test(".sendFile() (`this.req instanceof BindenRequest`)", async () => {
@@ -517,7 +553,7 @@ suite("BindenResponse", () => {
     const data = Buffer.from(await response.arrayBuffer());
     deepStrictEqual(response.headers.get("Content-Range"), null);
     deepStrictEqual(response.status, 200);
-    deepStrictEqual(data, msg.slice(msg.byteLength - end));
+    deepStrictEqual(data, msg.subarray(msg.byteLength - end));
     await new Promise<void>((resolve, reject) => {
       newServer.close((error) => {
         if (error) {
@@ -533,7 +569,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath)
+          .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -549,7 +585,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         rejects(
-          () => response.sendFile(path),
+          () => response.sendFile(path, file_stats),
           new TypeError(`Protocol ${path.protocol} is not supported`)
         )
           .catch(reject)
@@ -564,7 +600,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         rejects(
-          () => response.sendFile(dirPath),
+          () => response.sendFile(dirPath, dir_stats),
           new Error(`Provided path does not correspond to a regular file`)
         )
           .catch(reject)
@@ -575,10 +611,17 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  suiteTeardown(async () => {
+  teardown(async () => {
     await rmdir(dirPath);
     await rm(filePath);
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
   });
-
-  teardown((done) => server.close(done));
 });
