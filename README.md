@@ -424,6 +424,28 @@ const json = { k: "v", k1: 1, m: "message", f: false };
 await response.json(json);
 ```
 
+or using a custom `stringify` function
+
+```typescript
+const json = { currency: "💶", value: 120 };
+const fastJSON = await import("fast-json-stringify");
+const stringify = fastJSON({
+  title: "Example Schema",
+  type: "object",
+  properties: {
+    currency: {
+      type: "string",
+    },
+    value: {
+      type: "integer",
+    },
+  },
+  required: ["currency", "value"],
+  additionalProperties: false,
+});
+await response.json(json);
+```
+
 - `.text()` - send text as `plain/text`
 
 ```typescript
