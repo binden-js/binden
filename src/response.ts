@@ -105,8 +105,12 @@ export class BindenResponse<
   }
 
   /** Send response as `application/json` */
-  public json(data: Record<string, unknown> | unknown[]): Promise<void> {
-    const msg = JSON.stringify(data);
+  public async json(
+    data: Record<string, unknown> | unknown[],
+    stringify = (input: Record<string, unknown> | unknown[]): string =>
+      JSON.stringify(input)
+  ): Promise<void> {
+    const msg = stringify(data);
     return this.setHeader("Content-Type", ct_json).send(msg);
   }
 

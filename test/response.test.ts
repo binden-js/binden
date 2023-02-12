@@ -5,6 +5,7 @@ import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import fetch from "node-fetch";
+import fastJSON from "fast-json-stringify";
 
 import {
   BindenResponse,
@@ -265,6 +266,35 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response.json(json).then(resolve).catch(reject);
+      });
+    });
+    const response = await fetch(url);
+    await serverPromise;
+    const data = await response.json();
+
+    deepStrictEqual(response.headers.get("Content-Type"), ct_json);
+    deepStrictEqual(data, json);
+  });
+
+  test(".json() (with a custom `stringify`)", async () => {
+    const json = { currency: "💶", value: 120 };
+    const stringify = fastJSON({
+      title: "Example Schema",
+      type: "object",
+      properties: {
+        currency: {
+          type: "string",
+        },
+        value: {
+          type: "integer",
+        },
+      },
+      required: ["currency", "value"],
+      additionalProperties: false,
+    });
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response) => {
+        response.json(json, stringify).then(resolve).catch(reject);
       });
     });
     const response = await fetch(url);

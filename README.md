@@ -133,6 +133,32 @@ await context.response.json(json);
 context.done = true;
 ```
 
+A custom `stringify` function (e.g. [fast-json-stringify](https://github.com/fastify/fast-json-stringify-stringify)) can pan passed as the second argument.
+
+```typescript
+const json = { currency: "💶", value: 120 };
+const fastJSON = await import("fast-json-stringify");
+const stringify = fastJSON({
+  title: "Example Schema",
+  type: "object",
+  properties: {
+    currency: {
+      type: "string",
+    },
+    value: {
+      type: "integer",
+    },
+  },
+  required: ["currency", "value"],
+  additionalProperties: false,
+});
+const json = { currency: "💶", value: 120 };
+await context.json(json, stringify);
+// or using `BindenResponse`
+await context.response.json(json, stringify);
+context.done = true;
+```
+
 - `.text()` - execute `context.response.text()` and set `context.done` to `true`
 
 ```typescript
