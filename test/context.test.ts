@@ -1,6 +1,7 @@
 /* eslint-disable init-declarations, @typescript-eslint/no-loop-func */
 import { ok, deepStrictEqual } from "node:assert";
 import { Server, createServer } from "node:http";
+import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
 import sinon from "sinon";
 
@@ -166,6 +167,46 @@ suite("Context", () => {
       await serverPromise;
     });
   }
+
+  test(".json() (with a custom `stringify`)", async () => {
+    const json = { currency: "💶", value: 120 };
+    const stringify = fastJSON({
+      title: "Example Schema",
+      type: "object",
+      properties: {
+        currency: {
+          type: "string",
+        },
+        value: {
+          type: "integer",
+        },
+      },
+      required: ["currency", "value"],
+      additionalProperties: false,
+    });
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (request, response) => {
+        const context = new Context({ request, response });
+
+        const mock = sinon
+          .mock(response)
+          .expects("json")
+          .once()
+          .withExactArgs(json, stringify);
+
+        context
+          .json(json, stringify)
+          .then(() => {
+            mock.verify();
+            deepStrictEqual(context.done, true);
+          })
+          .catch(reject)
+          .finally(() => response.end(resolve));
+      });
+    });
+    await fetch(url);
+    await serverPromise;
+  });
 
   test(".throw()", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
