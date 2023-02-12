@@ -4,9 +4,9 @@ import { randomUUID } from "node:crypto";
 import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
-import fetch from "node-fetch";
 import fastJSON from "fast-json-stringify";
-import { Stats } from "node:fs";
+import fetch from "node-fetch";
+import type { Stats } from "node:fs";
 
 import {
   BindenResponse,

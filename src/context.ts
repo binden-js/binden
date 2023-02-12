@@ -72,8 +72,15 @@ export class Context implements IBaseContext {
     this.done = true;
   }
 
-  public async json(data: Record<string, unknown> | unknown[]): Promise<void> {
-    await this.response.json(data);
+  public async json(
+    data: Record<string, unknown> | unknown[],
+    stringify?: (input: Record<string, unknown> | unknown[]) => string
+  ): Promise<void> {
+    if (typeof stringify === "undefined") {
+      await this.response.json(data);
+    } else {
+      await this.response.json(data, stringify);
+    }
     this.done = true;
   }
 
