@@ -1204,6 +1204,19 @@
                       ><span>write<wbr />Continue</span></a
                     >
                     <a
+                      href="BindenResponse.html#writeEarlyHints"
+                      class="tsd-index-link tsd-kind-method tsd-parent-kind-class tsd-is-inherited tsd-is-external"
+                      ><svg
+                        class="tsd-kind-icon"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                      >
+                        <use href="#icon-2048-path"></use>
+                        <use href="#icon-2048-text"></use></svg
+                      ><span>write<wbr />Early<wbr />Hints</span></a
+                    >
+                    <a
                       href="BindenResponse.html#writeHead"
                       class="tsd-index-link tsd-kind-method tsd-parent-kind-class tsd-is-inherited tsd-is-external"
                       ><svg
@@ -1464,7 +1477,7 @@
                     Inherited from ServerResponse&lt;Request&gt;.constructor
                   </p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:569</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:606</li>
                   </ul>
                 </aside>
               </li>
@@ -1553,7 +1566,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.chunkedEncoding</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:402</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:439</li>
               </ul>
             </aside>
           </section>
@@ -1587,12 +1600,12 @@
               <p>Is true after &#39;close&#39; has been emitted.</p>
 
               <h3>Since</h3>
-              <p>v8.0.0</p>
+              <p>v18.0.0</p>
             </div>
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.closed</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:583</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:584</li>
               </ul>
             </aside>
           </section>
@@ -1639,7 +1652,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.connection</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:420</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:457</li>
               </ul>
             </aside>
           </section>
@@ -1683,7 +1696,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.destroyed</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:578</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:579</li>
               </ul>
             </aside>
           </section>
@@ -1726,7 +1739,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.errored</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:588</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:589</li>
               </ul>
             </aside>
           </section>
@@ -1765,7 +1778,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.finished</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:409</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:446</li>
               </ul>
             </aside>
           </section>
@@ -1810,7 +1823,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.headersSent</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:414</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:451</li>
               </ul>
             </aside>
           </section>
@@ -1845,7 +1858,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.req</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:401</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:438</li>
               </ul>
             </aside>
           </section>
@@ -1880,7 +1893,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.sendDate</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:405</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:442</li>
               </ul>
             </aside>
           </section>
@@ -1917,7 +1930,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.shouldKeepAlive</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:403</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:440</li>
               </ul>
             </aside>
           </section>
@@ -1965,7 +1978,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.socket</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:428</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:465</li>
               </ul>
             </aside>
           </section>
@@ -2004,7 +2017,7 @@
                 controls the status code that will be sent to the client when
                 the headers get flushed.
               </p>
-              <pre><code class="language-js"><span class="hl-2">response</span><span class="hl-0">.</span><span class="hl-2">statusCode</span><span class="hl-0"> = </span><span class="hl-7">404</span><span class="hl-0">;</span>
+              <pre><code class="language-js"><span class="hl-3">response</span><span class="hl-0">.</span><span class="hl-3">statusCode</span><span class="hl-0"> = </span><span class="hl-7">404</span><span class="hl-0">;</span>
 </code></pre>
               <p>
                 After response header was sent to the client, this property
@@ -2017,7 +2030,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.statusCode</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:553</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:590</li>
               </ul>
             </aside>
           </section>
@@ -2058,7 +2071,7 @@
                 <code>undefined</code> then the standard message for the status
                 code will be used.
               </p>
-              <pre><code class="language-js"><span class="hl-2">response</span><span class="hl-0">.</span><span class="hl-2">statusMessage</span><span class="hl-0"> = </span><span class="hl-3">&#39;Not found&#39;</span><span class="hl-0">;</span>
+              <pre><code class="language-js"><span class="hl-3">response</span><span class="hl-0">.</span><span class="hl-3">statusMessage</span><span class="hl-0"> = </span><span class="hl-1">&#39;Not found&#39;</span><span class="hl-0">;</span>
 </code></pre>
               <p>
                 After response header was sent to the client, this property
@@ -2071,7 +2084,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.statusMessage</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:568</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:605</li>
               </ul>
             </aside>
           </section>
@@ -2110,7 +2123,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.useChunkedEncodingByDefault</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:404</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:441</li>
               </ul>
             </aside>
           </section>
@@ -2156,7 +2169,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writable</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:539</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:540</li>
               </ul>
             </aside>
           </section>
@@ -2201,7 +2214,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writableCorked</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:573</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:574</li>
               </ul>
             </aside>
           </section>
@@ -2248,7 +2261,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writableEnded</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:545</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:546</li>
               </ul>
             </aside>
           </section>
@@ -2293,7 +2306,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writableFinished</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:550</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:551</li>
               </ul>
             </aside>
           </section>
@@ -2341,7 +2354,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writableHighWaterMark</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:555</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:556</li>
               </ul>
             </aside>
           </section>
@@ -2387,7 +2400,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writableLength</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:562</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:563</li>
               </ul>
             </aside>
           </section>
@@ -2434,7 +2447,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writableNeedDrain</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:593</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:594</li>
               </ul>
             </aside>
           </section>
@@ -2481,7 +2494,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.writableObjectMode</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:567</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:568</li>
               </ul>
             </aside>
           </section>
@@ -2527,7 +2540,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.captureRejectionSymbol</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:291</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:328</li>
               </ul>
             </aside>
           </section>
@@ -2571,7 +2584,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.captureRejections</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:296</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:333</li>
               </ul>
             </aside>
           </section>
@@ -2610,7 +2623,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.defaultMaxListeners</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:297</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:334</li>
               </ul>
             </aside>
           </section>
@@ -2668,7 +2681,7 @@
             <aside class="tsd-sources">
               <p>Inherited from ServerResponse.errorMonitor</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:290</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:327</li>
               </ul>
             </aside>
           </section>
@@ -2877,7 +2890,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse._construct</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:603</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:604</li>
                   </ul>
                 </aside>
               </li>
@@ -3032,7 +3045,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse._destroy</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:604</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:605</li>
                   </ul>
                 </aside>
               </li>
@@ -3169,7 +3182,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse._final</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:605</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:606</li>
                   </ul>
                 </aside>
               </li>
@@ -3322,7 +3335,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse._write</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:595</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:596</li>
                   </ul>
                 </aside>
               </li>
@@ -3491,7 +3504,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse._writev</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:596</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:597</li>
                   </ul>
                 </aside>
               </li>
@@ -3641,7 +3654,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:771</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:772</li>
                   </ul>
                 </aside>
               </li>
@@ -3749,7 +3762,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:772</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:773</li>
                   </ul>
                 </aside>
               </li>
@@ -3878,7 +3891,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:773</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:774</li>
                   </ul>
                 </aside>
               </li>
@@ -3986,7 +3999,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:774</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:775</li>
                   </ul>
                 </aside>
               </li>
@@ -4113,7 +4126,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:775</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:776</li>
                   </ul>
                 </aside>
               </li>
@@ -4242,7 +4255,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:776</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:777</li>
                   </ul>
                 </aside>
               </li>
@@ -4385,7 +4398,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:777</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:778</li>
                   </ul>
                 </aside>
               </li>
@@ -4470,7 +4483,7 @@
                     emit trailers, with a list of header fields in its value,
                     e.g.
                   </p>
-                  <pre><code class="language-js"><span class="hl-2">message</span><span class="hl-0">.</span><span class="hl-6">writeHead</span><span class="hl-0">(</span><span class="hl-7">200</span><span class="hl-0">, { </span><span class="hl-3">&#39;Content-Type&#39;</span><span class="hl-2">:</span><span class="hl-0"> </span><span class="hl-3">&#39;text/plain&#39;</span><span class="hl-0">,</span><br/><span class="hl-0">                         </span><span class="hl-3">&#39;Trailer&#39;</span><span class="hl-2">:</span><span class="hl-0"> </span><span class="hl-3">&#39;Content-MD5&#39;</span><span class="hl-0"> });</span><br/><span class="hl-2">message</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-2">fileData</span><span class="hl-0">);</span><br/><span class="hl-2">message</span><span class="hl-0">.</span><span class="hl-6">addTrailers</span><span class="hl-0">({ </span><span class="hl-3">&#39;Content-MD5&#39;</span><span class="hl-2">:</span><span class="hl-0"> </span><span class="hl-3">&#39;7895bf4b8828b55ceaf47747b4bca667&#39;</span><span class="hl-0"> });</span><br/><span class="hl-2">message</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">();</span>
+                  <pre><code class="language-js"><span class="hl-3">message</span><span class="hl-0">.</span><span class="hl-6">writeHead</span><span class="hl-0">(</span><span class="hl-7">200</span><span class="hl-0">, { </span><span class="hl-1">&#39;Content-Type&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-1">&#39;text/plain&#39;</span><span class="hl-0">,</span><br/><span class="hl-0">                         </span><span class="hl-1">&#39;Trailer&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-1">&#39;Content-MD5&#39;</span><span class="hl-0"> });</span><br/><span class="hl-3">message</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">fileData</span><span class="hl-0">);</span><br/><span class="hl-3">message</span><span class="hl-0">.</span><span class="hl-6">addTrailers</span><span class="hl-0">({ </span><span class="hl-1">&#39;Content-MD5&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-1">&#39;7895bf4b8828b55ceaf47747b4bca667&#39;</span><span class="hl-0"> });</span><br/><span class="hl-3">message</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">();</span>
 </code></pre>
                   <p>
                     Attempting to set a header field name or value that contains
@@ -4507,7 +4520,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.addTrailers</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:519</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:556</li>
                   </ul>
                 </aside>
               </li>
@@ -4585,7 +4598,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.assignSocket</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:570</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:607</li>
                   </ul>
                 </aside>
               </li>
@@ -4678,7 +4691,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.cork</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:709</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:710</li>
                   </ul>
                 </aside>
               </li>
@@ -4808,7 +4821,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.destroy</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:760</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:761</li>
                   </ul>
                 </aside>
               </li>
@@ -4886,7 +4899,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.detachSocket</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:571</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:608</li>
                   </ul>
                 </aside>
               </li>
@@ -4962,7 +4975,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:778</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:779</li>
                   </ul>
                 </aside>
               </li>
@@ -5012,7 +5025,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:779</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:780</li>
                   </ul>
                 </aside>
               </li>
@@ -5069,7 +5082,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:780</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:781</li>
                   </ul>
                 </aside>
               </li>
@@ -5119,7 +5132,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:781</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:782</li>
                   </ul>
                 </aside>
               </li>
@@ -5174,7 +5187,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:782</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:783</li>
                   </ul>
                 </aside>
               </li>
@@ -5231,7 +5244,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:783</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:784</li>
                   </ul>
                 </aside>
               </li>
@@ -5295,7 +5308,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:784</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:785</li>
                   </ul>
                 </aside>
               </li>
@@ -5380,7 +5393,7 @@
                     calling <a href="BindenResponse.html#end">end</a> will raise
                     an error.
                   </p>
-                  <pre><code class="language-js"><span class="hl-9">// Write &#39;hello, &#39; and then end with &#39;world!&#39;.</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">fs</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;fs&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">file</span><span class="hl-0"> = </span><span class="hl-2">fs</span><span class="hl-0">.</span><span class="hl-6">createWriteStream</span><span class="hl-0">(</span><span class="hl-3">&#39;example.txt&#39;</span><span class="hl-0">);</span><br/><span class="hl-2">file</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">&#39;hello, &#39;</span><span class="hl-0">);</span><br/><span class="hl-2">file</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">(</span><span class="hl-3">&#39;world!&#39;</span><span class="hl-0">);</span><br/><span class="hl-9">// Writing more now is not allowed!</span>
+                  <pre><code class="language-js"><span class="hl-9">// Write &#39;hello, &#39; and then end with &#39;world!&#39;.</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">fs</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;fs&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">file</span><span class="hl-0"> = </span><span class="hl-3">fs</span><span class="hl-0">.</span><span class="hl-6">createWriteStream</span><span class="hl-0">(</span><span class="hl-1">&#39;example.txt&#39;</span><span class="hl-0">);</span><br/><span class="hl-3">file</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-1">&#39;hello, &#39;</span><span class="hl-0">);</span><br/><span class="hl-3">file</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">(</span><span class="hl-1">&#39;world!&#39;</span><span class="hl-0">);</span><br/><span class="hl-9">// Writing more now is not allowed!</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -5439,7 +5452,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.end</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:692</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:693</li>
                   </ul>
                 </aside>
               </li>
@@ -5544,7 +5557,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.end</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:693</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:694</li>
                   </ul>
                 </aside>
               </li>
@@ -5658,7 +5671,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.end</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:694</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:695</li>
                   </ul>
                 </aside>
               </li>
@@ -5729,7 +5742,7 @@
                     has registered listeners. The values in the array are
                     strings or <code>Symbol</code>s.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">EventEmitter</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEE</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">sym</span><span class="hl-0"> = </span><span class="hl-6">Symbol</span><span class="hl-0">(</span><span class="hl-3">&#39;symbol&#39;</span><span class="hl-0">);</span><br/><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-2">sym</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">eventNames</span><span class="hl-0">());</span><br/><span class="hl-9">// Prints: [ &#39;foo&#39;, &#39;bar&#39;, Symbol(symbol) ]</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">EventEmitter</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEE</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">sym</span><span class="hl-0"> = </span><span class="hl-6">Symbol</span><span class="hl-0">(</span><span class="hl-1">&#39;symbol&#39;</span><span class="hl-0">);</span><br/><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">sym</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">eventNames</span><span class="hl-0">());</span><br/><span class="hl-9">// Prints: [ &#39;foo&#39;, &#39;bar&#39;, Symbol(symbol) ]</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -5746,7 +5759,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.eventNames</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:632</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:669</li>
                   </ul>
                 </aside>
               </li>
@@ -5830,7 +5843,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.flushHeaders</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:532</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:569</li>
                   </ul>
                 </aside>
               </li>
@@ -5916,8 +5929,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L132"
-                        >src/response.ts:132</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L128"
+                        >src/response.ts:128</a
                       >
                     </li>
                   </ul>
@@ -6024,7 +6037,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:449</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:486</li>
                   </ul>
                 </aside>
               </li>
@@ -6102,7 +6115,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getHeaderNames</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:477</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:514</li>
                   </ul>
                 </aside>
               </li>
@@ -6180,7 +6193,7 @@
                     <code>obj.hasOwnProperty()</code>, and others are not
                     defined and will not work.
                   </p>
-                  <pre><code class="language-js"><span class="hl-2">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-3">&#39;Foo&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-2">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-3">&#39;Set-Cookie&#39;</span><span class="hl-0">, [</span><span class="hl-3">&#39;foo=bar&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;bar=baz&#39;</span><span class="hl-0">]);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">headers</span><span class="hl-0"> = </span><span class="hl-2">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">getHeaders</span><span class="hl-0">();</span><br/><span class="hl-9">// headers === { foo: &#39;bar&#39;, &#39;set-cookie&#39;: [&#39;foo=bar&#39;, &#39;bar=baz&#39;] }</span>
+                  <pre><code class="language-js"><span class="hl-3">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-1">&#39;Foo&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-3">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-1">&#39;Set-Cookie&#39;</span><span class="hl-0">, [</span><span class="hl-1">&#39;foo=bar&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;bar=baz&#39;</span><span class="hl-0">]);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">headers</span><span class="hl-0"> = </span><span class="hl-3">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">getHeaders</span><span class="hl-0">();</span><br/><span class="hl-9">// headers === { foo: &#39;bar&#39;, &#39;set-cookie&#39;: [&#39;foo=bar&#39;, &#39;bar=baz&#39;] }</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -6193,7 +6206,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getHeaders</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:471</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:508</li>
                   </ul>
                 </aside>
               </li>
@@ -6273,7 +6286,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getMaxListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:489</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:526</li>
                   </ul>
                 </aside>
               </li>
@@ -6341,7 +6354,7 @@
                     <code>name</code> is currently set in the outgoing headers.
                     The header name is case-insensitive.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">hasContentType</span><span class="hl-0"> = </span><span class="hl-2">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">hasHeader</span><span class="hl-0">(</span><span class="hl-3">&#39;content-type&#39;</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">hasContentType</span><span class="hl-0"> = </span><span class="hl-3">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">hasHeader</span><span class="hl-0">(</span><span class="hl-1">&#39;content-type&#39;</span><span class="hl-0">);</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -6363,7 +6376,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.hasHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:487</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:524</li>
                   </ul>
                 </aside>
               </li>
@@ -6445,8 +6458,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L127"
-                        >src/response.ts:127</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L123"
+                        >src/response.ts:123</a
                       >
                     </li>
                   </ul>
@@ -6488,7 +6501,26 @@
                 ><span class="tsd-signature-type">string</span
                 ><span class="tsd-signature-symbol">, </span
                 ><span class="tsd-signature-type">unknown</span
+                ><span class="tsd-signature-symbol">&gt;</span>, stringify<span
+                  class="tsd-signature-symbol"
+                  >?: </span
+                ><span class="tsd-signature-symbol">(</span
+                ><span class="tsd-signature-symbol">(</span>input<span
+                  class="tsd-signature-symbol"
+                  >: </span
+                ><span class="tsd-signature-type">unknown</span
+                ><span class="tsd-signature-symbol">[]</span
+                ><span class="tsd-signature-symbol"> | </span
+                ><span class="tsd-signature-type">Record</span
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type">string</span
+                ><span class="tsd-signature-symbol">, </span
+                ><span class="tsd-signature-type">unknown</span
                 ><span class="tsd-signature-symbol">&gt;</span
+                ><span class="tsd-signature-symbol">)</span
+                ><span class="tsd-signature-symbol"> =&gt; </span
+                ><span class="tsd-signature-type">string</span
+                ><span class="tsd-signature-symbol">)</span
                 ><span class="tsd-signature-symbol">)</span
                 ><span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">Promise</span
@@ -6533,6 +6565,85 @@
                         ><span class="tsd-signature-symbol">&gt;</span>
                       </h5>
                     </li>
+                    <li>
+                      <h5>
+                        stringify: <span class="tsd-signature-symbol">(</span
+                        ><span class="tsd-signature-symbol">(</span>input<span
+                          class="tsd-signature-symbol"
+                          >: </span
+                        ><span class="tsd-signature-type">unknown</span
+                        ><span class="tsd-signature-symbol">[]</span
+                        ><span class="tsd-signature-symbol"> | </span
+                        ><span class="tsd-signature-type">Record</span
+                        ><span class="tsd-signature-symbol">&lt;</span
+                        ><span class="tsd-signature-type">string</span
+                        ><span class="tsd-signature-symbol">, </span
+                        ><span class="tsd-signature-type">unknown</span
+                        ><span class="tsd-signature-symbol">&gt;</span
+                        ><span class="tsd-signature-symbol">)</span
+                        ><span class="tsd-signature-symbol"> =&gt; </span
+                        ><span class="tsd-signature-type">string</span
+                        ><span class="tsd-signature-symbol">)</span
+                        ><span class="tsd-signature-symbol"> = ...</span>
+                      </h5>
+                      <ul class="tsd-parameters">
+                        <li class="tsd-parameter-signature">
+                          <ul class="tsd-signatures tsd-kind-type-literal">
+                            <li class="tsd-signature">
+                              <span class="tsd-signature-symbol">(</span
+                              >input<span class="tsd-signature-symbol">: </span
+                              ><span class="tsd-signature-type">unknown</span
+                              ><span class="tsd-signature-symbol">[]</span
+                              ><span class="tsd-signature-symbol"> | </span
+                              ><span class="tsd-signature-type">Record</span
+                              ><span class="tsd-signature-symbol">&lt;</span
+                              ><span class="tsd-signature-type">string</span
+                              ><span class="tsd-signature-symbol">, </span
+                              ><span class="tsd-signature-type">unknown</span
+                              ><span class="tsd-signature-symbol">&gt;</span
+                              ><span class="tsd-signature-symbol">)</span
+                              ><span class="tsd-signature-symbol">: </span
+                              ><span class="tsd-signature-type">string</span>
+                            </li>
+                            <li class="tsd-description">
+                              <div class="tsd-parameters">
+                                <h4 class="tsd-parameters-title">Parameters</h4>
+                                <ul class="tsd-parameter-list">
+                                  <li>
+                                    <h5>
+                                      input:
+                                      <span class="tsd-signature-type"
+                                        >unknown</span
+                                      ><span class="tsd-signature-symbol"
+                                        >[]</span
+                                      ><span class="tsd-signature-symbol">
+                                        | </span
+                                      ><span class="tsd-signature-type"
+                                        >Record</span
+                                      ><span class="tsd-signature-symbol"
+                                        >&lt;</span
+                                      ><span class="tsd-signature-type"
+                                        >string</span
+                                      ><span class="tsd-signature-symbol"
+                                        >, </span
+                                      ><span class="tsd-signature-type"
+                                        >unknown</span
+                                      ><span class="tsd-signature-symbol"
+                                        >&gt;</span
+                                      >
+                                    </h5>
+                                  </li>
+                                </ul>
+                              </div>
+                              <h4 class="tsd-returns-title">
+                                Returns
+                                <span class="tsd-signature-type">string</span>
+                              </h4>
+                            </li>
+                          </ul>
+                        </li>
+                      </ul>
+                    </li>
                   </ul>
                 </div>
                 <h4 class="tsd-returns-title">
@@ -6546,8 +6657,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L116"
-                        >src/response.ts:116</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L108"
+                        >src/response.ts:108</a
                       >
                     </li>
                   </ul>
@@ -6643,7 +6754,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.listenerCount</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:579</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:616</li>
                   </ul>
                 </aside>
               </li>
@@ -6713,7 +6824,7 @@
                     Returns a copy of the array of listeners for the event named
                     <code>eventName</code>.
                   </p>
-                  <pre><code class="language-js"><span class="hl-2">server</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;connection&#39;</span><span class="hl-0">, (</span><span class="hl-2">stream</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;someone connected!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">util</span><span class="hl-0">.</span><span class="hl-6">inspect</span><span class="hl-0">(</span><span class="hl-2">server</span><span class="hl-0">.</span><span class="hl-6">listeners</span><span class="hl-0">(</span><span class="hl-3">&#39;connection&#39;</span><span class="hl-0">)));</span><br/><span class="hl-9">// Prints: [ [Function] ]</span>
+                  <pre><code class="language-js"><span class="hl-3">server</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;connection&#39;</span><span class="hl-0">, (</span><span class="hl-3">stream</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;someone connected!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">util</span><span class="hl-0">.</span><span class="hl-6">inspect</span><span class="hl-0">(</span><span class="hl-3">server</span><span class="hl-0">.</span><span class="hl-6">listeners</span><span class="hl-0">(</span><span class="hl-1">&#39;connection&#39;</span><span class="hl-0">)));</span><br/><span class="hl-9">// Prints: [ [Function] ]</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -6738,7 +6849,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.listeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:502</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:539</li>
                   </ul>
                 </aside>
               </li>
@@ -6911,7 +7022,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.off</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:462</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:499</li>
                   </ul>
                 </aside>
               </li>
@@ -7043,7 +7154,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:785</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:786</li>
                   </ul>
                 </aside>
               </li>
@@ -7149,7 +7260,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:786</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:787</li>
                   </ul>
                 </aside>
               </li>
@@ -7276,7 +7387,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:787</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:788</li>
                   </ul>
                 </aside>
               </li>
@@ -7382,7 +7493,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:788</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:789</li>
                   </ul>
                 </aside>
               </li>
@@ -7507,7 +7618,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:789</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:790</li>
                   </ul>
                 </aside>
               </li>
@@ -7634,7 +7745,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:790</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:791</li>
                   </ul>
                 </aside>
               </li>
@@ -7775,7 +7886,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:791</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:792</li>
                   </ul>
                 </aside>
               </li>
@@ -7907,7 +8018,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:792</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:793</li>
                   </ul>
                 </aside>
               </li>
@@ -8013,7 +8124,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:793</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:794</li>
                   </ul>
                 </aside>
               </li>
@@ -8140,7 +8251,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:794</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:795</li>
                   </ul>
                 </aside>
               </li>
@@ -8246,7 +8357,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:795</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:796</li>
                   </ul>
                 </aside>
               </li>
@@ -8371,7 +8482,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:796</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:797</li>
                   </ul>
                 </aside>
               </li>
@@ -8498,7 +8609,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:797</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:798</li>
                   </ul>
                 </aside>
               </li>
@@ -8639,7 +8750,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:798</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:799</li>
                   </ul>
                 </aside>
               </li>
@@ -8778,7 +8889,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.pipe</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:25</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:26</li>
                   </ul>
                 </aside>
               </li>
@@ -8915,7 +9026,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:799</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:800</li>
                   </ul>
                 </aside>
               </li>
@@ -9023,7 +9134,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:800</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:801</li>
                   </ul>
                 </aside>
               </li>
@@ -9152,7 +9263,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:801</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:802</li>
                   </ul>
                 </aside>
               </li>
@@ -9260,7 +9371,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:802</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:803</li>
                   </ul>
                 </aside>
               </li>
@@ -9387,7 +9498,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:803</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:804</li>
                   </ul>
                 </aside>
               </li>
@@ -9516,7 +9627,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:804</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:805</li>
                   </ul>
                 </aside>
               </li>
@@ -9659,7 +9770,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:805</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:806</li>
                   </ul>
                 </aside>
               </li>
@@ -9798,7 +9909,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:806</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:807</li>
                   </ul>
                 </aside>
               </li>
@@ -9908,7 +10019,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:807</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:808</li>
                   </ul>
                 </aside>
               </li>
@@ -10039,7 +10150,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:808</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:809</li>
                   </ul>
                 </aside>
               </li>
@@ -10149,7 +10260,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:809</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:810</li>
                   </ul>
                 </aside>
               </li>
@@ -10278,7 +10389,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:810</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:811</li>
                   </ul>
                 </aside>
               </li>
@@ -10409,7 +10520,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:811</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:812</li>
                   </ul>
                 </aside>
               </li>
@@ -10554,7 +10665,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:812</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:813</li>
                   </ul>
                 </aside>
               </li>
@@ -10625,7 +10736,7 @@
                     <code>eventName</code>, including any wrappers (such as
                     those created by <code>.once()</code>).
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;log once&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Returns a new Array with a function `onceWrapper` which has a property</span><br/><span class="hl-9">// `listener` which contains the original listener bound above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">listeners</span><span class="hl-0"> = </span><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">logFnWrapper</span><span class="hl-0"> = </span><span class="hl-2">listeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">];</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and does not unbind the `once` event</span><br/><span class="hl-2">logFnWrapper</span><span class="hl-0">.</span><span class="hl-6">listener</span><span class="hl-0">();</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and removes the listener</span><br/><span class="hl-6">logFnWrapper</span><span class="hl-0">();</span><br/><br/><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;log persistently&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Will return a new Array with a single function bound by `.on()` above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">newListeners</span><span class="hl-0"> = </span><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-9">// Logs &quot;log persistently&quot; twice</span><br/><span class="hl-2">newListeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">]();</span><br/><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;log once&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Returns a new Array with a function `onceWrapper` which has a property</span><br/><span class="hl-9">// `listener` which contains the original listener bound above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">listeners</span><span class="hl-0"> = </span><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">logFnWrapper</span><span class="hl-0"> = </span><span class="hl-3">listeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">];</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and does not unbind the `once` event</span><br/><span class="hl-3">logFnWrapper</span><span class="hl-0">.</span><span class="hl-6">listener</span><span class="hl-0">();</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and removes the listener</span><br/><span class="hl-6">logFnWrapper</span><span class="hl-0">();</span><br/><br/><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;log persistently&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Will return a new Array with a single function bound by `.on()` above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">newListeners</span><span class="hl-0"> = </span><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-9">// Logs &quot;log persistently&quot; twice</span><br/><span class="hl-3">newListeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">]();</span><br/><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">);</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -10650,7 +10761,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.rawListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:532</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:569</li>
                   </ul>
                 </aside>
               </li>
@@ -10773,7 +10884,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeAllListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:473</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:510</li>
                   </ul>
                 </aside>
               </li>
@@ -10837,7 +10948,7 @@
               <li class="tsd-description">
                 <div class="tsd-comment tsd-typography">
                   <p>Removes a header that is queued for implicit sending.</p>
-                  <pre><code class="language-js"><span class="hl-2">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">removeHeader</span><span class="hl-0">(</span><span class="hl-3">&#39;Content-Encoding&#39;</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-3">outgoingMessage</span><span class="hl-0">.</span><span class="hl-6">removeHeader</span><span class="hl-0">(</span><span class="hl-1">&#39;Content-Encoding&#39;</span><span class="hl-0">);</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -10862,7 +10973,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:497</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:534</li>
                   </ul>
                 </aside>
               </li>
@@ -10999,7 +11110,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:813</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:814</li>
                   </ul>
                 </aside>
               </li>
@@ -11107,7 +11218,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:814</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:815</li>
                   </ul>
                 </aside>
               </li>
@@ -11236,7 +11347,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:815</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:816</li>
                   </ul>
                 </aside>
               </li>
@@ -11344,7 +11455,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:816</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:817</li>
                   </ul>
                 </aside>
               </li>
@@ -11471,7 +11582,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:817</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:818</li>
                   </ul>
                 </aside>
               </li>
@@ -11600,7 +11711,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:818</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:819</li>
                   </ul>
                 </aside>
               </li>
@@ -11743,7 +11854,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:819</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:820</li>
                   </ul>
                 </aside>
               </li>
@@ -11842,8 +11953,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L59"
-                        >src/response.ts:59</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L51"
+                        >src/response.ts:51</a
                       >
                     </li>
                   </ul>
@@ -11909,8 +12020,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L62"
-                        >src/response.ts:62</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L54"
+                        >src/response.ts:54</a
                       >
                     </li>
                   </ul>
@@ -11951,7 +12062,19 @@
                 >path<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">string</span
                 ><span class="tsd-signature-symbol"> | </span
-                ><span class="tsd-signature-type">URL</span
+                ><span class="tsd-signature-type">URL</span>, options<span
+                  class="tsd-signature-symbol"
+                  >?: </span
+                ><span class="tsd-signature-type">Pick</span
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type">Stats</span
+                ><span class="tsd-signature-symbol">, </span
+                ><span class="tsd-signature-type">&quot;size&quot;</span
+                ><span class="tsd-signature-symbol"> | </span
+                ><span class="tsd-signature-type">&quot;isFile&quot;</span
+                ><span class="tsd-signature-symbol"> | </span
+                ><span class="tsd-signature-type">&quot;mtime&quot;</span
+                ><span class="tsd-signature-symbol">&gt;</span
                 ><span class="tsd-signature-symbol">)</span
                 ><span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">Promise</span
@@ -11988,6 +12111,23 @@
                         ><span class="tsd-signature-type">URL</span>
                       </h5>
                     </li>
+                    <li>
+                      <h5>
+                        <code class="tsd-tag ts-flagOptional">Optional</code>
+                        options: <span class="tsd-signature-type">Pick</span
+                        ><span class="tsd-signature-symbol">&lt;</span
+                        ><span class="tsd-signature-type">Stats</span
+                        ><span class="tsd-signature-symbol">, </span
+                        ><span class="tsd-signature-type">&quot;size&quot;</span
+                        ><span class="tsd-signature-symbol"> | </span
+                        ><span class="tsd-signature-type"
+                          >&quot;isFile&quot;</span
+                        ><span class="tsd-signature-symbol"> | </span
+                        ><span class="tsd-signature-type"
+                          >&quot;mtime&quot;</span
+                        ><span class="tsd-signature-symbol">&gt;</span>
+                      </h5>
+                    </li>
                   </ul>
                 </div>
                 <h4 class="tsd-returns-title">
@@ -12001,8 +12141,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L137"
-                        >src/response.ts:137</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L133"
+                        >src/response.ts:133</a
                       >
                     </li>
                   </ul>
@@ -12107,8 +12247,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L44"
-                        >src/response.ts:44</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L43"
+                        >src/response.ts:43</a
                       >
                     </li>
                   </ul>
@@ -12223,7 +12363,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setDefaultEncoding</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:669</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:670</li>
                   </ul>
                 </aside>
               </li>
@@ -12352,7 +12492,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setHeader</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:442</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:479</li>
                   </ul>
                 </aside>
               </li>
@@ -12468,7 +12608,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setMaxListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:483</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:520</li>
                   </ul>
                 </aside>
               </li>
@@ -12620,7 +12760,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setTimeout</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:435</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:472</li>
                   </ul>
                 </aside>
               </li>
@@ -12800,8 +12940,8 @@
                     <li>
                       Defined in
                       <a
-                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L122"
-                        >src/response.ts:122</a
+                        href="https://github.com/binden-js/binden/blob/main/src/response.ts#L118"
+                        >src/response.ts:118</a
                       >
                     </li>
                   </ul>
@@ -12872,7 +13012,7 @@
                     batching of all<code>writable.write()</code> calls that
                     occur within a given Node.js event loop phase.
                   </p>
-                  <pre><code class="language-js"><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">cork</span><span class="hl-0">();</span><br/><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">&#39;some &#39;</span><span class="hl-0">);</span><br/><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">&#39;data &#39;</span><span class="hl-0">);</span><br/><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">uncork</span><span class="hl-0">());</span>
+                  <pre><code class="language-js"><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">cork</span><span class="hl-0">();</span><br/><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-1">&#39;some &#39;</span><span class="hl-0">);</span><br/><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-1">&#39;data &#39;</span><span class="hl-0">);</span><br/><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">uncork</span><span class="hl-0">());</span>
 </code></pre>
                   <p>
                     If the <code>writable.cork()</code> method is called
@@ -12880,7 +13020,7 @@
                     <code>writable.uncork()</code> must be called to flush the
                     buffered data.
                   </p>
-                  <pre><code class="language-js"><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">cork</span><span class="hl-0">();</span><br/><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">&#39;some &#39;</span><span class="hl-0">);</span><br/><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">cork</span><span class="hl-0">();</span><br/><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">&#39;data &#39;</span><span class="hl-0">);</span><br/><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">uncork</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-9">// The data will not be flushed until uncork() is called a second time.</span><br/><span class="hl-0">  </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">uncork</span><span class="hl-0">();</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">cork</span><span class="hl-0">();</span><br/><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-1">&#39;some &#39;</span><span class="hl-0">);</span><br/><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">cork</span><span class="hl-0">();</span><br/><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-1">&#39;data &#39;</span><span class="hl-0">);</span><br/><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">uncork</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-9">// The data will not be flushed until uncork() is called a second time.</span><br/><span class="hl-0">  </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">uncork</span><span class="hl-0">();</span><br/><span class="hl-0">});</span>
 </code></pre>
                   <p>See also: <code>writable.cork()</code>.</p>
 
@@ -12893,7 +13033,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.uncork</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:743</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:744</li>
                   </ul>
                 </aside>
               </li>
@@ -13019,7 +13159,7 @@
                     respect backpressure and avoid memory issues using the
                     <code>&#39;drain&#39;</code> event:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-2">data</span><span class="hl-0">, </span><span class="hl-2">cb</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-1">if</span><span class="hl-0"> (!</span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-2">data</span><span class="hl-0">)) {</span><br/><span class="hl-0">    </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">&#39;drain&#39;</span><span class="hl-0">, </span><span class="hl-2">cb</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-1">else</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(</span><span class="hl-2">cb</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-9">// Wait for cb to be called before doing any other write.</span><br/><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">&#39;hello&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Write completed, do more writes now.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">data</span><span class="hl-0">, </span><span class="hl-3">cb</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-2">if</span><span class="hl-0"> (!</span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">data</span><span class="hl-0">)) {</span><br/><span class="hl-0">    </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-1">&#39;drain&#39;</span><span class="hl-0">, </span><span class="hl-3">cb</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-2">else</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(</span><span class="hl-3">cb</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-9">// Wait for cb to be called before doing any other write.</span><br/><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-1">&#39;hello&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Write completed, do more writes now.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
 </code></pre>
                   <p>
                     A <code>Writable</code> stream in object mode will always
@@ -13130,7 +13270,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.write</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:662</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:663</li>
                   </ul>
                 </aside>
               </li>
@@ -13265,7 +13405,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.write</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:663</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:664</li>
                   </ul>
                 </aside>
               </li>
@@ -13334,7 +13474,7 @@
               <li class="tsd-description">
                 <div class="tsd-comment tsd-typography">
                   <p>
-                    Sends a HTTP/1.1 100 Continue message to the client,
+                    Sends an HTTP/1.1 100 Continue message to the client,
                     indicating that the request body should be sent. See the
                     <code>&#39;checkContinue&#39;</code> event
                     on<code>Server</code>.
@@ -13385,7 +13525,167 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeContinue</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:577</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:614</li>
+                  </ul>
+                </aside>
+              </li>
+            </ul>
+          </section>
+          <section
+            class="tsd-panel tsd-member tsd-kind-method tsd-parent-kind-class tsd-is-inherited tsd-is-external"
+          >
+            <a id="writeEarlyHints" class="tsd-anchor"></a>
+            <h3 class="tsd-anchor-link">
+              <span>write<wbr />Early<wbr />Hints</span
+              ><a
+                href="#writeEarlyHints"
+                aria-label="Permalink"
+                class="tsd-anchor-icon"
+                ><svg
+                  class="icon icon-tabler icon-tabler-link"
+                  viewBox="0 0 24 24"
+                  stroke-width="2"
+                  stroke="currentColor"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <use href="#icon-anchor-a"></use>
+                  <use href="#icon-anchor-b"></use>
+                  <use href="#icon-anchor-c"></use></svg
+              ></a>
+            </h3>
+            <ul
+              class="tsd-signatures tsd-kind-method tsd-parent-kind-class tsd-is-inherited tsd-is-external"
+            >
+              <li
+                class="tsd-signature tsd-anchor-link"
+                id="writeEarlyHints.writeEarlyHints-1"
+              >
+                write<wbr />Early<wbr />Hints<span class="tsd-signature-symbol"
+                  >(</span
+                >hints<span class="tsd-signature-symbol">: </span
+                ><span class="tsd-signature-type">Record</span
+                ><span class="tsd-signature-symbol">&lt;</span
+                ><span class="tsd-signature-type">string</span
+                ><span class="tsd-signature-symbol">, </span
+                ><span class="tsd-signature-type">string</span
+                ><span class="tsd-signature-symbol"> | </span
+                ><span class="tsd-signature-type">string</span
+                ><span class="tsd-signature-symbol">[]</span
+                ><span class="tsd-signature-symbol">&gt;</span>, callback<span
+                  class="tsd-signature-symbol"
+                  >?: </span
+                ><span class="tsd-signature-symbol">(</span
+                ><span class="tsd-signature-symbol">(</span
+                ><span class="tsd-signature-symbol">)</span
+                ><span class="tsd-signature-symbol"> =&gt; </span
+                ><span class="tsd-signature-type">void</span
+                ><span class="tsd-signature-symbol">)</span
+                ><span class="tsd-signature-symbol">)</span
+                ><span class="tsd-signature-symbol">: </span
+                ><span class="tsd-signature-type">void</span
+                ><a
+                  href="#writeEarlyHints.writeEarlyHints-1"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg
+                    class="icon icon-tabler icon-tabler-link"
+                    viewBox="0 0 24 24"
+                    stroke-width="2"
+                    stroke="currentColor"
+                    fill="none"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <use href="#icon-anchor-a"></use>
+                    <use href="#icon-anchor-b"></use>
+                    <use href="#icon-anchor-c"></use></svg
+                ></a>
+              </li>
+              <li class="tsd-description">
+                <div class="tsd-comment tsd-typography">
+                  <p>
+                    Sends an HTTP/1.1 103 Early Hints message to the client with
+                    a Link header, indicating that the user agent can
+                    preload/preconnect the linked resources. The
+                    <code>hints</code> is an object containing the values of
+                    headers to be sent with early hints message. The optional
+                    <code>callback</code> argument will be called when the
+                    response message has been written.
+                  </p>
+                  <p>Example:</p>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">earlyHintsLink</span><span class="hl-0"> = </span><span class="hl-1">&#39;&lt;/styles.css&gt;; rel=preload; as=style&#39;</span><span class="hl-0">;</span><br/><span class="hl-3">response</span><span class="hl-0">.</span><span class="hl-6">writeEarlyHints</span><span class="hl-0">({</span><br/><span class="hl-0">  </span><span class="hl-1">&#39;link&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-3">earlyHintsLink</span><span class="hl-0">,</span><br/><span class="hl-0">});</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">earlyHintsLinks</span><span class="hl-0"> = [</span><br/><span class="hl-0">  </span><span class="hl-1">&#39;&lt;/styles.css&gt;; rel=preload; as=style&#39;</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-1">&#39;&lt;/scripts.js&gt;; rel=preload; as=script&#39;</span><span class="hl-0">,</span><br/><span class="hl-0">];</span><br/><span class="hl-3">response</span><span class="hl-0">.</span><span class="hl-6">writeEarlyHints</span><span class="hl-0">({</span><br/><span class="hl-0">  </span><span class="hl-1">&#39;link&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-3">earlyHintsLinks</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-1">&#39;x-trace-id&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-1">&#39;id for diagnostics&#39;</span><br/><span class="hl-0">});</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">earlyHintsCallback</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;early hints message sent&#39;</span><span class="hl-0">);</span><br/><span class="hl-3">response</span><span class="hl-0">.</span><span class="hl-6">writeEarlyHints</span><span class="hl-0">({</span><br/><span class="hl-0">  </span><span class="hl-1">&#39;link&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-3">earlyHintsLinks</span><br/><span class="hl-0">}, </span><span class="hl-3">earlyHintsCallback</span><span class="hl-0">);</span>
+</code></pre>
+
+                  <h3>Since</h3>
+                  <p>v18.11.0</p>
+                </div>
+                <div class="tsd-parameters">
+                  <h4 class="tsd-parameters-title">Parameters</h4>
+                  <ul class="tsd-parameter-list">
+                    <li>
+                      <h5>
+                        hints: <span class="tsd-signature-type">Record</span
+                        ><span class="tsd-signature-symbol">&lt;</span
+                        ><span class="tsd-signature-type">string</span
+                        ><span class="tsd-signature-symbol">, </span
+                        ><span class="tsd-signature-type">string</span
+                        ><span class="tsd-signature-symbol"> | </span
+                        ><span class="tsd-signature-type">string</span
+                        ><span class="tsd-signature-symbol">[]</span
+                        ><span class="tsd-signature-symbol">&gt;</span>
+                      </h5>
+                      <div class="tsd-comment tsd-typography">
+                        <p>An object containing the values of headers</p>
+                      </div>
+                    </li>
+                    <li>
+                      <h5>
+                        <code class="tsd-tag ts-flagOptional">Optional</code>
+                        callback: <span class="tsd-signature-symbol">(</span
+                        ><span class="tsd-signature-symbol">(</span
+                        ><span class="tsd-signature-symbol">)</span
+                        ><span class="tsd-signature-symbol"> =&gt; </span
+                        ><span class="tsd-signature-type">void</span
+                        ><span class="tsd-signature-symbol">)</span>
+                      </h5>
+                      <div class="tsd-comment tsd-typography">
+                        <p>
+                          Will be called when the response message has been
+                          written
+                        </p>
+                      </div>
+                      <ul class="tsd-parameters">
+                        <li class="tsd-parameter-signature">
+                          <ul
+                            class="tsd-signatures tsd-kind-type-literal tsd-is-external"
+                          >
+                            <li class="tsd-signature">
+                              <span class="tsd-signature-symbol">(</span
+                              ><span class="tsd-signature-symbol">)</span
+                              ><span class="tsd-signature-symbol">: </span
+                              ><span class="tsd-signature-type">void</span>
+                            </li>
+                            <li class="tsd-description">
+                              <h4 class="tsd-returns-title">
+                                Returns
+                                <span class="tsd-signature-type">void</span>
+                              </h4>
+                            </li>
+                          </ul>
+                        </li>
+                      </ul>
+                    </li>
+                  </ul>
+                </div>
+                <h4 class="tsd-returns-title">
+                  Returns <span class="tsd-signature-type">void</span>
+                </h4>
+                <aside class="tsd-sources">
+                  <p>Inherited from ServerResponse.writeEarlyHints</p>
+                  <ul>
+                    <li>Defined in node_modules/@types/node/http.d.ts:649</li>
                   </ul>
                 </aside>
               </li>
@@ -13483,7 +13783,7 @@
                     Returns a reference to the <code>ServerResponse</code>, so
                     that calls can be chained.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">body</span><span class="hl-0"> = </span><span class="hl-3">&#39;hello world&#39;</span><span class="hl-0">;</span><br/><span class="hl-2">response</span><br/><span class="hl-0">  .</span><span class="hl-6">writeHead</span><span class="hl-0">(</span><span class="hl-7">200</span><span class="hl-0">, {</span><br/><span class="hl-0">    </span><span class="hl-3">&#39;Content-Length&#39;</span><span class="hl-2">:</span><span class="hl-0"> </span><span class="hl-2">Buffer</span><span class="hl-0">.</span><span class="hl-6">byteLength</span><span class="hl-0">(</span><span class="hl-2">body</span><span class="hl-0">),</span><br/><span class="hl-0">    </span><span class="hl-3">&#39;Content-Type&#39;</span><span class="hl-2">:</span><span class="hl-0"> </span><span class="hl-3">&#39;text/plain&#39;</span><br/><span class="hl-0">  })</span><br/><span class="hl-0">  .</span><span class="hl-6">end</span><span class="hl-0">(</span><span class="hl-2">body</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">body</span><span class="hl-0"> = </span><span class="hl-1">&#39;hello world&#39;</span><span class="hl-0">;</span><br/><span class="hl-3">response</span><br/><span class="hl-0">  .</span><span class="hl-6">writeHead</span><span class="hl-0">(</span><span class="hl-7">200</span><span class="hl-0">, {</span><br/><span class="hl-0">    </span><span class="hl-1">&#39;Content-Length&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-3">Buffer</span><span class="hl-0">.</span><span class="hl-6">byteLength</span><span class="hl-0">(</span><span class="hl-3">body</span><span class="hl-0">),</span><br/><span class="hl-0">    </span><span class="hl-1">&#39;Content-Type&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-1">&#39;text/plain&#39;</span><br/><span class="hl-0">  })</span><br/><span class="hl-0">  .</span><span class="hl-6">end</span><span class="hl-0">(</span><span class="hl-3">body</span><span class="hl-0">);</span>
 </code></pre>
                   <p>
                     This method must only be called once on a message and it
@@ -13512,7 +13812,7 @@
                     headers is desired with potential future retrieval and
                     modification, use <code>response.setHeader()</code> instead.
                   </p>
-                  <pre><code class="language-js"><span class="hl-9">// Returns content-type = text/plain</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">server</span><span class="hl-0"> = </span><span class="hl-2">http</span><span class="hl-0">.</span><span class="hl-6">createServer</span><span class="hl-0">((</span><span class="hl-2">req</span><span class="hl-0">, </span><span class="hl-2">res</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">res</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-3">&#39;Content-Type&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;text/html&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">res</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-3">&#39;X-Foo&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">res</span><span class="hl-0">.</span><span class="hl-6">writeHead</span><span class="hl-0">(</span><span class="hl-7">200</span><span class="hl-0">, { </span><span class="hl-3">&#39;Content-Type&#39;</span><span class="hl-2">:</span><span class="hl-0"> </span><span class="hl-3">&#39;text/plain&#39;</span><span class="hl-0"> });</span><br/><span class="hl-0">  </span><span class="hl-2">res</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">(</span><span class="hl-3">&#39;ok&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-9">// Returns content-type = text/plain</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">server</span><span class="hl-0"> = </span><span class="hl-3">http</span><span class="hl-0">.</span><span class="hl-6">createServer</span><span class="hl-0">((</span><span class="hl-3">req</span><span class="hl-0">, </span><span class="hl-3">res</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">res</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-1">&#39;Content-Type&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;text/html&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">res</span><span class="hl-0">.</span><span class="hl-6">setHeader</span><span class="hl-0">(</span><span class="hl-1">&#39;X-Foo&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">res</span><span class="hl-0">.</span><span class="hl-6">writeHead</span><span class="hl-0">(</span><span class="hl-7">200</span><span class="hl-0">, { </span><span class="hl-1">&#39;Content-Type&#39;</span><span class="hl-3">:</span><span class="hl-0"> </span><span class="hl-1">&#39;text/plain&#39;</span><span class="hl-0"> });</span><br/><span class="hl-0">  </span><span class="hl-3">res</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">(</span><span class="hl-1">&#39;ok&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
 </code></pre>
                   <p>
                     <code>Content-Length</code> is given in bytes, not
@@ -13577,7 +13877,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeHead</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:635</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:707</li>
                   </ul>
                 </aside>
               </li>
@@ -13664,7 +13964,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeHead</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:640</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:712</li>
                   </ul>
                 </aside>
               </li>
@@ -13726,7 +14026,7 @@
               <li class="tsd-description">
                 <div class="tsd-comment tsd-typography">
                   <p>
-                    Sends a HTTP/1.1 102 Processing message to the client,
+                    Sends an HTTP/1.1 102 Processing message to the client,
                     indicating that the request body should be sent.
                   </p>
 
@@ -13739,7 +14039,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.writeProcessing</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:646</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:718</li>
                   </ul>
                 </aside>
               </li>
@@ -13866,7 +14166,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.fromWeb</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:527</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:528</li>
                   </ul>
                 </aside>
               </li>
@@ -13910,7 +14210,7 @@
                 >emitter<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">EventEmitter</span
                 ><span class="tsd-signature-symbol"> | </span
-                ><span class="tsd-signature-type">DOMEventTarget</span>,
+                ><span class="tsd-signature-type">_DOMEventTarget</span>,
                 name<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">string</span
                 ><span class="tsd-signature-symbol"> | </span
@@ -13952,7 +14252,7 @@
                     the event listeners for the event target. This is useful for
                     debugging and diagnostic purposes.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">getEventListeners</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-2">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">et</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">et</span><span class="hl-0">.</span><span class="hl-6">addEventListener</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-2">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-2">et</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">getEventListeners</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">et</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">et</span><span class="hl-0">.</span><span class="hl-6">addEventListener</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-3">et</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -13966,7 +14266,7 @@
                         emitter:
                         <span class="tsd-signature-type">EventEmitter</span
                         ><span class="tsd-signature-symbol"> | </span
-                        ><span class="tsd-signature-type">DOMEventTarget</span>
+                        ><span class="tsd-signature-type">_DOMEventTarget</span>
                       </h5>
                     </li>
                     <li>
@@ -13985,7 +14285,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.getEventListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:262</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:299</li>
                   </ul>
                 </aside>
               </li>
@@ -14058,7 +14358,7 @@
                     given <code>eventName</code>registered on the given
                     <code>emitter</code>.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">listenerCount</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEmitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-2">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-2">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-6">listenerCount</span><span class="hl-0">(</span><span class="hl-2">myEmitter</span><span class="hl-0">, </span><span class="hl-3">&#39;event&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Prints: 2</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">listenerCount</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEmitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-3">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-3">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-6">listenerCount</span><span class="hl-0">(</span><span class="hl-3">myEmitter</span><span class="hl-0">, </span><span class="hl-1">&#39;event&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Prints: 2</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -14097,7 +14397,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.listenerCount</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:234</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:271</li>
                   </ul>
                 </aside>
               </li>
@@ -14164,7 +14464,7 @@
               </li>
               <li class="tsd-description">
                 <div class="tsd-comment tsd-typography">
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-1">for</span><span class="hl-0"> </span><span class="hl-1">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">)) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-2">for</span><span class="hl-0"> </span><span class="hl-2">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">)) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span>
 </code></pre>
                   <p>
                     Returns an <code>AsyncIterator</code> that iterates
@@ -14179,7 +14479,7 @@
                     An <code>AbortSignal</code> can be used to cancel waiting on
                     events:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-1">for</span><span class="hl-0"> </span><span class="hl-1">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, { </span><span class="hl-2">signal:</span><span class="hl-0"> </span><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-2">signal</span><span class="hl-0"> })) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span><br/><br/><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">());</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-2">for</span><span class="hl-0"> </span><span class="hl-2">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, { </span><span class="hl-3">signal:</span><span class="hl-0"> </span><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-3">signal</span><span class="hl-0"> })) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span><br/><br/><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">());</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -14230,7 +14530,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:217</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:254</li>
                   </ul>
                 </aside>
               </li>
@@ -14264,7 +14564,7 @@
                 once<span class="tsd-signature-symbol">(</span>emitter<span
                   class="tsd-signature-symbol"
                   >: </span
-                ><span class="tsd-signature-type">NodeEventTarget</span>,
+                ><span class="tsd-signature-type">_NodeEventTarget</span>,
                 eventName<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">string</span
                 ><span class="tsd-signature-symbol"> | </span
@@ -14318,7 +14618,7 @@
                     event semantics and does not listen to the
                     <code>&#39;error&#39;</code> event.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">once</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">run</span><span class="hl-0">() {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;myevent&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> [</span><span class="hl-5">value</span><span class="hl-0">] = </span><span class="hl-1">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">value</span><span class="hl-0">);</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">err</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-3">&#39;kaboom&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-1">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-1">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-1">catch</span><span class="hl-0"> (</span><span class="hl-2">err</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;error happened&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">run</span><span class="hl-0">();</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">once</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">run</span><span class="hl-0">() {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;myevent&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> [</span><span class="hl-5">value</span><span class="hl-0">] = </span><span class="hl-2">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">value</span><span class="hl-0">);</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">err</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-1">&#39;kaboom&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-2">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-2">catch</span><span class="hl-0"> (</span><span class="hl-3">err</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;error happened&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">run</span><span class="hl-0">();</span>
 </code></pre>
                   <p>
                     The special handling of the
@@ -14328,13 +14628,13 @@
                     &#39;<code>error&#39;</code> event itself, then it is
                     treated as any other kind of event without special handling:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">)</span><br/><span class="hl-0">  .</span><span class="hl-6">then</span><span class="hl-0">(([</span><span class="hl-2">err</span><span class="hl-0">]) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;ok&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">.</span><span class="hl-2">message</span><span class="hl-0">))</span><br/><span class="hl-0">  .</span><span class="hl-6">catch</span><span class="hl-0">((</span><span class="hl-2">err</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">.</span><span class="hl-2">message</span><span class="hl-0">));</span><br/><br/><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-3">&#39;boom&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Prints: ok boom</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">)</span><br/><span class="hl-0">  .</span><span class="hl-6">then</span><span class="hl-0">(([</span><span class="hl-3">err</span><span class="hl-0">]) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;ok&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">.</span><span class="hl-3">message</span><span class="hl-0">))</span><br/><span class="hl-0">  .</span><span class="hl-6">catch</span><span class="hl-0">((</span><span class="hl-3">err</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">.</span><span class="hl-3">message</span><span class="hl-0">));</span><br/><br/><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-1">&#39;boom&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Prints: ok boom</span>
 </code></pre>
                   <p>
                     An <code>AbortSignal</code> can be used to cancel waiting
                     for the event:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-2">emitter</span><span class="hl-0">, </span><span class="hl-2">event</span><span class="hl-0">, </span><span class="hl-2">signal</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-1">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-1">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">emitter</span><span class="hl-0">, </span><span class="hl-2">event</span><span class="hl-0">, { </span><span class="hl-2">signal</span><span class="hl-0"> });</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;event emitted!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-1">catch</span><span class="hl-0"> (</span><span class="hl-2">error</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-1">if</span><span class="hl-0"> (</span><span class="hl-2">error</span><span class="hl-0">.</span><span class="hl-2">name</span><span class="hl-0"> === </span><span class="hl-3">&#39;AbortError&#39;</span><span class="hl-0">) {</span><br/><span class="hl-0">      </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-3">&#39;Waiting for the event was canceled!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    } </span><span class="hl-1">else</span><span class="hl-0"> {</span><br/><span class="hl-0">      </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-3">&#39;There was an error&#39;</span><span class="hl-0">, </span><span class="hl-2">error</span><span class="hl-0">.</span><span class="hl-2">message</span><span class="hl-0">);</span><br/><span class="hl-0">    }</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-2">signal</span><span class="hl-0">);</span><br/><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">(); </span><span class="hl-9">// Abort waiting for the event</span><br/><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// Prints: Waiting for the event was canceled!</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-3">emitter</span><span class="hl-0">, </span><span class="hl-3">event</span><span class="hl-0">, </span><span class="hl-3">signal</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-2">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">emitter</span><span class="hl-0">, </span><span class="hl-3">event</span><span class="hl-0">, { </span><span class="hl-3">signal</span><span class="hl-0"> });</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;event emitted!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-2">catch</span><span class="hl-0"> (</span><span class="hl-3">error</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-2">if</span><span class="hl-0"> (</span><span class="hl-3">error</span><span class="hl-0">.</span><span class="hl-3">name</span><span class="hl-0"> === </span><span class="hl-1">&#39;AbortError&#39;</span><span class="hl-0">) {</span><br/><span class="hl-0">      </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-1">&#39;Waiting for the event was canceled!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    } </span><span class="hl-2">else</span><span class="hl-0"> {</span><br/><span class="hl-0">      </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-1">&#39;There was an error&#39;</span><span class="hl-0">, </span><span class="hl-3">error</span><span class="hl-0">.</span><span class="hl-3">message</span><span class="hl-0">);</span><br/><span class="hl-0">    }</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-3">signal</span><span class="hl-0">);</span><br/><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">(); </span><span class="hl-9">// Abort waiting for the event</span><br/><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// Prints: Waiting for the event was canceled!</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -14346,7 +14646,7 @@
                     <li>
                       <h5>
                         emitter:
-                        <span class="tsd-signature-type">NodeEventTarget</span>
+                        <span class="tsd-signature-type">_NodeEventTarget</span>
                       </h5>
                     </li>
                     <li>
@@ -14377,7 +14677,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:157</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:194</li>
                   </ul>
                 </aside>
               </li>
@@ -14385,7 +14685,7 @@
                 once<span class="tsd-signature-symbol">(</span>emitter<span
                   class="tsd-signature-symbol"
                   >: </span
-                ><span class="tsd-signature-type">DOMEventTarget</span>,
+                ><span class="tsd-signature-type">_DOMEventTarget</span>,
                 eventName<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">string</span>, options<span
                   class="tsd-signature-symbol"
@@ -14424,7 +14724,7 @@
                     <li>
                       <h5>
                         emitter:
-                        <span class="tsd-signature-type">DOMEventTarget</span>
+                        <span class="tsd-signature-type">_DOMEventTarget</span>
                       </h5>
                     </li>
                     <li>
@@ -14454,7 +14754,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:158</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:195</li>
                   </ul>
                 </aside>
               </li>
@@ -14502,7 +14802,7 @@
                 ><span class="tsd-signature-symbol">(</span
                 ><span class="tsd-signature-type">EventEmitter</span
                 ><span class="tsd-signature-symbol"> | </span
-                ><span class="tsd-signature-type">DOMEventTarget</span
+                ><span class="tsd-signature-type">_DOMEventTarget</span
                 ><span class="tsd-signature-symbol">)</span
                 ><span class="tsd-signature-symbol">[]</span
                 ><span class="tsd-signature-symbol">)</span
@@ -14528,7 +14828,7 @@
               </li>
               <li class="tsd-description">
                 <div class="tsd-comment tsd-typography">
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-5">setMaxListeners</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-5">EventEmitter</span><br/><span class="hl-0">} = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">target</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">setMaxListeners</span><span class="hl-0">(</span><span class="hl-7">5</span><span class="hl-0">, </span><span class="hl-2">target</span><span class="hl-0">, </span><span class="hl-2">emitter</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-5">setMaxListeners</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-5">EventEmitter</span><br/><span class="hl-0">} = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">target</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">setMaxListeners</span><span class="hl-0">(</span><span class="hl-7">5</span><span class="hl-0">, </span><span class="hl-3">target</span><span class="hl-0">, </span><span class="hl-3">emitter</span><span class="hl-0">);</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -14557,7 +14857,7 @@
                         <span class="tsd-signature-symbol">(</span
                         ><span class="tsd-signature-type">EventEmitter</span
                         ><span class="tsd-signature-symbol"> | </span
-                        ><span class="tsd-signature-type">DOMEventTarget</span
+                        ><span class="tsd-signature-type">_DOMEventTarget</span
                         ><span class="tsd-signature-symbol">)</span
                         ><span class="tsd-signature-symbol">[]</span>
                       </h5>
@@ -14570,7 +14870,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.setMaxListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:280</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:317</li>
                   </ul>
                 </aside>
               </li>
@@ -14660,7 +14960,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from ServerResponse.toWeb</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:533</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:534</li>
                   </ul>
                 </aside>
               </li>
@@ -16082,6 +16382,23 @@
                       <use href="#icon-2048-path"></use>
                       <use href="#icon-2048-text"></use></svg
                     >write<wbr />Continue</a
+                  >
+                </li>
+                <li
+                  class="tsd-kind-method tsd-parent-kind-class tsd-is-inherited tsd-is-external"
+                >
+                  <a
+                    href="BindenResponse.html#writeEarlyHints"
+                    class="tsd-index-link"
+                    ><svg
+                      class="tsd-kind-icon"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                    >
+                      <use href="#icon-2048-path"></use>
+                      <use href="#icon-2048-text"></use></svg
+                    >write<wbr />Early<wbr />Hints</a
                   >
                 </li>
                 <li

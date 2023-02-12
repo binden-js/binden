@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.6](https://github.com/binden-js/binden/compare/v1.1.5...v1.1.6) (2023-02-12)
+
+### Performance Improvements
+
+- **BindenResponse:** allow to pass a custom `Stats` to `.sendFile()` ([c3a9a8e](https://github.com/binden-js/binden/commit/c3a9a8e042e3c6937751bb2f8a7b3d67ceb6e361))
+- **BindenResponse:** allow to pass a custom `stringify` function to `.json()` ([e90a580](https://github.com/binden-js/binden/commit/e90a5803ea5175e44013da667b555b1d8fe07f24))
+
+### Dependencies
+
+- bump `binden/logger` from `1.0.5` to `1.0.6` ([9333718](https://github.com/binden-js/binden/commit/93337181f98f7367d574c1889e09481022d8849e))
+
 ## [1.1.5](https://github.com/binden-js/binden/compare/v1.1.4...v1.1.5) (2022-11-08)
 
 ### Dependencies

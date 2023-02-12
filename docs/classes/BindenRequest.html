@@ -1574,7 +1574,7 @@
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.constructor</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:928</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:1000</li>
                   </ul>
                 </aside>
               </li>
@@ -2136,7 +2136,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.aborted</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:935</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1007</li>
               </ul>
             </aside>
           </section>
@@ -2170,12 +2170,12 @@
               <p>Is true after &#39;close&#39; has been emitted.</p>
 
               <h3>Since</h3>
-              <p>v8.0.0</p>
+              <p>v18.0.0</p>
             </div>
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.closed</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:133</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:134</li>
               </ul>
             </aside>
           </section>
@@ -2218,7 +2218,7 @@
                 if a client or server fully transmitted a message before a
                 connection was terminated:
               </p>
-              <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">req</span><span class="hl-0"> = </span><span class="hl-2">http</span><span class="hl-0">.</span><span class="hl-6">request</span><span class="hl-0">({</span><br/><span class="hl-0">  </span><span class="hl-2">host:</span><span class="hl-0"> </span><span class="hl-3">&#39;127.0.0.1&#39;</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-2">port:</span><span class="hl-0"> </span><span class="hl-7">8080</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-2">method:</span><span class="hl-0"> </span><span class="hl-3">&#39;POST&#39;</span><br/><span class="hl-0">}, (</span><span class="hl-2">res</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">res</span><span class="hl-0">.</span><span class="hl-6">resume</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-2">res</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-1">if</span><span class="hl-0"> (!</span><span class="hl-2">res</span><span class="hl-0">.</span><span class="hl-2">complete</span><span class="hl-0">)</span><br/><span class="hl-0">      </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><br/><span class="hl-0">        </span><span class="hl-3">&#39;The connection was terminated while the message was still being sent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><span class="hl-0">});</span>
+              <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">req</span><span class="hl-0"> = </span><span class="hl-3">http</span><span class="hl-0">.</span><span class="hl-6">request</span><span class="hl-0">({</span><br/><span class="hl-0">  </span><span class="hl-3">host:</span><span class="hl-0"> </span><span class="hl-1">&#39;127.0.0.1&#39;</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-3">port:</span><span class="hl-0"> </span><span class="hl-7">8080</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-3">method:</span><span class="hl-0"> </span><span class="hl-1">&#39;POST&#39;</span><br/><span class="hl-0">}, (</span><span class="hl-3">res</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">res</span><span class="hl-0">.</span><span class="hl-6">resume</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-3">res</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">if</span><span class="hl-0"> (!</span><span class="hl-3">res</span><span class="hl-0">.</span><span class="hl-3">complete</span><span class="hl-0">)</span><br/><span class="hl-0">      </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><br/><span class="hl-0">        </span><span class="hl-1">&#39;The connection was terminated while the message was still being sent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><span class="hl-0">});</span>
 </code></pre>
 
               <h3>Since</h3>
@@ -2227,7 +2227,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.complete</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:970</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1042</li>
               </ul>
             </aside>
           </section>
@@ -2271,7 +2271,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.connection</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:976</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1048</li>
               </ul>
             </aside>
           </section>
@@ -2310,12 +2310,12 @@
               </p>
 
               <h3>Since</h3>
-              <p>v18.0.0</p>
+              <p>v8.0.0</p>
             </div>
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.destroyed</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:128</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:129</li>
               </ul>
             </aside>
           </section>
@@ -2358,7 +2358,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.errored</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:138</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:139</li>
               </ul>
             </aside>
           </section>
@@ -2393,7 +2393,7 @@
                 Key-value pairs of header names and values. Header names are
                 lower-cased.
               </p>
-              <pre><code class="language-js"><span class="hl-9">// Prints something like:</span><br/><span class="hl-9">//</span><br/><span class="hl-9">// { &#39;user-agent&#39;: &#39;curl/7.22.0&#39;,</span><br/><span class="hl-9">//   host: &#39;127.0.0.1:8000&#39;,</span><br/><span class="hl-9">//   accept: &#39;*&#39; }</span><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">request</span><span class="hl-0">.</span><span class="hl-6">getHeaders</span><span class="hl-0">());</span>
+              <pre><code class="language-js"><span class="hl-9">// Prints something like:</span><br/><span class="hl-9">//</span><br/><span class="hl-9">// { &#39;user-agent&#39;: &#39;curl/7.22.0&#39;,</span><br/><span class="hl-9">//   host: &#39;127.0.0.1:8000&#39;,</span><br/><span class="hl-9">//   accept: &#39;*&#39; }</span><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">request</span><span class="hl-0">.</span><span class="hl-6">getHeaders</span><span class="hl-0">());</span>
 </code></pre>
               <p>
                 Duplicates in raw headers are handled in the following ways,
@@ -2432,7 +2432,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.headers</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1013</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1085</li>
               </ul>
             </aside>
           </section>
@@ -2482,7 +2482,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.httpVersion</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:944</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1016</li>
               </ul>
             </aside>
           </section>
@@ -2519,7 +2519,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.httpVersionMajor</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:945</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1017</li>
               </ul>
             </aside>
           </section>
@@ -2556,7 +2556,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.httpVersionMinor</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:946</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1018</li>
               </ul>
             </aside>
           </section>
@@ -2601,7 +2601,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.method</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1061</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1133</li>
               </ul>
             </aside>
           </section>
@@ -2647,7 +2647,7 @@
               <p>
                 Header names are not lowercased, and duplicates are not merged.
               </p>
-              <pre><code class="language-js"><span class="hl-9">// Prints something like:</span><br/><span class="hl-9">//</span><br/><span class="hl-9">// [ &#39;user-agent&#39;,</span><br/><span class="hl-9">//   &#39;this is invalid because there can be only one&#39;,</span><br/><span class="hl-9">//   &#39;User-Agent&#39;,</span><br/><span class="hl-9">//   &#39;curl/7.22.0&#39;,</span><br/><span class="hl-9">//   &#39;Host&#39;,</span><br/><span class="hl-9">//   &#39;127.0.0.1:8000&#39;,</span><br/><span class="hl-9">//   &#39;ACCEPT&#39;,</span><br/><span class="hl-9">//   &#39;*&#39; ]</span><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">request</span><span class="hl-0">.</span><span class="hl-2">rawHeaders</span><span class="hl-0">);</span>
+              <pre><code class="language-js"><span class="hl-9">// Prints something like:</span><br/><span class="hl-9">//</span><br/><span class="hl-9">// [ &#39;user-agent&#39;,</span><br/><span class="hl-9">//   &#39;this is invalid because there can be only one&#39;,</span><br/><span class="hl-9">//   &#39;User-Agent&#39;,</span><br/><span class="hl-9">//   &#39;curl/7.22.0&#39;,</span><br/><span class="hl-9">//   &#39;Host&#39;,</span><br/><span class="hl-9">//   &#39;127.0.0.1:8000&#39;,</span><br/><span class="hl-9">//   &#39;ACCEPT&#39;,</span><br/><span class="hl-9">//   &#39;*&#39; ]</span><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">request</span><span class="hl-0">.</span><span class="hl-3">rawHeaders</span><span class="hl-0">);</span>
 </code></pre>
 
               <h3>Since</h3>
@@ -2656,7 +2656,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.rawHeaders</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1038</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1110</li>
               </ul>
             </aside>
           </section>
@@ -2702,7 +2702,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.rawTrailers</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1049</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1121</li>
               </ul>
             </aside>
           </section>
@@ -2748,7 +2748,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readable</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:84</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:85</li>
               </ul>
             </aside>
           </section>
@@ -2794,7 +2794,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableAborted</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:78</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:79</li>
               </ul>
             </aside>
           </section>
@@ -2841,7 +2841,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableDidRead</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:90</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:91</li>
               </ul>
             </aside>
           </section>
@@ -2889,7 +2889,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableEncoding</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:95</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:96</li>
               </ul>
             </aside>
           </section>
@@ -2934,7 +2934,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableEnded</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:100</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:101</li>
               </ul>
             </aside>
           </section>
@@ -2982,7 +2982,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableFlowing</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:106</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:107</li>
               </ul>
             </aside>
           </section>
@@ -3030,7 +3030,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableHighWaterMark</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:111</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:112</li>
               </ul>
             </aside>
           </section>
@@ -3076,7 +3076,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableLength</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:118</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:119</li>
               </ul>
             </aside>
           </section>
@@ -3123,7 +3123,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.readableObjectMode</p>
               <ul>
-                <li>Defined in node_modules/@types/node/stream.d.ts:123</li>
+                <li>Defined in node_modules/@types/node/stream.d.ts:124</li>
               </ul>
             </aside>
           </section>
@@ -3175,7 +3175,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.socket</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:988</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1060</li>
               </ul>
             </aside>
           </section>
@@ -3224,7 +3224,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.statusCode</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1108</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1180</li>
               </ul>
             </aside>
           </section>
@@ -3274,7 +3274,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.statusMessage</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1115</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1187</li>
               </ul>
             </aside>
           </section>
@@ -3321,7 +3321,7 @@
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.trailers</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1043</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1115</li>
               </ul>
             </aside>
           </section>
@@ -3359,11 +3359,10 @@
                 Request URL string. This contains only the URL that is present
                 in the actual HTTP request. Take the following request:
               </p>
-              <pre><code class="language-http">GET /status?name=ryan HTTP/1.1
-Accept: text/plain
+              <pre><code class="language-http"><span class="hl-2">GET</span><span class="hl-0"> /status?name=ryan </span><span class="hl-4">HTTP</span><span class="hl-0">/</span><span class="hl-7">1.1</span><br/><span class="hl-10">Accept</span><span class="hl-4">:</span><span class="hl-0"> </span><span class="hl-1">text/plain</span>
 </code></pre>
               <p>To parse the URL into its parts:</p>
-              <pre><code class="language-js"><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">URL</span><span class="hl-0">(</span><span class="hl-2">request</span><span class="hl-0">.</span><span class="hl-2">url</span><span class="hl-0">, </span><span class="hl-3">`http://</span><span class="hl-4">${</span><span class="hl-2">request</span><span class="hl-10">.</span><span class="hl-6">getHeaders</span><span class="hl-10">().</span><span class="hl-2">host</span><span class="hl-4">}</span><span class="hl-3">`</span><span class="hl-0">);</span>
+              <pre><code class="language-js"><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">URL</span><span class="hl-0">(</span><span class="hl-3">request</span><span class="hl-0">.</span><span class="hl-3">url</span><span class="hl-0">, </span><span class="hl-1">`http://</span><span class="hl-4">${</span><span class="hl-3">request</span><span class="hl-11">.</span><span class="hl-6">getHeaders</span><span class="hl-11">().</span><span class="hl-3">host</span><span class="hl-4">}</span><span class="hl-1">`</span><span class="hl-0">);</span>
 </code></pre>
               <p>
                 When <code>request.url</code> is
@@ -3372,22 +3371,7 @@ Accept: text/plain
                 >
                 is <code>&#39;localhost:3000&#39;</code>:
               </p>
-              <pre><code class="language-console">$ node
-&gt; new URL(request.url, `http://${request.getHeaders().host}`)
-URL {
-  href: &#39;http://localhost:3000/status?name=ryan&#39;,
-  origin: &#39;http://localhost:3000&#39;,
-  protocol: &#39;http:&#39;,
-  username: &#39;&#39;,
-  password: &#39;&#39;,
-  host: &#39;localhost:3000&#39;,
-  hostname: &#39;localhost&#39;,
-  port: &#39;3000&#39;,
-  pathname: &#39;/status&#39;,
-  search: &#39;?name=ryan&#39;,
-  searchParams: URLSearchParams { &#39;name&#39; =&gt; &#39;ryan&#39; },
-  hash: &#39;&#39;
-}
+              <pre><code class="language-console"><span class="hl-0">$ </span><span class="hl-1">node</span><br/><span class="hl-0">&gt; new URL(request.url, </span><span class="hl-6">`http://${request.getHeaders</span><span class="hl-0">().host}</span><span class="hl-1">`)</span><br/><span class="hl-1">URL {</span><br/><span class="hl-1">  href: &#39;http://localhost:3000/status?name=ryan&#39;,</span><br/><span class="hl-1">  origin: &#39;http://localhost:3000&#39;,</span><br/><span class="hl-1">  protocol: &#39;http:&#39;,</span><br/><span class="hl-1">  username: &#39;&#39;,</span><br/><span class="hl-1">  password: &#39;&#39;,</span><br/><span class="hl-1">  host: &#39;localhost:3000&#39;,</span><br/><span class="hl-1">  hostname: &#39;localhost&#39;,</span><br/><span class="hl-1">  port: &#39;3000&#39;,</span><br/><span class="hl-1">  pathname: &#39;/status&#39;,</span><br/><span class="hl-1">  search: &#39;?name=ryan&#39;,</span><br/><span class="hl-1">  searchParams: URLSearchParams { &#39;name&#39; =</span><span class="hl-0">&gt;</span><span class="hl-1"> &#39;ryan&#39; },</span><br/><span class="hl-1">  </span><span class="hl-6">hash</span><span class="hl-1">: &#39;&#39;</span><br/><span class="hl-1">}</span>
 </code></pre>
 
               <h3>Since</h3>
@@ -3396,7 +3380,7 @@ URL {
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.url</p>
               <ul>
-                <li>Defined in node_modules/@types/node/http.d.ts:1101</li>
+                <li>Defined in node_modules/@types/node/http.d.ts:1173</li>
               </ul>
             </aside>
           </section>
@@ -3442,7 +3426,7 @@ URL {
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.captureRejectionSymbol</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:291</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:328</li>
               </ul>
             </aside>
           </section>
@@ -3486,7 +3470,7 @@ URL {
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.captureRejections</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:296</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:333</li>
               </ul>
             </aside>
           </section>
@@ -3525,7 +3509,7 @@ URL {
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.defaultMaxListeners</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:297</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:334</li>
               </ul>
             </aside>
           </section>
@@ -3583,7 +3567,7 @@ URL {
             <aside class="tsd-sources">
               <p>Inherited from IncomingMessage.errorMonitor</p>
               <ul>
-                <li>Defined in node_modules/@types/node/events.d.ts:290</li>
+                <li>Defined in node_modules/@types/node/events.d.ts:327</li>
               </ul>
             </aside>
           </section>
@@ -4498,9 +4482,9 @@ URL {
                   ><span class="tsd-signature-symbol">&gt;</span>
                 </h4>
                 <aside class="tsd-sources">
-                  <p>Inherited from IncomingMessage.__@asyncIterator@21638</p>
+                  <p>Inherited from IncomingMessage.__@asyncIterator@22065</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:502</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:503</li>
                   </ul>
                 </aside>
               </li>
@@ -4643,7 +4627,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage._construct</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:140</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:141</li>
                   </ul>
                 </aside>
               </li>
@@ -4798,7 +4782,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage._destroy</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:422</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:423</li>
                   </ul>
                 </aside>
               </li>
@@ -4871,7 +4855,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage._read</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:141</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:142</li>
                   </ul>
                 </aside>
               </li>
@@ -5013,7 +4997,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:446</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:447</li>
                   </ul>
                 </aside>
               </li>
@@ -5131,7 +5115,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:447</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:448</li>
                   </ul>
                 </aside>
               </li>
@@ -5228,7 +5212,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:448</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:449</li>
                   </ul>
                 </aside>
               </li>
@@ -5348,7 +5332,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:449</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:450</li>
                   </ul>
                 </aside>
               </li>
@@ -5447,7 +5431,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:450</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:451</li>
                   </ul>
                 </aside>
               </li>
@@ -5546,7 +5530,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:451</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:452</li>
                   </ul>
                 </aside>
               </li>
@@ -5645,7 +5629,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:452</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:453</li>
                   </ul>
                 </aside>
               </li>
@@ -5779,7 +5763,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.addListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:453</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:454</li>
                   </ul>
                 </aside>
               </li>
@@ -5875,7 +5859,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.destroy</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:1121</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:1193</li>
                   </ul>
                 </aside>
               </li>
@@ -5951,7 +5935,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:454</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:455</li>
                   </ul>
                 </aside>
               </li>
@@ -6006,7 +5990,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:455</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:456</li>
                   </ul>
                 </aside>
               </li>
@@ -6054,7 +6038,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:456</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:457</li>
                   </ul>
                 </aside>
               </li>
@@ -6111,7 +6095,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:457</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:458</li>
                   </ul>
                 </aside>
               </li>
@@ -6161,7 +6145,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:458</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:459</li>
                   </ul>
                 </aside>
               </li>
@@ -6211,7 +6195,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:459</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:460</li>
                   </ul>
                 </aside>
               </li>
@@ -6261,7 +6245,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:460</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:461</li>
                   </ul>
                 </aside>
               </li>
@@ -6325,7 +6309,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.emit</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:461</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:462</li>
                   </ul>
                 </aside>
               </li>
@@ -6396,7 +6380,7 @@ URL {
                     has registered listeners. The values in the array are
                     strings or <code>Symbol</code>s.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">EventEmitter</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEE</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">sym</span><span class="hl-0"> = </span><span class="hl-6">Symbol</span><span class="hl-0">(</span><span class="hl-3">&#39;symbol&#39;</span><span class="hl-0">);</span><br/><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-2">sym</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">myEE</span><span class="hl-0">.</span><span class="hl-6">eventNames</span><span class="hl-0">());</span><br/><span class="hl-9">// Prints: [ &#39;foo&#39;, &#39;bar&#39;, Symbol(symbol) ]</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">EventEmitter</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEE</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">sym</span><span class="hl-0"> = </span><span class="hl-6">Symbol</span><span class="hl-0">(</span><span class="hl-1">&#39;symbol&#39;</span><span class="hl-0">);</span><br/><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">sym</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">myEE</span><span class="hl-0">.</span><span class="hl-6">eventNames</span><span class="hl-0">());</span><br/><span class="hl-9">// Prints: [ &#39;foo&#39;, &#39;bar&#39;, Symbol(symbol) ]</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -6413,7 +6397,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.eventNames</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:632</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:669</li>
                   </ul>
                 </aside>
               </li>
@@ -6493,7 +6477,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.getMaxListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:489</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:526</li>
                   </ul>
                 </aside>
               </li>
@@ -6649,7 +6633,7 @@ URL {
                     method. In most typical cases, there will be no reason to
                     use this method directly.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">Readable</span><span class="hl-0">();</span><br/><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">isPaused</span><span class="hl-0">(); </span><span class="hl-9">// === false</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">pause</span><span class="hl-0">();</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">isPaused</span><span class="hl-0">(); </span><span class="hl-9">// === true</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">resume</span><span class="hl-0">();</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">isPaused</span><span class="hl-0">(); </span><span class="hl-9">// === false</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">Readable</span><span class="hl-0">();</span><br/><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">isPaused</span><span class="hl-0">(); </span><span class="hl-9">// === false</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">pause</span><span class="hl-0">();</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">isPaused</span><span class="hl-0">(); </span><span class="hl-9">// === true</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">resume</span><span class="hl-0">();</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">isPaused</span><span class="hl-0">(); </span><span class="hl-9">// === false</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -6661,7 +6645,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.isPaused</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:301</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:302</li>
                   </ul>
                 </aside>
               </li>
@@ -6755,7 +6739,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.listenerCount</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:579</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:616</li>
                   </ul>
                 </aside>
               </li>
@@ -6825,7 +6809,7 @@ URL {
                     Returns a copy of the array of listeners for the event named
                     <code>eventName</code>.
                   </p>
-                  <pre><code class="language-js"><span class="hl-2">server</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;connection&#39;</span><span class="hl-0">, (</span><span class="hl-2">stream</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;someone connected!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">util</span><span class="hl-0">.</span><span class="hl-6">inspect</span><span class="hl-0">(</span><span class="hl-2">server</span><span class="hl-0">.</span><span class="hl-6">listeners</span><span class="hl-0">(</span><span class="hl-3">&#39;connection&#39;</span><span class="hl-0">)));</span><br/><span class="hl-9">// Prints: [ [Function] ]</span>
+                  <pre><code class="language-js"><span class="hl-3">server</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;connection&#39;</span><span class="hl-0">, (</span><span class="hl-3">stream</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;someone connected!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">util</span><span class="hl-0">.</span><span class="hl-6">inspect</span><span class="hl-0">(</span><span class="hl-3">server</span><span class="hl-0">.</span><span class="hl-6">listeners</span><span class="hl-0">(</span><span class="hl-1">&#39;connection&#39;</span><span class="hl-0">)));</span><br/><span class="hl-9">// Prints: [ [Function] ]</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -6850,7 +6834,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.listeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:502</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:539</li>
                   </ul>
                 </aside>
               </li>
@@ -7014,7 +6998,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.off</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:462</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:499</li>
                   </ul>
                 </aside>
               </li>
@@ -7137,7 +7121,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:462</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:463</li>
                   </ul>
                 </aside>
               </li>
@@ -7253,7 +7237,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:463</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:464</li>
                   </ul>
                 </aside>
               </li>
@@ -7348,7 +7332,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:464</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:465</li>
                   </ul>
                 </aside>
               </li>
@@ -7466,7 +7450,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:465</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:466</li>
                   </ul>
                 </aside>
               </li>
@@ -7563,7 +7547,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:466</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:467</li>
                   </ul>
                 </aside>
               </li>
@@ -7660,7 +7644,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:467</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:468</li>
                   </ul>
                 </aside>
               </li>
@@ -7757,7 +7741,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:468</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:469</li>
                   </ul>
                 </aside>
               </li>
@@ -7889,7 +7873,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:469</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:470</li>
                   </ul>
                 </aside>
               </li>
@@ -8012,7 +7996,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:470</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:471</li>
                   </ul>
                 </aside>
               </li>
@@ -8128,7 +8112,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:471</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:472</li>
                   </ul>
                 </aside>
               </li>
@@ -8223,7 +8207,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:472</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:473</li>
                   </ul>
                 </aside>
               </li>
@@ -8341,7 +8325,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:473</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:474</li>
                   </ul>
                 </aside>
               </li>
@@ -8438,7 +8422,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:474</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:475</li>
                   </ul>
                 </aside>
               </li>
@@ -8535,7 +8519,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:475</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:476</li>
                   </ul>
                 </aside>
               </li>
@@ -8632,7 +8616,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:476</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:477</li>
                   </ul>
                 </aside>
               </li>
@@ -8764,7 +8748,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:477</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:478</li>
                   </ul>
                 </aside>
               </li>
@@ -8830,7 +8814,7 @@ URL {
                     mode. Any data that becomes available will remain in the
                     internal buffer.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;data&#39;</span><span class="hl-0">, (</span><span class="hl-2">chunk</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">`Received </span><span class="hl-4">${</span><span class="hl-2">chunk</span><span class="hl-10">.</span><span class="hl-2">length</span><span class="hl-4">}</span><span class="hl-3"> bytes of data.`</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">pause</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;There will be no additional data for 1 second.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">setTimeout</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Now data will start flowing again.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">resume</span><span class="hl-0">();</span><br/><span class="hl-0">  }, </span><span class="hl-7">1000</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;data&#39;</span><span class="hl-0">, (</span><span class="hl-3">chunk</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">`Received </span><span class="hl-4">${</span><span class="hl-3">chunk</span><span class="hl-11">.</span><span class="hl-3">length</span><span class="hl-4">}</span><span class="hl-1"> bytes of data.`</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">pause</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;There will be no additional data for 1 second.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">setTimeout</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Now data will start flowing again.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">resume</span><span class="hl-0">();</span><br/><span class="hl-0">  }, </span><span class="hl-7">1000</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
 </code></pre>
                   <p>
                     The <code>readable.pause()</code> method has no effect if
@@ -8852,7 +8836,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.pause</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:265</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:266</li>
                   </ul>
                 </aside>
               </li>
@@ -8991,7 +8975,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.pipe</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:25</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:26</li>
                   </ul>
                 </aside>
               </li>
@@ -9119,7 +9103,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:478</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:479</li>
                   </ul>
                 </aside>
               </li>
@@ -9237,7 +9221,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:479</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:480</li>
                   </ul>
                 </aside>
               </li>
@@ -9334,7 +9318,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:480</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:481</li>
                   </ul>
                 </aside>
               </li>
@@ -9454,7 +9438,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:481</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:482</li>
                   </ul>
                 </aside>
               </li>
@@ -9553,7 +9537,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:482</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:483</li>
                   </ul>
                 </aside>
               </li>
@@ -9652,7 +9636,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:483</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:484</li>
                   </ul>
                 </aside>
               </li>
@@ -9751,7 +9735,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:484</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:485</li>
                   </ul>
                 </aside>
               </li>
@@ -9885,7 +9869,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:485</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:486</li>
                   </ul>
                 </aside>
               </li>
@@ -10015,7 +9999,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:486</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:487</li>
                   </ul>
                 </aside>
               </li>
@@ -10135,7 +10119,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:487</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:488</li>
                   </ul>
                 </aside>
               </li>
@@ -10234,7 +10218,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:488</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:489</li>
                   </ul>
                 </aside>
               </li>
@@ -10356,7 +10340,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:489</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:490</li>
                   </ul>
                 </aside>
               </li>
@@ -10457,7 +10441,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:490</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:491</li>
                   </ul>
                 </aside>
               </li>
@@ -10558,7 +10542,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:491</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:492</li>
                   </ul>
                 </aside>
               </li>
@@ -10659,7 +10643,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:492</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:493</li>
                   </ul>
                 </aside>
               </li>
@@ -10795,7 +10779,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.prependOnceListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:493</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:494</li>
                   </ul>
                 </aside>
               </li>
@@ -10878,7 +10862,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.push</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:421</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:422</li>
                   </ul>
                 </aside>
               </li>
@@ -10949,7 +10933,7 @@ URL {
                     <code>eventName</code>, including any wrappers (such as
                     those created by <code>.once()</code>).
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;log once&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Returns a new Array with a function `onceWrapper` which has a property</span><br/><span class="hl-9">// `listener` which contains the original listener bound above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">listeners</span><span class="hl-0"> = </span><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">logFnWrapper</span><span class="hl-0"> = </span><span class="hl-2">listeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">];</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and does not unbind the `once` event</span><br/><span class="hl-2">logFnWrapper</span><span class="hl-0">.</span><span class="hl-6">listener</span><span class="hl-0">();</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and removes the listener</span><br/><span class="hl-6">logFnWrapper</span><span class="hl-0">();</span><br/><br/><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;log persistently&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Will return a new Array with a single function bound by `.on()` above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">newListeners</span><span class="hl-0"> = </span><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-9">// Logs &quot;log persistently&quot; twice</span><br/><span class="hl-2">newListeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">]();</span><br/><span class="hl-2">emitter</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;log&#39;</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;log once&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Returns a new Array with a function `onceWrapper` which has a property</span><br/><span class="hl-9">// `listener` which contains the original listener bound above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">listeners</span><span class="hl-0"> = </span><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">logFnWrapper</span><span class="hl-0"> = </span><span class="hl-3">listeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">];</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and does not unbind the `once` event</span><br/><span class="hl-3">logFnWrapper</span><span class="hl-0">.</span><span class="hl-6">listener</span><span class="hl-0">();</span><br/><br/><span class="hl-9">// Logs &quot;log once&quot; to the console and removes the listener</span><br/><span class="hl-6">logFnWrapper</span><span class="hl-0">();</span><br/><br/><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;log persistently&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Will return a new Array with a single function bound by `.on()` above</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">newListeners</span><span class="hl-0"> = </span><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">rawListeners</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-9">// Logs &quot;log persistently&quot; twice</span><br/><span class="hl-3">newListeners</span><span class="hl-0">[</span><span class="hl-7">0</span><span class="hl-0">]();</span><br/><span class="hl-3">emitter</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;log&#39;</span><span class="hl-0">);</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -10974,7 +10958,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.rawListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:532</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:569</li>
                   </ul>
                 </aside>
               </li>
@@ -11063,7 +11047,7 @@ URL {
                     called automatically until the internal buffer is fully
                     drained.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><br/><span class="hl-9">// &#39;readable&#39; may be triggered multiple times as data is buffered in</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;readable&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-2">chunk</span><span class="hl-0">;</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Stream is readable (new data received in buffer)&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-9">// Use a loop to make sure we read all currently available data</span><br/><span class="hl-0">  </span><span class="hl-1">while</span><span class="hl-0"> (</span><span class="hl-4">null</span><span class="hl-0"> !== (</span><span class="hl-2">chunk</span><span class="hl-0"> = </span><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">())) {</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">`Read </span><span class="hl-4">${</span><span class="hl-2">chunk</span><span class="hl-10">.</span><span class="hl-2">length</span><span class="hl-4">}</span><span class="hl-3"> bytes of data...`</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">});</span><br/><br/><span class="hl-9">// &#39;end&#39; will be triggered once when there is no more data available</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Reached end of stream.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><br/><span class="hl-9">// &#39;readable&#39; may be triggered multiple times as data is buffered in</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;readable&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-3">chunk</span><span class="hl-0">;</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Stream is readable (new data received in buffer)&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-9">// Use a loop to make sure we read all currently available data</span><br/><span class="hl-0">  </span><span class="hl-2">while</span><span class="hl-0"> (</span><span class="hl-4">null</span><span class="hl-0"> !== (</span><span class="hl-3">chunk</span><span class="hl-0"> = </span><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">())) {</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">`Read </span><span class="hl-4">${</span><span class="hl-3">chunk</span><span class="hl-11">.</span><span class="hl-3">length</span><span class="hl-4">}</span><span class="hl-1"> bytes of data...`</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">});</span><br/><br/><span class="hl-9">// &#39;end&#39; will be triggered once when there is no more data available</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Reached end of stream.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
 </code></pre>
                   <p>
                     Each call to <code>readable.read()</code> returns a chunk of
@@ -11083,7 +11067,7 @@ URL {
                     <code>readable</code>, it is necessary to collect chunks
                     across multiple <code>&#39;readable&#39;</code> events:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">chunks</span><span class="hl-0"> = [];</span><br/><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;readable&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-2">chunk</span><span class="hl-0">;</span><br/><span class="hl-0">  </span><span class="hl-1">while</span><span class="hl-0"> (</span><span class="hl-4">null</span><span class="hl-0"> !== (</span><span class="hl-2">chunk</span><span class="hl-0"> = </span><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">())) {</span><br/><span class="hl-0">    </span><span class="hl-2">chunks</span><span class="hl-0">.</span><span class="hl-6">push</span><span class="hl-0">(</span><span class="hl-2">chunk</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">});</span><br/><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">content</span><span class="hl-0"> = </span><span class="hl-2">chunks</span><span class="hl-0">.</span><span class="hl-6">join</span><span class="hl-0">(</span><span class="hl-3">&#39;&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">chunks</span><span class="hl-0"> = [];</span><br/><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;readable&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-3">chunk</span><span class="hl-0">;</span><br/><span class="hl-0">  </span><span class="hl-2">while</span><span class="hl-0"> (</span><span class="hl-4">null</span><span class="hl-0"> !== (</span><span class="hl-3">chunk</span><span class="hl-0"> = </span><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">())) {</span><br/><span class="hl-0">    </span><span class="hl-3">chunks</span><span class="hl-0">.</span><span class="hl-6">push</span><span class="hl-0">(</span><span class="hl-3">chunk</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">});</span><br/><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">content</span><span class="hl-0"> = </span><span class="hl-3">chunks</span><span class="hl-0">.</span><span class="hl-6">join</span><span class="hl-0">(</span><span class="hl-1">&#39;&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
 </code></pre>
                   <p>
                     A <code>Readable</code> stream in object mode will always
@@ -11127,7 +11111,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.read</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:218</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:219</li>
                   </ul>
                 </aside>
               </li>
@@ -11241,7 +11225,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeAllListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:473</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:510</li>
                   </ul>
                 </aside>
               </li>
@@ -11369,7 +11353,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:494</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:495</li>
                   </ul>
                 </aside>
               </li>
@@ -11487,7 +11471,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:495</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:496</li>
                   </ul>
                 </aside>
               </li>
@@ -11584,7 +11568,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:496</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:497</li>
                   </ul>
                 </aside>
               </li>
@@ -11704,7 +11688,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:497</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:498</li>
                   </ul>
                 </aside>
               </li>
@@ -11803,7 +11787,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:498</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:499</li>
                   </ul>
                 </aside>
               </li>
@@ -11902,7 +11886,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:499</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:500</li>
                   </ul>
                 </aside>
               </li>
@@ -12001,7 +11985,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:500</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:501</li>
                   </ul>
                 </aside>
               </li>
@@ -12135,7 +12119,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.removeListener</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:501</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:502</li>
                   </ul>
                 </aside>
               </li>
@@ -12205,7 +12189,7 @@ URL {
                     fully consume the data from a stream without actually
                     processing any of that data:
                   </p>
-                  <pre><code class="language-js"><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">()</span><br/><span class="hl-0">  .</span><span class="hl-6">resume</span><span class="hl-0">()</span><br/><span class="hl-0">  .</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Reached the end, but did not read anything.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span>
+                  <pre><code class="language-js"><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">()</span><br/><span class="hl-0">  .</span><span class="hl-6">resume</span><span class="hl-0">()</span><br/><span class="hl-0">  .</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;end&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Reached the end, but did not read anything.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span>
 </code></pre>
                   <p>
                     The <code>readable.resume()</code> method has no effect if
@@ -12227,7 +12211,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.resume</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:284</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:285</li>
                   </ul>
                 </aside>
               </li>
@@ -12319,7 +12303,7 @@ URL {
                     would otherwise become improperly decoded if simply pulled
                     from the stream as <code>Buffer</code> objects.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">setEncoding</span><span class="hl-0">(</span><span class="hl-3">&#39;utf8&#39;</span><span class="hl-0">);</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;data&#39;</span><span class="hl-0">, (</span><span class="hl-2">chunk</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">assert</span><span class="hl-0">.</span><span class="hl-6">equal</span><span class="hl-0">(</span><span class="hl-4">typeof</span><span class="hl-0"> </span><span class="hl-2">chunk</span><span class="hl-0">, </span><span class="hl-3">&#39;string&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Got %d characters of string data:&#39;</span><span class="hl-0">, </span><span class="hl-2">chunk</span><span class="hl-0">.</span><span class="hl-2">length</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">setEncoding</span><span class="hl-0">(</span><span class="hl-1">&#39;utf8&#39;</span><span class="hl-0">);</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;data&#39;</span><span class="hl-0">, (</span><span class="hl-3">chunk</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">assert</span><span class="hl-0">.</span><span class="hl-6">equal</span><span class="hl-0">(</span><span class="hl-4">typeof</span><span class="hl-0"> </span><span class="hl-3">chunk</span><span class="hl-0">, </span><span class="hl-1">&#39;string&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Got %d characters of string data:&#39;</span><span class="hl-0">, </span><span class="hl-3">chunk</span><span class="hl-0">.</span><span class="hl-3">length</span><span class="hl-0">);</span><br/><span class="hl-0">});</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -12351,7 +12335,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.setEncoding</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:243</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:244</li>
                   </ul>
                 </aside>
               </li>
@@ -12458,7 +12442,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.setMaxListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:483</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:520</li>
                   </ul>
                 </aside>
               </li>
@@ -12594,7 +12578,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.setTimeout</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/http.d.ts:1054</li>
+                    <li>Defined in node_modules/@types/node/http.d.ts:1126</li>
                   </ul>
                 </aside>
               </li>
@@ -12668,7 +12652,7 @@ URL {
                     If the <code>destination</code> is specified, but no pipe is
                     set up for it, then the method does nothing.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">fs</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;fs&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">writable</span><span class="hl-0"> = </span><span class="hl-2">fs</span><span class="hl-0">.</span><span class="hl-6">createWriteStream</span><span class="hl-0">(</span><span class="hl-3">&#39;file.txt&#39;</span><span class="hl-0">);</span><br/><span class="hl-9">// All the data from readable goes into &#39;file.txt&#39;,</span><br/><span class="hl-9">// but only for the first second.</span><br/><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">pipe</span><span class="hl-0">(</span><span class="hl-2">writable</span><span class="hl-0">);</span><br/><span class="hl-6">setTimeout</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Stop writing to file.txt.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">readable</span><span class="hl-0">.</span><span class="hl-6">unpipe</span><span class="hl-0">(</span><span class="hl-2">writable</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Manually close the file stream.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">writable</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">();</span><br/><span class="hl-0">}, </span><span class="hl-7">1000</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">fs</span><span class="hl-0"> = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;fs&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">readable</span><span class="hl-0"> = </span><span class="hl-6">getReadableStreamSomehow</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">writable</span><span class="hl-0"> = </span><span class="hl-3">fs</span><span class="hl-0">.</span><span class="hl-6">createWriteStream</span><span class="hl-0">(</span><span class="hl-1">&#39;file.txt&#39;</span><span class="hl-0">);</span><br/><span class="hl-9">// All the data from readable goes into &#39;file.txt&#39;,</span><br/><span class="hl-9">// but only for the first second.</span><br/><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">pipe</span><span class="hl-0">(</span><span class="hl-3">writable</span><span class="hl-0">);</span><br/><span class="hl-6">setTimeout</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Stop writing to file.txt.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">readable</span><span class="hl-0">.</span><span class="hl-6">unpipe</span><span class="hl-0">(</span><span class="hl-3">writable</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Manually close the file stream.&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">writable</span><span class="hl-0">.</span><span class="hl-6">end</span><span class="hl-0">();</span><br/><span class="hl-0">}, </span><span class="hl-7">1000</span><span class="hl-0">);</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -12701,7 +12685,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.unpipe</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:328</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:329</li>
                   </ul>
                 </aside>
               </li>
@@ -12789,7 +12773,7 @@ URL {
                     <code>API for stream implementers</code> section for more
                     information.
                   </p>
-                  <pre><code class="language-js"><span class="hl-9">// Pull off a header delimited by \n\n.</span><br/><span class="hl-9">// Use unshift() if we get too much.</span><br/><span class="hl-9">// Call the callback with (error, header, stream).</span><br/><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">StringDecoder</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;string_decoder&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">parseHeader</span><span class="hl-0">(</span><span class="hl-2">stream</span><span class="hl-0">, </span><span class="hl-2">callback</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-2">callback</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;readable&#39;</span><span class="hl-0">, </span><span class="hl-2">onReadable</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">decoder</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">StringDecoder</span><span class="hl-0">(</span><span class="hl-3">&#39;utf8&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-2">header</span><span class="hl-0"> = </span><span class="hl-3">&#39;&#39;</span><span class="hl-0">;</span><br/><span class="hl-0">  </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">onReadable</span><span class="hl-0">() {</span><br/><span class="hl-0">    </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-2">chunk</span><span class="hl-0">;</span><br/><span class="hl-0">    </span><span class="hl-1">while</span><span class="hl-0"> (</span><span class="hl-4">null</span><span class="hl-0"> !== (</span><span class="hl-2">chunk</span><span class="hl-0"> = </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">())) {</span><br/><span class="hl-0">      </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">str</span><span class="hl-0"> = </span><span class="hl-2">decoder</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-2">chunk</span><span class="hl-0">);</span><br/><span class="hl-0">      </span><span class="hl-1">if</span><span class="hl-0"> (</span><span class="hl-2">str</span><span class="hl-0">.</span><span class="hl-6">includes</span><span class="hl-0">(</span><span class="hl-3">&#39;</span><span class="hl-11">\n\n</span><span class="hl-3">&#39;</span><span class="hl-0">)) {</span><br/><span class="hl-0">        </span><span class="hl-9">// Found the header boundary.</span><br/><span class="hl-0">        </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">split</span><span class="hl-0"> = </span><span class="hl-2">str</span><span class="hl-0">.</span><span class="hl-6">split</span><span class="hl-0">(</span><span class="hl-12">/\n\n/</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-2">header</span><span class="hl-0"> += </span><span class="hl-2">split</span><span class="hl-0">.</span><span class="hl-6">shift</span><span class="hl-0">();</span><br/><span class="hl-0">        </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">remaining</span><span class="hl-0"> = </span><span class="hl-2">split</span><span class="hl-0">.</span><span class="hl-6">join</span><span class="hl-0">(</span><span class="hl-3">&#39;</span><span class="hl-11">\n\n</span><span class="hl-3">&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">buf</span><span class="hl-0"> = </span><span class="hl-2">Buffer</span><span class="hl-0">.</span><span class="hl-6">from</span><span class="hl-0">(</span><span class="hl-2">remaining</span><span class="hl-0">, </span><span class="hl-3">&#39;utf8&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">removeListener</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-2">callback</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-9">// Remove the &#39;readable&#39; listener before unshifting.</span><br/><span class="hl-0">        </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">removeListener</span><span class="hl-0">(</span><span class="hl-3">&#39;readable&#39;</span><span class="hl-0">, </span><span class="hl-2">onReadable</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-1">if</span><span class="hl-0"> (</span><span class="hl-2">buf</span><span class="hl-0">.</span><span class="hl-2">length</span><span class="hl-0">)</span><br/><span class="hl-0">          </span><span class="hl-2">stream</span><span class="hl-0">.</span><span class="hl-6">unshift</span><span class="hl-0">(</span><span class="hl-2">buf</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-9">// Now the body of the message can be read from the stream.</span><br/><span class="hl-0">        </span><span class="hl-6">callback</span><span class="hl-0">(</span><span class="hl-4">null</span><span class="hl-0">, </span><span class="hl-2">header</span><span class="hl-0">, </span><span class="hl-2">stream</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-1">return</span><span class="hl-0">;</span><br/><span class="hl-0">      }</span><br/><span class="hl-0">      </span><span class="hl-9">// Still reading the header.</span><br/><span class="hl-0">      </span><span class="hl-2">header</span><span class="hl-0"> += </span><span class="hl-2">str</span><span class="hl-0">;</span><br/><span class="hl-0">    }</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span>
+                  <pre><code class="language-js"><span class="hl-9">// Pull off a header delimited by \n\n.</span><br/><span class="hl-9">// Use unshift() if we get too much.</span><br/><span class="hl-9">// Call the callback with (error, header, stream).</span><br/><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">StringDecoder</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;string_decoder&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">parseHeader</span><span class="hl-0">(</span><span class="hl-3">stream</span><span class="hl-0">, </span><span class="hl-3">callback</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-3">callback</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;readable&#39;</span><span class="hl-0">, </span><span class="hl-3">onReadable</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">decoder</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">StringDecoder</span><span class="hl-0">(</span><span class="hl-1">&#39;utf8&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-3">header</span><span class="hl-0"> = </span><span class="hl-1">&#39;&#39;</span><span class="hl-0">;</span><br/><span class="hl-0">  </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">onReadable</span><span class="hl-0">() {</span><br/><span class="hl-0">    </span><span class="hl-4">let</span><span class="hl-0"> </span><span class="hl-3">chunk</span><span class="hl-0">;</span><br/><span class="hl-0">    </span><span class="hl-2">while</span><span class="hl-0"> (</span><span class="hl-4">null</span><span class="hl-0"> !== (</span><span class="hl-3">chunk</span><span class="hl-0"> = </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">())) {</span><br/><span class="hl-0">      </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">str</span><span class="hl-0"> = </span><span class="hl-3">decoder</span><span class="hl-0">.</span><span class="hl-6">write</span><span class="hl-0">(</span><span class="hl-3">chunk</span><span class="hl-0">);</span><br/><span class="hl-0">      </span><span class="hl-2">if</span><span class="hl-0"> (</span><span class="hl-3">str</span><span class="hl-0">.</span><span class="hl-6">includes</span><span class="hl-0">(</span><span class="hl-1">&#39;</span><span class="hl-12">\n\n</span><span class="hl-1">&#39;</span><span class="hl-0">)) {</span><br/><span class="hl-0">        </span><span class="hl-9">// Found the header boundary.</span><br/><span class="hl-0">        </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">split</span><span class="hl-0"> = </span><span class="hl-3">str</span><span class="hl-0">.</span><span class="hl-6">split</span><span class="hl-0">(</span><span class="hl-13">/\n\n/</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-3">header</span><span class="hl-0"> += </span><span class="hl-3">split</span><span class="hl-0">.</span><span class="hl-6">shift</span><span class="hl-0">();</span><br/><span class="hl-0">        </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">remaining</span><span class="hl-0"> = </span><span class="hl-3">split</span><span class="hl-0">.</span><span class="hl-6">join</span><span class="hl-0">(</span><span class="hl-1">&#39;</span><span class="hl-12">\n\n</span><span class="hl-1">&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">buf</span><span class="hl-0"> = </span><span class="hl-3">Buffer</span><span class="hl-0">.</span><span class="hl-6">from</span><span class="hl-0">(</span><span class="hl-3">remaining</span><span class="hl-0">, </span><span class="hl-1">&#39;utf8&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">removeListener</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-3">callback</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-9">// Remove the &#39;readable&#39; listener before unshifting.</span><br/><span class="hl-0">        </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">removeListener</span><span class="hl-0">(</span><span class="hl-1">&#39;readable&#39;</span><span class="hl-0">, </span><span class="hl-3">onReadable</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-2">if</span><span class="hl-0"> (</span><span class="hl-3">buf</span><span class="hl-0">.</span><span class="hl-3">length</span><span class="hl-0">)</span><br/><span class="hl-0">          </span><span class="hl-3">stream</span><span class="hl-0">.</span><span class="hl-6">unshift</span><span class="hl-0">(</span><span class="hl-3">buf</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-9">// Now the body of the message can be read from the stream.</span><br/><span class="hl-0">        </span><span class="hl-6">callback</span><span class="hl-0">(</span><span class="hl-4">null</span><span class="hl-0">, </span><span class="hl-3">header</span><span class="hl-0">, </span><span class="hl-3">stream</span><span class="hl-0">);</span><br/><span class="hl-0">        </span><span class="hl-2">return</span><span class="hl-0">;</span><br/><span class="hl-0">      }</span><br/><span class="hl-0">      </span><span class="hl-9">// Still reading the header.</span><br/><span class="hl-0">      </span><span class="hl-3">header</span><span class="hl-0"> += </span><span class="hl-3">str</span><span class="hl-0">;</span><br/><span class="hl-0">    }</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span>
 </code></pre>
                   <p>
                     Unlike <a href="BindenRequest.html#push">push</a>,
@@ -12851,7 +12835,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.unshift</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:394</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:395</li>
                   </ul>
                 </aside>
               </li>
@@ -12932,7 +12916,7 @@ URL {
                     provided as a convenience for interacting with older Node.js
                     applications and libraries.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">OldReader</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;./old-api-module.js&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">Readable</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;stream&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">oreader</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">OldReader</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myReader</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Readable</span><span class="hl-0">().</span><span class="hl-6">wrap</span><span class="hl-0">(</span><span class="hl-2">oreader</span><span class="hl-0">);</span><br/><br/><span class="hl-2">myReader</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;readable&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-2">myReader</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">(); </span><span class="hl-9">// etc.</span><br/><span class="hl-0">});</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">OldReader</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;./old-api-module.js&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">Readable</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;stream&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">oreader</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">OldReader</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myReader</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Readable</span><span class="hl-0">().</span><span class="hl-6">wrap</span><span class="hl-0">(</span><span class="hl-3">oreader</span><span class="hl-0">);</span><br/><br/><span class="hl-3">myReader</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;readable&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">myReader</span><span class="hl-0">.</span><span class="hl-6">read</span><span class="hl-0">(); </span><span class="hl-9">// etc.</span><br/><span class="hl-0">});</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -12964,7 +12948,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.wrap</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:420</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:421</li>
                   </ul>
                 </aside>
               </li>
@@ -13070,7 +13054,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.from</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:55</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:56</li>
                   </ul>
                 </aside>
               </li>
@@ -13196,7 +13180,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.fromWeb</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:61</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:62</li>
                   </ul>
                 </aside>
               </li>
@@ -13240,7 +13224,7 @@ URL {
                 >emitter<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">EventEmitter</span
                 ><span class="tsd-signature-symbol"> | </span
-                ><span class="tsd-signature-type">DOMEventTarget</span>,
+                ><span class="tsd-signature-type">_DOMEventTarget</span>,
                 name<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">string</span
                 ><span class="tsd-signature-symbol"> | </span
@@ -13282,7 +13266,7 @@ URL {
                     the event listeners for the event target. This is useful for
                     debugging and diagnostic purposes.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">getEventListeners</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-2">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">et</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">et</span><span class="hl-0">.</span><span class="hl-6">addEventListener</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-2">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-2">et</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">getEventListeners</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span><br/><span class="hl-0">{</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">et</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">listener</span><span class="hl-0"> = () </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;Events are fun&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">et</span><span class="hl-0">.</span><span class="hl-6">addEventListener</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">listener</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-6">getEventListeners</span><span class="hl-0">(</span><span class="hl-3">et</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// [listener]</span><br/><span class="hl-0">}</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -13296,7 +13280,7 @@ URL {
                         emitter:
                         <span class="tsd-signature-type">EventEmitter</span
                         ><span class="tsd-signature-symbol"> | </span
-                        ><span class="tsd-signature-type">DOMEventTarget</span>
+                        ><span class="tsd-signature-type">_DOMEventTarget</span>
                       </h5>
                     </li>
                     <li>
@@ -13315,7 +13299,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.getEventListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:262</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:299</li>
                   </ul>
                 </aside>
               </li>
@@ -13407,7 +13391,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.isDisturbed</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:66</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:67</li>
                   </ul>
                 </aside>
               </li>
@@ -13480,7 +13464,7 @@ URL {
                     given <code>eventName</code>registered on the given
                     <code>emitter</code>.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">listenerCount</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEmitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-2">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-2">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-6">listenerCount</span><span class="hl-0">(</span><span class="hl-2">myEmitter</span><span class="hl-0">, </span><span class="hl-3">&#39;event&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Prints: 2</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">listenerCount</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">myEmitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-3">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-3">myEmitter</span><span class="hl-0">.</span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-1">&#39;event&#39;</span><span class="hl-0">, () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {});</span><br/><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-6">listenerCount</span><span class="hl-0">(</span><span class="hl-3">myEmitter</span><span class="hl-0">, </span><span class="hl-1">&#39;event&#39;</span><span class="hl-0">));</span><br/><span class="hl-9">// Prints: 2</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -13519,7 +13503,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.listenerCount</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:234</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:271</li>
                   </ul>
                 </aside>
               </li>
@@ -13586,7 +13570,7 @@ URL {
               </li>
               <li class="tsd-description">
                 <div class="tsd-comment tsd-typography">
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-1">for</span><span class="hl-0"> </span><span class="hl-1">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">)) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-2">for</span><span class="hl-0"> </span><span class="hl-2">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">)) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span>
 </code></pre>
                   <p>
                     Returns an <code>AsyncIterator</code> that iterates
@@ -13601,7 +13585,7 @@ URL {
                     An <code>AbortSignal</code> can be used to cancel waiting on
                     events:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-1">for</span><span class="hl-0"> </span><span class="hl-1">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, { </span><span class="hl-2">signal:</span><span class="hl-0"> </span><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-2">signal</span><span class="hl-0"> })) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span><br/><br/><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">());</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">on</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-0">(</span><span class="hl-4">async</span><span class="hl-0"> () </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-9">// Emit later on</span><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-1">&#39;bar&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-2">for</span><span class="hl-0"> </span><span class="hl-2">await</span><span class="hl-0"> (</span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">event</span><span class="hl-0"> </span><span class="hl-4">of</span><span class="hl-0"> </span><span class="hl-6">on</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, { </span><span class="hl-3">signal:</span><span class="hl-0"> </span><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-3">signal</span><span class="hl-0"> })) {</span><br/><span class="hl-0">    </span><span class="hl-9">// The execution of this inner block is synchronous and it</span><br/><span class="hl-0">    </span><span class="hl-9">// processes one event at a time (even with await). Do not use</span><br/><span class="hl-0">    </span><span class="hl-9">// if concurrent execution is required.</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">event</span><span class="hl-0">); </span><span class="hl-9">// prints [&#39;bar&#39;] [42]</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">  </span><span class="hl-9">// Unreachable here</span><br/><span class="hl-0">})();</span><br/><br/><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">());</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -13652,7 +13636,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.on</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:217</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:254</li>
                   </ul>
                 </aside>
               </li>
@@ -13686,7 +13670,7 @@ URL {
                 once<span class="tsd-signature-symbol">(</span>emitter<span
                   class="tsd-signature-symbol"
                   >: </span
-                ><span class="tsd-signature-type">NodeEventTarget</span>,
+                ><span class="tsd-signature-type">_NodeEventTarget</span>,
                 eventName<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">string</span
                 ><span class="tsd-signature-symbol"> | </span
@@ -13740,7 +13724,7 @@ URL {
                     event semantics and does not listen to the
                     <code>&#39;error&#39;</code> event.
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">once</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">run</span><span class="hl-0">() {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;myevent&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> [</span><span class="hl-5">value</span><span class="hl-0">] = </span><span class="hl-1">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-2">value</span><span class="hl-0">);</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">err</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-3">&#39;kaboom&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-2">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-1">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-1">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-1">catch</span><span class="hl-0"> (</span><span class="hl-2">err</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;error happened&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">run</span><span class="hl-0">();</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">once</span><span class="hl-0">, </span><span class="hl-5">EventEmitter</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">run</span><span class="hl-0">() {</span><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;myevent&#39;</span><span class="hl-0">, </span><span class="hl-7">42</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> [</span><span class="hl-5">value</span><span class="hl-0">] = </span><span class="hl-2">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">value</span><span class="hl-0">);</span><br/><br/><span class="hl-0">  </span><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">err</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-1">&#39;kaboom&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  </span><span class="hl-3">process</span><span class="hl-0">.</span><span class="hl-6">nextTick</span><span class="hl-0">(() </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">);</span><br/><span class="hl-0">  });</span><br/><br/><span class="hl-0">  </span><span class="hl-2">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;myevent&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-2">catch</span><span class="hl-0"> (</span><span class="hl-3">err</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;error happened&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">);</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">run</span><span class="hl-0">();</span>
 </code></pre>
                   <p>
                     The special handling of the
@@ -13750,13 +13734,13 @@ URL {
                     &#39;<code>error&#39;</code> event itself, then it is
                     treated as any other kind of event without special handling:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">)</span><br/><span class="hl-0">  .</span><span class="hl-6">then</span><span class="hl-0">(([</span><span class="hl-2">err</span><span class="hl-0">]) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;ok&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">.</span><span class="hl-2">message</span><span class="hl-0">))</span><br/><span class="hl-0">  .</span><span class="hl-6">catch</span><span class="hl-0">((</span><span class="hl-2">err</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-2">err</span><span class="hl-0">.</span><span class="hl-2">message</span><span class="hl-0">));</span><br/><br/><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-3">&#39;boom&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Prints: ok boom</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">)</span><br/><span class="hl-0">  .</span><span class="hl-6">then</span><span class="hl-0">(([</span><span class="hl-3">err</span><span class="hl-0">]) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;ok&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">.</span><span class="hl-3">message</span><span class="hl-0">))</span><br/><span class="hl-0">  .</span><span class="hl-6">catch</span><span class="hl-0">((</span><span class="hl-3">err</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-3">err</span><span class="hl-0">.</span><span class="hl-3">message</span><span class="hl-0">));</span><br/><br/><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;error&#39;</span><span class="hl-0">, </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Error</span><span class="hl-0">(</span><span class="hl-1">&#39;boom&#39;</span><span class="hl-0">));</span><br/><br/><span class="hl-9">// Prints: ok boom</span>
 </code></pre>
                   <p>
                     An <code>AbortSignal</code> can be used to cancel waiting
                     for the event:
                   </p>
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-2">emitter</span><span class="hl-0">, </span><span class="hl-2">event</span><span class="hl-0">, </span><span class="hl-2">signal</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-1">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-1">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-2">emitter</span><span class="hl-0">, </span><span class="hl-2">event</span><span class="hl-0">, { </span><span class="hl-2">signal</span><span class="hl-0"> });</span><br/><span class="hl-0">    </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-3">&#39;event emitted!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-1">catch</span><span class="hl-0"> (</span><span class="hl-2">error</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-1">if</span><span class="hl-0"> (</span><span class="hl-2">error</span><span class="hl-0">.</span><span class="hl-2">name</span><span class="hl-0"> === </span><span class="hl-3">&#39;AbortError&#39;</span><span class="hl-0">) {</span><br/><span class="hl-0">      </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-3">&#39;Waiting for the event was canceled!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    } </span><span class="hl-1">else</span><span class="hl-0"> {</span><br/><span class="hl-0">      </span><span class="hl-2">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-3">&#39;There was an error&#39;</span><span class="hl-0">, </span><span class="hl-2">error</span><span class="hl-0">.</span><span class="hl-2">message</span><span class="hl-0">);</span><br/><span class="hl-0">    }</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-2">ee</span><span class="hl-0">, </span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-2">signal</span><span class="hl-0">);</span><br/><span class="hl-2">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">(); </span><span class="hl-9">// Abort waiting for the event</span><br/><span class="hl-2">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-3">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// Prints: Waiting for the event was canceled!</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> { </span><span class="hl-5">EventEmitter</span><span class="hl-0">, </span><span class="hl-5">once</span><span class="hl-0"> } = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ee</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">ac</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">AbortController</span><span class="hl-0">();</span><br/><br/><span class="hl-4">async</span><span class="hl-0"> </span><span class="hl-4">function</span><span class="hl-0"> </span><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-3">emitter</span><span class="hl-0">, </span><span class="hl-3">event</span><span class="hl-0">, </span><span class="hl-3">signal</span><span class="hl-0">) {</span><br/><span class="hl-0">  </span><span class="hl-2">try</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-2">await</span><span class="hl-0"> </span><span class="hl-6">once</span><span class="hl-0">(</span><span class="hl-3">emitter</span><span class="hl-0">, </span><span class="hl-3">event</span><span class="hl-0">, { </span><span class="hl-3">signal</span><span class="hl-0"> });</span><br/><span class="hl-0">    </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">log</span><span class="hl-0">(</span><span class="hl-1">&#39;event emitted!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">  } </span><span class="hl-2">catch</span><span class="hl-0"> (</span><span class="hl-3">error</span><span class="hl-0">) {</span><br/><span class="hl-0">    </span><span class="hl-2">if</span><span class="hl-0"> (</span><span class="hl-3">error</span><span class="hl-0">.</span><span class="hl-3">name</span><span class="hl-0"> === </span><span class="hl-1">&#39;AbortError&#39;</span><span class="hl-0">) {</span><br/><span class="hl-0">      </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-1">&#39;Waiting for the event was canceled!&#39;</span><span class="hl-0">);</span><br/><span class="hl-0">    } </span><span class="hl-2">else</span><span class="hl-0"> {</span><br/><span class="hl-0">      </span><span class="hl-3">console</span><span class="hl-0">.</span><span class="hl-6">error</span><span class="hl-0">(</span><span class="hl-1">&#39;There was an error&#39;</span><span class="hl-0">, </span><span class="hl-3">error</span><span class="hl-0">.</span><span class="hl-3">message</span><span class="hl-0">);</span><br/><span class="hl-0">    }</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span><br/><br/><span class="hl-6">foo</span><span class="hl-0">(</span><span class="hl-3">ee</span><span class="hl-0">, </span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">, </span><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-3">signal</span><span class="hl-0">);</span><br/><span class="hl-3">ac</span><span class="hl-0">.</span><span class="hl-6">abort</span><span class="hl-0">(); </span><span class="hl-9">// Abort waiting for the event</span><br/><span class="hl-3">ee</span><span class="hl-0">.</span><span class="hl-6">emit</span><span class="hl-0">(</span><span class="hl-1">&#39;foo&#39;</span><span class="hl-0">); </span><span class="hl-9">// Prints: Waiting for the event was canceled!</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -13768,7 +13752,7 @@ URL {
                     <li>
                       <h5>
                         emitter:
-                        <span class="tsd-signature-type">NodeEventTarget</span>
+                        <span class="tsd-signature-type">_NodeEventTarget</span>
                       </h5>
                     </li>
                     <li>
@@ -13799,7 +13783,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:157</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:194</li>
                   </ul>
                 </aside>
               </li>
@@ -13807,7 +13791,7 @@ URL {
                 once<span class="tsd-signature-symbol">(</span>emitter<span
                   class="tsd-signature-symbol"
                   >: </span
-                ><span class="tsd-signature-type">DOMEventTarget</span>,
+                ><span class="tsd-signature-type">_DOMEventTarget</span>,
                 eventName<span class="tsd-signature-symbol">: </span
                 ><span class="tsd-signature-type">string</span>, options<span
                   class="tsd-signature-symbol"
@@ -13846,7 +13830,7 @@ URL {
                     <li>
                       <h5>
                         emitter:
-                        <span class="tsd-signature-type">DOMEventTarget</span>
+                        <span class="tsd-signature-type">_DOMEventTarget</span>
                       </h5>
                     </li>
                     <li>
@@ -13876,7 +13860,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.once</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:158</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:195</li>
                   </ul>
                 </aside>
               </li>
@@ -13924,7 +13908,7 @@ URL {
                 ><span class="tsd-signature-symbol">(</span
                 ><span class="tsd-signature-type">EventEmitter</span
                 ><span class="tsd-signature-symbol"> | </span
-                ><span class="tsd-signature-type">DOMEventTarget</span
+                ><span class="tsd-signature-type">_DOMEventTarget</span
                 ><span class="tsd-signature-symbol">)</span
                 ><span class="tsd-signature-symbol">[]</span
                 ><span class="tsd-signature-symbol">)</span
@@ -13950,7 +13934,7 @@ URL {
               </li>
               <li class="tsd-description">
                 <div class="tsd-comment tsd-typography">
-                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-5">setMaxListeners</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-5">EventEmitter</span><br/><span class="hl-0">} = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-3">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">target</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">setMaxListeners</span><span class="hl-0">(</span><span class="hl-7">5</span><span class="hl-0">, </span><span class="hl-2">target</span><span class="hl-0">, </span><span class="hl-2">emitter</span><span class="hl-0">);</span>
+                  <pre><code class="language-js"><span class="hl-4">const</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-5">setMaxListeners</span><span class="hl-0">,</span><br/><span class="hl-0">  </span><span class="hl-5">EventEmitter</span><br/><span class="hl-0">} = </span><span class="hl-6">require</span><span class="hl-0">(</span><span class="hl-1">&#39;events&#39;</span><span class="hl-0">);</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">target</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventTarget</span><span class="hl-0">();</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">emitter</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">EventEmitter</span><span class="hl-0">();</span><br/><br/><span class="hl-6">setMaxListeners</span><span class="hl-0">(</span><span class="hl-7">5</span><span class="hl-0">, </span><span class="hl-3">target</span><span class="hl-0">, </span><span class="hl-3">emitter</span><span class="hl-0">);</span>
 </code></pre>
 
                   <h3>Since</h3>
@@ -13979,7 +13963,7 @@ URL {
                         <span class="tsd-signature-symbol">(</span
                         ><span class="tsd-signature-type">EventEmitter</span
                         ><span class="tsd-signature-symbol"> | </span
-                        ><span class="tsd-signature-type">DOMEventTarget</span
+                        ><span class="tsd-signature-type">_DOMEventTarget</span
                         ><span class="tsd-signature-symbol">)</span
                         ><span class="tsd-signature-symbol">[]</span>
                       </h5>
@@ -13992,7 +13976,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.setMaxListeners</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/events.d.ts:280</li>
+                    <li>Defined in node_modules/@types/node/events.d.ts:317</li>
                   </ul>
                 </aside>
               </li>
@@ -14082,7 +14066,7 @@ URL {
                 <aside class="tsd-sources">
                   <p>Inherited from IncomingMessage.toWeb</p>
                   <ul>
-                    <li>Defined in node_modules/@types/node/stream.d.ts:72</li>
+                    <li>Defined in node_modules/@types/node/stream.d.ts:73</li>
                   </ul>
                 </aside>
               </li>
