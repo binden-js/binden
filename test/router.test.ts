@@ -48,11 +48,13 @@ suite("Router", () => {
 
   test(".on()", () => {
     const router = new Router()
+      .on("HEAD")
       .on("UNSUBSCRIBE", one)
       .on("GET", three)
       .on("UNSUBSCRIBE", two);
 
     deepStrictEqual(router.middlewares("GET"), [three]);
+    deepStrictEqual(router.middlewares("HEAD"), []);
     deepStrictEqual(router.middlewares("UNSUBSCRIBE"), [one, two]);
     deepStrictEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
   });
