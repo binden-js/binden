@@ -222,6 +222,16 @@ suite("Binden", () => {
     deepStrictEqual(response.status, 200);
   });
 
+  test("function middlewares", async () => {
+    const message = { message: "Hello World!" };
+    const m = (context: Context): Promise<void> => context.json(message);
+    app.use("/", new Router().get(m));
+    const response = await fetch(url);
+    const data = await response.json();
+    deepStrictEqual(response.status, 200);
+    deepStrictEqual(data, message);
+  });
+
   test("Middleware `ignore_errors === true`", async () => {
     const m1 = new SendMiddleware();
     const m2 = new ErrorMiddleware({ ignore_errors: true });

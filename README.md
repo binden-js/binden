@@ -20,6 +20,8 @@ import { Binden } from "binden";
 const app = new Binden().use(middleware1).use(router2);
 app.use("/path", middleware2, router2);
 app.use(new RegExp("path"), router3, middleware1);
+const middleware3 = (context) => context.json({ message: "Hello World!" });
+app.use("/path2", middleware3);
 ```
 
 - `.off()` - remove a `Middleware/Router` form the stack
@@ -102,6 +104,14 @@ class MyMiddleware extends Middleware {
     context.done = true; // Stop passing the `context` to other middlewares
   }
 }
+```
+
+or with a function
+
+```typescript
+const MyMiddleware = (context): void => {
+  context.done = true;
+};
 ```
 
 - `.url` - parsed `URL` object

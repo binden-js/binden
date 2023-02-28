@@ -1,5 +1,5 @@
-import os from "node:os";
 import Pino from "pino";
+import { Logger } from "@binden/logger";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
 /* c8 ignore start */
@@ -20,11 +20,8 @@ export const serializers = {
     if (input instanceof Context) {
       return {
         ...input,
-        request: Pino.stdSerializers.wrapRequestSerializer(
-          /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-          ({ id: _id, ...rest }) => rest
-        )(input.request),
-        response: Pino.stdSerializers.res(input.response),
+        request: serializers.request(input.request),
+        response: serializers.response(input.response),
       };
     }
     return input;
@@ -32,4 +29,4 @@ export const serializers = {
 };
 /* c8 ignore stop */
 
-export const base = { pid: process.pid, hostname: os.hostname() };
+export default new Logger({ serializers });

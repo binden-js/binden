@@ -3,14 +3,14 @@ import https from "node:https";
 import { isDeepStrictEqual } from "node:util";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
-import { Middleware } from "./middleware.js";
+import { Middleware, IMiddleware } from "./middleware.js";
 import { BindenRequest } from "./request.js";
 import { BindenResponse, ct_text, ct_json } from "./response.js";
 import { Router } from "./router.js";
 
 type IUseOptions = IStackItem | RegExp | string | null | undefined;
 
-export type IStackItem = Middleware | Router;
+export type IStackItem = IMiddleware | Router;
 export type IStack = [IStackItem[], RegExp | string | null];
 
 export const DefaultErrorCode = 500;
@@ -39,9 +39,9 @@ export class Binden {
   }
 
   public createServer(
-    options: http.ServerOptions = {}
+    options: Omit<http.ServerOptions, "IncomingMessage" | "ServerResponse"> = {}
   ): http.Server<typeof BindenRequest, typeof BindenResponse> {
-    return http.createServer(
+    return http.createServer<typeof BindenRequest, typeof BindenResponse>(
       {
         ...options,
         IncomingMessage: BindenRequest,
@@ -54,9 +54,12 @@ export class Binden {
   }
 
   public createSecureServer(
-    options: https.ServerOptions = {}
+    options: Omit<
+      https.ServerOptions,
+      "IncomingMessage" | "ServerResponse"
+    > = {}
   ): https.Server<typeof BindenRequest, typeof BindenResponse> {
-    return https.createServer(
+    return https.createServer<typeof BindenRequest, typeof BindenResponse>(
       {
         ...options,
         IncomingMessage: BindenRequest,
@@ -71,7 +74,7 @@ export class Binden {
   public use(...items: IStackItem[]): this;
   public use(path: RegExp | string, ...items: IStackItem[]): this;
   public use(_path: IUseOptions, ...items: IStackItem[]): this {
-    if (_path instanceof Middleware || _path instanceof Router) {
+    if (Binden.#validateItem(_path)) {
       items.unshift(_path);
     } else if (!items.length) {
       return this;
@@ -85,7 +88,7 @@ export class Binden {
         : null;
 
     for (const item of items) {
-      if (!(item instanceof Middleware || item instanceof Router)) {
+      if (!Binden.#validateItem(item)) {
         throw new TypeError("Unsupported Middleware/Router");
       }
     }
@@ -106,7 +109,7 @@ export class Binden {
   public off(...items: IStackItem[]): IStackItem[];
   public off(path: RegExp | string, ...items: IStackItem[]): IStackItem[];
   public off(_path: IUseOptions, ...items: IStackItem[]): IStackItem[] {
-    if (_path instanceof Middleware || _path instanceof Router) {
+    if (Binden.#validateItem(_path)) {
       items.unshift(_path);
     } else if (!items.length || !this.#stack.length) {
       return [];
@@ -280,27 +283,38 @@ export class Binden {
   }
 
   static async #runMiddleware(
-    middleware: Middleware,
+    middleware: IMiddleware,
     context: Context
   ): Promise<Context> {
     const { name } = middleware.constructor;
 
-    if (middleware.disabled) {
+    if (middleware instanceof Middleware && middleware.disabled) {
       context.log.debug("Middleware is disabled", { name });
       return context;
     }
 
     try {
-      const next = await middleware.run(context);
+      const next =
+        typeof middleware === "function"
+          ? await middleware(context)
+          : await middleware.run(context);
       return next instanceof Context ? next : context;
     } catch (error: unknown) {
-      if (middleware.ignore_errors) {
+      if (middleware instanceof Middleware && middleware.ignore_errors) {
         context.log.debug("Middleware ignores errors", { error, name });
         return context;
       }
 
       throw error;
     }
+  }
+
+  static #validateItem(item: unknown): item is IStackItem {
+    return (
+      item instanceof Middleware ||
+      item instanceof Router ||
+      typeof item === "function"
+    );
   }
 }
 

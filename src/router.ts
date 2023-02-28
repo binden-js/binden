@@ -1,17 +1,17 @@
 import { METHODS } from "node:http";
-import { Middleware } from "./middleware.js";
+import { Middleware, IMiddleware } from "./middleware.js";
 
 export interface IRouterOptions {
   guarded?: boolean;
 }
 
 export class Router {
-  readonly #middlewares: Map<string, Middleware[]>;
+  readonly #middlewares: Map<string, IMiddleware[]>;
   #guarded: boolean;
 
   public constructor({ guarded = false }: IRouterOptions = {}) {
     this.#guarded = Boolean(guarded);
-    this.#middlewares = new Map<string, Middleware[]>();
+    this.#middlewares = new Map<string, IMiddleware[]>();
   }
 
   public get guarded(): boolean {
@@ -27,7 +27,7 @@ export class Router {
     const methods = new Set<string>();
 
     for (const [method, middlewares] of this.#middlewares) {
-      if (middlewares.find((m) => !m.disabled)) {
+      if (middlewares.find((m) => typeof m === "function" || !m.disabled)) {
         methods.add(method);
       }
     }
@@ -35,19 +35,23 @@ export class Router {
     return methods;
   }
 
-  public get middlewares(): (method: string) => Middleware[] {
-    return (method: string): Middleware[] => [
+  public get middlewares(): (method: string) => IMiddleware[] {
+    return (method: string): IMiddleware[] => [
       ...(this.#middlewares.get(method.toUpperCase()) ?? []),
     ];
   }
 
-  public on(method: string, ..._middlewares: Middleware[]): this {
+  public on(method: string, ..._middlewares: IMiddleware[]): this {
     if (!METHODS.includes(method)) {
       throw new TypeError(`Method ${method} is not supported`);
+    } else if (!_middlewares.length) {
+      return this;
     }
 
     for (const middleware of _middlewares) {
-      if (!(middleware instanceof Middleware)) {
+      if (
+        !(middleware instanceof Middleware || typeof middleware === "function")
+      ) {
         throw new TypeError("Middleware is not supported");
       }
     }
@@ -57,19 +61,19 @@ export class Router {
     if (middlewares) {
       middlewares.push(..._middlewares);
     } else {
-      this.#middlewares.set(method, [..._middlewares]);
+      this.#middlewares.set(method.toUpperCase(), [..._middlewares]);
     }
 
     return this;
   }
 
-  public off(method: string, ..._middlewares: Middleware[]): Middleware[] {
+  public off(method: string, ..._middlewares: IMiddleware[]): IMiddleware[] {
     if (!METHODS.includes(method)) {
       throw new TypeError(`Method ${method} is not supported`);
     }
 
     const middlewares = this.#middlewares.get(method) ?? [];
-    const removed: Middleware[] = [];
+    const removed: IMiddleware[] = [];
 
     if (!middlewares.length) {
       return removed;
@@ -91,35 +95,35 @@ export class Router {
     return removed;
   }
 
-  public delete(...middlewares: Middleware[]): this {
+  public delete(...middlewares: IMiddleware[]): this {
     return this.on("DELETE", ...middlewares);
   }
 
-  public get(...middlewares: Middleware[]): this {
+  public get(...middlewares: IMiddleware[]): this {
     return this.on("GET", ...middlewares);
   }
 
-  public head(...middlewares: Middleware[]): this {
+  public head(...middlewares: IMiddleware[]): this {
     return this.on("HEAD", ...middlewares);
   }
 
-  public options(...middlewares: Middleware[]): this {
+  public options(...middlewares: IMiddleware[]): this {
     return this.on("OPTIONS", ...middlewares);
   }
 
-  public patch(...middlewares: Middleware[]): this {
+  public patch(...middlewares: IMiddleware[]): this {
     return this.on("PATCH", ...middlewares);
   }
 
-  public post(...middlewares: Middleware[]): this {
+  public post(...middlewares: IMiddleware[]): this {
     return this.on("POST", ...middlewares);
   }
 
-  public put(...middlewares: Middleware[]): this {
+  public put(...middlewares: IMiddleware[]): this {
     return this.on("PUT", ...middlewares);
   }
 
-  public trace(...middlewares: Middleware[]): this {
+  public trace(...middlewares: IMiddleware[]): this {
     return this.on("TRACE", ...middlewares);
   }
 }
