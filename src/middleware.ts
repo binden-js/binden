@@ -1,5 +1,14 @@
 import type { Context } from "./context.js";
 
+type IMiddlewareReturnType =
+  | Context
+  | Promise<Context>
+  | Promise<void>
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
+  | void;
+
+export type IFunctionMiddleware = (context: Context) => IMiddlewareReturnType;
+
 export interface IMiddlewareParams {
   disabled?: boolean;
   ignore_errors?: boolean;
@@ -17,8 +26,7 @@ export abstract class Middleware {
     this.ignore_errors = ignore_errors;
   }
 
-  public abstract run(
-    context: Context
-  ): /* eslint-disable-next-line @typescript-eslint/no-invalid-void-type */
-  Context | Promise<Context> | Promise<void> | void;
+  public abstract run(context: Context): IMiddlewareReturnType;
 }
+
+export type IMiddleware = IFunctionMiddleware | Middleware;
