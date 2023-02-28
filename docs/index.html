@@ -176,7 +176,7 @@
               stack
             </li>
           </ul>
-          <pre><code class="language-typescript"><span class="hl-2">import</span><span class="hl-0"> { </span><span class="hl-3">Binden</span><span class="hl-0"> } </span><span class="hl-2">from</span><span class="hl-0"> </span><span class="hl-1">&quot;binden&quot;</span><span class="hl-0">;</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">app</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Binden</span><span class="hl-0">().</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-3">middleware1</span><span class="hl-0">).</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-3">router2</span><span class="hl-0">);</span><br/><span class="hl-3">app</span><span class="hl-0">.</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-1">&quot;/path&quot;</span><span class="hl-0">, </span><span class="hl-3">middleware2</span><span class="hl-0">, </span><span class="hl-3">router2</span><span class="hl-0">);</span><br/><span class="hl-3">app</span><span class="hl-0">.</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">RegExp</span><span class="hl-0">(</span><span class="hl-1">&quot;path&quot;</span><span class="hl-0">), </span><span class="hl-3">router3</span><span class="hl-0">, </span><span class="hl-3">middleware1</span><span class="hl-0">);</span>
+          <pre><code class="language-typescript"><span class="hl-2">import</span><span class="hl-0"> { </span><span class="hl-3">Binden</span><span class="hl-0"> } </span><span class="hl-2">from</span><span class="hl-0"> </span><span class="hl-1">&quot;binden&quot;</span><span class="hl-0">;</span><br/><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-5">app</span><span class="hl-0"> = </span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">Binden</span><span class="hl-0">().</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-3">middleware1</span><span class="hl-0">).</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-3">router2</span><span class="hl-0">);</span><br/><span class="hl-3">app</span><span class="hl-0">.</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-1">&quot;/path&quot;</span><span class="hl-0">, </span><span class="hl-3">middleware2</span><span class="hl-0">, </span><span class="hl-3">router2</span><span class="hl-0">);</span><br/><span class="hl-3">app</span><span class="hl-0">.</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-4">new</span><span class="hl-0"> </span><span class="hl-6">RegExp</span><span class="hl-0">(</span><span class="hl-1">&quot;path&quot;</span><span class="hl-0">), </span><span class="hl-3">router3</span><span class="hl-0">, </span><span class="hl-3">middleware1</span><span class="hl-0">);</span><br/><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">middleware3</span><span class="hl-0"> = (</span><span class="hl-3">context</span><span class="hl-0">) </span><span class="hl-4">=&gt;</span><span class="hl-0"> </span><span class="hl-3">context</span><span class="hl-0">.</span><span class="hl-6">json</span><span class="hl-0">({ </span><span class="hl-3">message:</span><span class="hl-0"> </span><span class="hl-1">&quot;Hello World!&quot;</span><span class="hl-0"> });</span><br/><span class="hl-3">app</span><span class="hl-0">.</span><span class="hl-6">use</span><span class="hl-0">(</span><span class="hl-1">&quot;/path2&quot;</span><span class="hl-0">, </span><span class="hl-3">middleware3</span><span class="hl-0">);</span>
 </code></pre>
           <ul>
             <li>
@@ -262,6 +262,9 @@
             <li><code>.done</code></li>
           </ul>
           <pre><code class="language-typescript"><span class="hl-4">class</span><span class="hl-0"> </span><span class="hl-8">MyMiddleware</span><span class="hl-0"> </span><span class="hl-4">extends</span><span class="hl-0"> </span><span class="hl-8">Middleware</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-4">public</span><span class="hl-0"> </span><span class="hl-6">run</span><span class="hl-0">(</span><span class="hl-3">context</span><span class="hl-0">: </span><span class="hl-8">Context</span><span class="hl-0">): </span><span class="hl-8">void</span><span class="hl-0"> {</span><br/><span class="hl-0">    </span><span class="hl-3">context</span><span class="hl-0">.</span><span class="hl-3">done</span><span class="hl-0"> = </span><span class="hl-4">true</span><span class="hl-0">; </span><span class="hl-9">// Stop passing the `context` to other middlewares</span><br/><span class="hl-0">  }</span><br/><span class="hl-0">}</span>
+</code></pre>
+          <p>or with a function</p>
+          <pre><code class="language-typescript"><span class="hl-4">const</span><span class="hl-0"> </span><span class="hl-6">MyMiddleware</span><span class="hl-0"> = (</span><span class="hl-3">context</span><span class="hl-0">): </span><span class="hl-8">void</span><span class="hl-0"> </span><span class="hl-4">=&gt;</span><span class="hl-0"> {</span><br/><span class="hl-0">  </span><span class="hl-3">context</span><span class="hl-0">.</span><span class="hl-3">done</span><span class="hl-0"> = </span><span class="hl-4">true</span><span class="hl-0">;</span><br/><span class="hl-0">};</span>
 </code></pre>
           <ul>
             <li><code>.url</code> - parsed <code>URL</code> object</li>
@@ -1294,6 +1297,19 @@
               >
             </li>
             <li class="tsd-kind-type-alias">
+              <a href="types/IFunctionMiddleware.html" class="tsd-index-link"
+                ><svg
+                  class="tsd-kind-icon"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                >
+                  <use href="#icon-4194304-path"></use>
+                  <use href="#icon-4194304-text"></use></svg
+                >IFunction<wbr />Middleware</a
+              >
+            </li>
+            <li class="tsd-kind-type-alias">
               <a href="types/IHeaders.html" class="tsd-index-link"
                 ><svg
                   class="tsd-kind-icon"
@@ -1317,6 +1333,19 @@
                   <use href="#icon-4194304-path"></use>
                   <use href="#icon-4194304-text"></use></svg
                 >IHeaders<wbr />Value</a
+              >
+            </li>
+            <li class="tsd-kind-type-alias">
+              <a href="types/IMiddleware.html" class="tsd-index-link"
+                ><svg
+                  class="tsd-kind-icon"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                >
+                  <use href="#icon-4194304-path"></use>
+                  <use href="#icon-4194304-text"></use></svg
+                >IMiddleware</a
               >
             </li>
             <li class="tsd-kind-type-alias">

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.0](https://github.com/binden-js/binden/compare/v1.1.7...v1.2.0) (2023-02-28)
+
+### Features
+
+- allow to use functions as middlewares ([10333cb](https://github.com/binden-js/binden/commit/10333cbc0aad25a833ef7d4903dc4c537e0c1efa))
+
+### Dependencies
+
+- bump `@binden/logger` from `1.0.6` to `1.0.7` ([6a7611b](https://github.com/binden-js/binden/commit/6a7611b7e9bc06a475544bce578b72904b1ebd66))
+
 ## [1.1.7](https://github.com/binden-js/binden/compare/v1.1.6...v1.1.7) (2023-02-12)
 
 ### Bug Fixes

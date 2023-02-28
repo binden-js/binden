@@ -1672,8 +1672,8 @@
       let e = document.getElementById(location.hash.substring(1));
       if (!e) return;
       let n = e.parentElement;
-      for (; n.tagName !== "SECTION"; ) n = n.parentElement;
-      if (n.offsetParent == null) {
+      for (; n && n.tagName !== "SECTION"; ) n = n.parentElement;
+      if (n && n.offsetParent == null) {
         (this.alwaysVisibleMember = n), n.classList.add("always-visible");
         let r = document.createElement("p");
         r.classList.add("warning"),
