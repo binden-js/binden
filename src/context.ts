@@ -1,6 +1,6 @@
 import { Logger } from "@binden/logger";
 import { BindenError, IBindenErrorOptions } from "./error.js";
-import { serializers, base } from "./logger.js";
+import logger from "./logger.js";
 
 import type { Readable } from "node:stream";
 import type { BindenRequest } from "./request.js";
@@ -22,7 +22,7 @@ export class Context implements IBaseContext {
     this.#response = response;
     this.#done = false;
     const { id: trace_id } = request;
-    this.#logger = new Logger({ serializers, base: { ...base, trace_id } });
+    this.#logger = logger.child({ trace_id });
   }
 
   public get log(): Logger {

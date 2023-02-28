@@ -1,5 +1,5 @@
-import os from "node:os";
 import Pino from "pino";
+import { Logger } from "@binden/logger";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
 /* c8 ignore start */
@@ -32,4 +32,4 @@ export const serializers = {
 };
 /* c8 ignore stop */
 
-export const base = { pid: process.pid, hostname: os.hostname() };
+export default new Logger({ serializers });
