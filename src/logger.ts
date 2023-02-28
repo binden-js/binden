@@ -20,11 +20,8 @@ export const serializers = {
     if (input instanceof Context) {
       return {
         ...input,
-        request: Pino.stdSerializers.wrapRequestSerializer(
-          /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-          ({ id: _id, ...rest }) => rest
-        )(input.request),
-        response: Pino.stdSerializers.res(input.response),
+        request: serializers.request(input.request),
+        response: serializers.response(input.response),
       };
     }
     return input;
