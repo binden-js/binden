@@ -58,7 +58,7 @@
   "devDependencies": {
     "@binden/commitlint-config": "^1.0.2",
     "@binden/semantic-release-config": "^2.0.0",
-    "@binden/tsconfig": "^1.0.1",
+    "@binden/tsconfig": "^1.0.2",
     "@types/mocha": "^10.0.1",
     "@types/sinon": "^10.0.15",
     "c8": "^8.0.0",
