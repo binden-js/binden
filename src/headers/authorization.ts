@@ -39,7 +39,7 @@ export class Authorization implements IAuthorization {
   }
 
   public static fromString(input?: string): Authorization | null {
-    if (typeof input === "undefined" || !input.length) {
+    if (typeof input === "undefined" || input.length === 0) {
       return null;
     }
 

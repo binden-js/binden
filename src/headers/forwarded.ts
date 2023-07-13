@@ -56,7 +56,7 @@ export class Forwarded implements IForwarded {
   }
 
   public static fromString(input?: string): Forwarded[] {
-    if (typeof input === "undefined" || !input.length) {
+    if (typeof input === "undefined" || input.length === 0) {
       return [];
     }
 
