@@ -44,7 +44,7 @@ export class ContentType implements IContentType {
   }
 
   public static fromString(input?: string): ContentType | null {
-    if (typeof input === "undefined" || !input.length) {
+    if (typeof input === "undefined" || input.length === 0) {
       return null;
     }
 
