@@ -263,9 +263,12 @@ const mm1 = new MyMiddleware1({ disabled: true });
 export class MyMiddleware2 extends Middleware {
   public async run(): Promise<void> {
     // Disable `mm1` every hour
-    setInterval(() => {
-      mm1.disabled = !mm1.disabled;
-    }, 1000 * 60 * 60);
+    setInterval(
+      () => {
+        mm1.disabled = !mm1.disabled;
+      },
+      1000 * 60 * 60,
+    );
   }
 }
 ```
@@ -423,7 +426,7 @@ await response.status(402).set(headers).send("Payment is required");
 
 ```typescript
 await response.send(
-  "Could be `number` | `string` | `Buffer` | `Readable` | `bigint` | `undefined`"
+  "Could be `number` | `string` | `Buffer` | `Readable` | `bigint` | `undefined`",
 );
 ```
 
@@ -512,7 +515,7 @@ const { accept_encoding } = request;
 import { Authorization } from "binden";
 
 const authorization = AcceptEncoding.fromString(
-  request.headers["Authorization"]
+  request.headers["Authorization"],
 );
 // or using BindenRequest
 const { authorization } = request;
@@ -524,7 +527,7 @@ const { authorization } = request;
 import { ContentEncoding } from "binden";
 
 const encodings = ContentEncoding.fromString(
-  request.headers["content-encoding"]
+  request.headers["content-encoding"],
 );
 // or using BindenRequest
 const { content_encoding } = request;
@@ -588,7 +591,7 @@ const { forwarded } = request;
 import { IfModifiedSince } from "binden";
 
 const if_modified_since = IfModifiedSince.fromString(
-  request.headers["if-modified-since"]
+  request.headers["if-modified-since"],
 );
 // or using BindenRequest
 const { if_modified_since } = request;

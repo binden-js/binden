@@ -63,14 +63,14 @@ suite("Router", () => {
     const unsupportedMethod = "_unsupported_";
     throws(
       () => new Router().on(unsupportedMethod),
-      new TypeError(`Method ${unsupportedMethod} is not supported`)
+      new TypeError(`Method ${unsupportedMethod} is not supported`),
     );
   });
 
   test(".on() (with unsupported middleware)", () => {
     throws(
       () => new Router().on("GET", {} as Middleware),
-      new TypeError("Middleware is not supported")
+      new TypeError("Middleware is not supported"),
     );
   });
 
@@ -109,9 +109,12 @@ suite("Router", () => {
 
     const method = "unsupported";
 
-    throws(() => {
-      router.off(method);
-    }, new TypeError(`Method ${method} is not supported`));
+    throws(
+      () => {
+        router.off(method);
+      },
+      new TypeError(`Method ${method} is not supported`),
+    );
   });
 
   for (const method of methods) {

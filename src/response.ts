@@ -19,7 +19,7 @@ export type IHeadersValue = number | string | readonly string[];
 export type IHeaders = Record<string, IHeadersValue>;
 
 export class BindenResponse<
-  Request extends IncomingMessage = IncomingMessage
+  Request extends IncomingMessage = IncomingMessage,
 > extends ServerResponse<Request> {
   #cookies?: Set<Cookie>;
 
@@ -49,12 +49,12 @@ export class BindenResponse<
 
   /** Send a response */
   public send(
-    data?: Buffer | Readable | bigint | number | string
+    data?: Buffer | Readable | bigint | number | string,
   ): Promise<void>;
   public send(data: string, encoding: BufferEncoding): Promise<void>;
   public send(
     data?: Buffer | Readable | bigint | number | string,
-    encoding?: BufferEncoding
+    encoding?: BufferEncoding,
   ): Promise<void> {
     if (this.writableEnded) {
       return Promise.resolve();
@@ -68,7 +68,7 @@ export class BindenResponse<
           ? values
           : Array.isArray(setCookie)
           ? [...setCookie, ...values]
-          : [`${setCookie}`, ...values]
+          : [`${setCookie}`, ...values],
       );
     }
 
@@ -108,7 +108,7 @@ export class BindenResponse<
   public async json(
     data: Record<string, unknown> | unknown[],
     stringify = (input: Record<string, unknown> | unknown[]): string =>
-      JSON.stringify(input)
+      JSON.stringify(input),
   ): Promise<void> {
     const msg = stringify(data);
     return this.setHeader("Content-Type", ct_json).send(msg);
@@ -132,7 +132,7 @@ export class BindenResponse<
   /** Send a file */
   public async sendFile(
     path: URL | string,
-    options?: Pick<Stats, "isFile" | "mtime" | "size">
+    options?: Pick<Stats, "isFile" | "mtime" | "size">,
   ): Promise<void> {
     const url = path instanceof URL ? new URL(path.href) : pathToFileURL(path);
 

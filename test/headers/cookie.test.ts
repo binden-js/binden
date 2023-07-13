@@ -34,7 +34,7 @@ suite("Cookie", () => {
     deepStrictEqual(cookie.same_site, same_site);
     deepStrictEqual(
       cookie.toString(),
-      `${key}=${value}; Max-Age=${max_age}; Domain=${domain}; Path=/; Secure; HttpOnly; SameSite=${same_site}`
+      `${key}=${value}; Max-Age=${max_age}; Domain=${domain}; Path=/; Secure; HttpOnly; SameSite=${same_site}`,
     );
   });
 
@@ -57,7 +57,7 @@ suite("Cookie", () => {
     deepStrictEqual(cookie.same_site, "Lax");
     deepStrictEqual(
       cookie.toString(),
-      `${key}=${value}; Expires=${expires.toUTCString()}; Path=/; Secure; HttpOnly; SameSite=Lax`
+      `${key}=${value}; Expires=${expires.toUTCString()}; Path=/; Secure; HttpOnly; SameSite=Lax`,
     );
   });
 
@@ -78,7 +78,7 @@ suite("Cookie", () => {
     deepStrictEqual(cookie.same_site, same_site);
     deepStrictEqual(
       cookie.toString(),
-      `${key}=${value}; Path=/; Secure; HttpOnly; SameSite=${same_site}`
+      `${key}=${value}; Path=/; Secure; HttpOnly; SameSite=${same_site}`,
     );
   });
 
@@ -99,7 +99,7 @@ suite("Cookie", () => {
     deepStrictEqual(cookie.same_site, "Lax");
     deepStrictEqual(
       cookie.toString(),
-      `${key}=${value}; Path=/; HttpOnly; SameSite=Lax`
+      `${key}=${value}; Path=/; HttpOnly; SameSite=Lax`,
     );
   });
 

@@ -87,7 +87,7 @@ suite("BindenResponse", () => {
         try {
           throws(
             () => response.status(status),
-            new TypeError(`Status code ${status} is invalid`)
+            new TypeError(`Status code ${status} is invalid`),
           );
           deepStrictEqual(response.statusCode, 200);
         } catch (error) {
@@ -142,7 +142,7 @@ suite("BindenResponse", () => {
     deepStrictEqual(response.headers.get("Content-Type"), null);
     deepStrictEqual(
       response.headers.get("Set-Cookie"),
-      [cookie1, cookie2].map((c) => c.toString()).join(", ")
+      [cookie1, cookie2].map((c) => c.toString()).join(", "),
     );
     ok(response.ok);
   });
@@ -188,7 +188,7 @@ suite("BindenResponse", () => {
     deepStrictEqual(response.headers.get("Content-Type"), ct_text);
     deepStrictEqual(
       response.headers.get("Set-Cookie"),
-      [cookie1, cookie2].map((c) => c.toString()).join(", ")
+      [cookie1, cookie2].map((c) => c.toString()).join(", "),
     );
     deepStrictEqual(data, string);
   });
@@ -213,7 +213,7 @@ suite("BindenResponse", () => {
     deepStrictEqual(response.headers.get("Content-Type"), ct_text);
     deepStrictEqual(
       response.headers.get("Set-Cookie"),
-      [cookie1, cookie2].map((c) => c.toString()).join(", ")
+      [cookie1, cookie2].map((c) => c.toString()).join(", "),
     );
     deepStrictEqual(data, buffer);
   });
@@ -522,7 +522,7 @@ suite("BindenResponse", () => {
     const cr = response.headers.get("Content-Range");
     deepStrictEqual(
       cr,
-      `bytes ${msg.byteLength - end}-${msg.byteLength - 1}/${msg.byteLength}`
+      `bytes ${msg.byteLength - end}-${msg.byteLength - 1}/${msg.byteLength}`,
     );
     deepStrictEqual(response.status, 206);
     deepStrictEqual(data, msg.subarray(msg.byteLength - end));
@@ -586,7 +586,7 @@ suite("BindenResponse", () => {
       server.once("request", (_request, response) => {
         rejects(
           () => response.sendFile(path, file_stats),
-          new TypeError(`Protocol ${path.protocol} is not supported`)
+          new TypeError(`Protocol ${path.protocol} is not supported`),
         )
           .catch(reject)
           .finally(() => response.end(resolve));
@@ -601,7 +601,7 @@ suite("BindenResponse", () => {
       server.once("request", (_request, response) => {
         rejects(
           () => response.sendFile(dirPath, dir_stats),
-          new Error(`Provided path does not correspond to a regular file`)
+          new Error(`Provided path does not correspond to a regular file`),
         )
           .catch(reject)
           .finally(() => response.end(resolve));

@@ -46,11 +46,11 @@ suite("BindenError", () => {
   test("constructor (with invalid status)", () => {
     throws(
       () => new BindenError(300),
-      new RangeError("Status code is less than 400")
+      new RangeError("Status code is less than 400"),
     );
     throws(
       () => new BindenError(600),
-      new RangeError("Status code is greater than 599")
+      new RangeError("Status code is greater than 599"),
     );
     throws(() => new BindenError(499), new TypeError("Invalid status code"));
   });

@@ -18,7 +18,7 @@ suite("Forwarded", () => {
     deepStrictEqual(forwarded.secret, secret);
     deepStrictEqual(
       forwarded.toString(),
-      `for="${_.for}";by=${by};host=${host};secret=${secret};proto=${proto}`
+      `for="${_.for}";by=${by};host=${host};secret=${secret};proto=${proto}`,
     );
   });
 

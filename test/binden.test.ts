@@ -40,7 +40,7 @@ class ErrorMiddleware extends CustomMiddleware {
   public constructor(
     params?: IMiddlewareParams,
     status = 401,
-    error_params: IBindenErrorOptions = {}
+    error_params: IBindenErrorOptions = {},
   ) {
     super(params);
     this.#error = new BindenError(status, error_params);
@@ -428,7 +428,7 @@ suite("Binden", () => {
       }
       app.use(
         new CTMiddleware(),
-        new ErrorMiddleware({}, status, { message, expose })
+        new ErrorMiddleware({}, status, { message, expose }),
       );
 
       const response = await fetch(url);

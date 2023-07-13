@@ -13,7 +13,7 @@ export const serializers = {
   }),
   request: Pino.stdSerializers.wrapRequestSerializer(
     /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-    ({ id: _id, ...rest }) => rest
+    ({ id: _id, ...rest }) => rest,
   ),
   response: Pino.stdSerializers.res,
   context: (input: unknown): unknown => {

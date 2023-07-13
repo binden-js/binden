@@ -66,7 +66,7 @@ export class Context implements IBaseContext {
   }
 
   public async send(
-    data?: Buffer | Readable | bigint | number | string
+    data?: Buffer | Readable | bigint | number | string,
   ): Promise<void> {
     await this.response.send(data);
     this.done = true;
@@ -74,7 +74,7 @@ export class Context implements IBaseContext {
 
   public async json(
     data: Record<string, unknown> | unknown[],
-    stringify?: (input: Record<string, unknown> | unknown[]) => string
+    stringify?: (input: Record<string, unknown> | unknown[]) => string,
   ): Promise<void> {
     if (typeof stringify === "undefined") {
       await this.response.json(data);
