@@ -39,7 +39,10 @@ export class Binden {
   }
 
   public createServer(
-    options: Omit<http.ServerOptions, "IncomingMessage" | "ServerResponse"> = {}
+    options: Omit<
+      http.ServerOptions,
+      "IncomingMessage" | "ServerResponse"
+    > = {},
   ): http.Server<typeof BindenRequest, typeof BindenResponse> {
     return http.createServer<typeof BindenRequest, typeof BindenResponse>(
       {
@@ -49,7 +52,7 @@ export class Binden {
       },
       (request, response) => {
         this.#requestListener(request, response);
-      }
+      },
     );
   }
 
@@ -57,7 +60,7 @@ export class Binden {
     options: Omit<
       https.ServerOptions,
       "IncomingMessage" | "ServerResponse"
-    > = {}
+    > = {},
   ): https.Server<typeof BindenRequest, typeof BindenResponse> {
     return https.createServer<typeof BindenRequest, typeof BindenResponse>(
       {
@@ -67,7 +70,7 @@ export class Binden {
       },
       (request, response) => {
         this.#requestListener(request, response);
-      }
+      },
     );
   }
 
@@ -164,7 +167,7 @@ export class Binden {
 
   #requestListener(
     request: BindenRequest,
-    response: BindenResponse<BindenRequest>
+    response: BindenResponse<BindenRequest>,
   ): void {
     const context = new Context({ request, response });
     this.#handle(context).catch((error: unknown) => {
@@ -284,7 +287,7 @@ export class Binden {
 
   static async #runMiddleware(
     middleware: IMiddleware,
-    context: Context
+    context: Context,
   ): Promise<Context> {
     const { name } = middleware.constructor;
 

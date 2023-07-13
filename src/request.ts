@@ -56,7 +56,7 @@ export class BindenRequest extends IncomingMessage {
   public get content_encoding(): ContentEncoding[] {
     if (!this.#content_encoding) {
       this.#content_encoding = ContentEncoding.fromString(
-        this.headers["content-encoding"]
+        this.headers["content-encoding"],
       );
     }
     return [...this.#content_encoding];
@@ -112,15 +112,17 @@ export class BindenRequest extends IncomingMessage {
 
   public get query(): ParsedUrlQuery {
     if (!this.#query) {
-      this.#query = { ...parse(this.URL.search.substring(1)) };
+      this.#query = parse(this.URL.search.substring(1));
     }
 
-    const query = this.#query;
+    const query: ParsedUrlQuery = {};
 
-    return Object.keys(query).reduce<ParsedUrlQuery>((acc, key) => {
-      const value = query[key];
-      return { ...acc, [key]: Array.isArray(value) ? [...value] : value };
-    }, {});
+    for (const key in this.#query) {
+      const value = this.#query[key];
+      query[key] = Array.isArray(value) ? [...value] : value;
+    }
+
+    return query;
   }
 
   public get range(): Range[] {

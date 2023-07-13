@@ -18,7 +18,7 @@ export class BindenError extends Error {
       expose = false,
       json,
       cause,
-    }: IBindenErrorOptions = {}
+    }: IBindenErrorOptions = {},
   ) {
     if (status > 599) {
       throw new RangeError("Status code is greater than 599");

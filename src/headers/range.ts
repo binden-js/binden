@@ -61,7 +61,7 @@ export class Range implements IRange {
         ([start, end]) =>
           (!isNaN(start) && !isNaN(end) && start >= 0 && start <= end) ||
           (!isNaN(start) && isNaN(end) && start >= 0) ||
-          (isNaN(start) && !isNaN(end) && end > 0)
+          (isNaN(start) && !isNaN(end) && end > 0),
       )
       .map(([start, end]) => new Range({ start, end }));
   }

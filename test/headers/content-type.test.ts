@@ -13,7 +13,7 @@ suite("ContentType", () => {
 
     throws(
       () => new ContentType({ type: "multipart/form-data" }),
-      new TypeError("`boundary` is missing")
+      new TypeError("`boundary` is missing"),
     );
   });
 
@@ -78,7 +78,7 @@ suite("ContentType", () => {
     deepStrictEqual(parsed.boundary, "something");
     deepStrictEqual(
       parsed.toString(),
-      "multipart/form-data; boundary=something"
+      "multipart/form-data; boundary=something",
     );
   });
 

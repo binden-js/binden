@@ -21,7 +21,7 @@ suite("BindenRequest", () => {
   setup((done) => {
     server = createServer({ IncomingMessage: BindenRequest }).listen(
       port,
-      done
+      done,
     );
   });
 
@@ -62,7 +62,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(request.authorization?.type, "Basic");
           deepStrictEqual(
             request.authorization.credentials,
-            "YWxhZGRpbjpvcGVuc2VzYW1l"
+            "YWxhZGRpbjpvcGVuc2VzYW1l",
           );
         } catch (error) {
           reject(error);
@@ -284,7 +284,7 @@ suite("BindenRequest", () => {
           ok(request.if_modified_since);
           deepStrictEqual(
             request.if_modified_since.date,
-            new Date(ims.date.toUTCString())
+            new Date(ims.date.toUTCString()),
           );
           deepStrictEqual(request.if_modified_since.toString(), ims.toString());
         } catch (error) {
