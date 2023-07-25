@@ -61,7 +61,7 @@
     "@binden/tsconfig": "^1.0.2",
     "@types/mocha": "^10.0.1",
     "@types/sinon": "^10.0.15",
-    "c8": "^8.0.0",
+    "c8": "^8.0.1",
     "eslint-config-binden-ts": "^2.0.0",
     "fast-json-stringify": "^5.7.0",
     "husky": "^8.0.3",
