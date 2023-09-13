@@ -53,7 +53,7 @@
   },
   "homepage": "https://github.com/binden-js/binden#readme",
   "dependencies": {
-    "@binden/logger": "^1.0.9"
+    "@binden/logger": "^1.0.10"
   },
   "devDependencies": {
     "@binden/commitlint-config": "^1.0.2",
