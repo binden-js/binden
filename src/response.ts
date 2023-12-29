@@ -67,8 +67,8 @@ export class BindenResponse<
         typeof setCookie === "undefined"
           ? values
           : Array.isArray(setCookie)
-          ? [...setCookie, ...values]
-          : [`${setCookie}`, ...values],
+            ? [...setCookie, ...values]
+            : [`${setCookie}`, ...values],
       );
     }
 

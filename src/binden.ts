@@ -44,7 +44,7 @@ export class Binden {
       "IncomingMessage" | "ServerResponse"
     > = {},
   ): http.Server<typeof BindenRequest, typeof BindenResponse> {
-    return http.createServer<typeof BindenRequest, typeof BindenResponse>(
+    return http.createServer(
       {
         ...options,
         IncomingMessage: BindenRequest,
@@ -62,7 +62,7 @@ export class Binden {
       "IncomingMessage" | "ServerResponse"
     > = {},
   ): https.Server<typeof BindenRequest, typeof BindenResponse> {
-    return https.createServer<typeof BindenRequest, typeof BindenResponse>(
+    return https.createServer(
       {
         ...options,
         IncomingMessage: BindenRequest,
@@ -87,8 +87,8 @@ export class Binden {
       _path instanceof RegExp
         ? new RegExp(_path, "u")
         : typeof _path === "string" && _path
-        ? _path
-        : null;
+          ? _path
+          : null;
 
     for (const item of items) {
       if (!Binden.#validateItem(item)) {
@@ -122,8 +122,8 @@ export class Binden {
       _path instanceof RegExp
         ? new RegExp(_path, "u")
         : typeof _path === "string" && _path
-        ? _path
-        : null;
+          ? _path
+          : null;
 
     const removed: IStackItem[] = [];
 

@@ -39,8 +39,8 @@ export class ContentType implements IContentType {
     return typeof this.boundary === "string"
       ? `${this.type}; boundary=${this.boundary}`
       : typeof this.charset === "string" && this.charset
-      ? `${this.type}; charset=${this.charset}`
-      : this.type;
+        ? `${this.type}; charset=${this.charset}`
+        : this.type;
   }
 
   public static fromString(input?: string): ContentType | null {
