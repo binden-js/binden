@@ -90,8 +90,8 @@ export class Cookie implements ICookie {
       typeof this.max_age === "number"
         ? `; Max-Age=${this.max_age}`
         : this.expires
-        ? `; Expires=${this.expires.toUTCString()}`
-        : "";
+          ? `; Expires=${this.expires.toUTCString()}`
+          : "";
     output += typeof this.domain === "string" ? `; Domain=${this.domain}` : "";
     output += typeof this.path === "string" ? `; Path=${this.path}` : "";
     output += this.secure ? `; Secure` : "";
