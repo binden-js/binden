@@ -36,7 +36,7 @@ class SendMiddleware extends CustomMiddleware {
   }
 }
 class ErrorMiddleware extends CustomMiddleware {
-  #error: BindenError;
+  readonly #error: BindenError;
   public constructor(
     params?: IMiddlewareParams,
     status = 401,
