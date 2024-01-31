@@ -65,7 +65,7 @@
     "eslint-config-binden-ts": "^3.0.0",
     "fast-json-stringify": "^5.10.0",
     "husky": "^9.0.7",
-    "lint-staged": "^15.2.0",
+    "lint-staged": "^15.2.1",
     "mocha": "^10.2.0",
     "node-fetch": "^3.3.2",
     "prettier": "^3.2.4",
