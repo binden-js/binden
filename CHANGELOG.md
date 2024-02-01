@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.2](https://github.com/binden-js/binden/compare/v2.0.1...v2.0.2) (2024-02-01)
+
+### Bug Fixes
+
+- add missing files to the `npm` package ([d8db0fe](https://github.com/binden-js/binden/commit/d8db0feb894595e70d5aad8a6ef0147b3daa0cfe)), closes [#150](https://github.com/binden-js/binden/issues/150)
+
 ## [2.0.1](https://github.com/binden-js/binden/compare/v2.0.0...v2.0.1) (2024-01-31)
 
 ### Dependencies
