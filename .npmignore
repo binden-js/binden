@@ -6,7 +6,7 @@ coverage
 
 # Tests
 test
-dist/test
+dist/test/*
 
 # Documentation
 docs
@@ -48,5 +48,5 @@ typedoc.json
 CODE_OF_CONDUCT.md
 
 # Source files
-src/
+src/*
 index.ts
