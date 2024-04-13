@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert";
+import { deepEqual } from "node:assert/strict";
 
 import { Range } from "../../index.js";
 
@@ -7,36 +7,36 @@ suite("Range", () => {
     const start = 0;
     const end = 499;
     const range = new Range({ start, end });
-    deepStrictEqual(range.end, end);
-    deepStrictEqual(range.start, start);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes=${start}-${end}`);
+    deepEqual(range.end, end);
+    deepEqual(range.start, start);
+    deepEqual(range.unit, "bytes");
+    deepEqual(range.toString(), `bytes=${start}-${end}`);
   });
 
   test("constructor (no `start`)", () => {
     const start = 0.1;
     const end = 500;
     const range = new Range({ start, end });
-    deepStrictEqual(range.end, end);
-    deepStrictEqual(range.start, null);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes=-${end}`);
+    deepEqual(range.end, end);
+    deepEqual(range.start, null);
+    deepEqual(range.unit, "bytes");
+    deepEqual(range.toString(), `bytes=-${end}`);
   });
 
   test("constructor (no `end`)", () => {
     const end = 499.9;
     const start = 0;
     const range = new Range({ start, end });
-    deepStrictEqual(range.start, start);
-    deepStrictEqual(range.end, null);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes=${start}-`);
+    deepEqual(range.start, start);
+    deepEqual(range.end, null);
+    deepEqual(range.unit, "bytes");
+    deepEqual(range.toString(), `bytes=${start}-`);
   });
 
   test(".fromString()", () => {
-    deepStrictEqual(Range.fromString(), []);
-    deepStrictEqual(Range.fromString(" "), []);
-    deepStrictEqual(Range.fromString("bytes= -"), []);
+    deepEqual(Range.fromString(), []);
+    deepEqual(Range.fromString(" "), []);
+    deepEqual(Range.fromString("bytes= -"), []);
 
     const input = "bytes= 200 - 1000 , 2000 - 6576 , 19000 - ,__unsupported__";
 
@@ -46,21 +46,21 @@ suite("Range", () => {
 
     const parsed = Range.fromString(input);
 
-    deepStrictEqual(parsed.length, 3);
+    deepEqual(parsed.length, 3);
 
     const [one, two, three] = parsed;
 
-    deepStrictEqual(one.end, first.end);
-    deepStrictEqual(one.start, first.start);
-    deepStrictEqual(one.toString(), first.toString());
+    deepEqual(one.end, first.end);
+    deepEqual(one.start, first.start);
+    deepEqual(one.toString(), first.toString());
 
-    deepStrictEqual(two.end, second.end);
-    deepStrictEqual(two.start, second.start);
-    deepStrictEqual(two.toString(), second.toString());
+    deepEqual(two.end, second.end);
+    deepEqual(two.start, second.start);
+    deepEqual(two.toString(), second.toString());
 
-    deepStrictEqual(three.end, third.end);
-    deepStrictEqual(three.start, third.start);
-    deepStrictEqual(three.toString(), third.toString());
+    deepEqual(three.end, third.end);
+    deepEqual(three.start, third.start);
+    deepEqual(three.toString(), third.toString());
   });
 
   test(".fromString() (no start)", () => {
@@ -70,12 +70,12 @@ suite("Range", () => {
 
     const parsed = Range.fromString(input);
 
-    deepStrictEqual(parsed.length, 1);
+    deepEqual(parsed.length, 1);
 
     const [actual] = parsed;
 
-    deepStrictEqual(actual.end, range.end);
-    deepStrictEqual(actual.start, range.start);
-    deepStrictEqual(actual.toString(), range.toString());
+    deepEqual(actual.end, range.end);
+    deepEqual(actual.start, range.start);
+    deepEqual(actual.toString(), range.toString());
   });
 });

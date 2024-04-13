@@ -1,4 +1,4 @@
-import { deepStrictEqual, throws } from "node:assert";
+import { deepEqual, throws } from "node:assert/strict";
 
 import { Router, Middleware } from "../index.js";
 
@@ -27,23 +27,23 @@ const methods = [
 suite("Router", () => {
   test("constructor", () => {
     const router = new Router();
-    deepStrictEqual(router.guarded, false);
-    deepStrictEqual(typeof router.middlewares, "function");
-    deepStrictEqual(router.methods, new Set());
+    deepEqual(router.guarded, false);
+    deepEqual(typeof router.middlewares, "function");
+    deepEqual(router.methods, new Set());
   });
 
   test("constructor (`guarded === true`)", () => {
     const guarded = true;
     const router = new Router({ guarded });
-    deepStrictEqual(router.guarded, guarded);
-    deepStrictEqual(router.middlewares("GET"), []);
-    deepStrictEqual(router.methods, new Set());
+    deepEqual(router.guarded, guarded);
+    deepEqual(router.middlewares("GET"), []);
+    deepEqual(router.methods, new Set());
 
     router.guarded = null;
-    deepStrictEqual(router.guarded, false);
+    deepEqual(router.guarded, false);
 
     router.guarded = 1;
-    deepStrictEqual(router.guarded, true);
+    deepEqual(router.guarded, true);
   });
 
   test(".on()", () => {
@@ -53,10 +53,10 @@ suite("Router", () => {
       .on("GET", three)
       .on("UNSUBSCRIBE", two);
 
-    deepStrictEqual(router.middlewares("GET"), [three]);
-    deepStrictEqual(router.middlewares("HEAD"), []);
-    deepStrictEqual(router.middlewares("UNSUBSCRIBE"), [one, two]);
-    deepStrictEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
+    deepEqual(router.middlewares("GET"), [three]);
+    deepEqual(router.middlewares("HEAD"), []);
+    deepEqual(router.middlewares("UNSUBSCRIBE"), [one, two]);
+    deepEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
   });
 
   test(".on() (with unsupported method)", () => {
@@ -77,35 +77,35 @@ suite("Router", () => {
   test(".off()", () => {
     const router = new Router().on("UNSUBSCRIBE", one, two).on("GET", three);
 
-    deepStrictEqual(router.off("GET", one, two), []);
-    deepStrictEqual(router.middlewares("GET"), [three]);
-    deepStrictEqual(router.middlewares("UNSUBSCRIBE"), [one, two]);
-    deepStrictEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
+    deepEqual(router.off("GET", one, two), []);
+    deepEqual(router.middlewares("GET"), [three]);
+    deepEqual(router.middlewares("UNSUBSCRIBE"), [one, two]);
+    deepEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
 
-    deepStrictEqual(router.off("UNSUBSCRIBE"), []);
-    deepStrictEqual(router.middlewares("GET"), [three]);
-    deepStrictEqual(router.middlewares("UNSUBSCRIBE"), [one, two]);
-    deepStrictEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
+    deepEqual(router.off("UNSUBSCRIBE"), []);
+    deepEqual(router.middlewares("GET"), [three]);
+    deepEqual(router.middlewares("UNSUBSCRIBE"), [one, two]);
+    deepEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
 
-    deepStrictEqual(router.off("UNSUBSCRIBE", one), [one]);
-    deepStrictEqual(router.middlewares("GET"), [three]);
-    deepStrictEqual(router.middlewares("UNSUBSCRIBE"), [two]);
-    deepStrictEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
+    deepEqual(router.off("UNSUBSCRIBE", one), [one]);
+    deepEqual(router.middlewares("GET"), [three]);
+    deepEqual(router.middlewares("UNSUBSCRIBE"), [two]);
+    deepEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
 
-    deepStrictEqual(router.off("UNSUBSCRIBE", two), [two]);
-    deepStrictEqual(router.middlewares("GET"), [three]);
-    deepStrictEqual(router.middlewares("UNSUBSCRIBE"), []);
-    deepStrictEqual(router.methods, new Set(["GET"]));
+    deepEqual(router.off("UNSUBSCRIBE", two), [two]);
+    deepEqual(router.middlewares("GET"), [three]);
+    deepEqual(router.middlewares("UNSUBSCRIBE"), []);
+    deepEqual(router.methods, new Set(["GET"]));
 
-    deepStrictEqual(router.off("GET", three), [three]);
-    deepStrictEqual(router.middlewares("GET"), []);
-    deepStrictEqual(router.middlewares("UNSUBSCRIBE"), []);
-    deepStrictEqual(router.methods, new Set());
+    deepEqual(router.off("GET", three), [three]);
+    deepEqual(router.middlewares("GET"), []);
+    deepEqual(router.middlewares("UNSUBSCRIBE"), []);
+    deepEqual(router.methods, new Set());
 
-    deepStrictEqual(router.off("GET", three), []);
-    deepStrictEqual(router.middlewares("GET"), []);
-    deepStrictEqual(router.middlewares("UNSUBSCRIBE"), []);
-    deepStrictEqual(router.methods, new Set());
+    deepEqual(router.off("GET", three), []);
+    deepEqual(router.middlewares("GET"), []);
+    deepEqual(router.middlewares("UNSUBSCRIBE"), []);
+    deepEqual(router.methods, new Set());
 
     const method = "unsupported";
 
@@ -120,8 +120,8 @@ suite("Router", () => {
   for (const method of methods) {
     test(`.${method}()`, () => {
       const router = new Router()[method](one, two, three);
-      deepStrictEqual(router.middlewares(method), [one, two, three]);
-      deepStrictEqual(router.methods, new Set([method.toUpperCase()]));
+      deepEqual(router.middlewares(method), [one, two, three]);
+      deepEqual(router.methods, new Set([method.toUpperCase()]));
     });
   }
 });

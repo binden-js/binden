@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations, class-methods-use-this, @typescript-eslint/no-throw-literal */
-import { deepStrictEqual, throws } from "node:assert";
+import { deepEqual, throws } from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Server } from "node:http";
@@ -85,9 +85,9 @@ suite("Binden", () => {
     const m = new SendMiddleware();
     newApp.use(m);
     const response = await fetch(path.toString(), { agent });
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.status, 200);
     const data = await response.text();
-    deepStrictEqual(data, m.id);
+    deepEqual(data, m.id);
 
     await new Promise((resolve) => {
       newServer.close(resolve);
@@ -103,58 +103,56 @@ suite("Binden", () => {
 
     const reg = new RegExp("Something", "u");
 
-    deepStrictEqual(app.stack, []);
+    deepEqual(app.stack, []);
 
-    deepStrictEqual(app.use().stack, []);
+    deepEqual(app.use().stack, []);
 
-    deepStrictEqual(app.use("/path", m1).stack, [[[m1], "/path"]]);
+    deepEqual(app.use("/path", m1).stack, [[[m1], "/path"]]);
 
     throws(() => {
       app.use("/", {} as Router);
     }, new TypeError("Unsupported Middleware/Router"));
 
-    deepStrictEqual(app.use("/path", m2).stack, [[[m1, m2], "/path"]]);
+    deepEqual(app.use("/path", m2).stack, [[[m1, m2], "/path"]]);
 
-    deepStrictEqual(app.off(), []);
-    deepStrictEqual(app.stack, [[[m1, m2], "/path"]]);
+    deepEqual(app.off(), []);
+    deepEqual(app.stack, [[[m1, m2], "/path"]]);
 
-    deepStrictEqual(app.use("/path", r2, m3).stack, [
-      [[m1, m2, r2, m3], "/path"],
-    ]);
+    deepEqual(app.use("/path", r2, m3).stack, [[[m1, m2, r2, m3], "/path"]]);
 
-    deepStrictEqual(app.use("/path2", r1).stack, [
+    deepEqual(app.use("/path2", r1).stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
     ]);
 
-    deepStrictEqual(app.use(m3).stack, [
+    deepEqual(app.use(m3).stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m3], null],
     ]);
 
-    deepStrictEqual(app.use(m2).stack, [
+    deepEqual(app.use(m2).stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m3, m2], null],
     ]);
 
-    deepStrictEqual(app.use(reg, m3, r1, m1).stack, [
+    deepEqual(app.use(reg, m3, r1, m1).stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m3, m2], null],
       [[m3, r1, m1], reg],
     ]);
 
-    deepStrictEqual(app.off(m3), [m3]);
-    deepStrictEqual(app.stack, [
+    deepEqual(app.off(m3), [m3]);
+    deepEqual(app.stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m2], null],
       [[m3, r1, m1], reg],
     ]);
 
-    deepStrictEqual(app.use(m3).stack, [
+    deepEqual(app.use(m3).stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m2], null],
@@ -162,8 +160,8 @@ suite("Binden", () => {
       [[m3], null],
     ]);
 
-    deepStrictEqual(app.off(reg, r1), [r1]);
-    deepStrictEqual(app.stack, [
+    deepEqual(app.off(reg, r1), [r1]);
+    deepEqual(app.stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m2], null],
@@ -171,38 +169,38 @@ suite("Binden", () => {
       [[m3], null],
     ]);
 
-    deepStrictEqual(app.off(reg, m1, m3), [m1, m3]);
-    deepStrictEqual(app.stack, [
+    deepEqual(app.off(reg, m1, m3), [m1, m3]);
+    deepEqual(app.stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m2, m3], null],
     ]);
 
-    deepStrictEqual(app.use("/path3", m3).stack, [
+    deepEqual(app.use("/path3", m3).stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m2, m3], null],
       [[m3], "/path3"],
     ]);
 
-    deepStrictEqual(app.off(m2, m3), [m2, m3]);
-    deepStrictEqual(app.stack, [
+    deepEqual(app.off(m2, m3), [m2, m3]);
+    deepEqual(app.stack, [
       [[m1, m2, r2, m3], "/path"],
       [[r1], "/path2"],
       [[m3], "/path3"],
     ]);
 
-    deepStrictEqual(app.off("/path", m1, m2, r2, m3), [m1, m2, r2, m3]);
-    deepStrictEqual(app.stack, [
+    deepEqual(app.off("/path", m1, m2, r2, m3), [m1, m2, r2, m3]);
+    deepEqual(app.stack, [
       [[r1], "/path2"],
       [[m3], "/path3"],
     ]);
 
-    deepStrictEqual(app.off("/path2", m3, r1), [r1]);
-    deepStrictEqual(app.stack, [[[m3], "/path3"]]);
+    deepEqual(app.off("/path2", m3, r1), [r1]);
+    deepEqual(app.stack, [[[m3], "/path3"]]);
 
-    deepStrictEqual(app.off("/path3", m3, r1), [m3]);
-    deepStrictEqual(app.stack, []);
+    deepEqual(app.off("/path3", m3, r1), [m3]);
+    deepEqual(app.stack, []);
   });
 
   test("Disabled middleware", async () => {
@@ -210,16 +208,16 @@ suite("Binden", () => {
     const m2 = new SendMiddleware();
     app.use(m1, m2);
     const response = await fetch(url);
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.status, 200);
     const text = await response.text();
-    deepStrictEqual(text, m2.id);
+    deepEqual(text, m2.id);
   });
 
   test("auto_head", async () => {
     const m = new SendMiddleware();
     app.use("/", new Router().get(m));
     const response = await fetch(url, { method: "HEAD" });
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.status, 200);
   });
 
   test("function middlewares", async () => {
@@ -228,8 +226,8 @@ suite("Binden", () => {
     app.use("/", new Router().get(m));
     const response = await fetch(url);
     const data = await response.json();
-    deepStrictEqual(response.status, 200);
-    deepStrictEqual(data, message);
+    deepEqual(response.status, 200);
+    deepEqual(data, message);
   });
 
   test("Middleware `ignore_errors === true`", async () => {
@@ -237,22 +235,22 @@ suite("Binden", () => {
     const m2 = new ErrorMiddleware({ ignore_errors: true });
     app.use(m2, m1);
     const response = await fetch(url);
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.status, 200);
     const text = await response.text();
-    deepStrictEqual(text, m1.id);
+    deepEqual(text, m1.id);
   });
 
   test("404 error (context.done === false)", async () => {
     app.use(new CustomMiddleware());
     const response = await fetch(url);
-    deepStrictEqual(response.status, 404);
+    deepEqual(response.status, 404);
   });
 
   test("404 error (Empty `guarded` router)", async () => {
     app.use(new Router({ guarded: true }));
     const response = await fetch(url, { method: "POST" });
-    deepStrictEqual(response.status, 404);
-    deepStrictEqual(response.headers.get("Allow"), null);
+    deepEqual(response.status, 404);
+    deepEqual(response.headers.get("Allow"), null);
   });
 
   test("405 error (`guarded` router)", async () => {
@@ -260,8 +258,8 @@ suite("Binden", () => {
     const router = new Router({ guarded: true }).patch(m).get(m);
     app.use(router);
     const response = await fetch(url, { method: "POST" });
-    deepStrictEqual(response.status, 405);
-    deepStrictEqual(response.headers.get("Allow"), "PATCH, GET, HEAD");
+    deepEqual(response.status, 405);
+    deepEqual(response.headers.get("Allow"), "PATCH, GET, HEAD");
   });
 
   test("405 error (`guarded` router `auto_head === false`)", async () => {
@@ -279,8 +277,8 @@ suite("Binden", () => {
     const router = new Router({ guarded: true }).patch(m).get(m);
     newApp.use(router);
     const response = await fetch(path.toString(), { method: "POST" });
-    deepStrictEqual(response.status, 405);
-    deepStrictEqual(response.headers.get("Allow"), "PATCH, GET");
+    deepEqual(response.status, 405);
+    deepEqual(response.headers.get("Allow"), "PATCH, GET");
 
     await new Promise((resolve) => {
       newServer.close(resolve);
@@ -311,11 +309,11 @@ suite("Binden", () => {
       newApp.use(new ErrorMiddleware({}, status, { message, expose }));
 
       const response = await fetch(path.toString());
-      deepStrictEqual(response.status, 401);
-      deepStrictEqual(response.headers.get("X-HEADER"), "Value");
+      deepEqual(response.status, 401);
+      deepEqual(response.headers.get("X-HEADER"), "Value");
 
       const text = await response.text();
-      deepStrictEqual(text, "Secret");
+      deepEqual(text, "Secret");
 
       await new Promise((resolve) => {
         newServer.close(resolve);
@@ -337,11 +335,11 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, DefaultErrorCode);
-      deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+      deepEqual(response.status, DefaultErrorCode);
+      deepEqual(response.headers.get("Content-Type"), ct_text);
 
       const received = await response.text();
-      deepStrictEqual(received, message);
+      deepEqual(received, message);
     });
 
     test("errorHadler (`message` is not a string)", async () => {
@@ -361,11 +359,11 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, DefaultErrorCode);
-      deepStrictEqual(response.headers.get("Content-Type"), null);
+      deepEqual(response.status, DefaultErrorCode);
+      deepEqual(response.headers.get("Content-Type"), null);
 
       const received = await response.text();
-      deepStrictEqual(received, "");
+      deepEqual(received, "");
     });
 
     test("errorHadler (`expose === true`)", async () => {
@@ -376,12 +374,12 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+      deepEqual(response.status, status);
+      deepEqual(response.headers.get("Content-Type"), ct_text);
 
       const received = await response.text();
 
-      deepStrictEqual(received, message);
+      deepEqual(received, message);
     });
 
     test("errorHadler (`expose === false`)", async () => {
@@ -392,12 +390,12 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), null);
+      deepEqual(response.status, status);
+      deepEqual(response.headers.get("Content-Type"), null);
 
       const received = await response.text();
 
-      deepStrictEqual(received, "");
+      deepEqual(received, "");
     });
 
     test("errorHadler (`json`)", async () => {
@@ -409,12 +407,12 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), ct_json);
+      deepEqual(response.status, status);
+      deepEqual(response.headers.get("Content-Type"), ct_json);
 
       const received = await response.json();
 
-      deepStrictEqual(received, json);
+      deepEqual(received, json);
     });
 
     test("errorHadler (custom `Content-Type`)", async () => {
@@ -433,12 +431,12 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), ct_html);
+      deepEqual(response.status, status);
+      deepEqual(response.headers.get("Content-Type"), ct_html);
 
       const received = await response.text();
 
-      deepStrictEqual(received, message);
+      deepEqual(received, message);
     });
 
     test("errorHadler (invalid `json`)", async () => {
@@ -450,12 +448,12 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), null);
+      deepEqual(response.status, status);
+      deepEqual(response.headers.get("Content-Type"), null);
 
       const received = await response.text();
 
-      deepStrictEqual(received, "");
+      deepEqual(received, "");
     });
 
     test(".errorHandler() (`headersSent === true`)", async () => {
@@ -480,8 +478,8 @@ suite("Binden", () => {
       }
       class EM extends ErrorMiddleware {
         public run(context?: Context): Promise<never> {
-          deepStrictEqual(context?.response.writableEnded, false);
-          deepStrictEqual(context.response.headersSent, true);
+          deepEqual(context?.response.writableEnded, false);
+          deepEqual(context.response.headersSent, true);
           throw this.error;
         }
       }
@@ -490,12 +488,12 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, 201);
-      deepStrictEqual(response.headers.get("Content-Type"), html);
+      deepEqual(response.status, 201);
+      deepEqual(response.headers.get("Content-Type"), html);
 
       const received = await response.text();
 
-      deepStrictEqual(received, message);
+      deepEqual(received, message);
     });
 
     test(".errorHandler() (`writableEnded === true`)", async () => {
@@ -517,7 +515,7 @@ suite("Binden", () => {
       }
       class EM extends Middleware {
         public run(context: Context): Promise<void> {
-          deepStrictEqual(context.response.writableEnded, true);
+          deepEqual(context.response.writableEnded, true);
           throw error;
         }
       }
@@ -526,12 +524,12 @@ suite("Binden", () => {
 
       const response = await fetch(url);
 
-      deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), html);
+      deepEqual(response.status, status);
+      deepEqual(response.headers.get("Content-Type"), html);
 
       const received = await response.text();
 
-      deepStrictEqual(received, message);
+      deepEqual(received, message);
     });
   });
 

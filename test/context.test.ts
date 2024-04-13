@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations, @typescript-eslint/no-loop-func */
-import { ok, deepStrictEqual } from "node:assert";
+import { ok, deepEqual } from "node:assert/strict";
 import { Server, createServer } from "node:http";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
@@ -32,10 +32,10 @@ suite("Context", () => {
           const context = new Context({ request, response });
           ok(context instanceof Context);
           ok(!context.done);
-          deepStrictEqual(context.request, request);
-          deepStrictEqual(context.response, response);
-          deepStrictEqual(typeof context.id, "string");
-          deepStrictEqual(context.url, new URL(url));
+          deepEqual(context.request, request);
+          deepEqual(context.response, response);
+          deepEqual(typeof context.id, "string");
+          deepEqual(context.url, new URL(url));
 
           context.done = true;
           ok(context.done);
@@ -66,7 +66,7 @@ suite("Context", () => {
             .once()
             .withExactArgs(name, value);
 
-          deepStrictEqual(context.setHeader(name, value), context);
+          deepEqual(context.setHeader(name, value), context);
           mock.verify();
         } catch (error) {
           reject(error);
@@ -92,7 +92,7 @@ suite("Context", () => {
             .once()
             .withExactArgs(status);
 
-          deepStrictEqual(context.status(status), context);
+          deepEqual(context.status(status), context);
           mock.verify();
         } catch (error) {
           reject(error);
@@ -130,29 +130,29 @@ suite("Context", () => {
             let promise: Promise<void>;
 
             if (method === "send") {
-              deepStrictEqual(args, params[0][1]);
+              deepEqual(args, params[0][1]);
               promise = context.send(args);
             } else if (method === "sendFile") {
-              deepStrictEqual(args, params[1][1]);
+              deepEqual(args, params[1][1]);
               promise = context.sendFile(args);
             } else if (method === "form") {
-              deepStrictEqual(args, params[2][1]);
+              deepEqual(args, params[2][1]);
               promise = context.form(args);
             } else if (method === "html") {
-              deepStrictEqual(args, params[3][1]);
+              deepEqual(args, params[3][1]);
               promise = context.html(args);
             } else if (method === "json") {
-              deepStrictEqual(args, params[4][1]);
+              deepEqual(args, params[4][1]);
               promise = context.json(args);
             } else {
-              deepStrictEqual(args, params[5][1]);
+              deepEqual(args, params[5][1]);
               promise = context.text(args);
             }
 
             promise
               .then(() => {
                 mock.verify();
-                deepStrictEqual(context.done, true);
+                deepEqual(context.done, true);
               })
               .catch(reject)
               .finally(() => context.response.end(resolve));
@@ -198,7 +198,7 @@ suite("Context", () => {
           .json(json, stringify)
           .then(() => {
             mock.verify();
-            deepStrictEqual(context.done, true);
+            deepEqual(context.done, true);
           })
           .catch(reject)
           .finally(() => response.end(resolve));
@@ -222,10 +222,10 @@ suite("Context", () => {
         } catch (error: unknown) {
           try {
             ok(error instanceof BindenError);
-            deepStrictEqual(error.expose, expose);
-            deepStrictEqual(error.message, message);
-            deepStrictEqual(error.json, json);
-            deepStrictEqual(error.status, status);
+            deepEqual(error.expose, expose);
+            deepEqual(error.message, message);
+            deepEqual(error.json, json);
+            deepEqual(error.status, status);
           } catch (err) {
             reject(err);
           }

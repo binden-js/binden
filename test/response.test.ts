@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, ok, throws, rejects } from "node:assert";
+import { deepEqual, ok, throws, rejects } from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer } from "node:http";
@@ -48,7 +48,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         try {
-          deepStrictEqual(response instanceof BindenResponse, true);
+          deepEqual(response instanceof BindenResponse, true);
         } catch (error) {
           reject(error);
         } finally {
@@ -66,7 +66,7 @@ suite("BindenResponse", () => {
       server.once("request", (_request, response) => {
         try {
           ok(response.status(status) instanceof BindenResponse);
-          deepStrictEqual(response.statusCode, status);
+          deepEqual(response.statusCode, status);
         } catch (error) {
           reject(error);
         } finally {
@@ -77,7 +77,7 @@ suite("BindenResponse", () => {
     const response = await fetch(url);
     await serverPromise;
 
-    deepStrictEqual(response.status, status);
+    deepEqual(response.status, status);
   });
 
   test(".status() (throws TypeError with unsupported code)", async () => {
@@ -89,7 +89,7 @@ suite("BindenResponse", () => {
             () => response.status(status),
             new TypeError(`Status code ${status} is invalid`),
           );
-          deepStrictEqual(response.statusCode, 200);
+          deepEqual(response.statusCode, 200);
         } catch (error) {
           reject(error);
         } finally {
@@ -120,9 +120,9 @@ suite("BindenResponse", () => {
     const response = await fetch(url);
     await serverPromise;
 
-    deepStrictEqual(response.headers.get(x), headers[x].toString());
-    deepStrictEqual(response.headers.get(y), headers[y]);
-    deepStrictEqual(response.headers.get(z), headers[z].join(", "));
+    deepEqual(response.headers.get(x), headers[x].toString());
+    deepEqual(response.headers.get(y), headers[y]);
+    deepEqual(response.headers.get(z), headers[z].join(", "));
   });
 
   test(".send()", async () => {
@@ -139,8 +139,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), null);
-    deepStrictEqual(
+    deepEqual(response.headers.get("Content-Type"), null);
+    deepEqual(
       response.headers.get("Set-Cookie"),
       [cookie1, cookie2].map((c) => c.toString()).join(", "),
     );
@@ -152,7 +152,7 @@ suite("BindenResponse", () => {
       server.once("request", (_request, response) => {
         response.end(() => {
           try {
-            deepStrictEqual(response.writableEnded, true);
+            deepEqual(response.writableEnded, true);
             response.send().then(resolve).catch(reject);
           } catch (error) {
             reject(error);
@@ -164,7 +164,7 @@ suite("BindenResponse", () => {
     await serverPromise;
     await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), null);
+    deepEqual(response.headers.get("Content-Type"), null);
     ok(response.ok);
   });
 
@@ -185,12 +185,12 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_text);
-    deepStrictEqual(
+    deepEqual(response.headers.get("Content-Type"), ct_text);
+    deepEqual(
       response.headers.get("Set-Cookie"),
       [cookie1, cookie2].map((c) => c.toString()).join(", "),
     );
-    deepStrictEqual(data, string);
+    deepEqual(data, string);
   });
 
   test(".send() (Buffer)", async () => {
@@ -210,12 +210,12 @@ suite("BindenResponse", () => {
 
     const data = Buffer.from(await response.arrayBuffer());
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_text);
-    deepStrictEqual(
+    deepEqual(response.headers.get("Content-Type"), ct_text);
+    deepEqual(
       response.headers.get("Set-Cookie"),
       [cookie1, cookie2].map((c) => c.toString()).join(", "),
     );
-    deepStrictEqual(data, buffer);
+    deepEqual(data, buffer);
   });
 
   test(".send() (number)", async () => {
@@ -229,8 +229,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_text);
-    deepStrictEqual(data, number.toString());
+    deepEqual(response.headers.get("Content-Type"), ct_text);
+    deepEqual(data, number.toString());
   });
 
   test(".send() (bigint)", async () => {
@@ -244,8 +244,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_text);
-    deepStrictEqual(data, bigint.toString());
+    deepEqual(response.headers.get("Content-Type"), ct_text);
+    deepEqual(data, bigint.toString());
   });
 
   test(".json()", async () => {
@@ -259,8 +259,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.json();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_json);
-    deepStrictEqual(data, json);
+    deepEqual(response.headers.get("Content-Type"), ct_json);
+    deepEqual(data, json);
   });
 
   test(".json() (an array)", async () => {
@@ -274,8 +274,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.json();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_json);
-    deepStrictEqual(data, json);
+    deepEqual(response.headers.get("Content-Type"), ct_json);
+    deepEqual(data, json);
   });
 
   test(".json() (with a custom `stringify`)", async () => {
@@ -303,8 +303,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.json();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_json);
-    deepStrictEqual(data, json);
+    deepEqual(response.headers.get("Content-Type"), ct_json);
+    deepEqual(data, json);
   });
 
   test(".text()", async () => {
@@ -318,8 +318,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_text);
-    deepStrictEqual(data, text);
+    deepEqual(response.headers.get("Content-Type"), ct_text);
+    deepEqual(data, text);
   });
 
   test(".html()", async () => {
@@ -333,8 +333,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_html);
-    deepStrictEqual(data, html);
+    deepEqual(response.headers.get("Content-Type"), ct_html);
+    deepEqual(data, html);
   });
 
   test(".form()", async () => {
@@ -351,8 +351,8 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_form);
-    deepStrictEqual(new URLSearchParams(data), form);
+    deepEqual(response.headers.get("Content-Type"), ct_form);
+    deepEqual(new URLSearchParams(data), form);
   });
 
   test(".sendFile()", async () => {
@@ -365,11 +365,11 @@ suite("BindenResponse", () => {
       });
     });
     const response = await fetch(url);
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.status, 200);
     await serverPromise;
     const data = Buffer.from(await response.arrayBuffer());
 
-    deepStrictEqual(data, msg);
+    deepEqual(data, msg);
   });
 
   test(".sendFile() (304 response with `If-Modified-Since`)", async () => {
@@ -390,17 +390,17 @@ suite("BindenResponse", () => {
     const lm = response.headers.get("Last-Modified");
     ok(lm);
     ok(!Number.isNaN(Date.parse(lm)));
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.status, 200);
 
     const data = Buffer.from(await response.arrayBuffer());
-    deepStrictEqual(data, msg);
+    deepEqual(data, msg);
 
     const headers = { "If-Modified-Since": lm };
     const response2 = await fetch(url, { headers });
-    deepStrictEqual(response2.status, 304);
+    deepEqual(response2.status, 304);
 
     const data2 = await response2.text();
-    deepStrictEqual(data2, "");
+    deepEqual(data2, "");
 
     await serverPromise;
   });
@@ -423,17 +423,17 @@ suite("BindenResponse", () => {
     const lm = response.headers.get("Last-Modified");
     ok(lm);
     ok(!Number.isNaN(Date.parse(lm)));
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.status, 200);
 
     const data = await response.text();
-    deepStrictEqual(data, "");
+    deepEqual(data, "");
 
     const headers = { "If-Modified-Since": lm };
     const response2 = await fetch(url, { headers });
-    deepStrictEqual(response2.status, 304);
+    deepEqual(response2.status, 304);
 
     const data2 = await response2.text();
-    deepStrictEqual(data2, "");
+    deepEqual(data2, "");
 
     await serverPromise;
   });
@@ -450,13 +450,13 @@ suite("BindenResponse", () => {
 
     const range = `bytes=${msg.byteLength}-`;
     const response = await fetch(url, { headers: { Range: range } });
-    deepStrictEqual(response.status, 416);
+    deepEqual(response.status, 416);
     const cr = response.headers.get("Content-Range");
-    deepStrictEqual(cr, `bytes */${msg.byteLength}`);
+    deepEqual(cr, `bytes */${msg.byteLength}`);
 
     await serverPromise;
     const data = await response.text();
-    deepStrictEqual(data, "");
+    deepEqual(data, "");
   });
 
   test(".sendFile() (Partial response with `Range`)", async () => {
@@ -473,12 +473,12 @@ suite("BindenResponse", () => {
     const headers = { Range: `bytes= ${start} - ${end} ` };
     const response = await fetch(url, { headers });
     const cr = response.headers.get("Content-Range");
-    deepStrictEqual(cr, `bytes ${start}-${end}/${msg.byteLength}`);
-    deepStrictEqual(response.status, 206);
+    deepEqual(cr, `bytes ${start}-${end}/${msg.byteLength}`);
+    deepEqual(response.status, 206);
 
     await serverPromise;
     const data = Buffer.from(await response.arrayBuffer());
-    deepStrictEqual(data, msg.subarray(start, end + 1));
+    deepEqual(data, msg.subarray(start, end + 1));
   });
 
   test(".sendFile() (Full response with invalid `If-Range`)", async () => {
@@ -497,12 +497,12 @@ suite("BindenResponse", () => {
       "If-Range": `${new Date(file_stats.mtimeMs - 10000).toUTCString()}`,
     };
     const response = await fetch(url, { headers });
-    deepStrictEqual(response.headers.get("Content-Range"), null);
-    deepStrictEqual(response.status, 200);
+    deepEqual(response.headers.get("Content-Range"), null);
+    deepEqual(response.status, 200);
 
     await serverPromise;
     const data = Buffer.from(await response.arrayBuffer());
-    deepStrictEqual(data, msg);
+    deepEqual(data, msg);
   });
 
   test(".sendFile() (Partial response with suffix length)", async () => {
@@ -520,12 +520,12 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = Buffer.from(await response.arrayBuffer());
     const cr = response.headers.get("Content-Range");
-    deepStrictEqual(
+    deepEqual(
       cr,
       `bytes ${msg.byteLength - end}-${msg.byteLength - 1}/${msg.byteLength}`,
     );
-    deepStrictEqual(response.status, 206);
-    deepStrictEqual(data, msg.subarray(msg.byteLength - end));
+    deepEqual(response.status, 206);
+    deepEqual(data, msg.subarray(msg.byteLength - end));
   });
 
   test(".sendFile() (`this.req instanceof BindenRequest`)", async () => {
@@ -551,9 +551,9 @@ suite("BindenResponse", () => {
     const response = await fetch(`http://localhost:${port + 1}`, { headers });
     await serverPromise;
     const data = Buffer.from(await response.arrayBuffer());
-    deepStrictEqual(response.headers.get("Content-Range"), null);
-    deepStrictEqual(response.status, 200);
-    deepStrictEqual(data, msg.subarray(msg.byteLength - end));
+    deepEqual(response.headers.get("Content-Range"), null);
+    deepEqual(response.status, 200);
+    deepEqual(data, msg.subarray(msg.byteLength - end));
     await new Promise<void>((resolve, reject) => {
       newServer.close((error) => {
         if (error) {
@@ -577,7 +577,7 @@ suite("BindenResponse", () => {
     const response = await fetch(url);
     await serverPromise;
     const data = await response.text();
-    deepStrictEqual(data, msg.toString());
+    deepEqual(data, msg.toString());
   });
 
   test(".sendFile() (with invalid protocol)", async () => {

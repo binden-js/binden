@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert";
+import { deepEqual } from "node:assert/strict";
 
 import { Forwarded } from "../../index.js";
 
@@ -11,12 +11,12 @@ suite("Forwarded", () => {
     const proto = "http";
 
     const forwarded = new Forwarded({ ..._, by, host, secret, proto });
-    deepStrictEqual(forwarded.for, _.for);
-    deepStrictEqual(forwarded.by, by);
-    deepStrictEqual(forwarded.host, host);
-    deepStrictEqual(forwarded.proto, proto);
-    deepStrictEqual(forwarded.secret, secret);
-    deepStrictEqual(
+    deepEqual(forwarded.for, _.for);
+    deepEqual(forwarded.by, by);
+    deepEqual(forwarded.host, host);
+    deepEqual(forwarded.proto, proto);
+    deepEqual(forwarded.secret, secret);
+    deepEqual(
       forwarded.toString(),
       `for="${_.for}";by=${by};host=${host};secret=${secret};proto=${proto}`,
     );
@@ -39,23 +39,23 @@ suite("Forwarded", () => {
 
     const parsed = Forwarded.fromString(input);
 
-    deepStrictEqual(parsed.length, 2);
+    deepEqual(parsed.length, 2);
 
     const [one, two] = parsed;
 
-    deepStrictEqual(one.for, forwarded1.for);
-    deepStrictEqual(one.by, forwarded1.by);
-    deepStrictEqual(one.host, forwarded1.host);
-    deepStrictEqual(one.proto, forwarded1.proto);
-    deepStrictEqual(one.secret, forwarded1.secret);
-    deepStrictEqual(one.toString(), forwarded1.toString());
+    deepEqual(one.for, forwarded1.for);
+    deepEqual(one.by, forwarded1.by);
+    deepEqual(one.host, forwarded1.host);
+    deepEqual(one.proto, forwarded1.proto);
+    deepEqual(one.secret, forwarded1.secret);
+    deepEqual(one.toString(), forwarded1.toString());
 
-    deepStrictEqual(two.for, forwarded2.for);
-    deepStrictEqual(two.by, forwarded2.by);
-    deepStrictEqual(two.host, forwarded2.host);
-    deepStrictEqual(two.proto, forwarded2.proto);
-    deepStrictEqual(two.secret, forwarded2.secret);
-    deepStrictEqual(two.toString(), forwarded2.toString());
+    deepEqual(two.for, forwarded2.for);
+    deepEqual(two.by, forwarded2.by);
+    deepEqual(two.host, forwarded2.host);
+    deepEqual(two.proto, forwarded2.proto);
+    deepEqual(two.secret, forwarded2.secret);
+    deepEqual(two.toString(), forwarded2.toString());
   });
 
   test(".fromString() (no `for` directive)", () => {
@@ -66,15 +66,15 @@ suite("Forwarded", () => {
 
     const parsed = Forwarded.fromString(input);
 
-    deepStrictEqual(parsed.length, 1);
+    deepEqual(parsed.length, 1);
 
     const [actual] = parsed;
 
-    deepStrictEqual(actual.for, forwarded.for);
-    deepStrictEqual(actual.by, forwarded.by);
-    deepStrictEqual(actual.host, forwarded.host);
-    deepStrictEqual(actual.proto, forwarded.proto);
-    deepStrictEqual(actual.secret, forwarded.secret);
-    deepStrictEqual(actual.toString(), forwarded.toString());
+    deepEqual(actual.for, forwarded.for);
+    deepEqual(actual.by, forwarded.by);
+    deepEqual(actual.host, forwarded.host);
+    deepEqual(actual.proto, forwarded.proto);
+    deepEqual(actual.secret, forwarded.secret);
+    deepEqual(actual.toString(), forwarded.toString());
   });
 });

@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok } from "node:assert";
+import { deepEqual, ok } from "node:assert/strict";
 
 import { Authorization } from "../../index.js";
 
@@ -7,28 +7,28 @@ suite("Authorization", () => {
     const type = "Bearer";
     const credentials = "credentials";
     const authorization = new Authorization({ type, credentials });
-    deepStrictEqual(authorization.type, type);
-    deepStrictEqual(authorization.credentials, credentials);
-    deepStrictEqual(authorization.toString(), `${type} ${credentials}`);
+    deepEqual(authorization.type, type);
+    deepEqual(authorization.credentials, credentials);
+    deepEqual(authorization.toString(), `${type} ${credentials}`);
   });
 
   test("constructor (no `credentials`)", () => {
     const type = "AWS4-HMAC-SHA256";
     const authorization = new Authorization({ type });
-    deepStrictEqual(authorization.type, type);
-    deepStrictEqual(authorization.credentials, null);
-    deepStrictEqual(authorization.toString(), type);
+    deepEqual(authorization.type, type);
+    deepEqual(authorization.credentials, null);
+    deepEqual(authorization.toString(), type);
   });
 
   test("Authorization.fromString()", () => {
-    deepStrictEqual(Authorization.fromString(), null);
-    deepStrictEqual(Authorization.fromString(""), null);
-    deepStrictEqual(Authorization.fromString("invalittype"), null);
+    deepEqual(Authorization.fromString(), null);
+    deepEqual(Authorization.fromString(""), null);
+    deepEqual(Authorization.fromString("invalittype"), null);
     const input = "Bearer credentials";
     const parsed = Authorization.fromString(input);
     ok(parsed);
-    deepStrictEqual(parsed.type, "Bearer");
-    deepStrictEqual(parsed.credentials, "credentials");
-    deepStrictEqual(parsed.toString(), input);
+    deepEqual(parsed.type, "Bearer");
+    deepEqual(parsed.credentials, "credentials");
+    deepEqual(parsed.toString(), input);
   });
 });

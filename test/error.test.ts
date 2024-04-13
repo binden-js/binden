@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok, throws } from "node:assert";
+import { deepEqual, ok, throws } from "node:assert/strict";
 import { STATUS_CODES } from "node:http";
 
 import { BindenError } from "../index.js";
@@ -9,11 +9,11 @@ suite("BindenError", () => {
     const message = "Something bad happened";
     const status = 500;
     const error = new BindenError(status, { message });
-    deepStrictEqual(error.expose, expose);
-    deepStrictEqual(error.status, status);
-    deepStrictEqual(error.json, null);
-    deepStrictEqual(error.message, message);
-    deepStrictEqual(error.name, "BindenError");
+    deepEqual(error.expose, expose);
+    deepEqual(error.status, status);
+    deepEqual(error.json, null);
+    deepEqual(error.message, message);
+    deepEqual(error.name, "BindenError");
     ok(typeof error.cause === "undefined");
   });
 
@@ -23,12 +23,12 @@ suite("BindenError", () => {
     const status = 500;
     const cause = new Error("Socket has been closed");
     const error = new BindenError(status, { message, cause });
-    deepStrictEqual(error.expose, expose);
-    deepStrictEqual(error.status, status);
-    deepStrictEqual(error.json, null);
-    deepStrictEqual(error.message, message);
-    deepStrictEqual(error.name, "BindenError");
-    deepStrictEqual(error.cause, cause);
+    deepEqual(error.expose, expose);
+    deepEqual(error.status, status);
+    deepEqual(error.json, null);
+    deepEqual(error.message, message);
+    deepEqual(error.name, "BindenError");
+    deepEqual(error.cause, cause);
   });
 
   test("constructor (json)", () => {
@@ -36,11 +36,11 @@ suite("BindenError", () => {
     const expose = true;
     const status = 400;
     const error = new BindenError(status, { json, expose });
-    deepStrictEqual(error.expose, expose);
-    deepStrictEqual(error.status, status);
-    deepStrictEqual(error.json, json);
-    deepStrictEqual(error.message, STATUS_CODES[status]);
-    deepStrictEqual(error.name, "BindenError");
+    deepEqual(error.expose, expose);
+    deepEqual(error.status, status);
+    deepEqual(error.json, json);
+    deepEqual(error.message, STATUS_CODES[status]);
+    deepEqual(error.name, "BindenError");
   });
 
   test("constructor (with invalid status)", () => {

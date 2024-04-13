@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok, throws } from "node:assert";
+import { deepEqual, ok, throws } from "node:assert/strict";
 
 import { ContentRange } from "../../index.js";
 
@@ -8,11 +8,11 @@ suite("ContentRange", () => {
     const end = 499;
     const size = 500;
     const range = new ContentRange({ start, end, size });
-    deepStrictEqual(range.end, end);
-    deepStrictEqual(range.start, start);
-    deepStrictEqual(range.size, size);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes ${start}-${end}/${size}`);
+    deepEqual(range.end, end);
+    deepEqual(range.start, start);
+    deepEqual(range.size, size);
+    deepEqual(range.unit, "bytes");
+    deepEqual(range.toString(), `bytes ${start}-${end}/${size}`);
   });
 
   test("constructor (with errors)", () => {
@@ -64,30 +64,30 @@ suite("ContentRange", () => {
     const end = 499;
     const size = "*";
     const range = new ContentRange({ start, end, size });
-    deepStrictEqual(range.end, end);
-    deepStrictEqual(range.start, start);
-    deepStrictEqual(range.size, size);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes ${start}-${end}/${size}`);
+    deepEqual(range.end, end);
+    deepEqual(range.start, start);
+    deepEqual(range.size, size);
+    deepEqual(range.unit, "bytes");
+    deepEqual(range.toString(), `bytes ${start}-${end}/${size}`);
   });
 
   test("constructor (no range)", () => {
     const size = 500;
     const range = new ContentRange({ size });
-    deepStrictEqual(range.end, null);
-    deepStrictEqual(range.start, null);
-    deepStrictEqual(range.size, size);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes */${size}`);
+    deepEqual(range.end, null);
+    deepEqual(range.start, null);
+    deepEqual(range.size, size);
+    deepEqual(range.unit, "bytes");
+    deepEqual(range.toString(), `bytes */${size}`);
   });
 
   test(".fromString() (invalid input)", () => {
-    deepStrictEqual(ContentRange.fromString(), []);
-    deepStrictEqual(ContentRange.fromString(""), []);
-    deepStrictEqual(ContentRange.fromString("   "), []);
-    deepStrictEqual(ContentRange.fromString("bytes */*"), []);
-    deepStrictEqual(ContentRange.fromString("bytes 1-0/500"), []);
-    deepStrictEqual(ContentRange.fromString("bytes 1-1000/500"), []);
+    deepEqual(ContentRange.fromString(), []);
+    deepEqual(ContentRange.fromString(""), []);
+    deepEqual(ContentRange.fromString("   "), []);
+    deepEqual(ContentRange.fromString("bytes */*"), []);
+    deepEqual(ContentRange.fromString("bytes 1-0/500"), []);
+    deepEqual(ContentRange.fromString("bytes 1-1000/500"), []);
   });
 
   test(".fromString()", () => {
@@ -96,10 +96,10 @@ suite("ContentRange", () => {
     const parsed = ContentRange.fromString(input);
     const [actual] = parsed;
     ok(actual);
-    deepStrictEqual(actual.end, cr.end);
-    deepStrictEqual(actual.start, cr.start);
-    deepStrictEqual(actual.size, cr.size);
-    deepStrictEqual(actual.toString(), cr.toString());
+    deepEqual(actual.end, cr.end);
+    deepEqual(actual.start, cr.start);
+    deepEqual(actual.size, cr.size);
+    deepEqual(actual.toString(), cr.toString());
   });
 
   test(".fromString() (unknown size)", () => {
@@ -108,10 +108,10 @@ suite("ContentRange", () => {
     const parsed = ContentRange.fromString(input);
     const [actual] = parsed;
     ok(actual);
-    deepStrictEqual(actual.end, cr.end);
-    deepStrictEqual(actual.start, cr.start);
-    deepStrictEqual(actual.size, cr.size);
-    deepStrictEqual(actual.toString(), cr.toString());
+    deepEqual(actual.end, cr.end);
+    deepEqual(actual.start, cr.start);
+    deepEqual(actual.size, cr.size);
+    deepEqual(actual.toString(), cr.toString());
   });
 
   test(".fromString() (unknown range)", () => {
@@ -120,9 +120,9 @@ suite("ContentRange", () => {
     const parsed = ContentRange.fromString(input);
     const [actual] = parsed;
     ok(actual);
-    deepStrictEqual(actual.end, cr.end);
-    deepStrictEqual(actual.start, cr.start);
-    deepStrictEqual(actual.size, cr.size);
-    deepStrictEqual(actual.toString(), cr.toString());
+    deepEqual(actual.end, cr.end);
+    deepEqual(actual.start, cr.start);
+    deepEqual(actual.size, cr.size);
+    deepEqual(actual.toString(), cr.toString());
   });
 });

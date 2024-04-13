@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert";
+import { deepEqual } from "node:assert/strict";
 
 import { Middleware } from "../index.js";
 
@@ -12,24 +12,24 @@ class CustomMiddleware extends Middleware {
 suite("Middleware", () => {
   test("constructor (default values)", () => {
     const middleware = new CustomMiddleware();
-    deepStrictEqual(middleware.disabled, false);
-    deepStrictEqual(middleware.ignore_errors, false);
+    deepEqual(middleware.disabled, false);
+    deepEqual(middleware.ignore_errors, false);
   });
 
   test("constructor (disabled)", () => {
     const middleware = new CustomMiddleware({ disabled: true });
-    deepStrictEqual(middleware.disabled, true);
+    deepEqual(middleware.disabled, true);
     middleware.disabled = false;
-    deepStrictEqual(middleware.disabled, false);
-    deepStrictEqual(middleware.ignore_errors, false);
+    deepEqual(middleware.disabled, false);
+    deepEqual(middleware.ignore_errors, false);
   });
 
   test("constructor (ignore errors)", () => {
     const middleware = new CustomMiddleware({ ignore_errors: true });
-    deepStrictEqual(middleware.ignore_errors, true);
+    deepEqual(middleware.ignore_errors, true);
     middleware.ignore_errors = false;
-    deepStrictEqual(middleware.ignore_errors, false);
-    deepStrictEqual(middleware.disabled, false);
+    deepEqual(middleware.ignore_errors, false);
+    deepEqual(middleware.disabled, false);
   });
 
   test("constructor (ignore errors and disabled)", () => {
@@ -37,11 +37,11 @@ suite("Middleware", () => {
       disabled: true,
       ignore_errors: true,
     });
-    deepStrictEqual(middleware.disabled, true);
-    deepStrictEqual(middleware.ignore_errors, true);
+    deepEqual(middleware.disabled, true);
+    deepEqual(middleware.ignore_errors, true);
     middleware.disabled = false;
-    deepStrictEqual(middleware.disabled, false);
+    deepEqual(middleware.disabled, false);
     middleware.ignore_errors = false;
-    deepStrictEqual(middleware.ignore_errors, false);
+    deepEqual(middleware.ignore_errors, false);
   });
 });

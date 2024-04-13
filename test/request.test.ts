@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, ok } from "node:assert";
+import { deepEqual, ok } from "node:assert/strict";
 import { Server, createServer } from "node:http";
 import { stringify, parse } from "node:querystring";
 import fetch from "node-fetch";
@@ -29,19 +29,19 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.accept_encoding.length, 4);
+          deepEqual(request.accept_encoding.length, 4);
 
-          deepStrictEqual(request.accept_encoding[0].encoding, "*");
-          deepStrictEqual(request.accept_encoding[0].q_value, null);
+          deepEqual(request.accept_encoding[0].encoding, "*");
+          deepEqual(request.accept_encoding[0].q_value, null);
 
-          deepStrictEqual(request.accept_encoding[1].encoding, "x-gzip");
-          deepStrictEqual(request.accept_encoding[1].q_value, 0.3);
+          deepEqual(request.accept_encoding[1].encoding, "x-gzip");
+          deepEqual(request.accept_encoding[1].q_value, 0.3);
 
-          deepStrictEqual(request.accept_encoding[2].encoding, "br");
-          deepStrictEqual(request.accept_encoding[2].q_value, 0.2);
+          deepEqual(request.accept_encoding[2].encoding, "br");
+          deepEqual(request.accept_encoding[2].q_value, 0.2);
 
-          deepStrictEqual(request.accept_encoding[3].encoding, "compress");
-          deepStrictEqual(request.accept_encoding[3].q_value, 0.15);
+          deepEqual(request.accept_encoding[3].encoding, "compress");
+          deepEqual(request.accept_encoding[3].q_value, 0.15);
         } catch (error) {
           reject(error);
         } finally {
@@ -59,8 +59,8 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.authorization?.type, "Basic");
-          deepStrictEqual(
+          deepEqual(request.authorization?.type, "Basic");
+          deepEqual(
             request.authorization.credentials,
             "YWxhZGRpbjpvcGVuc2VzYW1l",
           );
@@ -82,16 +82,16 @@ suite("BindenRequest", () => {
       server.once("request", (request, response) => {
         try {
           const { content_encoding } = request;
-          deepStrictEqual(content_encoding.length, 3);
+          deepEqual(content_encoding.length, 3);
 
-          deepStrictEqual(content_encoding[0].encoding, "x-gzip");
-          deepStrictEqual(content_encoding[0].q_value, null);
+          deepEqual(content_encoding[0].encoding, "x-gzip");
+          deepEqual(content_encoding[0].q_value, null);
 
-          deepStrictEqual(content_encoding[1].encoding, "br");
-          deepStrictEqual(content_encoding[1].q_value, null);
+          deepEqual(content_encoding[1].encoding, "br");
+          deepEqual(content_encoding[1].q_value, null);
 
-          deepStrictEqual(content_encoding[2].encoding, "compress");
-          deepStrictEqual(content_encoding[2].q_value, null);
+          deepEqual(content_encoding[2].encoding, "compress");
+          deepEqual(content_encoding[2].q_value, null);
         } catch (error) {
           reject(error);
         } finally {
@@ -111,9 +111,9 @@ suite("BindenRequest", () => {
         try {
           const { content_type } = request;
           ok(content_type);
-          deepStrictEqual(content_type.charset, null);
-          deepStrictEqual(content_type.type, "multipart/form-data");
-          deepStrictEqual(content_type.boundary, "something");
+          deepEqual(content_type.charset, null);
+          deepEqual(content_type.type, "multipart/form-data");
+          deepEqual(content_type.boundary, "something");
         } catch (error) {
           reject(error);
         } finally {
@@ -149,7 +149,7 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.secure, false);
+          deepEqual(request.secure, false);
         } catch (error) {
           reject(error);
         } finally {
@@ -165,7 +165,7 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.protocol, "http:");
+          deepEqual(request.protocol, "http:");
         } catch (error) {
           reject(error);
         } finally {
@@ -184,8 +184,8 @@ suite("BindenRequest", () => {
       server.once("request", (request, response) => {
         try {
           ok(Array.isArray(request.query.b));
-          deepStrictEqual(request.query.b.pop(), "3");
-          deepStrictEqual(request.query, expected);
+          deepEqual(request.query.b.pop(), "3");
+          deepEqual(request.query, expected);
         } catch (error) {
           reject(error);
         } finally {
@@ -205,13 +205,13 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(typeof request.body, "undefined");
+          deepEqual(typeof request.body, "undefined");
           request.body = body;
-          deepStrictEqual(request.body, body);
+          deepEqual(request.body, body);
           request.body = {};
-          deepStrictEqual(request.body, body);
+          deepEqual(request.body, body);
           body.b = 3;
-          deepStrictEqual(request.body, body);
+          deepEqual(request.body, body);
         } catch (error) {
           reject(error);
         } finally {
@@ -229,16 +229,16 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.cookies, [cookie]);
-          deepStrictEqual(request.cookies[0].key, cookie.key);
-          deepStrictEqual(request.cookies[0].value, cookie.value);
-          deepStrictEqual(request.cookies[0].secure, cookie.secure);
-          deepStrictEqual(request.cookies[0].domain, cookie.domain);
-          deepStrictEqual(request.cookies[0].expires, cookie.expires);
-          deepStrictEqual(request.cookies[0].http_only, cookie.http_only);
-          deepStrictEqual(request.cookies[0].max_age, cookie.max_age);
-          deepStrictEqual(request.cookies[0].path, cookie.path);
-          deepStrictEqual(request.cookies[0].same_site, cookie.same_site);
+          deepEqual(request.cookies, [cookie]);
+          deepEqual(request.cookies[0].key, cookie.key);
+          deepEqual(request.cookies[0].value, cookie.value);
+          deepEqual(request.cookies[0].secure, cookie.secure);
+          deepEqual(request.cookies[0].domain, cookie.domain);
+          deepEqual(request.cookies[0].expires, cookie.expires);
+          deepEqual(request.cookies[0].http_only, cookie.http_only);
+          deepEqual(request.cookies[0].max_age, cookie.max_age);
+          deepEqual(request.cookies[0].path, cookie.path);
+          deepEqual(request.cookies[0].same_site, cookie.same_site);
         } catch (error) {
           reject(error);
         } finally {
@@ -256,14 +256,14 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.protocol, "https:");
+          deepEqual(request.protocol, "https:");
           ok(request.secure);
-          deepStrictEqual(request.forwarded, [forwarded]);
-          deepStrictEqual(request.forwarded[0].for, forwarded.for);
-          deepStrictEqual(request.forwarded[0].proto, forwarded.proto);
-          deepStrictEqual(request.forwarded[0].by, forwarded.by);
-          deepStrictEqual(request.forwarded[0].secret, forwarded.secret);
-          deepStrictEqual(request.forwarded[0].host, forwarded.host);
+          deepEqual(request.forwarded, [forwarded]);
+          deepEqual(request.forwarded[0].for, forwarded.for);
+          deepEqual(request.forwarded[0].proto, forwarded.proto);
+          deepEqual(request.forwarded[0].by, forwarded.by);
+          deepEqual(request.forwarded[0].secret, forwarded.secret);
+          deepEqual(request.forwarded[0].host, forwarded.host);
         } catch (error) {
           reject(error);
         } finally {
@@ -282,11 +282,11 @@ suite("BindenRequest", () => {
       server.once("request", (request, response) => {
         try {
           ok(request.if_modified_since);
-          deepStrictEqual(
+          deepEqual(
             request.if_modified_since.date,
             new Date(ims.date.toUTCString()),
           );
-          deepStrictEqual(request.if_modified_since.toString(), ims.toString());
+          deepEqual(request.if_modified_since.toString(), ims.toString());
         } catch (error) {
           reject(error);
         } finally {
@@ -303,12 +303,12 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.range.length, 1);
+          deepEqual(request.range.length, 1);
           const [actual] = request.range;
           ok(actual instanceof Range);
-          deepStrictEqual(actual.start, range.start);
-          deepStrictEqual(actual.end, range.end);
-          deepStrictEqual(actual.toString(), range.toString());
+          deepEqual(actual.start, range.start);
+          deepEqual(actual.end, range.end);
+          deepEqual(actual.toString(), range.toString());
         } catch (error) {
           reject(error);
         } finally {
@@ -325,7 +325,7 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.URL, newUrl);
+          deepEqual(request.URL, newUrl);
         } catch (error) {
           reject(error);
         } finally {
@@ -344,8 +344,8 @@ suite("BindenRequest", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.header("X-CUSTOM-HEADER"), value);
-          deepStrictEqual(request.header("x-custom-header"), value);
+          deepEqual(request.header("X-CUSTOM-HEADER"), value);
+          deepEqual(request.header("x-custom-header"), value);
         } catch (error) {
           reject(error);
         } finally {
