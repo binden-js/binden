@@ -1,9 +1,10 @@
 import { deepEqual, ok } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { Authorization } from "../../index.js";
 
-suite("Authorization", () => {
-  test("constructor", () => {
+describe("Authorization", () => {
+  it("constructor", () => {
     const type = "Bearer";
     const credentials = "credentials";
     const authorization = new Authorization({ type, credentials });
@@ -12,7 +13,7 @@ suite("Authorization", () => {
     deepEqual(authorization.toString(), `${type} ${credentials}`);
   });
 
-  test("constructor (no `credentials`)", () => {
+  it("constructor (no `credentials`)", () => {
     const type = "AWS4-HMAC-SHA256";
     const authorization = new Authorization({ type });
     deepEqual(authorization.type, type);
@@ -20,7 +21,7 @@ suite("Authorization", () => {
     deepEqual(authorization.toString(), type);
   });
 
-  test("Authorization.fromString()", () => {
+  it("Authorization.fromString()", () => {
     deepEqual(Authorization.fromString(), null);
     deepEqual(Authorization.fromString(""), null);
     deepEqual(Authorization.fromString("invalittype"), null);

@@ -1,9 +1,10 @@
 import { deepEqual } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { Forwarded } from "../../index.js";
 
-suite("Forwarded", () => {
-  test("constructor", () => {
+describe("Forwarded", () => {
+  it("constructor", () => {
     const _ = { for: "[2001:db8:cafe::17]:4711" };
     const by = "203.0.113.43";
     const secret = "Secret";
@@ -22,7 +23,7 @@ suite("Forwarded", () => {
     );
   });
 
-  test(".fromString()", () => {
+  it(".fromString()", () => {
     const input = ` For="[2001:db8:cafe::17]:4711";proto=https , for = 192.0.2.60 ; PROTO = http ; By = 203.0.113.43; secRet = SECRET; hoSt = localhost, ignored=1, ignored; k=v, for="", for="`;
 
     const forwarded1 = new Forwarded({
@@ -58,7 +59,7 @@ suite("Forwarded", () => {
     deepEqual(two.toString(), forwarded2.toString());
   });
 
-  test(".fromString() (no `for` directive)", () => {
+  it(".fromString() (no `for` directive)", () => {
     const secret = "donottellanyone";
     const input = `Secret = donottellanyone ; , ; , `;
 

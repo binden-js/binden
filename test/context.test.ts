@@ -1,9 +1,10 @@
 /* eslint-disable init-declarations, @typescript-eslint/no-loop-func */
 import { ok, deepEqual } from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { writeFileSync, rmSync } from "node:fs";
 import { Server, createServer } from "node:http";
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import fastJSON from "fast-json-stringify";
-import fetch from "node-fetch";
-import sinon from "sinon";
 
 import {
   Context,
@@ -12,20 +13,22 @@ import {
   BindenResponse,
 } from "../index.js";
 
-const port = 8080;
+const port = 18080;
 const url = `http://localhost:${port}`;
 
-suite("Context", () => {
+describe("Context", () => {
   let server: Server<typeof BindenRequest, typeof BindenResponse>;
 
-  setup((done) => {
-    server = createServer({
-      IncomingMessage: BindenRequest,
-      ServerResponse: BindenResponse,
-    }).listen(port, done);
+  beforeEach(async () => {
+    await new Promise<void>((resolve) => {
+      server = createServer({
+        IncomingMessage: BindenRequest,
+        ServerResponse: BindenResponse,
+      }).listen(port, resolve);
+    });
   });
 
-  test("constructor", async () => {
+  it("constructor", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -53,21 +56,22 @@ suite("Context", () => {
     await serverPromise;
   });
 
-  test(".setHeader()", async () => {
+  it(".setHeader()", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
           const context = new Context({ request, response });
           const name = "name";
           const value = ["value1", "value2"];
-          const mock = sinon
-            .mock(response)
-            .expects("setHeader")
-            .once()
-            .withExactArgs(name, value);
+
+          const mocked = mock.method(response, "setHeader");
 
           deepEqual(context.setHeader(name, value), context);
-          mock.verify();
+          deepEqual(mocked.mock.calls.length, 1);
+          const [call] = mocked.mock.calls;
+          deepEqual(call.arguments, [name, value]);
+          deepEqual(call.result, context.response);
+          ok(typeof call.error === "undefined");
         } catch (error) {
           reject(error);
         } finally {
@@ -79,21 +83,21 @@ suite("Context", () => {
     await serverPromise;
   });
 
-  test("status", async () => {
+  it("status", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
           const status = 401;
           const context = new Context({ request, response });
 
-          const mock = sinon
-            .mock(response)
-            .expects("status")
-            .once()
-            .withExactArgs(status);
+          const mocked = mock.method(response, "status");
 
           deepEqual(context.status(status), context);
-          mock.verify();
+          deepEqual(mocked.mock.calls.length, 1);
+          const [call] = mocked.mock.calls;
+          deepEqual(call.result, context.response);
+          deepEqual(call.arguments, [status]);
+          ok(typeof call.error === "undefined");
         } catch (error) {
           reject(error);
         } finally {
@@ -115,16 +119,12 @@ suite("Context", () => {
   ] as const;
 
   for (const [method, args] of params) {
-    test(`.${method}()`, async () => {
+    it(`.${method}()`, async () => {
       const serverPromise = new Promise<void>((resolve, reject) => {
         server.once("request", (request, response) => {
           const context = new Context({ request, response });
 
-          const mock = sinon
-            .mock(response)
-            .expects(method)
-            .once()
-            .withExactArgs(args);
+          const mocked = mock.method(response, method);
 
           try {
             let promise: Promise<void>;
@@ -133,6 +133,7 @@ suite("Context", () => {
               deepEqual(args, params[0][1]);
               promise = context.send(args);
             } else if (method === "sendFile") {
+              writeFileSync(args, randomUUID());
               deepEqual(args, params[1][1]);
               promise = context.sendFile(args);
             } else if (method === "form") {
@@ -151,11 +152,23 @@ suite("Context", () => {
 
             promise
               .then(() => {
-                mock.verify();
+                deepEqual(mocked.mock.calls.length, 1);
+                const [call] = mocked.mock.calls;
+                ok(typeof call.result !== "undefined");
+                deepEqual(call.arguments, [args]);
+                ok(typeof call.error === "undefined");
                 deepEqual(context.done, true);
+                if (method === "sendFile") {
+                  rmSync(args);
+                }
+                call.result
+                  .then((res) => {
+                    ok(typeof res === "undefined");
+                  })
+                  .catch(reject)
+                  .finally(() => context.response.end(resolve));
               })
-              .catch(reject)
-              .finally(() => context.response.end(resolve));
+              .catch(reject);
           } catch (error) {
             context.response.end(() => {
               reject(error);
@@ -168,7 +181,7 @@ suite("Context", () => {
     });
   }
 
-  test(".json() (with a custom `stringify`)", async () => {
+  it(".json() (with a custom `stringify`)", async () => {
     const json = { currency: "💶", value: 120 };
     const stringify = fastJSON({
       title: "Example Schema",
@@ -188,27 +201,32 @@ suite("Context", () => {
       server.once("request", (request, response) => {
         const context = new Context({ request, response });
 
-        const mock = sinon
-          .mock(response)
-          .expects("json")
-          .once()
-          .withExactArgs(json, stringify);
+        const mocked = mock.method(response, "json");
 
         context
           .json(json, stringify)
           .then(() => {
-            mock.verify();
             deepEqual(context.done, true);
+            deepEqual(mocked.mock.calls.length, 1);
+            const [call] = mocked.mock.calls;
+            ok(typeof call.result !== "undefined");
+            deepEqual(call.arguments, [json, stringify]);
+            ok(typeof call.error === "undefined");
+            call.result
+              .then((res) => {
+                ok(typeof res === "undefined");
+              })
+              .catch(reject)
+              .finally(() => context.response.end(resolve));
           })
-          .catch(reject)
-          .finally(() => response.end(resolve));
+          .catch(reject);
       });
     });
     await fetch(url);
     await serverPromise;
   });
 
-  test(".throw()", async () => {
+  it(".throw()", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         const status = 401;
@@ -238,5 +256,17 @@ suite("Context", () => {
     await serverPromise;
   });
 
-  teardown((done) => server.close(done));
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => {
+      mock.reset();
+      server.closeIdleConnections();
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
 });

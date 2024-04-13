@@ -2,7 +2,7 @@
 import { deepEqual, ok } from "node:assert/strict";
 import { Server, createServer } from "node:http";
 import { stringify, parse } from "node:querystring";
-import fetch from "node-fetch";
+import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
   Range,
@@ -12,20 +12,22 @@ import {
   IfModifiedSince,
 } from "../index.js";
 
-const port = 8080;
+const port = 18080;
 const url = `http://localhost:${port}`;
 
-suite("BindenRequest", () => {
+describe("BindenRequest", () => {
   let server: Server<typeof BindenRequest>;
 
-  setup((done) => {
-    server = createServer({ IncomingMessage: BindenRequest }).listen(
-      port,
-      done,
-    );
+  beforeEach(async () => {
+    await new Promise<void>((resolve) => {
+      server = createServer({ IncomingMessage: BindenRequest }).listen(
+        port,
+        resolve,
+      );
+    });
   });
 
-  test(".accept_encoding", async () => {
+  it(".accept_encoding", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -55,7 +57,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".authorization", async () => {
+  it(".authorization", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -77,7 +79,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".content_encoding", async () => {
+  it(".content_encoding", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -105,7 +107,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".content_type", async () => {
+  it(".content_type", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -127,7 +129,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".id", async () => {
+  it(".id", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -145,7 +147,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test("secure", async () => {
+  it("secure", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -161,7 +163,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test("protocol", async () => {
+  it("protocol", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
@@ -177,7 +179,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".query()", async () => {
+  it(".query()", async () => {
     const query = { a: 1, b: ["2", "3"], c: "4" };
     const expected = { ...parse(stringify(query)) };
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -200,7 +202,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".body", async () => {
+  it(".body", async () => {
     const body = { a: 1 } as Record<string, number>;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
@@ -224,7 +226,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".cookies", async () => {
+  it(".cookies", async () => {
     const cookie = new Cookie({ key: "key", value: "value" });
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
@@ -251,7 +253,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".forwarded", async () => {
+  it(".forwarded", async () => {
     const forwarded = new Forwarded({ for: "8:8:8:8", proto: "https" });
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
@@ -276,7 +278,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".if_modified_since", async () => {
+  it(".if_modified_since", async () => {
     const ims = new IfModifiedSince({ date: new Date() });
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
@@ -298,7 +300,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".range", async () => {
+  it(".range", async () => {
     const range = new Range({ start: 0, end: 499 });
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
@@ -320,7 +322,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".URL", async () => {
+  it(".URL", async () => {
     const newUrl = new URL("/p/a/t/h?a=1&a=2&b=3c", url);
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
@@ -338,7 +340,7 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  test(".header()", async () => {
+  it(".header()", async () => {
     const value = "some value";
     const headers = { "X-CUSTOM-HEADER": value };
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -358,5 +360,16 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  teardown((done) => server.close(done));
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.closeIdleConnections();
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
 });

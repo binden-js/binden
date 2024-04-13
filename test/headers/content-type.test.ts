@@ -1,9 +1,10 @@
 import { deepEqual, ok, throws } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { ContentType } from "../../index.js";
 
-suite("ContentType", () => {
-  test("constructor", () => {
+describe("ContentType", () => {
+  it("constructor", () => {
     const type = "video/mp4";
     const ct = new ContentType({ type });
     deepEqual(ct.type, type);
@@ -17,7 +18,7 @@ suite("ContentType", () => {
     );
   });
 
-  test("constructor(with charset)", () => {
+  it("constructor(with charset)", () => {
     const type = "plain/text";
     const charset = "UTF-8";
     const boundary = "__boundary";
@@ -28,7 +29,7 @@ suite("ContentType", () => {
     deepEqual(ct.toString(), `${type}; charset=${charset}`);
   });
 
-  test("constructor(with boundary)", () => {
+  it("constructor(with boundary)", () => {
     const type = "multipart/form-data";
     const charset = "UTF-8";
     const boundary = "__boundary";
@@ -39,7 +40,7 @@ suite("ContentType", () => {
     deepEqual(ct.toString(), `${type}; boundary=${boundary}`);
   });
 
-  test("ContentType.fromString()", () => {
+  it("ContentType.fromString()", () => {
     const input = ` text/html `;
     const parsed = ContentType.fromString(input);
     ok(parsed);
@@ -49,7 +50,7 @@ suite("ContentType", () => {
     deepEqual(parsed.toString(), "text/html");
   });
 
-  test("ContentType.fromString() (charset)", () => {
+  it("ContentType.fromString() (charset)", () => {
     const input = ` text/html ;   charset  =  utf-8  `;
     const parsed = ContentType.fromString(input);
     ok(parsed);
@@ -59,7 +60,7 @@ suite("ContentType", () => {
     deepEqual(parsed.toString(), "text/html; charset=utf-8");
   });
 
-  test("ContentType.fromString() (with quoted charset)", () => {
+  it("ContentType.fromString() (with quoted charset)", () => {
     const input = ` text/html ;   charset  =  "UtF-8"  `;
     const parsed = ContentType.fromString(input);
     ok(parsed);
@@ -69,7 +70,7 @@ suite("ContentType", () => {
     deepEqual(parsed.toString(), "text/html; charset=utf-8");
   });
 
-  test("ContentType.fromString() (with boudary)", () => {
+  it("ContentType.fromString() (with boudary)", () => {
     const input = `  multipart/form-data  ; boundary  =  something  `;
     const parsed = ContentType.fromString(input);
     ok(parsed);
@@ -79,7 +80,7 @@ suite("ContentType", () => {
     deepEqual(parsed.toString(), "multipart/form-data; boundary=something");
   });
 
-  test("ContentType.fromString() (with empty charset)", () => {
+  it("ContentType.fromString() (with empty charset)", () => {
     const input = `plain/text; charset=""`;
     const parsed = ContentType.fromString(input);
     ok(parsed);
@@ -89,7 +90,7 @@ suite("ContentType", () => {
     deepEqual(parsed.toString(), "plain/text");
   });
 
-  test("ContentType.fromString() (invalid input)", () => {
+  it("ContentType.fromString() (invalid input)", () => {
     deepEqual(ContentType.fromString(), null);
     deepEqual(ContentType.fromString(""), null);
     deepEqual(ContentType.fromString(";"), null);

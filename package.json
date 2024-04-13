@@ -30,7 +30,7 @@
     "prettier": "prettier -c .",
     "prettier:write": "prettier -c -w .",
     "preversion": "npm run docs:build",
-    "test": "mocha"
+    "test": "node --loader ts-node/esm --test test/*.test.ts test/headers/*.test.ts"
   },
   "repository": {
     "type": "git",
@@ -59,19 +59,15 @@
     "@binden/commitlint-config": "^2.1.0",
     "@binden/semantic-release-config": "^3.0.0",
     "@binden/tsconfig": "^2.0.0",
-    "@types/mocha": "^10.0.6",
-    "@types/sinon": "^17.0.3",
     "c8": "^9.1.0",
     "eslint-config-binden-ts": "^4.0.0",
     "fast-json-stringify": "^5.14.1",
     "husky": "^9.0.11",
     "lint-staged": "^15.2.2",
-    "mocha": "^10.4.0",
-    "node-fetch": "^3.3.2",
     "prettier": "^3.2.5",
-    "sinon": "^17.0.1",
     "ts-node": "^10.9.2",
-    "typedoc": "^0.25.13"
+    "typedoc": "^0.25.13",
+    "undici": "^6.13.0"
   },
   "funding": {
     "type": "Coinbase Commerce",

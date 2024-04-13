@@ -1,16 +1,17 @@
 import { deepEqual } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { ContentEncoding } from "../../index.js";
 
-suite("ContentEncoding", () => {
-  test("constructor", () => {
+describe("ContentEncoding", () => {
+  it("constructor", () => {
     const encoding = "br";
     const ac = new ContentEncoding({ encoding });
     deepEqual(ac.encoding, encoding);
     deepEqual(ac.toString(), encoding);
   });
 
-  test("ContentEncoding.fromString()", () => {
+  it("ContentEncoding.fromString()", () => {
     deepEqual(ContentEncoding.fromString(), []);
     deepEqual(ContentEncoding.fromString(""), []);
     const input = " x-gzip , br , deflate , ignored ";

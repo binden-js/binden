@@ -1,16 +1,17 @@
 import { deepEqual, ok } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { IfModifiedSince } from "../../index.js";
 
-suite("If-Modified-Since", () => {
-  test("constructor", () => {
+describe("If-Modified-Since", () => {
+  it("constructor", () => {
     const date = new Date();
     const ac = new IfModifiedSince({ date });
     deepEqual(ac.date, date);
     deepEqual(ac.toString(), date.toUTCString());
   });
 
-  test("constructor (invalid Date)", () => {
+  it("constructor (invalid Date)", () => {
     const input = "invalid";
     const date = new Date(input);
     const ac = new IfModifiedSince({ date });
@@ -18,7 +19,7 @@ suite("If-Modified-Since", () => {
     deepEqual(ac.toString(), "Invalid Date");
   });
 
-  test("IfModifiedSince.fromString()", () => {
+  it("IfModifiedSince.fromString()", () => {
     deepEqual(IfModifiedSince.fromString(), null);
     deepEqual(IfModifiedSince.fromString(""), null);
     deepEqual(IfModifiedSince.fromString("notadate"), null);

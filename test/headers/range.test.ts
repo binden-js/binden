@@ -1,9 +1,10 @@
 import { deepEqual } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { Range } from "../../index.js";
 
-suite("Range", () => {
-  test("constructor", () => {
+describe("Range", () => {
+  it("constructor", () => {
     const start = 0;
     const end = 499;
     const range = new Range({ start, end });
@@ -13,7 +14,7 @@ suite("Range", () => {
     deepEqual(range.toString(), `bytes=${start}-${end}`);
   });
 
-  test("constructor (no `start`)", () => {
+  it("constructor (no `start`)", () => {
     const start = 0.1;
     const end = 500;
     const range = new Range({ start, end });
@@ -23,7 +24,7 @@ suite("Range", () => {
     deepEqual(range.toString(), `bytes=-${end}`);
   });
 
-  test("constructor (no `end`)", () => {
+  it("constructor (no `end`)", () => {
     const end = 499.9;
     const start = 0;
     const range = new Range({ start, end });
@@ -33,7 +34,7 @@ suite("Range", () => {
     deepEqual(range.toString(), `bytes=${start}-`);
   });
 
-  test(".fromString()", () => {
+  it(".fromString()", () => {
     deepEqual(Range.fromString(), []);
     deepEqual(Range.fromString(" "), []);
     deepEqual(Range.fromString("bytes= -"), []);
@@ -63,7 +64,7 @@ suite("Range", () => {
     deepEqual(three.toString(), third.toString());
   });
 
-  test(".fromString() (no start)", () => {
+  it(".fromString() (no start)", () => {
     const input = "bytes= -500";
 
     const range = new Range({ end: 500 });

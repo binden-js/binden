@@ -1,9 +1,10 @@
 import { deepEqual } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { Cookie } from "../../index.js";
 
-suite("Cookie", () => {
-  test("constructor (`__Secure-` prefix)", () => {
+describe("Cookie", () => {
+  it("constructor (`__Secure-` prefix)", () => {
     const key = "__Secure-ID";
     const value = "123";
     const expires = new Date();
@@ -38,7 +39,7 @@ suite("Cookie", () => {
     );
   });
 
-  test("constructor (`__Host-` prefix)", () => {
+  it("constructor (`__Host-` prefix)", () => {
     const key = "__Host-ID";
     const value = "123";
     const expires = new Date();
@@ -61,7 +62,7 @@ suite("Cookie", () => {
     );
   });
 
-  test("constructor (SameSite=None)", () => {
+  it("constructor (SameSite=None)", () => {
     const key = "Key";
     const value = "Value";
     const same_site = "None";
@@ -82,7 +83,7 @@ suite("Cookie", () => {
     );
   });
 
-  test("constructor (Secure = false)", () => {
+  it("constructor (Secure = false)", () => {
     const key = "Key";
     const value = "Value";
     const secure = false;
@@ -103,7 +104,7 @@ suite("Cookie", () => {
     );
   });
 
-  test("constructor (Secure = true)", () => {
+  it("constructor (Secure = true)", () => {
     const key = "Key";
     const value = "Value";
     const secure = true;
@@ -123,7 +124,7 @@ suite("Cookie", () => {
     deepEqual(cookie.toString(), `${key}=${value}; Secure; SameSite=Lax`);
   });
 
-  test(".fromString()", () => {
+  it(".fromString()", () => {
     deepEqual(Cookie.fromString(), []);
     deepEqual(Cookie.fromString("a="), []);
 

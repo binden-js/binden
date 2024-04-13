@@ -1,4 +1,5 @@
 import { deepEqual } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { Middleware } from "../index.js";
 
@@ -9,14 +10,14 @@ class CustomMiddleware extends Middleware {
   }
 }
 
-suite("Middleware", () => {
-  test("constructor (default values)", () => {
+describe("Middleware", () => {
+  it("constructor (default values)", () => {
     const middleware = new CustomMiddleware();
     deepEqual(middleware.disabled, false);
     deepEqual(middleware.ignore_errors, false);
   });
 
-  test("constructor (disabled)", () => {
+  it("constructor (disabled)", () => {
     const middleware = new CustomMiddleware({ disabled: true });
     deepEqual(middleware.disabled, true);
     middleware.disabled = false;
@@ -24,7 +25,7 @@ suite("Middleware", () => {
     deepEqual(middleware.ignore_errors, false);
   });
 
-  test("constructor (ignore errors)", () => {
+  it("constructor (ignore errors)", () => {
     const middleware = new CustomMiddleware({ ignore_errors: true });
     deepEqual(middleware.ignore_errors, true);
     middleware.ignore_errors = false;
@@ -32,7 +33,7 @@ suite("Middleware", () => {
     deepEqual(middleware.disabled, false);
   });
 
-  test("constructor (ignore errors and disabled)", () => {
+  it("constructor (ignore errors and disabled)", () => {
     const middleware = new CustomMiddleware({
       disabled: true,
       ignore_errors: true,

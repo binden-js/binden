@@ -1,10 +1,11 @@
 import { deepEqual, ok, throws } from "node:assert/strict";
 import { STATUS_CODES } from "node:http";
+import { describe, it } from "node:test";
 
 import { BindenError } from "../index.js";
 
-suite("BindenError", () => {
-  test("constructor", () => {
+describe("BindenError", () => {
+  it("constructor", () => {
     const expose = false;
     const message = "Something bad happened";
     const status = 500;
@@ -17,7 +18,7 @@ suite("BindenError", () => {
     ok(typeof error.cause === "undefined");
   });
 
-  test("constructor (with `cause`)", () => {
+  it("constructor (with `cause`)", () => {
     const expose = false;
     const message = "Something bad happened";
     const status = 500;
@@ -31,7 +32,7 @@ suite("BindenError", () => {
     deepEqual(error.cause, cause);
   });
 
-  test("constructor (json)", () => {
+  it("constructor (json)", () => {
     const json = { error: "Something bad happened" };
     const expose = true;
     const status = 400;
@@ -43,7 +44,7 @@ suite("BindenError", () => {
     deepEqual(error.name, "BindenError");
   });
 
-  test("constructor (with invalid status)", () => {
+  it("constructor (with invalid status)", () => {
     throws(
       () => new BindenError(300),
       new RangeError("Status code is less than 400"),

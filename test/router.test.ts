@@ -1,5 +1,5 @@
 import { deepEqual, throws } from "node:assert/strict";
-
+import { describe, it } from "node:test";
 import { Router, Middleware } from "../index.js";
 
 class CustomMiddleware extends Middleware {
@@ -24,15 +24,15 @@ const methods = [
   "trace",
 ] as const;
 
-suite("Router", () => {
-  test("constructor", () => {
+describe("Router", () => {
+  it("constructor", () => {
     const router = new Router();
     deepEqual(router.guarded, false);
     deepEqual(typeof router.middlewares, "function");
     deepEqual(router.methods, new Set());
   });
 
-  test("constructor (`guarded === true`)", () => {
+  it("constructor (`guarded === true`)", () => {
     const guarded = true;
     const router = new Router({ guarded });
     deepEqual(router.guarded, guarded);
@@ -46,7 +46,7 @@ suite("Router", () => {
     deepEqual(router.guarded, true);
   });
 
-  test(".on()", () => {
+  it(".on()", () => {
     const router = new Router()
       .on("HEAD")
       .on("UNSUBSCRIBE", one)
@@ -59,7 +59,7 @@ suite("Router", () => {
     deepEqual(router.methods, new Set(["UNSUBSCRIBE", "GET"]));
   });
 
-  test(".on() (with unsupported method)", () => {
+  it(".on() (with unsupported method)", () => {
     const unsupportedMethod = "_unsupported_";
     throws(
       () => new Router().on(unsupportedMethod),
@@ -67,14 +67,14 @@ suite("Router", () => {
     );
   });
 
-  test(".on() (with unsupported middleware)", () => {
+  it(".on() (with unsupported middleware)", () => {
     throws(
       () => new Router().on("GET", {} as Middleware),
       new TypeError("Middleware is not supported"),
     );
   });
 
-  test(".off()", () => {
+  it(".off()", () => {
     const router = new Router().on("UNSUBSCRIBE", one, two).on("GET", three);
 
     deepEqual(router.off("GET", one, two), []);
@@ -118,7 +118,7 @@ suite("Router", () => {
   });
 
   for (const method of methods) {
-    test(`.${method}()`, () => {
+    it(`.${method}()`, () => {
       const router = new Router()[method](one, two, three);
       deepEqual(router.middlewares(method), [one, two, three]);
       deepEqual(router.methods, new Set([method.toUpperCase()]));

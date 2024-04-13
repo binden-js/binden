@@ -4,8 +4,9 @@ import { randomUUID } from "node:crypto";
 import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import fastJSON from "fast-json-stringify";
-import fetch from "node-fetch";
+
 import type { Stats } from "node:fs";
 
 import {
@@ -18,10 +19,10 @@ import {
   ct_html,
 } from "../index.js";
 
-const port = 8080;
+const port = 18080;
 const url = `http://localhost:${port}`;
 
-suite("BindenResponse", () => {
+describe("BindenResponse", () => {
   const filePath = `${tmpdir()}/__binden.test.file`;
   const dirPath = `${tmpdir()}/__binden.test.dir`;
   let msg: Buffer;
@@ -29,22 +30,20 @@ suite("BindenResponse", () => {
   let file_stats: Stats;
   let dir_stats: Stats;
 
-  setup(async () => {
+  beforeEach(async () => {
     msg = Buffer.from(randomUUID());
     await mkdir(dirPath);
     await writeFile(filePath, msg);
     await new Promise<void>((resolve) => {
       server = createServer<typeof IncomingMessage, typeof BindenResponse>({
         ServerResponse: BindenResponse,
-      }).listen(port, () => {
-        resolve();
-      });
+      }).listen(port, resolve);
     });
     dir_stats = await stat(dirPath);
     file_stats = await stat(filePath);
   });
 
-  test("ServerResponse", async () => {
+  it("ServerResponse", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         try {
@@ -60,7 +59,7 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  test(".status()", async () => {
+  it(".status()", async () => {
     const status = 401;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -80,7 +79,7 @@ suite("BindenResponse", () => {
     deepEqual(response.status, status);
   });
 
-  test(".status() (throws TypeError with unsupported code)", async () => {
+  it(".status() (throws TypeError with unsupported code)", async () => {
     const status = 499;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -101,7 +100,7 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  test(".set()", async () => {
+  it(".set()", async () => {
     const x = "X-Header";
     const y = "Y-Header";
     const z = "Z-Header";
@@ -125,7 +124,7 @@ suite("BindenResponse", () => {
     deepEqual(response.headers.get(z), headers[z].join(", "));
   });
 
-  test(".send()", async () => {
+  it(".send()", async () => {
     const cookie1 = new Cookie({ key: "__Secure-K1", value: "V1" });
     const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -147,7 +146,7 @@ suite("BindenResponse", () => {
     ok(response.ok);
   });
 
-  test(".send() (`writableEnded === true`)", async () => {
+  it(".send() (`writableEnded === true`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response.end(() => {
@@ -168,7 +167,7 @@ suite("BindenResponse", () => {
     ok(response.ok);
   });
 
-  test(".send() (with encoding)", async () => {
+  it(".send() (with encoding)", async () => {
     const cookie1 = new Cookie({ key: "__Secure-K1", value: "V1" });
     const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
     const string = "Hello World!";
@@ -193,7 +192,7 @@ suite("BindenResponse", () => {
     deepEqual(data, string);
   });
 
-  test(".send() (Buffer)", async () => {
+  it(".send() (Buffer)", async () => {
     const cookie1 = new Cookie({ key: "__Secure-K1", value: "V1" });
     const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
     const string = "Hello World!";
@@ -218,7 +217,7 @@ suite("BindenResponse", () => {
     deepEqual(data, buffer);
   });
 
-  test(".send() (number)", async () => {
+  it(".send() (number)", async () => {
     const number = 1;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -233,7 +232,7 @@ suite("BindenResponse", () => {
     deepEqual(data, number.toString());
   });
 
-  test(".send() (bigint)", async () => {
+  it(".send() (bigint)", async () => {
     const bigint = 1n;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -248,7 +247,7 @@ suite("BindenResponse", () => {
     deepEqual(data, bigint.toString());
   });
 
-  test(".json()", async () => {
+  it(".json()", async () => {
     const json = { currency: "💶" };
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -257,13 +256,13 @@ suite("BindenResponse", () => {
     });
     const response = await fetch(url);
     await serverPromise;
-    const data = await response.json();
+    const data = (await response.json()) as unknown;
 
     deepEqual(response.headers.get("Content-Type"), ct_json);
     deepEqual(data, json);
   });
 
-  test(".json() (an array)", async () => {
+  it(".json() (an array)", async () => {
     const json = [1, "2", { currency: "💶" }];
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -272,13 +271,13 @@ suite("BindenResponse", () => {
     });
     const response = await fetch(url);
     await serverPromise;
-    const data = await response.json();
+    const data = (await response.json()) as unknown;
 
     deepEqual(response.headers.get("Content-Type"), ct_json);
     deepEqual(data, json);
   });
 
-  test(".json() (with a custom `stringify`)", async () => {
+  it(".json() (with a custom `stringify`)", async () => {
     const json = { currency: "💶", value: 120 };
     const stringify = fastJSON({
       title: "Example Schema",
@@ -301,13 +300,13 @@ suite("BindenResponse", () => {
     });
     const response = await fetch(url);
     await serverPromise;
-    const data = await response.json();
+    const data = (await response.json()) as unknown;
 
     deepEqual(response.headers.get("Content-Type"), ct_json);
     deepEqual(data, json);
   });
 
-  test(".text()", async () => {
+  it(".text()", async () => {
     const text = "😀";
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -322,7 +321,7 @@ suite("BindenResponse", () => {
     deepEqual(data, text);
   });
 
-  test(".html()", async () => {
+  it(".html()", async () => {
     const html = "<html></html>";
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -337,7 +336,7 @@ suite("BindenResponse", () => {
     deepEqual(data, html);
   });
 
-  test(".form()", async () => {
+  it(".form()", async () => {
     const form = new URLSearchParams();
     form.append("1", "2");
     form.set("0", "1");
@@ -355,7 +354,7 @@ suite("BindenResponse", () => {
     deepEqual(new URLSearchParams(data), form);
   });
 
-  test(".sendFile()", async () => {
+  it(".sendFile()", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
@@ -372,7 +371,7 @@ suite("BindenResponse", () => {
     deepEqual(data, msg);
   });
 
-  test(".sendFile() (304 response with `If-Modified-Since`)", async () => {
+  it(".sendFile() (304 response with `If-Modified-Since`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
@@ -405,7 +404,7 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  test(".sendFile() (304 response with `If-Modified-Since` HEAD)", async () => {
+  it(".sendFile() (304 response with `If-Modified-Since` HEAD)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
@@ -438,7 +437,7 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  test(".sendFile() (416 response with invalid `Range`)", async () => {
+  it(".sendFile() (416 response with invalid `Range`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
@@ -459,7 +458,7 @@ suite("BindenResponse", () => {
     deepEqual(data, "");
   });
 
-  test(".sendFile() (Partial response with `Range`)", async () => {
+  it(".sendFile() (Partial response with `Range`)", async () => {
     const start = 10;
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -481,7 +480,7 @@ suite("BindenResponse", () => {
     deepEqual(data, msg.subarray(start, end + 1));
   });
 
-  test(".sendFile() (Full response with invalid `If-Range`)", async () => {
+  it(".sendFile() (Full response with invalid `If-Range`)", async () => {
     const start = 10;
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
@@ -505,7 +504,7 @@ suite("BindenResponse", () => {
     deepEqual(data, msg);
   });
 
-  test(".sendFile() (Partial response with suffix length)", async () => {
+  it(".sendFile() (Partial response with suffix length)", async () => {
     const end = 20;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -528,7 +527,7 @@ suite("BindenResponse", () => {
     deepEqual(data, msg.subarray(msg.byteLength - end));
   });
 
-  test(".sendFile() (`this.req instanceof BindenRequest`)", async () => {
+  it(".sendFile() (`this.req instanceof BindenRequest`)", async () => {
     const newServer = createServer({
       ServerResponse: BindenResponse,
       IncomingMessage: BindenRequest,
@@ -555,6 +554,7 @@ suite("BindenResponse", () => {
     deepEqual(response.status, 200);
     deepEqual(data, msg.subarray(msg.byteLength - end));
     await new Promise<void>((resolve, reject) => {
+      newServer.closeIdleConnections();
       newServer.close((error) => {
         if (error) {
           reject(error);
@@ -565,7 +565,7 @@ suite("BindenResponse", () => {
     });
   });
 
-  test(".sendFile() (with `URL`)", async () => {
+  it(".sendFile() (with `URL`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
@@ -580,7 +580,7 @@ suite("BindenResponse", () => {
     deepEqual(data, msg.toString());
   });
 
-  test(".sendFile() (with invalid protocol)", async () => {
+  it(".sendFile() (with invalid protocol)", async () => {
     const path = new URL("https:/www.example.com/");
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
@@ -596,7 +596,7 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  test(".sendFile() (not a regular file)", async () => {
+  it(".sendFile() (not a regular file)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         rejects(
@@ -611,10 +611,11 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  teardown(async () => {
+  afterEach(async () => {
     await rmdir(dirPath);
     await rm(filePath);
     await new Promise<void>((resolve, reject) => {
+      server.closeIdleConnections();
       server.close((error) => {
         if (error) {
           reject(error);

@@ -1,9 +1,10 @@
 import { deepEqual, ok, throws } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { ContentRange } from "../../index.js";
 
-suite("ContentRange", () => {
-  test("constructor", () => {
+describe("ContentRange", () => {
+  it("constructor", () => {
     const start = 0;
     const end = 499;
     const size = 500;
@@ -15,7 +16,7 @@ suite("ContentRange", () => {
     deepEqual(range.toString(), `bytes ${start}-${end}/${size}`);
   });
 
-  test("constructor (with errors)", () => {
+  it("constructor (with errors)", () => {
     const size = 500;
     throws(
       () => new ContentRange({ size, start: 1.5 }),
@@ -59,7 +60,7 @@ suite("ContentRange", () => {
     );
   });
 
-  test("constructor (unknown size)", () => {
+  it("constructor (unknown size)", () => {
     const start = 0;
     const end = 499;
     const size = "*";
@@ -71,7 +72,7 @@ suite("ContentRange", () => {
     deepEqual(range.toString(), `bytes ${start}-${end}/${size}`);
   });
 
-  test("constructor (no range)", () => {
+  it("constructor (no range)", () => {
     const size = 500;
     const range = new ContentRange({ size });
     deepEqual(range.end, null);
@@ -81,7 +82,7 @@ suite("ContentRange", () => {
     deepEqual(range.toString(), `bytes */${size}`);
   });
 
-  test(".fromString() (invalid input)", () => {
+  it(".fromString() (invalid input)", () => {
     deepEqual(ContentRange.fromString(), []);
     deepEqual(ContentRange.fromString(""), []);
     deepEqual(ContentRange.fromString("   "), []);
@@ -90,7 +91,7 @@ suite("ContentRange", () => {
     deepEqual(ContentRange.fromString("bytes 1-1000/500"), []);
   });
 
-  test(".fromString()", () => {
+  it(".fromString()", () => {
     const input = "bytes  200  -  1000   /    67589   / 1 __ignored__ 1";
     const cr = new ContentRange({ start: 200, end: 1000, size: 67589 });
     const parsed = ContentRange.fromString(input);
@@ -102,7 +103,7 @@ suite("ContentRange", () => {
     deepEqual(actual.toString(), cr.toString());
   });
 
-  test(".fromString() (unknown size)", () => {
+  it(".fromString() (unknown size)", () => {
     const input = "bytes 200-1000/*";
     const cr = new ContentRange({ start: 200, end: 1000, size: "*" });
     const parsed = ContentRange.fromString(input);
@@ -114,7 +115,7 @@ suite("ContentRange", () => {
     deepEqual(actual.toString(), cr.toString());
   });
 
-  test(".fromString() (unknown range)", () => {
+  it(".fromString() (unknown range)", () => {
     const input = "bytes */500";
     const cr = new ContentRange({ size: 500 });
     const parsed = ContentRange.fromString(input);

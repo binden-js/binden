@@ -1,9 +1,10 @@
 import { deepEqual } from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { AcceptEncoding } from "../../index.js";
 
-suite("AcceptEncoding", () => {
-  test("constructor", () => {
+describe("AcceptEncoding", () => {
+  it("constructor", () => {
     const encoding = "br";
     const q_value = 0.02;
     const ac = new AcceptEncoding({ encoding, q_value });
@@ -12,7 +13,7 @@ suite("AcceptEncoding", () => {
     deepEqual(ac.toString(), `${encoding};q=${q_value}`);
   });
 
-  test("constructor (no `q_value`)", () => {
+  it("constructor (no `q_value`)", () => {
     const encoding = "br";
     const ac = new AcceptEncoding({ encoding });
     deepEqual(ac.encoding, encoding);
@@ -20,7 +21,7 @@ suite("AcceptEncoding", () => {
     deepEqual(ac.toString(), encoding);
   });
 
-  test("AcceptEncoding.fromString()", () => {
+  it("AcceptEncoding.fromString()", () => {
     deepEqual(AcceptEncoding.fromString(), []);
     deepEqual(AcceptEncoding.fromString(""), []);
     deepEqual(AcceptEncoding.fromString([]), []);
