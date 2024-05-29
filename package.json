@@ -62,7 +62,7 @@
     "@types/mocha": "^10.0.6",
     "@types/sinon": "^17.0.3",
     "c8": "^9.1.0",
-    "eslint-config-binden-ts": "^4.0.0",
+    "eslint-config-binden-ts": "^4.0.1",
     "fast-json-stringify": "^5.14.1",
     "husky": "^9.0.11",
     "lint-staged": "^15.2.2",
