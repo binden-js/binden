@@ -388,7 +388,7 @@ suite("BindenResponse", () => {
 
     const response = await fetch(url);
     const lm = response.headers.get("Last-Modified");
-    ok(lm);
+    ok(lm !== null);
     ok(!Number.isNaN(Date.parse(lm)));
     deepStrictEqual(response.status, 200);
 
@@ -421,7 +421,7 @@ suite("BindenResponse", () => {
 
     const response = await fetch(url, { method: "HEAD" });
     const lm = response.headers.get("Last-Modified");
-    ok(lm);
+    ok(lm !== null);
     ok(!Number.isNaN(Date.parse(lm)));
     deepStrictEqual(response.status, 200);
 
