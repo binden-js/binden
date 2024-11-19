@@ -64,7 +64,7 @@
     "c8": "^10.1.2",
     "eslint-config-binden-ts": "^4.0.2",
     "fast-json-stringify": "^6.0.0",
-    "husky": "^9.1.5",
+    "husky": "^9.1.7",
     "lint-staged": "^15.2.10",
     "mocha": "^10.7.3",
     "node-fetch": "^3.3.2",
