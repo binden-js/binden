@@ -1,5 +1,5 @@
 <!doctype html>
-<html class="default" lang="en">
+<html class="default" lang="en" data-base=".">
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="x-ua-compatible" content="IE=edge" />
@@ -12,6 +12,7 @@
     <script async src="assets/icons.js" id="tsd-icons-script"></script>
     <script async src="assets/search.js" id="tsd-search-script"></script>
     <script async src="assets/navigation.js" id="tsd-nav-script"></script>
+    <script async src="assets/hierarchy.js" id="tsd-hierarchy-script"></script>
   </head>
   <body>
     <script>
@@ -26,7 +27,7 @@
     </script>
     <header class="tsd-page-toolbar">
       <div class="tsd-toolbar-contents container">
-        <div class="table-cell" id="tsd-search" data-base=".">
+        <div class="table-cell" id="tsd-search">
           <div class="field">
             <label
               for="tsd-search-field"
@@ -56,275 +57,754 @@
     </header>
     <div class="container container-main">
       <div class="col-content">
-        <div class="tsd-page-title"><h2>binden</h2></div>
-        <section class="tsd-panel-group tsd-index-group">
-          <section class="tsd-panel tsd-index-panel">
-            <h3 class="tsd-index-heading uppercase">Index</h3>
-            <section class="tsd-index-section">
-              <h3 class="tsd-index-heading">Classes</h3>
-              <div class="tsd-index-list">
-                <a href="classes/AcceptEncoding.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Accept<wbr />Encoding</span></a
-                >
-                <a href="classes/Authorization.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Authorization</span></a
-                >
-                <a href="classes/Binden.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Binden</span></a
-                >
-                <a href="classes/BindenError.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Binden<wbr />Error</span></a
-                >
-                <a href="classes/BindenRequest.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Binden<wbr />Request</span></a
-                >
-                <a href="classes/BindenResponse.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Binden<wbr />Response</span></a
-                >
-                <a href="classes/ContentEncoding.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Content<wbr />Encoding</span></a
-                >
-                <a href="classes/ContentRange.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Content<wbr />Range</span></a
-                >
-                <a href="classes/ContentType.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Content<wbr />Type</span></a
-                >
-                <a href="classes/Context.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Context</span></a
-                >
-                <a href="classes/Cookie.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Cookie</span></a
-                >
-                <a href="classes/Forwarded.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Forwarded</span></a
-                >
-                <a href="classes/IfModifiedSince.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>If<wbr />Modified<wbr />Since</span></a
-                >
-                <a href="classes/Middleware.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Middleware</span></a
-                >
-                <a href="classes/Range.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Range</span></a
-                >
-                <a href="classes/Router.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-128"></use></svg
-                  ><span>Router</span></a
-                >
-              </div>
-            </section>
-            <section class="tsd-index-section">
-              <h3 class="tsd-index-heading">Interfaces</h3>
-              <div class="tsd-index-list">
-                <a href="interfaces/IAcceptEncoding.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IAccept<wbr />Encoding</span></a
-                >
-                <a href="interfaces/IAuthorization.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IAuthorization</span></a
-                >
-                <a href="interfaces/IBaseContext.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IBase<wbr />Context</span></a
-                >
-                <a
-                  href="interfaces/IBindenErrorOptions.html"
-                  class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IBinden<wbr />Error<wbr />Options</span></a
-                >
-                <a href="interfaces/IBindenOptions.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IBinden<wbr />Options</span></a
-                >
-                <a
-                  href="interfaces/IContentEncoding.html"
-                  class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IContent<wbr />Encoding</span></a
-                >
-                <a href="interfaces/IContentRange.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IContent<wbr />Range</span></a
-                >
-                <a href="interfaces/IContentType.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IContent<wbr />Type</span></a
-                >
-                <a href="interfaces/ICookie.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>ICookie</span></a
-                >
-                <a href="interfaces/IForwarded.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IForwarded</span></a
-                >
-                <a
-                  href="interfaces/IIfModifiedSince.html"
-                  class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IIf<wbr />Modified<wbr />Since</span></a
-                >
-                <a
-                  href="interfaces/IMiddlewareParams.html"
-                  class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IMiddleware<wbr />Params</span></a
-                >
-                <a href="interfaces/IRange.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IRange</span></a
-                >
-                <a href="interfaces/IRouterOptions.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-256"></use></svg
-                  ><span>IRouter<wbr />Options</span></a
-                >
-              </div>
-            </section>
-            <section class="tsd-index-section">
-              <h3 class="tsd-index-heading">Type Aliases</h3>
-              <div class="tsd-index-list">
-                <a href="types/IAcceptEncodings.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IAccept<wbr />Encodings</span></a
-                >
-                <a href="types/IAuthenticationType.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IAuthentication<wbr />Type</span></a
-                >
-                <a href="types/IEncodings.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IEncodings</span></a
-                >
-                <a href="types/IFunctionMiddleware.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IFunction<wbr />Middleware</span></a
-                >
-                <a href="types/IHeaders.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IHeaders</span></a
-                >
-                <a href="types/IHeadersValue.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IHeaders<wbr />Value</span></a
-                >
-                <a href="types/IMiddleware.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IMiddleware</span></a
-                >
-                <a href="types/IProtocol.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IProtocol</span></a
-                >
-                <a href="types/IStack.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IStack</span></a
-                >
-                <a href="types/IStackItem.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IStack<wbr />Item</span></a
-                >
-                <a href="types/IUnit.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-2097152"></use></svg
-                  ><span>IUnit</span></a
-                >
-              </div>
-            </section>
-            <section class="tsd-index-section">
-              <h3 class="tsd-index-heading">Variables</h3>
-              <div class="tsd-index-list">
-                <a href="variables/DefaultErrorCode.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-32"></use></svg
-                  ><span>Default<wbr />Error<wbr />Code</span></a
-                >
-                <a href="variables/ct_form.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-32"></use></svg
-                  ><span>ct_<wbr />form</span></a
-                >
-                <a href="variables/ct_html.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-32"></use></svg
-                  ><span>ct_<wbr />html</span></a
-                >
-                <a href="variables/ct_json.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-32"></use></svg
-                  ><span>ct_<wbr />json</span></a
-                >
-                <a href="variables/ct_text.html" class="tsd-index-link"
-                  ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                    <use href="assets/icons.svg#icon-32"></use></svg
-                  ><span>ct_<wbr />text</span></a
-                >
-              </div>
-            </section>
-          </section>
-        </section>
+        <div class="tsd-page-title">
+          <ul class="tsd-breadcrumb">
+            <li><a href="modules.html">binden</a></li>
+          </ul>
+          <h1>binden</h1>
+        </div>
+        <details class="tsd-panel-group tsd-member-group tsd-accordion" open>
+          <summary class="tsd-accordion-summary" data-key="section-Classes">
+            <h2>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <use href="assets/icons.svg#icon-chevronDown"></use>
+              </svg>
+              Classes
+            </h2>
+          </summary>
+          <dl class="tsd-member-summaries">
+            <dt class="tsd-member-summary">
+              <a id="acceptencoding" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/AcceptEncoding.html">AcceptEncoding</a
+                ><a
+                  href="#acceptencoding"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="authorization" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Authorization.html">Authorization</a
+                ><a
+                  href="#authorization"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="binden" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Binden.html">Binden</a
+                ><a
+                  href="#binden"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="bindenerror" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/BindenError.html">BindenError</a
+                ><a
+                  href="#bindenerror"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="bindenrequest" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/BindenRequest.html">BindenRequest</a
+                ><a
+                  href="#bindenrequest"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="bindenresponse" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/BindenResponse.html">BindenResponse</a
+                ><a
+                  href="#bindenresponse"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="contentencoding" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/ContentEncoding.html">ContentEncoding</a
+                ><a
+                  href="#contentencoding"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="contentrange" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/ContentRange.html">ContentRange</a
+                ><a
+                  href="#contentrange"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="contenttype" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/ContentType.html">ContentType</a
+                ><a
+                  href="#contenttype"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="context" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Context.html">Context</a
+                ><a
+                  href="#context"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="cookie" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Cookie.html">Cookie</a
+                ><a
+                  href="#cookie"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="forwarded" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Forwarded.html">Forwarded</a
+                ><a
+                  href="#forwarded"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ifmodifiedsince" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/IfModifiedSince.html">IfModifiedSince</a
+                ><a
+                  href="#ifmodifiedsince"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="middleware" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Middleware.html">Middleware</a
+                ><a
+                  href="#middleware"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="range" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Range.html">Range</a
+                ><a href="#range" aria-label="Permalink" class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="router" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-128"></use></svg
+                ><a href="classes/Router.html">Router</a
+                ><a
+                  href="#router"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+          </dl>
+        </details>
+        <details class="tsd-panel-group tsd-member-group tsd-accordion" open>
+          <summary class="tsd-accordion-summary" data-key="section-Interfaces">
+            <h2>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <use href="assets/icons.svg#icon-chevronDown"></use>
+              </svg>
+              Interfaces
+            </h2>
+          </summary>
+          <dl class="tsd-member-summaries">
+            <dt class="tsd-member-summary">
+              <a id="iacceptencoding" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IAcceptEncoding.html">IAcceptEncoding</a
+                ><a
+                  href="#iacceptencoding"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iauthorization" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IAuthorization.html">IAuthorization</a
+                ><a
+                  href="#iauthorization"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ibasecontext" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IBaseContext.html">IBaseContext</a
+                ><a
+                  href="#ibasecontext"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ibindenerroroptions" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IBindenErrorOptions.html"
+                  >IBindenErrorOptions</a
+                ><a
+                  href="#ibindenerroroptions"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ibindenoptions" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IBindenOptions.html">IBindenOptions</a
+                ><a
+                  href="#ibindenoptions"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="icontentencoding" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IContentEncoding.html">IContentEncoding</a
+                ><a
+                  href="#icontentencoding"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="icontentrange" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IContentRange.html">IContentRange</a
+                ><a
+                  href="#icontentrange"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="icontenttype" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IContentType.html">IContentType</a
+                ><a
+                  href="#icontenttype"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="icookie" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/ICookie.html">ICookie</a
+                ><a
+                  href="#icookie"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iforwarded" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IForwarded.html">IForwarded</a
+                ><a
+                  href="#iforwarded"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iifmodifiedsince" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IIfModifiedSince.html">IIfModifiedSince</a
+                ><a
+                  href="#iifmodifiedsince"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="imiddlewareparams" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IMiddlewareParams.html"
+                  >IMiddlewareParams</a
+                ><a
+                  href="#imiddlewareparams"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="irange" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IRange.html">IRange</a
+                ><a
+                  href="#irange"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="irouteroptions" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-256"></use></svg
+                ><a href="interfaces/IRouterOptions.html">IRouterOptions</a
+                ><a
+                  href="#irouteroptions"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+          </dl>
+        </details>
+        <details class="tsd-panel-group tsd-member-group tsd-accordion" open>
+          <summary
+            class="tsd-accordion-summary"
+            data-key="section-Type Aliases"
+          >
+            <h2>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <use href="assets/icons.svg#icon-chevronDown"></use>
+              </svg>
+              Type Aliases
+            </h2>
+          </summary>
+          <dl class="tsd-member-summaries">
+            <dt class="tsd-member-summary">
+              <a id="iacceptencodings" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IAcceptEncodings.html">IAcceptEncodings</a
+                ><a
+                  href="#iacceptencodings"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iauthenticationtype" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IAuthenticationType.html">IAuthenticationType</a
+                ><a
+                  href="#iauthenticationtype"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iencodings" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IEncodings.html">IEncodings</a
+                ><a
+                  href="#iencodings"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ifunctionmiddleware" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IFunctionMiddleware.html">IFunctionMiddleware</a
+                ><a
+                  href="#ifunctionmiddleware"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iheaders" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IHeaders.html">IHeaders</a
+                ><a
+                  href="#iheaders"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iheadersvalue" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IHeadersValue.html">IHeadersValue</a
+                ><a
+                  href="#iheadersvalue"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="imiddleware" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IMiddleware.html">IMiddleware</a
+                ><a
+                  href="#imiddleware"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iprotocol" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IProtocol.html">IProtocol</a
+                ><a
+                  href="#iprotocol"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="istack" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IStack.html">IStack</a
+                ><a
+                  href="#istack"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="istackitem" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IStackItem.html">IStackItem</a
+                ><a
+                  href="#istackitem"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="iunit" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-2097152"></use></svg
+                ><a href="types/IUnit.html">IUnit</a
+                ><a href="#iunit" aria-label="Permalink" class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+          </dl>
+        </details>
+        <details class="tsd-panel-group tsd-member-group tsd-accordion" open>
+          <summary class="tsd-accordion-summary" data-key="section-Variables">
+            <h2>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <use href="assets/icons.svg#icon-chevronDown"></use>
+              </svg>
+              Variables
+            </h2>
+          </summary>
+          <dl class="tsd-member-summaries">
+            <dt class="tsd-member-summary">
+              <a id="ct_form" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-32"></use></svg
+                ><a href="variables/ct_form.html">ct_form</a
+                ><a
+                  href="#ct_form"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ct_html" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-32"></use></svg
+                ><a href="variables/ct_html.html">ct_html</a
+                ><a
+                  href="#ct_html"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ct_json" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-32"></use></svg
+                ><a href="variables/ct_json.html">ct_json</a
+                ><a
+                  href="#ct_json"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="ct_text" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-32"></use></svg
+                ><a href="variables/ct_text.html">ct_text</a
+                ><a
+                  href="#ct_text"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+            <dt class="tsd-member-summary">
+              <a id="defaulterrorcode" class="tsd-anchor"></a
+              ><span class="tsd-member-summary-name"
+                ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                  <use href="assets/icons.svg#icon-32"></use></svg
+                ><a href="variables/DefaultErrorCode.html">DefaultErrorCode</a
+                ><a
+                  href="#defaulterrorcode"
+                  aria-label="Permalink"
+                  class="tsd-anchor-icon"
+                  ><svg viewBox="0 0 24 24">
+                    <use href="assets/icons.svg#icon-anchor"></use></svg></a
+              ></span>
+            </dt>
+            <dd class="tsd-member-summary"></dd>
+          </dl>
+        </details>
       </div>
       <div class="col-sidebar">
         <div class="page-menu">
           <div class="tsd-navigation settings">
-            <details class="tsd-index-accordion">
+            <details class="tsd-accordion">
               <summary class="tsd-accordion-summary">
                 <h3>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -334,144 +814,110 @@
               </summary>
               <div class="tsd-accordion-details">
                 <div class="tsd-filter-visibility">
-                  <h4 class="uppercase">Member Visibility</h4>
-                  <form>
-                    <ul id="tsd-filter-options">
-                      <li class="tsd-filter-item">
-                        <label class="tsd-filter-input"
-                          ><input
-                            type="checkbox"
-                            id="tsd-filter-protected"
-                            name="protected"
-                          /><svg
-                            width="32"
-                            height="32"
-                            viewBox="0 0 32 32"
-                            aria-hidden="true"
-                          >
-                            <rect
-                              class="tsd-checkbox-background"
-                              width="30"
-                              height="30"
-                              x="1"
-                              y="1"
-                              rx="6"
-                              fill="none"
-                            ></rect>
-                            <path
-                              class="tsd-checkbox-checkmark"
-                              d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25"
-                              stroke="none"
-                              stroke-width="3.5"
-                              stroke-linejoin="round"
-                              fill="none"
-                            ></path></svg
-                          ><span>Protected</span></label
+                  <span class="settings-label">Member Visibility</span>
+                  <ul id="tsd-filter-options">
+                    <li class="tsd-filter-item">
+                      <label class="tsd-filter-input"
+                        ><input
+                          type="checkbox"
+                          id="tsd-filter-protected"
+                          name="protected"
+                        /><svg
+                          width="32"
+                          height="32"
+                          viewBox="0 0 32 32"
+                          aria-hidden="true"
                         >
-                      </li>
-                      <li class="tsd-filter-item">
-                        <label class="tsd-filter-input"
-                          ><input
-                            type="checkbox"
-                            id="tsd-filter-private"
-                            name="private"
-                          /><svg
-                            width="32"
-                            height="32"
-                            viewBox="0 0 32 32"
-                            aria-hidden="true"
-                          >
-                            <rect
-                              class="tsd-checkbox-background"
-                              width="30"
-                              height="30"
-                              x="1"
-                              y="1"
-                              rx="6"
-                              fill="none"
-                            ></rect>
-                            <path
-                              class="tsd-checkbox-checkmark"
-                              d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25"
-                              stroke="none"
-                              stroke-width="3.5"
-                              stroke-linejoin="round"
-                              fill="none"
-                            ></path></svg
-                          ><span>Private</span></label
+                          <rect
+                            class="tsd-checkbox-background"
+                            width="30"
+                            height="30"
+                            x="1"
+                            y="1"
+                            rx="6"
+                            fill="none"
+                          ></rect>
+                          <path
+                            class="tsd-checkbox-checkmark"
+                            d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25"
+                            stroke="none"
+                            stroke-width="3.5"
+                            stroke-linejoin="round"
+                            fill="none"
+                          ></path></svg
+                        ><span>Protected</span></label
+                      >
+                    </li>
+                    <li class="tsd-filter-item">
+                      <label class="tsd-filter-input"
+                        ><input
+                          type="checkbox"
+                          id="tsd-filter-inherited"
+                          name="inherited"
+                          checked
+                        /><svg
+                          width="32"
+                          height="32"
+                          viewBox="0 0 32 32"
+                          aria-hidden="true"
                         >
-                      </li>
-                      <li class="tsd-filter-item">
-                        <label class="tsd-filter-input"
-                          ><input
-                            type="checkbox"
-                            id="tsd-filter-inherited"
-                            name="inherited"
-                            checked
-                          /><svg
-                            width="32"
-                            height="32"
-                            viewBox="0 0 32 32"
-                            aria-hidden="true"
-                          >
-                            <rect
-                              class="tsd-checkbox-background"
-                              width="30"
-                              height="30"
-                              x="1"
-                              y="1"
-                              rx="6"
-                              fill="none"
-                            ></rect>
-                            <path
-                              class="tsd-checkbox-checkmark"
-                              d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25"
-                              stroke="none"
-                              stroke-width="3.5"
-                              stroke-linejoin="round"
-                              fill="none"
-                            ></path></svg
-                          ><span>Inherited</span></label
+                          <rect
+                            class="tsd-checkbox-background"
+                            width="30"
+                            height="30"
+                            x="1"
+                            y="1"
+                            rx="6"
+                            fill="none"
+                          ></rect>
+                          <path
+                            class="tsd-checkbox-checkmark"
+                            d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25"
+                            stroke="none"
+                            stroke-width="3.5"
+                            stroke-linejoin="round"
+                            fill="none"
+                          ></path></svg
+                        ><span>Inherited</span></label
+                      >
+                    </li>
+                    <li class="tsd-filter-item">
+                      <label class="tsd-filter-input"
+                        ><input
+                          type="checkbox"
+                          id="tsd-filter-external"
+                          name="external"
+                        /><svg
+                          width="32"
+                          height="32"
+                          viewBox="0 0 32 32"
+                          aria-hidden="true"
                         >
-                      </li>
-                      <li class="tsd-filter-item">
-                        <label class="tsd-filter-input"
-                          ><input
-                            type="checkbox"
-                            id="tsd-filter-external"
-                            name="external"
-                          /><svg
-                            width="32"
-                            height="32"
-                            viewBox="0 0 32 32"
-                            aria-hidden="true"
-                          >
-                            <rect
-                              class="tsd-checkbox-background"
-                              width="30"
-                              height="30"
-                              x="1"
-                              y="1"
-                              rx="6"
-                              fill="none"
-                            ></rect>
-                            <path
-                              class="tsd-checkbox-checkmark"
-                              d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25"
-                              stroke="none"
-                              stroke-width="3.5"
-                              stroke-linejoin="round"
-                              fill="none"
-                            ></path></svg
-                          ><span>External</span></label
-                        >
-                      </li>
-                    </ul>
-                  </form>
+                          <rect
+                            class="tsd-checkbox-background"
+                            width="30"
+                            height="30"
+                            x="1"
+                            y="1"
+                            rx="6"
+                            fill="none"
+                          ></rect>
+                          <path
+                            class="tsd-checkbox-checkmark"
+                            d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25"
+                            stroke="none"
+                            stroke-width="3.5"
+                            stroke-linejoin="round"
+                            fill="none"
+                          ></path></svg
+                        ><span>External</span></label
+                      >
+                    </li>
+                  </ul>
                 </div>
                 <div class="tsd-theme-toggle">
-                  <h4 class="uppercase">Theme</h4>
-                  <select id="tsd-theme">
+                  <label class="settings-label" for="tsd-theme">Theme</label
+                  ><select id="tsd-theme">
                     <option value="os">OS</option>
                     <option value="light">Light</option>
                     <option value="dark">Dark</option>
@@ -480,19 +926,258 @@
               </div>
             </details>
           </div>
+          <details open class="tsd-accordion tsd-page-navigation">
+            <summary class="tsd-accordion-summary">
+              <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <use href="assets/icons.svg#icon-chevronDown"></use></svg
+                >On This Page
+              </h3>
+            </summary>
+            <div class="tsd-accordion-details">
+              <details open class="tsd-accordion tsd-page-navigation-section">
+                <summary
+                  class="tsd-accordion-summary"
+                  data-key="section-Classes"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <use href="assets/icons.svg#icon-chevronDown"></use></svg
+                  >Classes
+                </summary>
+                <div>
+                  <a href="#acceptencoding" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Accept<wbr />Encoding</span></a
+                  ><a href="#authorization" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Authorization</span></a
+                  ><a href="#binden" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Binden</span></a
+                  ><a href="#bindenerror" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Binden<wbr />Error</span></a
+                  ><a href="#bindenrequest" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Binden<wbr />Request</span></a
+                  ><a href="#bindenresponse" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Binden<wbr />Response</span></a
+                  ><a href="#contentencoding" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Content<wbr />Encoding</span></a
+                  ><a href="#contentrange" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Content<wbr />Range</span></a
+                  ><a href="#contenttype" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Content<wbr />Type</span></a
+                  ><a href="#context" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Context</span></a
+                  ><a href="#cookie" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Cookie</span></a
+                  ><a href="#forwarded" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Forwarded</span></a
+                  ><a href="#ifmodifiedsince" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>If<wbr />Modified<wbr />Since</span></a
+                  ><a href="#middleware" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Middleware</span></a
+                  ><a href="#range" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Range</span></a
+                  ><a href="#router" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-128"></use></svg
+                    ><span>Router</span></a
+                  >
+                </div>
+              </details>
+              <details open class="tsd-accordion tsd-page-navigation-section">
+                <summary
+                  class="tsd-accordion-summary"
+                  data-key="section-Interfaces"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <use href="assets/icons.svg#icon-chevronDown"></use></svg
+                  >Interfaces
+                </summary>
+                <div>
+                  <a href="#iacceptencoding" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IAccept<wbr />Encoding</span></a
+                  ><a href="#iauthorization" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IAuthorization</span></a
+                  ><a href="#ibasecontext" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IBase<wbr />Context</span></a
+                  ><a href="#ibindenerroroptions" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IBinden<wbr />Error<wbr />Options</span></a
+                  ><a href="#ibindenoptions" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IBinden<wbr />Options</span></a
+                  ><a href="#icontentencoding" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IContent<wbr />Encoding</span></a
+                  ><a href="#icontentrange" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IContent<wbr />Range</span></a
+                  ><a href="#icontenttype" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IContent<wbr />Type</span></a
+                  ><a href="#icookie" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>ICookie</span></a
+                  ><a href="#iforwarded" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IForwarded</span></a
+                  ><a href="#iifmodifiedsince" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IIf<wbr />Modified<wbr />Since</span></a
+                  ><a href="#imiddlewareparams" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IMiddleware<wbr />Params</span></a
+                  ><a href="#irange" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IRange</span></a
+                  ><a href="#irouteroptions" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-256"></use></svg
+                    ><span>IRouter<wbr />Options</span></a
+                  >
+                </div>
+              </details>
+              <details open class="tsd-accordion tsd-page-navigation-section">
+                <summary
+                  class="tsd-accordion-summary"
+                  data-key="section-Type Aliases"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <use href="assets/icons.svg#icon-chevronDown"></use></svg
+                  >Type Aliases
+                </summary>
+                <div>
+                  <a href="#iacceptencodings" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IAccept<wbr />Encodings</span></a
+                  ><a href="#iauthenticationtype" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IAuthentication<wbr />Type</span></a
+                  ><a href="#iencodings" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IEncodings</span></a
+                  ><a href="#ifunctionmiddleware" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IFunction<wbr />Middleware</span></a
+                  ><a href="#iheaders" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IHeaders</span></a
+                  ><a href="#iheadersvalue" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IHeaders<wbr />Value</span></a
+                  ><a href="#imiddleware" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IMiddleware</span></a
+                  ><a href="#iprotocol" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IProtocol</span></a
+                  ><a href="#istack" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IStack</span></a
+                  ><a href="#istackitem" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IStack<wbr />Item</span></a
+                  ><a href="#iunit" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-2097152"></use></svg
+                    ><span>IUnit</span></a
+                  >
+                </div>
+              </details>
+              <details open class="tsd-accordion tsd-page-navigation-section">
+                <summary
+                  class="tsd-accordion-summary"
+                  data-key="section-Variables"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <use href="assets/icons.svg#icon-chevronDown"></use></svg
+                  >Variables
+                </summary>
+                <div>
+                  <a href="#ct_form" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-32"></use></svg
+                    ><span>ct_<wbr />form</span></a
+                  ><a href="#ct_html" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-32"></use></svg
+                    ><span>ct_<wbr />html</span></a
+                  ><a href="#ct_json" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-32"></use></svg
+                    ><span>ct_<wbr />json</span></a
+                  ><a href="#ct_text" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-32"></use></svg
+                    ><span>ct_<wbr />text</span></a
+                  ><a href="#defaulterrorcode" class=""
+                    ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
+                      <use href="assets/icons.svg#icon-32"></use></svg
+                    ><span>Default<wbr />Error<wbr />Code</span></a
+                  >
+                </div>
+              </details>
+            </div>
+          </details>
         </div>
         <div class="site-menu">
           <nav class="tsd-navigation">
-            <a href="modules.html" class="current"
-              ><svg class="tsd-kind-icon" viewBox="0 0 24 24">
-                <use href="assets/icons.svg#icon-1"></use></svg
-              ><span>binden</span></a
-            >
-            <ul
-              class="tsd-small-nested-navigation"
-              id="tsd-nav-container"
-              data-base="."
-            >
+            <a href="modules.html" class="current">binden</a>
+            <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
               <li>Loading...</li>
             </ul>
           </nav>
