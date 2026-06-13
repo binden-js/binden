@@ -43,7 +43,7 @@
     "framework"
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "directories": {
     "doc": "docs",
     "test": "test"
