@@ -18,7 +18,7 @@ suite("ContentType", () => {
   });
 
   test("constructor(with charset)", () => {
-    const type = "plain/text";
+    const type = "text/plain";
     const charset = "UTF-8";
     const boundary = "__boundary";
     const ct = new ContentType({ type, charset, boundary });
@@ -83,13 +83,13 @@ suite("ContentType", () => {
   });
 
   test("ContentType.fromString() (with empty charset)", () => {
-    const input = `plain/text; charset=""`;
+    const input = `text/plain; charset=""`;
     const parsed = ContentType.fromString(input);
     ok(parsed);
-    deepStrictEqual(parsed.type, "plain/text");
+    deepStrictEqual(parsed.type, "text/plain");
     deepStrictEqual(parsed.boundary, null);
     deepStrictEqual(parsed.charset, null);
-    deepStrictEqual(parsed.toString(), "plain/text");
+    deepStrictEqual(parsed.toString(), "text/plain");
   });
 
   test("ContentType.fromString() (invalid input)", () => {

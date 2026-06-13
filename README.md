@@ -459,7 +459,7 @@ const stringify = fastJSON({
 await response.json(json);
 ```
 
-- `.text()` - send text as `plain/text`
+- `.text()` - send text as `text/plain`
 
 ```typescript
 const text = "Hello World!";
