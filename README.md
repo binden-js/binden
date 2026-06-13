@@ -481,7 +481,6 @@ await response.form(form);
 ```
 
 - `.sendFile()` - Send a file. Respects the following headers
-
   - [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since)
 
   - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range)
