@@ -757,7 +757,7 @@ window.translations = {
           return r;
         }),
         (t.TokenSet.prototype.toArray = function () {
-          for (var e = [], n = [{ prefix: "", node: this }]; n.length; ) {
+          for (var e = [], n = [{ prefix: "", node: this }]; n.length;) {
             var r = n.pop(),
               i = Object.keys(r.node.edges),
               s = i.length;
@@ -1328,7 +1328,7 @@ window.translations = {
             (this.escapeCharPositions = []));
         }),
         (t.QueryLexer.prototype.run = function () {
-          for (var e = t.QueryLexer.lexText; e; ) e = e(this);
+          for (var e = t.QueryLexer.lexText; e;) e = e(this);
         }),
         (t.QueryLexer.prototype.sliceString = function () {
           for (
@@ -1457,7 +1457,7 @@ window.translations = {
         }),
         (t.QueryParser.prototype.parse = function () {
           (this.lexer.run(), (this.lexemes = this.lexer.lexemes));
-          for (var e = t.QueryParser.parseClause; e; ) e = e(this);
+          for (var e = t.QueryParser.parseClause; e;) e = e(this);
           return this.query;
         }),
         (t.QueryParser.prototype.peekLexeme = function () {
@@ -1701,7 +1701,7 @@ window.translations = {
     ensureActivePageVisible() {
       let e = document.querySelector(".tsd-navigation .current"),
         n = e?.parentElement;
-      for (; n && !n.classList.contains(".tsd-navigation"); )
+      for (; n && !n.classList.contains(".tsd-navigation");)
         (n instanceof HTMLDetailsElement && (n.open = !0),
           (n = n.parentElement));
       if (e && !ze(e)) {
@@ -1737,11 +1737,11 @@ window.translations = {
       let e = document.getElementById(location.hash.substring(1));
       if (!e) return;
       let n = e.parentElement;
-      for (; n && n.tagName !== "SECTION"; ) n = n.parentElement;
+      for (; n && n.tagName !== "SECTION";) n = n.parentElement;
       if (!n) return;
       let r = n.offsetParent == null,
         i = n;
-      for (; i !== document.body; )
+      for (; i !== document.body;)
         (i instanceof HTMLDetailsElement && (i.open = !0),
           (i = i.parentElement));
       if (n.offsetParent == null) {
@@ -1943,7 +1943,7 @@ window.translations = {
       i = [],
       s = 0,
       o = n.indexOf(r);
-    for (; o != -1; )
+    for (; o != -1;)
       (i.push(
         ne(t.substring(s, o)),
         `<b>${ne(t.substring(o, o + r.length))}</b>`,
@@ -2204,7 +2204,7 @@ window.translations = {
   function Ye() {
     document.addEventListener("click", (r) => {
       let i = r.target;
-      for (; i.parentElement && i.parentElement.tagName != "LI"; )
+      for (; i.parentElement && i.parentElement.tagName != "LI";)
         i = i.parentElement;
       i.dataset.dropdown &&
         (i.dataset.dropdown = String(i.dataset.dropdown !== "true"));
@@ -2309,7 +2309,7 @@ window.translations = {
     if (e === n) return !0;
     let r = new Set(),
       i = [t.reflections[e]];
-    for (; i.length; ) {
+    for (; i.length;) {
       let s = i.pop();
       if (!r.has(s)) {
         r.add(s);

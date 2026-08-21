@@ -1,11 +1,5 @@
 export type IAcceptEncodings =
-  | "*"
-  | "br"
-  | "compress"
-  | "deflate"
-  | "gzip"
-  | "identity"
-  | "x-gzip";
+  "*" | "br" | "compress" | "deflate" | "gzip" | "identity" | "x-gzip";
 
 export interface IAcceptEncoding {
   encoding: IAcceptEncodings;
