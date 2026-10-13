@@ -19,13 +19,14 @@ API documentation: <https://binden-js.github.io/binden/>
 Requires Node.js `>=24.15.0` and npm `>=11.11.0`.
 
 ```bash
-npm install          # installs all workspaces and builds them (`prepare`)
-npm run build        # type checks and compiles every workspace (including tests)
-npm test             # node:test (via tsx) in every workspace
-npm run coverage     # tests with c8 coverage (coverage/lcov.info)
-npm run eslint       # type-aware ESLint for the whole repository
-npm run docs:build   # TypeDoc for all packages (docs/)
-npm run ci:all       # everything CI runs
+npm install            # installs all workspaces and builds them (`prepare`)
+npm run build          # type checks and compiles every workspace (including tests)
+npm test               # node:test (via tsx) in every workspace
+npm run coverage       # tests with c8 coverage (coverage/lcov.info)
+npm run eslint         # type-aware ESLint for the whole repository
+npm run docs:build     # TypeDoc for all packages (docs/)
+npm run consumer:check # the packed packages and the README examples in a fresh project
+npm run ci:all         # everything CI runs
 ```
 
 Commands for a single package: `npm test -w packages/binden`.

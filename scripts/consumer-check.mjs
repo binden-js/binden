@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Checks the packed workspaces the way a consumer uses them: the tarballs are
 // installed into a fresh project, which is type checked (with `@types/node` 24
-// and 26) and then run as ESM against a real server.
+// and 26) and then run as ESM against a real server. The TypeScript examples of
+// the READMEs are type checked against the same installation.
 //
 // `@types/node` 26 is checked with `skipLibCheck`: the types of `thread-stream`
 // (pulled in by `pino`, used by `@binden/logger`) still refer to
 // `worker_threads.TransferListItem`, which `@types/node` 26 removed.
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -18,9 +20,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const root = join(import.meta.dirname, "..");
-const { devDependencies } = JSON.parse(
-  readFileSync(join(root, "package.json"), "utf8"),
-);
+const readJSON = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
+const { devDependencies, workspaces } = readJSON("package.json");
+// Packages that the examples import besides the workspaces
+const exampleDependencies = {
+  ajv: readJSON("packages/body/package.json").devDependencies.ajv,
+  "fast-json-stringify": readJSON("packages/binden/package.json")
+    .devDependencies["fast-json-stringify"],
+};
 
 const consumer = `import { once } from "node:events";
 import type { AddressInfo } from "node:net";
@@ -93,7 +100,49 @@ try {
 }
 `;
 
+// The placeholders that the examples use without declaring them
+const globals = `import type { Binden, BindenRequest, BindenResponse, Context, IMiddleware, Router } from "binden";
+
+declare global {
+  const app: Binden;
+  const context: Context;
+  const request: BindenRequest;
+  const response: BindenResponse<BindenRequest>;
+  const middleware: IMiddleware;
+  const middleware1: IMiddleware;
+  const middleware2: IMiddleware;
+  const router: Router;
+  const router2: Router;
+  const router3: Router;
+  const key: string;
+  const cert: string;
+  function validateBody(): Promise<void>;
+}
+`;
+
 const dir = mkdtempSync(join(tmpdir(), "binden-consumer-"));
+
+/** Writes every `typescript` block of the READMEs as a module of `examples/` */
+function writeExamples() {
+  const examples = join(dir, "examples");
+  mkdirSync(examples);
+  let count = 0;
+  for (const workspace of workspaces) {
+    const readme = readFileSync(join(root, workspace, "README.md"), "utf8");
+    const name = workspace.split("/").at(-1);
+    const blocks = readme.matchAll(/^```typescript\n(?<code>[\s\S]*?)^```$/gmu);
+    for (const [index, { groups }] of [...blocks].entries()) {
+      writeFileSync(join(examples, `${name}-${index + 1}.ts`), groups.code);
+      count += 1;
+    }
+  }
+  if (count === 0) {
+    throw new Error("No TypeScript examples found in the READMEs");
+  }
+  writeFileSync(join(examples, "globals.d.ts"), globals);
+  process.stderr.write(`[consumer] ${count} README examples\n`);
+  return examples;
+}
 
 function run(command, args, cwd = dir) {
   process.stderr.write(`[consumer] ${command} ${args.join(" ")}\n`);
@@ -115,6 +164,7 @@ try {
     `${JSON.stringify({ private: true, type: "module" })}\n`,
   );
   writeFileSync(join(dir, "consumer.ts"), consumer);
+  const examples = writeExamples();
 
   for (const [types, skipLibCheck] of [
     ["24", false],
@@ -128,6 +178,9 @@ try {
       ...tarballs,
       `typescript@${devDependencies.typescript}`,
       `@types/node@${types}`,
+      ...Object.entries(exampleDependencies).map(
+        ([name, version]) => `${name}@${version}`,
+      ),
     ]);
     writeFileSync(
       join(dir, "tsconfig.json"),
@@ -149,6 +202,30 @@ try {
       dir,
     ]);
     run(process.execPath, [join(dir, "dist/consumer.js")]);
+
+    // Each example is a module (`moduleDetection`), and the parameters of their
+    // callbacks may be untyped (`noImplicitAny`)
+    writeFileSync(
+      join(examples, "tsconfig.json"),
+      `${JSON.stringify({
+        compilerOptions: {
+          module: "nodenext",
+          target: "es2022",
+          strict: true,
+          noImplicitAny: false,
+          moduleDetection: "force",
+          noEmit: true,
+          skipLibCheck,
+          types: ["node"],
+        },
+        include: ["*.ts"],
+      })}\n`,
+    );
+    run(process.execPath, [
+      join(dir, "node_modules/typescript/bin/tsc"),
+      "-p",
+      examples,
+    ]);
   }
   process.stderr.write("[consumer] OK\n");
 } finally {
