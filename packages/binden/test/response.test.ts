@@ -44,8 +44,18 @@ function abortAfterFirstChunk(): Promise<void> {
   });
 }
 
-/** The error codes of a `send()` to a client that went away */
-const gone = new Set(["EPIPE", "ECONNRESET", "ERR_STREAM_PREMATURE_CLOSE"]);
+/**
+ * The error codes of a `send()` to a client that went away: a write fails
+ * (`ECANCELED` when the socket is closed while it is pending, `ECONNABORTED` on
+ * Windows), or the response is closed before it finishes
+ */
+const gone = new Set([
+  "ECANCELED",
+  "ECONNABORTED",
+  "ECONNRESET",
+  "EPIPE",
+  "ERR_STREAM_PREMATURE_CLOSE",
+]);
 
 /** The error code of a settled `send()` (`null` when it has resolved) */
 function settle(promise: Promise<void>): Promise<unknown> {
@@ -373,7 +383,12 @@ suite("BindenResponse", () => {
 
   test(
     ".send() (rejects when the client goes away before the flush)",
-    { timeout: 10_000 },
+    {
+      // Windows takes a whole write while its send buffer has room: the chunk
+      // is flushed to the connection at once
+      skip: process.platform === "win32",
+      timeout: 10_000,
+    },
     async () => {
       // One chunk with the whole `Content-Length`: read at once, but not sent
       const size = 64 * 1024 * 1024;
