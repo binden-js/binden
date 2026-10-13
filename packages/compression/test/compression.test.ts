@@ -292,6 +292,62 @@ describe("Compression", () => {
     deepStrictEqual(response.headers["content-encoding"], "gzip");
   });
 
+  it("auto (an explicit quality takes precedence over `*`)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "br;q=0.1, *;q=1" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
+
+    const body = await response.body.arrayBuffer();
+    const actual = (await gunzip(Buffer.from(body))).toString();
+
+    deepStrictEqual(actual, expected);
+  });
+
+  it("auto (case-insensitive codings)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "GZIP;q=1, identity;q=0" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
+
+    const body = await response.body.arrayBuffer();
+    const actual = (await gunzip(Buffer.from(body))).toString();
+
+    deepStrictEqual(actual, expected);
+  });
+
+  it("auto (a single coding with a low quality)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "gzip;q=0.5" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
+
+    const body = await response.body.arrayBuffer();
+    const actual = (await gunzip(Buffer.from(body))).toString();
+
+    deepStrictEqual(actual, expected);
+  });
+
+  it("auto (no acceptable coding falls back to no compression)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "identity;q=0, *;q=0" };
+    const response = await request(url, { headers });
+
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    deepStrictEqual(await response.body.text(), expected);
+  });
+
   it("auto (unsupported)", async () => {
     const expected = "Hello World";
     const format = "compress";

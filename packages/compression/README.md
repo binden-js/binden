@@ -15,3 +15,14 @@ import Compression from "@binden/compression";
 
 app.use(Compression);
 ```
+
+### Content negotiation
+
+With the default `format: "auto"`, the content coding is chosen from the `Accept-Encoding` request header ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3)):
+
+- without the header, `br` is used;
+- otherwise, the coding (`br`, `gzip`, `deflate`) with the highest effective quality wins: its own `q` value, or the one of `*`, while `q=0` refuses a coding. Ties are resolved in the order `br`, `gzip`, `deflate`;
+- the response is not compressed when `identity` is explicitly preferred, or when no supported coding is acceptable (the header is then disregarded instead of replying with `406 Not Acceptable`);
+- `Vary: Accept-Encoding` is added to the response.
+
+A fixed `format` (`br`, `gzip` or `deflate`) compresses every response regardless of the request.

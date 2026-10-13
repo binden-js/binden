@@ -121,45 +121,44 @@ export class Compression extends Middleware {
 
     const { request } = context;
 
-    // No `Accept-Encoding` means that any coding is acceptable, while an empty
-    // one (or one refusing everything with `q=0`) asks for no coding at all.
+    // No `Accept-Encoding` means that any coding is acceptable
     if (typeof request.headers["accept-encoding"] === "undefined") {
       return DefaultCompression;
     }
 
-    const { accept_encoding } = request;
-    const refused = new Set(
-      accept_encoding
-        .filter(({ q_value }) => q_value === 0)
-        .map(({ encoding }) => encoding),
-    );
+    // The effective quality of a coding is its own `q` (`x-gzip` is `gzip`),
+    // otherwise the one of `*`, otherwise 0 (not acceptable)
+    const qualities = new Map<string, number>();
+    for (const { encoding, q_value } of request.accept_encoding) {
+      qualities.set(encoding === "x-gzip" ? "gzip" : encoding, q_value ?? 1);
+    }
+    const wildcard = qualities.get("*") ?? 0;
+    const quality = (coding: string): number =>
+      qualities.get(coding) ?? wildcard;
 
-    for (const { encoding } of accept_encoding.filter(
-      ({ q_value }) => q_value !== 0,
-    )) {
-      /* eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check */
-      switch (encoding) {
-        case "*": {
-          const any = Compression.#formats.find((f) => !refused.has(f));
-          if (typeof any !== "undefined") {
-            return any;
-          }
-          break;
-        }
-        case "identity":
-          return "identity";
-        case "x-gzip":
-          return "gzip";
-        case "br":
-        case "deflate":
-        case "gzip":
-          return encoding;
-        default:
-          break;
+    // The best acceptable coding (on a tie, in the order of `#formats`)
+    let best: Exclude<IComressFormats, "auto"> | null = null;
+    for (const coding of Compression.#formats) {
+      if (
+        quality(coding) > 0 &&
+        (best === null || quality(coding) > quality(best))
+      ) {
+        best = coding;
       }
     }
 
-    return "identity";
+    // `identity` wins only when it is explicitly preferred. When no coding is
+    // acceptable, the header is disregarded and the response is not encoded
+    // (RFC 9110, section 12.5.3) instead of replying with 406.
+    const identity = qualities.get("identity");
+    if (
+      best === null ||
+      (typeof identity === "number" && identity > quality(best))
+    ) {
+      return "identity";
+    }
+
+    return best;
   }
 
   /** Response codings in the order of preference (the first one is the default) */
