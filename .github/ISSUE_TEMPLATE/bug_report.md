@@ -23,7 +23,7 @@ A clear and concise description of what you expected to happen.
 
 - Node.js version: [e.g. v16.4.2]
 - NPM version: [e.g. 16.4.2]
-- `binden` version [e.g. 1.0.0]
+- Package and version [e.g. `binden` 4.0.0, `@binden/body` 4.0.0]
 
 **Additional context**
 Add any other context about the problem here.

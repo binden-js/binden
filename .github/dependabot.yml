@@ -7,6 +7,10 @@ updates:
       interval: daily
     allow:
       - dependency-type: direct
+    # Workspace packages are released in lockstep by scripts/release.mjs
+    ignore:
+      - dependency-name: binden
+      - dependency-name: "@binden/*"
     assignees:
       - vansergen
     versioning-strategy: increase
