@@ -17,6 +17,8 @@ export type IStack = [IStackItem[], RegExp | string | null];
 
 export const DefaultErrorCode = 500;
 
+type ILogLevel = "debug" | "error" | "trace" | "warn";
+
 export interface IBindenOptions {
   auto_head?: boolean;
   error_handler?: (context: Context, error: unknown) => void;
@@ -180,9 +182,17 @@ export class Binden {
     response: BindenResponse<BindenRequest>,
   ): void {
     const context = new Context({ request, response, logger: this.#logger });
-    this.#handle(context).catch((error: unknown) => {
-      this.#errorHandler(context, error);
-    });
+    this.#handle(context)
+      .catch((error: unknown) => {
+        this.#errorHandler(context, error);
+      })
+      .catch((error: unknown) => {
+        // The error handler failed (e.g. a custom `error_handler` threw): the
+        // response cannot be completed, but the process must not crash
+        const extra = { context, error };
+        Binden.#log(context, "error", "The error handler failed", extra);
+        request.destroy();
+      });
   }
 
   async #handle(context: Context): Promise<void> {
@@ -236,18 +246,22 @@ export class Binden {
 
   /** Default error hanlder (uses the provided `error_handler`, if any) */
   #errorHandler(context: Context, error: unknown): void {
-    const { response, request, log } = context;
+    const { response, request } = context;
+    // Only the context and the error, whose serializers keep the input out of the logs
     const base = { context, error };
+    const log = (level: ILogLevel, message: string): void => {
+      Binden.#log(context, level, message, base);
+    };
     if (this.#error_handler) {
-      log.trace("Passing error to the provided `error_handler`", base);
+      log("trace", "Passing error to the provided `error_handler`");
 
       this.#error_handler(context, error);
     } else if (response.writableEnded) {
-      log.debug("`.end()` has been called. Destroying the socket", base);
+      log("debug", "`.end()` has been called. Destroying the socket");
 
       request.destroy();
     } else if (response.headersSent) {
-      log.debug("Headers has been sent. Ending the response", base);
+      log("debug", "Headers has been sent. Ending the response");
 
       response.end();
     } else {
@@ -263,7 +277,7 @@ export class Binden {
       const expose = Boolean((error as { expose?: unknown }).expose);
 
       if (!expose) {
-        log.debug("Error should not be exposed", base);
+        log("debug", "Error should not be exposed");
         response.end();
         return;
       }
@@ -275,7 +289,7 @@ export class Binden {
           const message = JSON.stringify(json);
           response.setHeader("Content-Type", ct_json).end(message);
         } catch {
-          log.warn("`JSON.stringify` failed", { ...base, json });
+          log("warn", "`JSON.stringify` failed");
           response.end();
         }
         return;
@@ -284,7 +298,7 @@ export class Binden {
       const { message } = error as { message?: unknown };
 
       if (typeof message !== "string" || !message) {
-        log.debug("`message` is not a valid string", { ...base, message });
+        log("debug", "`message` is not a valid string");
         response.end();
         return;
       } else if (typeof response.getHeader("Content-Type") === "undefined") {
@@ -302,7 +316,7 @@ export class Binden {
     const { name } = middleware.constructor;
 
     if (middleware instanceof Middleware && middleware.disabled) {
-      context.log.debug("Middleware is disabled", { name });
+      Binden.#log(context, "debug", "Middleware is disabled", { name });
       return context;
     }
 
@@ -314,11 +328,26 @@ export class Binden {
       return next instanceof Context ? next : context;
     } catch (error: unknown) {
       if (middleware instanceof Middleware && middleware.ignore_errors) {
-        context.log.debug("Middleware ignores errors", { error, name });
+        const extra = { error, name };
+        Binden.#log(context, "debug", "Middleware ignores errors", extra);
         return context;
       }
 
       throw error;
+    }
+  }
+
+  /** Framework logs never break the handling of a request (e.g. a failing serializer) */
+  static #log(
+    context: Context,
+    level: ILogLevel,
+    message: string,
+    extra: Record<string, unknown>,
+  ): void {
+    try {
+      context.log[level](message, extra);
+    } catch {
+      // Nothing else to report it to
     }
   }
 

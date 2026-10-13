@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations, class-methods-use-this, @typescript-eslint/only-throw-error */
-import { deepStrictEqual, ok, throws } from "node:assert";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Server } from "node:http";
@@ -308,6 +308,115 @@ suite("Binden", () => {
 
       deepStrictEqual(response.status, DefaultErrorCode);
       ok(logged.output().includes(`"error":{"type":"Error"}`), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("does not log a `json` that cannot be stringified", async () => {
+    const logged = await loggedApp();
+    try {
+      logged.app.use(() => {
+        throw new BindenError(400, {
+          expose: true,
+          json: { password: "SECRET", amount: 1n },
+        });
+      });
+
+      const response = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, 400);
+      deepStrictEqual(await response.text(), "");
+      ok(logged.output().includes("`JSON.stringify` failed"));
+      ok(!logged.output().includes("SECRET"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("does not log a `message` that is not a string", async () => {
+    const logged = await loggedApp();
+    try {
+      logged.app.use(() => {
+        throw { status: 400, expose: true, message: { password: "SECRET" } };
+      });
+
+      const response = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, 400);
+      deepStrictEqual(await response.text(), "");
+      ok(logged.output().includes("`message` is not a valid string"));
+      ok(!logged.output().includes("SECRET"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("does not log a `code` that is not a Node.js error code", async () => {
+    const logged = await loggedApp();
+    try {
+      logged.app.use(() => {
+        throw Object.assign(new Error("Failed"), { code: "SECRET-CODE" });
+      });
+
+      const response = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, DefaultErrorCode);
+      ok(logged.output().includes(`"error":{"type":"Error"}`), logged.output());
+      ok(!logged.output().includes("SECRET"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("replies when the logger fails", async () => {
+    const logged = await loggedApp(
+      {},
+      {
+        ...serializers,
+        error: (): never => {
+          throw new Error("A failing serializer");
+        },
+      },
+    );
+    try {
+      logged.app.use(() => {
+        throw new BindenError(401);
+      });
+
+      const response = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, 401);
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("closes the connection when the error handler fails", async () => {
+    const logged = await loggedApp({
+      error_handler: (): never => {
+        throw new Error("A failing error handler");
+      },
+    });
+    try {
+      logged.app.use(() => {
+        throw new BindenError(400);
+      });
+
+      // The connection is closed (not left open until the deadline)
+      await rejects(
+        fetch(logged.url, { signal: AbortSignal.timeout(5000) }),
+        (error: Error) => error.name !== "AbortError",
+      );
+      ok(logged.output().includes("The error handler failed"), logged.output());
     } finally {
       await logged.close();
     }
