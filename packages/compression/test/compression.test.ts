@@ -6,6 +6,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
+import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   type InputType,
@@ -565,6 +566,99 @@ describe("Compression", () => {
       deepStrictEqual(await gunzip(body), expected);
       ok(results.every((result) => typeof result === "boolean"));
       ok(results.includes(false));
+    },
+  );
+
+  it("finishes the response before `send()` resolves (an error thrown afterwards)", async () => {
+    const events: string[] = [];
+    app.use(new Compression(), async (ct: Context) => {
+      ct.response.once("finish", () => events.push("finish"));
+      await ct.send("ok");
+      events.push("resolved");
+      throw new BindenError(400, { expose: true, message: "late error" });
+    });
+
+    const headers = { "Accept-Encoding": "br" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.statusCode, 200);
+    const body = await response.body.arrayBuffer();
+    deepStrictEqual((await brotliDecompress(body)).toString(), "ok");
+    deepStrictEqual(events, ["finish", "resolved"]);
+  });
+
+  it("calls the `end()` callback once the response has finished", async () => {
+    app.use(new Compression({ format: "gzip" }), (ct: Context) => {
+      ct.response.end("ok", () => {
+        ct.response.destroy();
+      });
+      ct.done = true;
+    });
+
+    const response = await request(url);
+    const body = await response.body.arrayBuffer();
+
+    deepStrictEqual((await gunzip(Buffer.from(body))).toString(), "ok");
+  });
+
+  it("ignores a second `end()`", async () => {
+    app.use(new Compression({ format: "gzip" }), (ct: Context) => {
+      ct.response.end("first");
+      ct.response.end("second");
+      ct.done = true;
+    });
+
+    const response = await request(url);
+    const body = await response.body.arrayBuffer();
+
+    deepStrictEqual((await gunzip(Buffer.from(body))).toString(), "first");
+  });
+
+  it("reports `writableEnded` once `end()` has been called", async () => {
+    const states: boolean[] = [];
+    app.use(new Compression({ format: "gzip" }), async (ct: Context) => {
+      ct.done = true;
+      states.push(ct.response.writableEnded);
+      ct.response.end("first");
+      states.push(ct.response.writableEnded);
+      // As for an uncompressed response, `send()` does nothing after `end()`
+      await ct.response.send(Readable.from(["second"]));
+    });
+
+    const response = await request(url);
+    const body = await response.body.arrayBuffer();
+
+    deepStrictEqual((await gunzip(Buffer.from(body))).toString(), "first");
+    deepStrictEqual(states, [false, true]);
+  });
+
+  it(
+    "does not resolve `send()` when the client goes away",
+    { timeout: 10_000 },
+    async () => {
+      let resolved = false;
+      let closed: Promise<unknown> = Promise.resolve();
+      app.use(new Compression({ format: "gzip" }), (ct: Context) => {
+        closed = once(ct.response, "close");
+        ct.send(randomBytes(4 * 1024 * 1024)).then(
+          () => {
+            resolved = true;
+          },
+          () => {
+            // A rejection is fine as well
+          },
+        );
+        ct.done = true;
+      });
+
+      const response = await request(url);
+      response.body.destroy();
+      await closed;
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 50);
+      });
+
+      ok(!resolved);
     },
   );
 

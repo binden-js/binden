@@ -1,6 +1,6 @@
 import { Context, type IMiddlewareParams, Middleware } from "binden";
+import { Writable, pipeline } from "node:stream";
 import { createBrotliCompress, createDeflate, createGzip } from "node:zlib";
-import { Writable } from "node:stream";
 
 export const DefaultCompression = "br";
 
@@ -64,6 +64,7 @@ export class Compression extends Middleware {
     // uncompressed body (e.g. from `sendFile`) is dropped, and nothing is
     // compressed when the headers have already been sent.
     let active: boolean | null = null;
+    let ended = false;
     const activate = (): boolean => {
       if (active === null) {
         active = !response.headersSent;
@@ -77,24 +78,32 @@ export class Compression extends Middleware {
           );
           response.removeHeader("Content-Length");
           // Backpressure in both directions: a compressed chunk is acknowledged
-          // once the response has flushed it (so `pipe` pauses the compressor
-          // while the response is full), and `drain` of the compressor is the
-          // `drain` that writers of the response wait for.
-          compress
-            .on("drain", () => response.emit("drain"))
-            .pipe(
-              new Writable({
-                write(chunk, _encoding, callback): void {
-                  write(chunk, () => {
-                    callback();
-                  });
-                },
-                final(callback): void {
-                  end();
+          // once the response has flushed it (so the compressor waits while the
+          // response is full), and `drain` of the compressor is the `drain`
+          // that writers of the response wait for. Errors of the chain and a
+          // response closed early (client gone) end both sides.
+          pipeline(
+            compress.on("drain", () => response.emit("drain")),
+            new Writable({
+              write(chunk, _encoding, callback): void {
+                write(chunk, () => {
                   callback();
-                },
-              }),
-            );
+                });
+              },
+              final(callback): void {
+                end();
+                callback();
+              },
+            }),
+            (error) => {
+              if (error) {
+                response.destroy();
+              }
+            },
+          );
+          response.once("close", () => {
+            compress.destroy();
+          });
         }
       }
       return active;
@@ -111,15 +120,31 @@ export class Compression extends Middleware {
       return write(chunk, encoding, cb);
     }) as typeof response.write;
 
-    response.end = ((
-      chunk?: unknown,
-      encoding?: BufferEncoding,
-      cb?: () => void,
-    ): typeof response => {
-      if (activate()) {
-        compress.end(chunk, encoding as BufferEncoding, cb);
-      } else {
-        end(chunk, encoding, cb);
+    // As for an uncompressed response, `writableEnded` is set by `end()`, the
+    // `end()` callback runs once the response has finished, and a second
+    // `end()` does nothing.
+    Object.defineProperty(response, "writableEnded", {
+      configurable: true,
+      get: () => ended,
+    });
+
+    response.end = ((...args: unknown[]): typeof response => {
+      const callback = args.find((arg) => typeof arg === "function");
+      if (typeof callback === "function") {
+        response.once("finish", () => {
+          (callback as () => void)();
+        });
+      }
+      if (!ended) {
+        ended = true;
+        const [chunk, encoding] = args.filter(
+          (arg) => typeof arg !== "function",
+        ) as [unknown, BufferEncoding];
+        if (activate()) {
+          compress.end(chunk, encoding);
+        } else {
+          end(chunk, encoding);
+        }
       }
       return response;
     }) as typeof response.end;
