@@ -18,7 +18,7 @@
     "build": "npm run build --workspaces",
     "ci:all": "npm ci && npm run release:check && npm run prettier && npm run commitlint && npm run eslint && npm run coverage && npm run pack:check && npm run docs:build",
     "commitlint": "commitlint --verbose --from=origin/main",
-    "coverage": "c8 npm test",
+    "coverage": "c8 npm test --",
     "docs:build": "typedoc",
     "eslint": "eslint .",
     "eslint:fix": "eslint . --fix",
@@ -29,7 +29,7 @@
     "prettier": "prettier -c .",
     "prettier:write": "prettier -c -w .",
     "release:check": "node scripts/release.mjs check",
-    "test": "npm test --workspaces --if-present"
+    "test": "npm test --workspaces --if-present --"
   },
   "repository": {
     "type": "git",

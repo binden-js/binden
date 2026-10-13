@@ -17,7 +17,7 @@
     "build": "tsc",
     "prebuild": "rm -rf dist",
     "prepack": "npm run build",
-    "test": "node --import tsx --test --test-concurrency=1 --test-timeout=60000 \"test/**/*.test.ts\""
+    "test": "node ../../scripts/test.mjs"
   },
   "repository": {
     "type": "git",
