@@ -1,11 +1,11 @@
 /* eslint-disable init-declarations, class-methods-use-this, @typescript-eslint/only-throw-error */
-import { deepStrictEqual, throws } from "node:assert";
+import { deepStrictEqual, ok, throws } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Server } from "node:http";
 import { Agent } from "node:https";
 import { afterEach, beforeEach, suite, test } from "node:test";
-import { Logger } from "@binden/logger";
+import { Logger, type LoggerOptions } from "@binden/logger";
 import fetch from "node-fetch";
 
 import {
@@ -13,6 +13,7 @@ import {
   Binden,
   BindenError,
   type IBindenErrorOptions,
+  type IBindenOptions,
   Middleware,
   type IMiddlewareParams,
   Context,
@@ -59,6 +60,49 @@ class ErrorMiddleware extends CustomMiddleware {
 
 const port = 8080;
 const url = `http://localhost:${port}`;
+
+interface ILoggedApp {
+  app: Binden;
+  url: string;
+  /** The log lines written so far */
+  output(): string;
+  close(): Promise<void>;
+}
+
+/** An application (on `port + 1`) whose debug logs are captured */
+async function loggedApp(
+  options: IBindenOptions = {},
+  logSerializers: LoggerOptions["serializers"] = serializers,
+): Promise<ILoggedApp> {
+  const lines: string[] = [];
+  const destination = {
+    write(line: string): void {
+      lines.push(line);
+    },
+  };
+  const logger = new Logger({
+    destination,
+    level: "debug",
+    serializers: logSerializers,
+  });
+  const logged = new Binden({ ...options, logger });
+  const loggedServer = logged.createServer();
+  const loggedUrl = `http://localhost:${port + 1}`;
+  await new Promise<void>((resolve) => {
+    loggedServer.listen(port + 1, resolve);
+  });
+  return {
+    app: logged,
+    url: loggedUrl,
+    output: (): string => lines.join(""),
+    close: async (): Promise<void> => {
+      loggedServer.closeAllConnections();
+      await new Promise((resolve) => {
+        loggedServer.close(resolve);
+      });
+    },
+  };
+}
 
 suite("Binden", () => {
   let app: Binden;
@@ -247,6 +291,25 @@ suite("Binden", () => {
       await new Promise((resolve) => {
         newServer.close(resolve);
       });
+    }
+  });
+
+  test("logs an error without a constructor (debug)", async () => {
+    const logged = await loggedApp();
+    try {
+      logged.app.use(() => {
+        throw Object.assign(new Error("secret-message"), { constructor: null });
+      });
+
+      // A deadline: a crashing error handler would never reply
+      const response = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, DefaultErrorCode);
+      ok(logged.output().includes(`"error":{"type":"Error"}`), logged.output());
+    } finally {
+      await logged.close();
     }
   });
 

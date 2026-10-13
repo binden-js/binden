@@ -60,7 +60,7 @@ Every context logs through `context.log`: a child (with the `trace_id` of the co
 
 - the `Authorization`, `Cookie`, `Proxy-Authorization` and `Set-Cookie` headers are redacted, and the query string is dropped from the request URL;
 - a logged `body` (e.g. the one that [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body) failed to parse) is redacted;
-- an `error` is reduced to its `type`, `status`, `expose` and `code`: its message, stack, cause and `json` may quote the input (e.g. an error of `JSON.parse()`).
+- an `error` is reduced to its `type`, `status` and `expose`, and to its `code` when it is a Node.js error code (such as `ECONNRESET` or `ERR_STREAM_PREMATURE_CLOSE`): its message, stack, cause and `json` may quote the input (e.g. an error of `JSON.parse()`). The serializer never throws, whatever is thrown.
 
 A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option. The default `serializers` are exported to build on:
 

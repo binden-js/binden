@@ -1,3 +1,4 @@
+import { STATUS_CODES } from "node:http";
 import Pino from "pino";
 import { Logger } from "@binden/logger";
 import { Context } from "./context.js";
@@ -21,27 +22,57 @@ function redact(headers: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
+/** Node.js error codes: system (`ECONNRESET`) and internal (`ERR_STREAM_DESTROYED`) ones */
+const nodeErrorCode = /^(?:E[A-Z0-9]+|ERR_[A-Z0-9_]+)$/u;
+
+/** Reads a property, so that a throwing getter (or proxy) cannot break the logs */
+function get(value: object, key: string): unknown {
+  try {
+    return Reflect.get(value, key) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** The name of the constructor (as pino), otherwise the `Object.prototype.toString()` tag */
+function typeOf(value: object): string {
+  const constructor = get(value, "constructor");
+  const name =
+    typeof constructor === "function" ? get(constructor, "name") : null;
+  if (typeof name === "string" && name !== "") {
+    return name;
+  }
+  try {
+    return Object.prototype.toString.call(value).slice(8, -1);
+  } catch {
+    return typeof value;
+  }
+}
+
 /**
  * The serializers of the default logger, which keep credentials, query strings,
  * request bodies and error details (messages, stacks, causes and `json`, which
  * may quote the input, e.g. the one of `JSON.parse()`) out of the logs
  */
 export const serializers = {
-  // Only the kind of an error: its type, `status`, `expose` and `code`
+  // Only the kind of an error: its type, `status`, `expose` and a Node.js
+  // `code`. Never throws, whatever is thrown.
   error: (error: unknown): Record<string, unknown> => {
-    if (!(error instanceof Error)) {
+    if (error === null) {
+      return { type: "null" };
+    } else if (typeof error !== "object" && typeof error !== "function") {
       return { type: typeof error };
     }
-    const { status, expose, code } = error as {
-      status?: unknown;
-      expose?: unknown;
-      code?: unknown;
-    };
+    const status = get(error, "status");
+    const expose = get(error, "expose");
+    const code = get(error, "code");
     return {
-      type: error.constructor.name,
-      ...(typeof status === "number" ? { status } : {}),
+      type: typeOf(error),
+      ...(typeof status === "number" && typeof STATUS_CODES[status] === "string"
+        ? { status }
+        : {}),
       ...(typeof expose === "boolean" ? { expose } : {}),
-      ...(typeof code === "string" || typeof code === "number" ? { code } : {}),
+      ...(typeof code === "string" && nodeErrorCode.test(code) ? { code } : {}),
     };
   },
   body: (): string => redacted,

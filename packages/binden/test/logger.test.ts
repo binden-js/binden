@@ -107,17 +107,85 @@ suite("serializers", () => {
       code: "ECONNRESET",
     });
 
-    const numeric = Object.assign(new TypeError("secret-message"), {
+    const internal = Object.assign(new Error("secret-message"), {
+      code: "ERR_STREAM_PREMATURE_CLOSE",
+    });
+    deepStrictEqual(serializers.error(internal), {
+      type: "Error",
+      code: "ERR_STREAM_PREMATURE_CLOSE",
+    });
+
+    const invalid = Object.assign(new TypeError("secret-message"), {
       code: 42,
       status: "400",
       expose: "true",
     });
-    deepStrictEqual(serializers.error(numeric), {
-      type: "TypeError",
-      code: 42,
+    deepStrictEqual(serializers.error(invalid), { type: "TypeError" });
+
+    // Only Node.js error codes: any other `code` may come from the input
+    for (const code of [
+      "secret-code",
+      "SECRET-CODE",
+      "Esecret",
+      "ERR_secret",
+    ]) {
+      deepStrictEqual(serializers.error(Object.assign(new Error(), { code })), {
+        type: "Error",
+      });
+    }
+
+    deepStrictEqual(
+      serializers.error({ status: 400, expose: true, message: "secret" }),
+      { type: "Object", status: 400, expose: true },
+    );
+    deepStrictEqual(serializers.error({ status: 999 }), { type: "Object" });
+    deepStrictEqual(serializers.error("secret-message"), { type: "string" });
+    deepStrictEqual(serializers.error(null), { type: "null" });
+  });
+
+  test("error: never throws", () => {
+    const anonymous = Object.assign(new Error("secret-message"), {
+      constructor: null,
+    });
+    deepStrictEqual(serializers.error(anonymous), { type: "Error" });
+
+    // An anonymous class
+    deepStrictEqual(serializers.error(new (class extends Error {})()), {
+      type: "Error",
     });
 
-    deepStrictEqual(serializers.error("secret-message"), { type: "string" });
+    const getters = new Error("secret-message");
+    for (const key of ["constructor", "status", "expose", "code"]) {
+      Object.defineProperty(getters, key, {
+        get(): never {
+          throw new Error("getter");
+        },
+      });
+    }
+    deepStrictEqual(serializers.error(getters), { type: "Error" });
+
+    const prototypeless = Object.assign(Object.create(null) as object, {
+      status: 404,
+    });
+    deepStrictEqual(serializers.error(prototypeless), {
+      type: "Object",
+      status: 404,
+    });
+
+    const { proxy, revoke } = Proxy.revocable(new Error("secret-message"), {});
+    revoke();
+    deepStrictEqual(serializers.error(proxy), { type: "object" });
+
+    const thrower = (): never => {
+      throw new Error("trap");
+    };
+    const traps = new Proxy(new Error("secret-message"), {
+      get: thrower,
+      getPrototypeOf: thrower,
+    });
+    deepStrictEqual(serializers.error(traps), { type: "object" });
+
+    deepStrictEqual(serializers.error(thrower), { type: "Function" });
   });
 
   test("body", () => {
