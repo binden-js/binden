@@ -1,4 +1,4 @@
-import { Range, IRange } from "./range.js";
+import { Range, type IRange } from "./range.js";
 
 export interface IContentRange extends IRange {
   readonly size: number | "*";

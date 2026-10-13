@@ -1,8 +1,0 @@
-{
-  "out": "docs",
-  "entryPoints": ["./index.ts"],
-  "name": "binden",
-  "exclude": ["test/**/*"],
-  "hideGenerator": true,
-  "gitRevision": "main"
-}

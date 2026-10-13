@@ -68,12 +68,13 @@ export class Multipart extends Middleware {
           fd.append(name, value);
         })
         .on("file", (name, stream, { mimeType: type, filename }) => {
-          const chunks: Buffer[] = [];
+          const chunks: Buffer<ArrayBuffer>[] = [];
           stream
             .once("close", () => {
-              fd.append(name, new File(chunks, filename, { type }));
+              // @types/busboy 1.5.5 types `filename` as optional; the value is passed through unchanged
+              fd.append(name, new File(chunks, filename as string, { type }));
             })
-            .on("data", (chunk: Buffer) => {
+            .on("data", (chunk: Buffer<ArrayBuffer>) => {
               chunks.push(chunk);
             })
             .once("limit", () => {

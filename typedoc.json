@@ -1,0 +1,11 @@
+{
+  "out": "docs",
+  "name": "binden",
+  "entryPointStrategy": "packages",
+  "entryPoints": ["packages/*"],
+  "packageOptions": {
+    "entryPoints": ["index.ts"]
+  },
+  "hideGenerator": true,
+  "gitRevision": "main"
+}

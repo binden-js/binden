@@ -1,10 +1,10 @@
 import pino, {
   stdSerializers,
-  Bindings,
-  Logger as PinoLogger,
-  LoggerOptions as PinoLoggerOptions,
-  DestinationStream,
-  LevelWithSilent,
+  type Bindings,
+  type Logger as PinoLogger,
+  type LoggerOptions as PinoLoggerOptions,
+  type DestinationStream,
+  type LevelWithSilent,
 } from "pino";
 
 export interface LoggerOptions extends PinoLoggerOptions {
@@ -24,7 +24,7 @@ export class Logger {
   public constructor({ logger, destination, ...options }: LoggerOptions = {}) {
     this.#logger = destination
       ? pino({ level: Logger.getLevel(), serializers, ...options }, destination)
-      : logger ?? pino({ level: Logger.getLevel(), serializers, ...options });
+      : (logger ?? pino({ level: Logger.getLevel(), serializers, ...options }));
   }
 
   public child(params: Bindings = {}): Logger {

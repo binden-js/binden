@@ -1,5 +1,5 @@
 import { METHODS } from "node:http";
-import { Middleware, IMiddleware } from "./middleware.js";
+import { Middleware, type IMiddleware } from "./middleware.js";
 
 export interface IRouterOptions {
   guarded?: boolean;
@@ -49,9 +49,9 @@ export class Router {
     }
 
     for (const middleware of _middlewares) {
-      if (
-        !(middleware instanceof Middleware || typeof middleware === "function")
-      ) {
+      if (!(
+        middleware instanceof Middleware || typeof middleware === "function"
+      )) {
         throw new TypeError("Middleware is not supported");
       }
     }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { IncomingMessage } from "node:http";
-import { parse, ParsedUrlQuery } from "node:querystring";
+import { parse, type ParsedUrlQuery } from "node:querystring";
 import { TLSSocket } from "node:tls";
 
 import AcceptEncoding from "./headers/accept-encoding.js";

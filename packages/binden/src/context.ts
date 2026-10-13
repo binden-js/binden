@@ -1,5 +1,5 @@
 import { Logger } from "@binden/logger";
-import { BindenError, IBindenErrorOptions } from "./error.js";
+import { BindenError, type IBindenErrorOptions } from "./error.js";
 import logger from "./logger.js";
 
 import type { Readable } from "node:stream";

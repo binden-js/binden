@@ -3,7 +3,7 @@ import { createInflate, createGunzip, createBrotliDecompress } from "node:zlib";
 import {
   BindenError,
   Middleware,
-  IMiddlewareParams,
+  type IMiddlewareParams,
   Context,
   ct_text,
   ct_json,

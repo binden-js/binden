@@ -1,40 +1,28 @@
 {
   "name": "@binden/body",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "Binden body parser middleware",
   "main": "dist/index.js",
   "type": "module",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/test"
+  ],
   "engines": {
-    "node": ">=20.11.0",
-    "npm": ">=10.2.4"
+    "node": ">=24.14.1",
+    "npm": ">=11.11.0"
   },
   "scripts": {
     "build": "tsc",
-    "build:remove": "rm -rf dist",
-    "ci:all": "npm ci && npm run prettier && npm run eslint && npm run commitlint && npm test && npm publish --dry-run && npm run docs:build && npm run coverage",
-    "commitlint": "commitlint --verbose --from=$( git rev-list --max-parents=0 $( git rev-parse --abbrev-ref HEAD ) )",
-    "coverage": "c8 npm test",
-    "docs:build": "typedoc",
-    "eslint": "eslint --ext .ts ./",
-    "eslint:fix": "npm run eslint -- --fix",
-    "install:clean": "npm install",
-    "postbuild": "prettier -c -w dist",
-    "postcoverage": "c8 report",
-    "postdocs:build": "prettier -c -w docs",
-    "postpublish": "npm run build:remove",
-    "prebuild": "npm run build:remove",
-    "preinstall:clean": "rm -rf node_modules package-lock.json",
-    "prepare": "husky",
-    "prepublishOnly": "npm run build",
-    "prettier": "prettier -c .",
-    "prettier:write": "prettier -c -w .",
-    "preversion": "npm run docs:build",
-    "test": "mocha"
+    "prebuild": "rm -rf dist",
+    "prepack": "npm run build",
+    "test": "node --import tsx --import ./test/setup.ts --test --test-concurrency=1 --test-timeout=60000 \"test/**/*.test.ts\""
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/binden-js/body.git"
+    "url": "git+https://github.com/binden-js/binden.git",
+    "directory": "packages/body"
   },
   "keywords": [
     "HTTP",
@@ -43,31 +31,15 @@
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
   "license": "AGPL-3.0-only",
-  "directories": {
-    "doc": "docs",
-    "test": "test"
-  },
   "bugs": {
-    "url": "https://github.com/binden-js/body/issues"
+    "url": "https://github.com/binden-js/binden/issues"
   },
-  "homepage": "https://github.com/binden-js/body#readme",
+  "homepage": "https://github.com/binden-js/binden/tree/main/packages/body#readme",
   "peerDependencies": {
-    "binden": "^2.0.2"
+    "binden": "^3.0.0"
   },
   "devDependencies": {
-    "@binden/commitlint-config": "^3.0.0",
-    "@binden/semantic-release-config": "^3.0.2",
-    "@binden/tsconfig": "^2.0.0",
-    "@types/mocha": "^10.0.10",
     "ajv": "^8.20.0",
-    "c8": "^11.0.0",
-    "eslint-config-binden-ts": "^3.0.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^15.5.1",
-    "mocha": "^11.7.6",
-    "prettier": "^3.5.3",
-    "ts-node": "^10.9.2",
-    "typedoc": "^0.28.14",
     "undici": "^7.11.0"
   },
   "publishConfig": {

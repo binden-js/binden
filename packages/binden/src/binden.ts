@@ -3,7 +3,7 @@ import https from "node:https";
 import { isDeepStrictEqual } from "node:util";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
-import { Middleware, IMiddleware } from "./middleware.js";
+import { Middleware, type IMiddleware } from "./middleware.js";
 import { BindenRequest } from "./request.js";
 import { BindenResponse, ct_text, ct_json } from "./response.js";
 import { Router } from "./router.js";

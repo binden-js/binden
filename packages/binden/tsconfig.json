@@ -1,1 +1,3 @@
-{ "extends": "@binden/tsconfig", "compilerOptions": { "outDir": "dist" } }
+{
+  "extends": "../../tsconfig.base.json"
+}
