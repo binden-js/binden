@@ -172,6 +172,9 @@ try {
   ]) {
     run("npm", [
       "install",
+      // Every package gets its own node_modules: an import of a dependency that
+      // is not declared (but hoisted in this repository) fails
+      "--install-strategy=nested",
       "--no-audit",
       "--no-fund",
       "--loglevel=warn",
