@@ -86,6 +86,8 @@ suite("Range", () => {
 
     // The unit is case-insensitive
     deepStrictEqual(parse("Bytes=0-1"), ["bytes=0-1"]);
+    // Valid, although it cannot be satisfied
+    deepStrictEqual(parse("bytes=-0"), ["bytes=-0"]);
     deepStrictEqual(parse("bytes=\t0-1 , 5-\t"), ["bytes=0-1", "bytes=5-"]);
     // Only plain digits, no control characters
     for (const input of [

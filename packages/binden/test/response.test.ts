@@ -6,6 +6,7 @@ import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer, get } from "node:http";
 import { type AddressInfo, Socket } from "node:net";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
 import type { Stats } from "node:fs";
@@ -905,6 +906,148 @@ suite("BindenResponse", () => {
         });
       });
     }
+  });
+
+  test(".sendFile() (RFC 9110, conditional and range requests)", async () => {
+    const send = async (
+      headers: Record<string, string>,
+      { method = "GET", path = filePath, etag = "" } = {},
+    ): Promise<[number, string | null, string]> => {
+      const serverPromise = new Promise<void>((resolve, reject) => {
+        server.once("request", (_request, response) => {
+          if (etag) {
+            response.setHeader("ETag", etag);
+          }
+          response.sendFile(path).then(resolve, reject);
+        });
+      });
+      const response = await fetch(url, {
+        method,
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+      const body = await response.text();
+      await serverPromise;
+      return [response.status, response.headers.get("Content-Range"), body];
+    };
+    const whole = msg.toString();
+    const size = msg.byteLength;
+    const seconds = Math.floor(file_stats.mtime.getTime() / 1000) * 1000;
+    const lm = new Date(seconds).toUTCString();
+    const range = { Range: "bytes=0-1" };
+    const partial = [206, `bytes 0-1/${size}`, whole.slice(0, 2)];
+
+    // Several ranges: one when they overlap or touch, the whole file otherwise
+    deepStrictEqual(await send({ Range: "bytes=0-1,2-3" }), [
+      206,
+      `bytes 0-3/${size}`,
+      whole.slice(0, 4),
+    ]);
+    deepStrictEqual(await send({ Range: "bytes=2-3, 0-4" }), [
+      206,
+      `bytes 0-4/${size}`,
+      whole.slice(0, 5),
+    ]);
+    deepStrictEqual(await send({ Range: "bytes=0-1,5-6" }), [200, null, whole]);
+    // Satisfiable when any range is
+    deepStrictEqual(await send({ Range: "bytes=99999-,0-1" }), partial);
+    // To the end of the file
+    deepStrictEqual(await send({ Range: "bytes=30-" }), [
+      206,
+      `bytes 30-${size - 1}/${size}`,
+      whole.slice(30),
+    ]);
+    deepStrictEqual(await send({ Range: "bytes=-0" }), [
+      416,
+      `bytes */${size}`,
+      "",
+    ]);
+    // Ranges apply to GET only
+    deepStrictEqual(await send(range, { method: "POST" }), [200, null, whole]);
+
+    // If-Range: exactly the Last-Modified, or a strong ETag
+    deepStrictEqual(await send({ ...range, "If-Range": lm }), partial);
+    const later = new Date(seconds + 1000).toUTCString();
+    deepStrictEqual(await send({ ...range, "If-Range": later }), [
+      200,
+      null,
+      whole,
+    ]);
+    deepStrictEqual(await send({ ...range, "If-Range": "garbage" }), [
+      200,
+      null,
+      whole,
+    ]);
+    deepStrictEqual(await send({ ...range, "If-Range": `"abc"` }), [
+      200,
+      null,
+      whole,
+    ]);
+    deepStrictEqual(
+      await send({ ...range, "If-Range": `"abc"` }, { etag: `"abc"` }),
+      partial,
+    );
+    deepStrictEqual(
+      await send({ ...range, "If-Range": `W/"abc"` }, { etag: `W/"abc"` }),
+      [200, null, whole],
+    );
+
+    // If-None-Match takes precedence over If-Modified-Since
+    deepStrictEqual((await send({ "If-Modified-Since": lm }))[0], 304);
+    deepStrictEqual(
+      await send({ "If-Modified-Since": lm, "If-None-Match": `"x"` }),
+      [200, null, whole],
+    );
+  });
+
+  test(".sendFile() (an empty file)", async () => {
+    const empty = join(dirPath, "empty");
+    const check = async (
+      headers: Record<string, string>,
+      status: number,
+      range: string | null,
+    ): Promise<void> => {
+      const serverPromise = new Promise<void>((resolve, reject) => {
+        server.once("request", (_request, response) => {
+          response.sendFile(empty).then(resolve, reject);
+        });
+      });
+      const response = await fetch(url, { headers });
+      await serverPromise;
+      deepStrictEqual(response.status, status);
+      deepStrictEqual(response.headers.get("Content-Range"), range);
+      deepStrictEqual(await response.text(), "");
+    };
+    await writeFile(empty, "");
+    try {
+      // No byte range can be satisfied
+      await check({ Range: "bytes=0-" }, 416, "bytes */0");
+      await check({ Range: "bytes=-5" }, 416, "bytes */0");
+      await check({}, 200, null);
+    } finally {
+      await rm(empty);
+    }
+  });
+
+  test(".sendFile() (a modification date in the future)", async () => {
+    const mtime = new Date(Date.now() + 3600 * 1000);
+    const serverPromise = new Promise<void>((resolve, reject) => {
+      server.once("request", (_request, response) => {
+        const stats = {
+          isFile: (): boolean => true,
+          mtime,
+          size: msg.byteLength,
+        };
+        response.sendFile(filePath, stats).then(resolve, reject);
+      });
+    });
+
+    const response = await fetch(url);
+    await serverPromise;
+
+    const lm = Date.parse(response.headers.get("Last-Modified") ?? "");
+    ok(lm <= Date.now(), `${lm}`);
+    deepStrictEqual(await response.text(), msg.toString());
   });
 
   test(".sendFile() (HEAD)", async () => {

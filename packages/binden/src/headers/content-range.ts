@@ -18,7 +18,7 @@ export class ContentRange extends Range implements IContentRange {
       throw new TypeError("`end` is less than zero");
     } else if (size !== "*" && !Number.isSafeInteger(size)) {
       throw new TypeError("`size` is not an integer");
-    } else if (size !== "*" && size <= 0) {
+    } else if (size !== "*" && size < 0) {
       throw new TypeError("`size` is less than zero");
     } else if (typeof end === "number" && size !== "*" && end >= size) {
       throw new TypeError("`end` is greater than `size`");

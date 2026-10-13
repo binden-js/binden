@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import ContentRange from "./headers/content-range.js";
 import Cookie from "./headers/cookie.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
+import { parseHttpDate } from "./headers/http-date.js";
 import Range from "./headers/range.js";
 import { BindenRequest } from "./request.js";
 
@@ -329,62 +330,113 @@ export class BindenResponse<
     }
 
     const { mtime, size } = stats;
-    const lm = new Date(mtime.toUTCString());
+    // In seconds, as an HTTP-date, and not in the future (RFC 9110, section 8.8.2.1)
+    const lm = new Date(
+      Math.floor(Math.min(mtime.getTime(), Date.now()) / 1000) * 1000,
+    );
 
     this.set({ "Last-Modified": lm.toUTCString(), "Accept-Ranges": "bytes" });
 
+    const { method = "GET", headers } = this.req;
     const ims =
       this.req instanceof BindenRequest
         ? this.req.if_modified_since
-        : IfModifiedSince.fromString(this.req.headers["if-modified-since"]);
+        : IfModifiedSince.fromString(headers["if-modified-since"]);
 
-    const { method = "GET" } = this.req;
-
-    if ((method === "GET" || method === "HEAD") && ims && ims.date >= lm) {
+    // If-None-Match takes precedence over If-Modified-Since (RFC 9110, 13.1.3)
+    if (
+      (method === "GET" || method === "HEAD") &&
+      typeof headers["if-none-match"] === "undefined" &&
+      ims &&
+      lm <= ims.date
+    ) {
       return this.status(304).send();
     } else if (method === "HEAD") {
       // The headers of the whole file, without reading it
       return this.setHeader("Content-Length", size).send();
     }
 
-    const range =
-      this.req instanceof BindenRequest
-        ? this.req.range.shift()
-        : Range.fromString(this.req.headers.range).shift();
+    // Ranges apply to GET only (RFC 9110, section 14.2)
+    const ranges =
+      method !== "GET" || !this.#ifRange(lm)
+        ? []
+        : this.req instanceof BindenRequest
+          ? this.req.range
+          : Range.fromString(headers.range);
+    const range = BindenResponse.#range(ranges, size);
 
-    const ifRange = new Date((this.req.headers["if-range"] ?? "") as string);
-
-    if (!range || ifRange < lm) {
+    if (range === null) {
       const stream = createReadStream(url);
       return this.setHeader("Content-Length", size).send(stream);
-    } else if (typeof range.start === "number" && range.start >= size) {
+    } else if (range === "unsatisfiable") {
       const cr = new ContentRange({ size }).toString();
       return this.setHeader("Content-Range", cr).status(416).send();
     }
 
-    const opts = { start: range.start ?? 0, end: size - 1 };
-
-    if (typeof range.end === "number") {
-      if (typeof range.start !== "number") {
-        const suffix = size - range.end;
-        opts.start = suffix < 0 ? 0 : suffix;
-      } else if (range.end < opts.end) {
-        opts.end = range.end;
-      }
-    }
-
-    const { start, end } = opts;
-    const cl = end - start + 1;
-
-    this.setHeader("Content-Length", cl);
-
-    if (cl === size) {
-      const stream = createReadStream(url);
-      return this.send(stream);
-    }
-
+    const { start, end } = range;
     const stream = createReadStream(url, { start, end });
     const cr = new ContentRange({ size, start, end }).toString();
-    return this.setHeader("Content-Range", cr).status(206).send(stream);
+    return this.set({ "Content-Length": end - start + 1, "Content-Range": cr })
+      .status(206)
+      .send(stream);
+  }
+
+  /** Whether `If-Range`, when sent, matches the file (RFC 9110, section 13.1.5) */
+  #ifRange(lm: Date): boolean {
+    const raw = this.req.headers["if-range"];
+    // Sent more than once, it is invalid: it does not match
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (typeof raw === "undefined") {
+      return true;
+    } else if (value.startsWith(`"`) || value.startsWith("W/")) {
+      // An entity-tag matches a strong `ETag` of the response only
+      const etag = this.getHeader("ETag");
+      return etag === value && !value.startsWith("W/");
+    }
+    // An HTTP-date matches the `Last-Modified` exactly
+    return parseHttpDate(value)?.getTime() === lm.getTime();
+  }
+
+  /**
+   * The byte range of a file to send: `null` for the whole file (without a
+   * range, or with several distinct ones: `multipart/byteranges` is not
+   * supported), or `"unsatisfiable"` (RFC 9110, section 14.1.1)
+   */
+  static #range(
+    ranges: readonly Range[],
+    size: number,
+  ): { start: number; end: number } | "unsatisfiable" | null {
+    if (ranges.length === 0) {
+      return null;
+    }
+
+    const satisfiable = ranges
+      .flatMap(({ start, end }): [number, number][] => {
+        if (start === null) {
+          // A suffix: the last `end` bytes
+          return end !== null && end > 0 && size > 0
+            ? [[Math.max(0, size - end), size - 1]]
+            : [];
+        }
+        return start < size ? [[start, Math.min(end ?? size, size - 1)]] : [];
+      })
+      .sort(([a], [b]) => a - b);
+    const [first, ...rest] = satisfiable;
+
+    if (typeof first === "undefined") {
+      return "unsatisfiable";
+    }
+
+    // Overlapping or adjacent ranges are one range
+    const [start] = first;
+    let [, end] = first;
+    for (const [nextStart, nextEnd] of rest) {
+      if (nextStart > end + 1) {
+        return null;
+      }
+      end = Math.max(end, nextEnd);
+    }
+
+    return start === 0 && end === size - 1 ? null : { start, end };
   }
 }

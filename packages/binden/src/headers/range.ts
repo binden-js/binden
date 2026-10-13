@@ -53,7 +53,7 @@ export class Range implements IRange {
       const end = last === "" ? null : Number(last);
       const valid =
         start === null
-          ? end !== null && end > 0
+          ? end !== null
           : Number.isSafeInteger(start) && (end === null || start <= end);
 
       if (valid && (end === null || Number.isSafeInteger(end))) {

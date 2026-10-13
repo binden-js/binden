@@ -528,12 +528,14 @@ const form = new URLSearchParams([
 await response.form(form);
 ```
 
-- `.sendFile()` - Send a file. Respects the following headers
-  - [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since)
+- `.sendFile()` - Send a file with its `Last-Modified` (never in the future). Follows [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) for the following headers
+  - [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since) - `304 Not Modified` for `GET` and `HEAD`, unless `If-None-Match` is sent
 
-  - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range)
+  - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) - for `GET` only: `206 Partial Content` for one range (overlapping or adjacent ranges are merged; several distinct ranges get the whole file), `416 Range Not Satisfiable` when no range can be satisfied
 
-  - [If-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range)
+  - [If-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range) - the ranges apply when it is exactly the `Last-Modified`, or the strong `ETag` set on the response
+
+  A response to `HEAD` gets the headers of the whole file, without reading it.
 
 ```typescript
 const path = "<path to file>";

@@ -39,9 +39,11 @@ suite("ContentRange", () => {
       new TypeError("`size` is not an integer"),
     );
     throws(
-      () => new ContentRange({ size: 0 }),
+      () => new ContentRange({ size: -1 }),
       new TypeError("`size` is less than zero"),
     );
+    // An empty representation (`bytes */0`)
+    deepStrictEqual(new ContentRange({ size: 0 }).toString(), "bytes */0");
     throws(
       () => new ContentRange({ size, end: size }),
       new TypeError("`end` is greater than `size`"),
