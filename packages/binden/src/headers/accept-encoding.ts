@@ -47,13 +47,18 @@ export class AcceptEncoding implements IAcceptEncoding {
       "identity",
     ];
 
+    // Content codings and the `q` parameter are case-insensitive (RFC 9110)
     return input
       .split(",")
-      .map((e) => e.trim().split(";q="))
-      .map<[string, number]>(([e, q]) => [
-        e.trim(),
-        Number((q as string | undefined)?.trim()),
-      ])
+      .map<[string, number]>((part) => {
+        const [coding = "", ...params] = part
+          .split(";")
+          .map((param) => param.trim());
+        const q = params
+          .map((param) => /^q\s*=\s*(?<value>.*)$/iu.exec(param)?.groups?.value)
+          .find((value) => typeof value === "string");
+        return [coding.toLowerCase(), Number(q?.trim())];
+      })
       .filter((e): e is [IAcceptEncodings, number] => encodings.includes(e[0]))
       .map(([encoding, q_value]) => {
         if (isNaN(q_value)) {

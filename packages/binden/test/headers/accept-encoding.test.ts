@@ -61,4 +61,15 @@ suite("AcceptEncoding", () => {
     deepStrictEqual(parsed[6].q_value, 0.1);
     deepStrictEqual(parsed[6].toString(), "identity;q=0.1");
   });
+
+  test("AcceptEncoding.fromString() (case and whitespace insensitive)", () => {
+    const parsed = AcceptEncoding.fromString(
+      "GZIP;Q=0.5, Br ; q = 0.4, deflate; q=1, X-Gzip",
+    );
+
+    deepStrictEqual(
+      parsed.map((e) => e.toString()),
+      ["deflate;q=1", "x-gzip", "gzip;q=0.5", "br;q=0.4"],
+    );
+  });
 });
