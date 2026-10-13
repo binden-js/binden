@@ -468,6 +468,59 @@ describe("Compression", () => {
     },
   );
 
+  it(
+    "does not compress partial responses (`Range`)",
+    { timeout: 10_000 },
+    async () => {
+      const expected = randomBytes(1024).toString("hex");
+      const path = join(tmpdir(), `binden-compression-${randomUUID()}.txt`);
+      await writeFile(path, expected);
+
+      try {
+        app.use(new Compression({ format: "gzip" }), (ct: Context) =>
+          ct.sendFile(path),
+        );
+
+        const partial = await request(url, {
+          headers: { Range: "bytes=0-9" },
+        });
+
+        deepStrictEqual(partial.statusCode, 206);
+        ok(typeof partial.headers["content-encoding"] === "undefined");
+        deepStrictEqual(partial.headers["content-length"], "10");
+        deepStrictEqual(partial.headers["content-range"], "bytes 0-9/2048");
+        deepStrictEqual(await partial.body.text(), expected.slice(0, 10));
+
+        const unsatisfiable = await request(url, {
+          headers: { Range: "bytes=4096-" },
+        });
+
+        deepStrictEqual(unsatisfiable.statusCode, 416);
+        ok(typeof unsatisfiable.headers["content-encoding"] === "undefined");
+        deepStrictEqual(unsatisfiable.headers["content-range"], "bytes */2048");
+        deepStrictEqual(await unsatisfiable.body.text(), "");
+      } finally {
+        await rm(path);
+      }
+    },
+  );
+
+  it("does not compress `206` without `Content-Range` (multipart/byteranges)", async () => {
+    const expected = "--boundary--";
+    app.use(new Compression({ format: "gzip" }), (ct: Context) =>
+      ct
+        .status(206)
+        .setHeader("Content-Type", "multipart/byteranges; boundary=boundary")
+        .send(expected),
+    );
+
+    const response = await request(url);
+
+    deepStrictEqual(response.statusCode, 206);
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    deepStrictEqual(await response.body.text(), expected);
+  });
+
   it("compresses error responses of the following middlewares", async () => {
     const message = "invalid request";
     app.use(new Compression({ format: "gzip" }), () => {

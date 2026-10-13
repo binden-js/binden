@@ -61,13 +61,17 @@ export class Compression extends Middleware {
     const end = response.end.bind(response) as IEnd;
 
     // Compression starts with the first body chunk. A `Content-Length` of the
-    // uncompressed body (e.g. from `sendFile`) is dropped, and nothing is
-    // compressed when the headers have already been sent.
+    // uncompressed body (e.g. from `sendFile`) is dropped. Nothing is compressed
+    // when the headers have already been sent, nor for partial responses: their
+    // ranges refer to the uncompressed body (RFC 9110, section 14.1.2).
     let active: boolean | null = null;
     let ended = false;
     const activate = (): boolean => {
       if (active === null) {
-        active = !response.headersSent;
+        active =
+          !response.headersSent &&
+          response.statusCode !== 206 &&
+          !response.hasHeader("Content-Range");
         if (active) {
           const raw = response.getHeader("Content-Encoding");
           response.setHeader(
