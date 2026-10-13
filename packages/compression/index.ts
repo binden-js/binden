@@ -62,16 +62,27 @@ export class Compression extends Middleware {
 
     // Compression starts with the first body chunk. A `Content-Length` of the
     // uncompressed body (e.g. from `sendFile`) is dropped. Nothing is compressed
-    // when the headers have already been sent, nor for partial responses: their
-    // ranges refer to the uncompressed body (RFC 9110, section 14.1.2).
+    // when the headers have already been sent, nor without a body (1xx, 204,
+    // 205, 304), nor for partial responses: their ranges refer to the
+    // uncompressed body (RFC 9110, section 14.1.2). A response to `HEAD` gets
+    // the headers of the compressed response, but no body.
+    const head = context.request.method === "HEAD";
     let active: boolean | null = null;
     let ended = false;
     const activate = (): boolean => {
       if (active === null) {
+        const { statusCode } = response;
         active =
           !response.headersSent &&
-          response.statusCode !== 206 &&
+          statusCode >= 200 &&
+          statusCode !== 204 &&
+          statusCode !== 205 &&
+          statusCode !== 304 &&
+          statusCode !== 206 &&
           !response.hasHeader("Content-Range");
+        if (!active || head) {
+          compress.destroy();
+        }
         if (active) {
           const raw = response.getHeader("Content-Encoding");
           response.setHeader(
@@ -81,6 +92,8 @@ export class Compression extends Middleware {
               : [...(Array.isArray(raw) ? raw : [`${raw}`]), format],
           );
           response.removeHeader("Content-Length");
+        }
+        if (active && !head) {
           // Backpressure in both directions: a compressed chunk is acknowledged
           // once the response has flushed it (so the compressor waits while the
           // response is full), and `drain` of the compressor is the `drain`
@@ -110,7 +123,7 @@ export class Compression extends Middleware {
           });
         }
       }
-      return active;
+      return active && !head;
     };
 
     response.write = ((

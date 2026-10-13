@@ -1,9 +1,10 @@
 /* eslint-disable init-declarations */
 import { deepStrictEqual, ok, throws, rejects } from "node:assert";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer, get } from "node:http";
-import { Socket } from "node:net";
+import { type AddressInfo, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
@@ -462,13 +463,66 @@ suite("BindenResponse", () => {
     });
     partial.emit("close");
     deepStrictEqual(await settle(sent), "ERR_STREAM_PREMATURE_CLOSE");
+  });
 
-    // A `HEAD` response has no body
-    const head = create("HEAD");
-    head.setHeader("Content-Length", 8);
-    const headSent = head.send(source());
-    head.emit("close");
-    deepStrictEqual(await settle(headSent), null);
+  test(".send() (`HEAD`: the headers of the body only)", async () => {
+    // Node.js rejects any body of a response to `HEAD` with this option
+    const strict = createServer(
+      { ServerResponse: BindenResponse, rejectNonStandardBodyWrites: true },
+      (_request, response) => {
+        response.send("hello").catch(() => {
+          // The test fails on the response instead
+        });
+      },
+    ).listen(0);
+    await once(strict, "listening");
+    const { port: local } = strict.address() as AddressInfo;
+
+    try {
+      const response = await fetch(`http://localhost:${local}`, {
+        method: "HEAD",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, 200);
+      deepStrictEqual(response.headers.get("Content-Length"), "5");
+      deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+      deepStrictEqual(await response.text(), "");
+    } finally {
+      strict.closeAllConnections();
+      strict.close();
+    }
+  });
+
+  test(".send() (a `Readable` is not read without a body)", async () => {
+    const check = async (method: string, status: number): Promise<void> => {
+      let reads = 0;
+      const source = new Readable({
+        read(): void {
+          reads += 1;
+          this.push(null);
+        },
+      });
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          resolve(settle(response.status(status).send(source)));
+        });
+      });
+
+      const response = await fetch(url, { method });
+
+      deepStrictEqual(response.status, status);
+      deepStrictEqual(await response.text(), "");
+      deepStrictEqual(await settled, null);
+      deepStrictEqual(reads, 0, `${method} ${status}`);
+      ok(source.destroyed);
+    };
+
+    // HEAD, 1xx, 204, 205 and 304 responses have no body
+    await check("HEAD", 200);
+    await check("GET", 204);
+    await check("GET", 205);
+    await check("GET", 304);
   });
 
   test(
@@ -851,6 +905,32 @@ suite("BindenResponse", () => {
         });
       });
     }
+  });
+
+  test(".sendFile() (HEAD)", async () => {
+    const check = async (headers: Record<string, string>): Promise<void> => {
+      const serverPromise = new Promise<void>((resolve, reject) => {
+        server.once("request", (_request, response) => {
+          response.sendFile(filePath).then(resolve, reject);
+        });
+      });
+
+      const response = await fetch(url, { method: "HEAD", headers });
+      await serverPromise;
+
+      // The headers of the whole file, without a body
+      deepStrictEqual(response.status, 200);
+      deepStrictEqual(
+        response.headers.get("Content-Length"),
+        `${msg.byteLength}`,
+      );
+      deepStrictEqual(response.headers.get("Content-Range"), null);
+      deepStrictEqual(await response.text(), "");
+    };
+
+    await check({});
+    // A range applies to GET only
+    await check({ Range: "bytes=0-9" });
   });
 
   test(".sendFile() (with `URL`)", async () => {

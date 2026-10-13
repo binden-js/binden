@@ -27,4 +27,4 @@ With the default `format: "auto"`, the content coding is chosen from the `Accept
 
 A fixed `format` (`br`, `gzip` or `deflate`) compresses every response regardless of the request.
 
-Partial responses (`206 Partial Content`, or any response with a `Content-Range` header, such as `416 Range Not Satisfiable`) are never compressed, because their ranges refer to the uncompressed body. Neither are responses whose headers have already been sent.
+Partial responses (`206 Partial Content`, or any response with a `Content-Range` header, such as `416 Range Not Satisfiable`) are never compressed, because their ranges refer to the uncompressed body. Neither are responses without a body (1xx, `204`, `205`, `304`) or whose headers have already been sent. A response to `HEAD` gets the headers of the compressed response, without a body.

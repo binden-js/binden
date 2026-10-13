@@ -6,6 +6,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
@@ -504,6 +505,44 @@ describe("Compression", () => {
       }
     },
   );
+
+  it("does not compress a response without a body", async () => {
+    // Node.js rejects any body of these responses with this option
+    const strict = new Binden()
+      .use(new Compression({ format: "gzip" }), (ct: Context) =>
+        ct.status(Number(ct.request.headers["x-status"])).send("ignored"),
+      )
+      .createServer({ rejectNonStandardBodyWrites: true })
+      .listen(0);
+    await once(strict, "listening");
+    const local = `http://localhost:${(strict.address() as AddressInfo).port}`;
+
+    try {
+      for (const status of [204, 304]) {
+        const response = await request(local, {
+          headers: { "x-status": `${status}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        deepStrictEqual(response.statusCode, status);
+        ok(!("content-encoding" in response.headers), `${status}`);
+        deepStrictEqual(await response.body.text(), "");
+      }
+
+      // The headers of the compressed response, without a body
+      const head = await request(local, {
+        method: "HEAD",
+        headers: { "x-status": "200" },
+        signal: AbortSignal.timeout(5000),
+      });
+      deepStrictEqual(head.statusCode, 200);
+      deepStrictEqual(head.headers["content-encoding"], "gzip");
+      ok(!("content-length" in head.headers));
+      deepStrictEqual(await head.body.text(), "");
+    } finally {
+      strict.closeAllConnections();
+      strict.close();
+    }
+  });
 
   it("does not compress `206` without `Content-Range` (multipart/byteranges)", async () => {
     const expected = "--boundary--";

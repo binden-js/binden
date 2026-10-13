@@ -466,7 +466,7 @@ const headers = {
 await response.status(402).set(headers).send("Payment is required");
 ```
 
-- `.send()` - send data
+- `.send()` - send data. A response without a body (to `HEAD`, or with a 1xx, 204, 205 or 304 status) sends none: a `Readable` is destroyed without being read, and a response to `HEAD` gets the `Content-Length` of the body it would send to `GET`
 
 ```typescript
 await response.send(

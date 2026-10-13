@@ -95,6 +95,13 @@ export class BindenResponse<
     }
 
     if (data instanceof Readable) {
+      if (this.#bodiless()) {
+        // Nothing of the source would be sent: it is not read at all
+        data.destroy();
+        const done = this.#finished(() => false);
+        this.end();
+        return done;
+      }
       return this.#pipe(data);
     }
 
@@ -114,12 +121,25 @@ export class BindenResponse<
       this.setHeader("Content-Type", ct_text);
     }
 
-    if (typeof data === "string" && encoding) {
-      this.end(data, encoding);
-    } else if (data instanceof Buffer || typeof data === "string") {
-      this.end(data);
+    const body =
+      data instanceof Buffer || typeof data === "string"
+        ? data
+        : data.toString();
+
+    if (this.#bodiless()) {
+      // The headers of the body (as for `GET`), but not the body itself
+      if (
+        this.req.method === "HEAD" &&
+        !this.headersSent &&
+        !this.hasHeader("Content-Length")
+      ) {
+        this.setHeader("Content-Length", Buffer.byteLength(body, encoding));
+      }
+      this.end();
+    } else if (typeof body === "string" && encoding) {
+      this.end(body, encoding);
     } else {
-      this.end(data.toString());
+      this.end(body);
     }
 
     return done;
@@ -151,20 +171,30 @@ export class BindenResponse<
   }
 
   /** Send a file */
+  /** A response without a body: to `HEAD`, or with a 1xx, 204, 205 or 304 status */
+  #bodiless(): boolean {
+    const { statusCode } = this;
+    return (
+      this.req.method === "HEAD" ||
+      (statusCode >= 100 && statusCode < 200) ||
+      statusCode === 204 ||
+      statusCode === 205 ||
+      statusCode === 304
+    );
+  }
+
   /**
    * Writes a `Readable` into the response (with backpressure) and settles like
    * `#finished()`. The client has the whole response (and may close the
-   * connection) once the `Content-Length` bytes (none for `HEAD`) are flushed to
-   * the connection, maybe before the source ends. The header is read at the
+   * connection) once the `Content-Length` bytes are flushed to the connection,
+   * maybe before the source ends. The header is read at the
    * close: compression removes it.
    */
   #pipe(data: Readable): Promise<void> {
     let flushed = 0;
     let written = false;
     const done = this.#finished(
-      () =>
-        this.req.method === "HEAD" ||
-        flushed >= Number(this.getHeader("Content-Length")),
+      () => flushed >= Number(this.getHeader("Content-Length")),
     );
     return new Promise<void>((resolve, reject) => {
       this.once("close", () => {
@@ -312,6 +342,9 @@ export class BindenResponse<
 
     if ((method === "GET" || method === "HEAD") && ims && ims.date >= lm) {
       return this.status(304).send();
+    } else if (method === "HEAD") {
+      // The headers of the whole file, without reading it
+      return this.setHeader("Content-Length", size).send();
     }
 
     const range =
