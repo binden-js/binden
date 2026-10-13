@@ -37,7 +37,8 @@
   },
   "homepage": "https://github.com/binden-js/binden/tree/main/packages/binden#readme",
   "dependencies": {
-    "@binden/logger": "^0.0.0-development"
+    "@binden/logger": "^0.0.0-development",
+    "pino": "^10.4.0"
   },
   "devDependencies": {
     "@types/sinon": "^22.0.0",
