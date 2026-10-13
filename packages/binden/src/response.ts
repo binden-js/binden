@@ -22,7 +22,6 @@ export class BindenResponse<
   Request extends IncomingMessage = IncomingMessage,
 > extends ServerResponse<Request> {
   #cookies?: Set<Cookie>;
-  #ended = false;
   #started = false;
 
   public constructor(...args: [request: Request, options?: unknown]) {
@@ -39,24 +38,6 @@ export class BindenResponse<
       this.#cookies = new Set<Cookie>();
     }
     return this.#cookies;
-  }
-
-  /**
-   * End the response. Once called, the response is handed over to the connection:
-   * a close that comes before `finish` is no longer premature (see `.send()`).
-   */
-  public override end(cb?: () => void): this;
-  /** End the response with a last `chunk` (see the first signature) */
-  public override end(chunk: unknown, cb?: () => void): this;
-  /** End the response with a last `chunk` in an `encoding` (see the first signature) */
-  public override end(
-    chunk: unknown,
-    encoding: BufferEncoding,
-    cb?: () => void,
-  ): this;
-  public override end(...args: unknown[]): this {
-    this.#ended = true;
-    return super.end(...(args as [unknown, BufferEncoding]));
   }
 
   /**
@@ -118,8 +99,8 @@ export class BindenResponse<
     }
 
     // Settles once the response has finished, or rejects when it is closed
-    // before `end()` (e.g. the client went away)
-    const done = this.#finished(() => this.#ended);
+    // before (e.g. the client went away)
+    const done = this.#finished(() => false);
 
     if (typeof data === "undefined" || data === "") {
       this.end();
@@ -170,17 +151,19 @@ export class BindenResponse<
   }
 
   /** Send a file */
-  /** Pipes a `Readable` into the response and settles like `#finished()` */
+  /**
+   * Writes a `Readable` into the response (with backpressure) and settles like
+   * `#finished()`. The client has the whole response (and may close the
+   * connection) once the `Content-Length` bytes (none for `HEAD`) are flushed to
+   * the connection, maybe before the source ends. The header is read at the
+   * close: compression removes it.
+   */
   #pipe(data: Readable): Promise<void> {
-    // The client has the whole response (and may close the connection) once it
-    // has the `Content-Length` bytes (none for `HEAD`), maybe before the source
-    // ends. The header is read at the close: compression removes it.
-    let received = 0;
+    let flushed = 0;
     const done = this.#finished(
       () =>
-        this.#ended ||
         this.req.method === "HEAD" ||
-        received >= Number(this.getHeader("Content-Length")),
+        flushed >= Number(this.getHeader("Content-Length")),
     );
     return new Promise<void>((resolve, reject) => {
       this.once("close", () => {
@@ -191,10 +174,33 @@ export class BindenResponse<
       });
       data
         .on("data", (chunk: Uint8Array | string) => {
-          received += Buffer.byteLength(chunk);
+          try {
+            const size = Buffer.byteLength(chunk);
+            const written = this.write(chunk, (error?: Error | null) => {
+              if (error) {
+                // Not delivered: the client went away (Node.js 24 may still
+                // emit `finish` once the response is ended)
+                data.destroy();
+                reject(error);
+              } else {
+                flushed += size;
+              }
+            });
+            if (!written) {
+              data.pause();
+              this.once("drain", () => {
+                data.resume();
+              });
+            }
+          } catch (error: unknown) {
+            // Not a chunk of bytes (e.g. an object)
+            data.destroy(error as Error);
+          }
         })
-        .once("error", reject)
-        .pipe(this);
+        .once("end", () => {
+          this.end();
+        })
+        .once("error", reject);
       done.then(resolve, (error: Error) => {
         data.destroy();
         reject(error);
@@ -203,9 +209,9 @@ export class BindenResponse<
   }
 
   /**
-   * Resolves when the response has finished, rejects when it is closed (e.g. the
-   * client went away) before it is `complete()` for the client: `end()` has
-   * handed it over to the connection (`#ended`), or the client has its body
+   * Resolves when the response has finished (flushed to the connection), rejects
+   * when it is closed before (e.g. the client went away), unless it is
+   * `complete()` for the client already
    */
   #finished(complete: () => boolean): Promise<void> {
     return new Promise<void>((resolve, reject) => {

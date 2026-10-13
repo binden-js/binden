@@ -38,6 +38,9 @@ function abortAfterFirstChunk(): Promise<void> {
   });
 }
 
+/** The error codes of a `send()` to a client that went away */
+const gone = new Set(["EPIPE", "ECONNRESET", "ERR_STREAM_PREMATURE_CLOSE"]);
+
 /** The error code of a settled `send()` (`null` when it has resolved) */
 function settle(promise: Promise<void>): Promise<unknown> {
   return promise.then(
@@ -288,11 +291,16 @@ suite("BindenResponse", () => {
     const create = (): BindenResponse =>
       new BindenResponse(new IncomingMessage(new Socket()));
 
-    // The connection may close before `finish` once `end()` has been called
+    // Ended, but not flushed to the connection: the close is premature
     const ended = create();
     const sent = ended.send("data");
     ended.emit("close");
-    deepStrictEqual(await settle(sent), null);
+    deepStrictEqual(await settle(sent), "ERR_STREAM_PREMATURE_CLOSE");
+
+    const finished = create();
+    const finishing = finished.send("data");
+    finished.emit("finish");
+    deepStrictEqual(await settle(finishing), null);
 
     const failed = create();
     const failing = failed.send("data");
@@ -351,6 +359,85 @@ suite("BindenResponse", () => {
     },
   );
 
+  test(
+    ".send() (rejects when the client goes away before the flush)",
+    { timeout: 10_000 },
+    async () => {
+      // One chunk with the whole `Content-Length`: read at once, but not sent
+      const size = 64 * 1024 * 1024;
+      const stream = Readable.from([Buffer.alloc(size)]);
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          response.setHeader("Content-Length", size);
+          resolve(settle(response.send(stream)));
+        });
+      });
+      await abortAfterFirstChunk();
+
+      // The write fails (or the response closes) before the chunk is flushed
+      const code = await settled;
+      ok(gone.has(code as string), String(code));
+      ok(stream.destroyed);
+    },
+  );
+
+  test(
+    ".send() (pauses a `Readable` while the client does not read)",
+    { timeout: 10_000 },
+    async () => {
+      const chunk = Buffer.alloc(1024 * 1024);
+      let left = 64;
+      const stream = new Readable({
+        read(): void {
+          left -= 1;
+          this.push(left >= 0 ? chunk : null);
+        },
+      });
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          resolve(settle(response.send(stream)));
+        });
+      });
+      const response = await new Promise<IncomingMessage>((resolve) => {
+        get(url, resolve);
+      });
+      response.pause();
+      await new Promise((resolve) => {
+        setTimeout(resolve, 200);
+      });
+
+      // The connection is full: the source waits for `drain`
+      deepStrictEqual(stream.readableFlowing, false);
+      ok(left > 0);
+
+      let received = 0;
+      for await (const data of response) {
+        received += (data as Buffer).byteLength;
+      }
+      deepStrictEqual(received, 64 * chunk.byteLength);
+      deepStrictEqual(await settled, null);
+    },
+  );
+
+  test(".send() (rejects a `Readable` of objects)", async () => {
+    const stream = Readable.from([{ not: "a chunk" }]);
+    const settled = new Promise<unknown>((resolve) => {
+      server.once("request", (_request, response) => {
+        resolve(settle(response.send(stream)));
+        response.once("close", () => {
+          // The test ends the connection below
+        });
+      });
+    });
+    const request = get(url).on("error", () => {
+      // The connection is closed below
+    });
+
+    deepStrictEqual(await settled, "ERR_INVALID_ARG_TYPE");
+    ok(stream.destroyed);
+    request.destroy();
+  });
+
   test(".send() (a `Readable` without its whole `Content-Length`)", async () => {
     // Without a connection: the events are emitted here
     const create = (method: string): BindenResponse =>
@@ -406,7 +493,8 @@ suite("BindenResponse", () => {
       });
       await abortAfterFirstChunk();
 
-      deepStrictEqual(await settled, "ERR_STREAM_PREMATURE_CLOSE");
+      const code = await settled;
+      ok(gone.has(code as string), String(code));
       ok(stream.destroyed && !stream.readableEnded);
     },
   );
