@@ -34,7 +34,7 @@
   },
   "homepage": "https://github.com/binden-js/binden/tree/main/packages/logger#readme",
   "dependencies": {
-    "pino": "^10.3.1"
+    "pino": "^10.4.0"
   },
   "publishConfig": {
     "access": "public"
