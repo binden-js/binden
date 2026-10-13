@@ -1,6 +1,5 @@
 import Pino from "pino";
 import { Logger } from "@binden/logger";
-import { BindenError } from "./error.js";
 import { Context } from "./context.js";
 
 const redacted = "[Redacted]";
@@ -22,14 +21,30 @@ function redact(headers: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
+/**
+ * The serializers of the default logger, which keep credentials, query strings,
+ * request bodies and error details (messages, stacks, causes and `json`, which
+ * may quote the input, e.g. the one of `JSON.parse()`) out of the logs
+ */
 export const serializers = {
-  error: Pino.stdSerializers.wrapErrorSerializer((error) => {
-    if (error.raw instanceof BindenError) {
-      const { status, expose, json } = error.raw;
-      return { status, expose, json, ...error };
+  // Only the kind of an error: its type, `status`, `expose` and `code`
+  error: (error: unknown): Record<string, unknown> => {
+    if (!(error instanceof Error)) {
+      return { type: typeof error };
     }
-    return error;
-  }),
+    const { status, expose, code } = error as {
+      status?: unknown;
+      expose?: unknown;
+      code?: unknown;
+    };
+    return {
+      type: error.constructor.name,
+      ...(typeof status === "number" ? { status } : {}),
+      ...(typeof expose === "boolean" ? { expose } : {}),
+      ...(typeof code === "string" || typeof code === "number" ? { code } : {}),
+    };
+  },
+  body: (): string => redacted,
   // The query string (and the parsed `query`/`params`) may contain tokens
   request: Pino.stdSerializers.wrapRequestSerializer(
     /* eslint-disable-next-line @typescript-eslint/no-unused-vars */

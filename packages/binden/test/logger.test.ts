@@ -16,6 +16,10 @@ const secrets = [
   "secret-cookie",
   "secret-query",
   "secret-set-cookie",
+  "secret-body",
+  "secret-message",
+  "secret-cause",
+  "secret-json",
 ];
 
 function createContext(): Context {
@@ -81,18 +85,43 @@ suite("serializers", () => {
     deepStrictEqual(serializers.context("not a context"), "not a context");
   });
 
-  test("error", () => {
-    const error = serializers.error(
-      new BindenError(400, { expose: true, json: { message: "Bad" } }),
-    );
-    deepStrictEqual(
-      [error.status, error.expose, error.json],
-      [400, true, { message: "Bad" }],
-    );
+  test("error: no message, stack, cause or json", () => {
+    const cause = new SyntaxError("secret-cause");
+    const error = new BindenError(400, {
+      expose: true,
+      message: "secret-message",
+      json: { message: "secret-json" },
+      cause,
+    });
+    deepStrictEqual(serializers.error(error), {
+      type: "BindenError",
+      status: 400,
+      expose: true,
+    });
 
-    const plain = serializers.error(new Error("plain"));
-    deepStrictEqual(plain.message, "plain");
-    ok(!("status" in plain));
+    const system = Object.assign(new Error("secret-message", { cause }), {
+      code: "ECONNRESET",
+    });
+    deepStrictEqual(serializers.error(system), {
+      type: "Error",
+      code: "ECONNRESET",
+    });
+
+    const numeric = Object.assign(new TypeError("secret-message"), {
+      code: 42,
+      status: "400",
+      expose: "true",
+    });
+    deepStrictEqual(serializers.error(numeric), {
+      type: "TypeError",
+      code: 42,
+    });
+
+    deepStrictEqual(serializers.error("secret-message"), { type: "string" });
+  });
+
+  test("body", () => {
+    deepStrictEqual(serializers.body(), "[Redacted]");
   });
 
   test("framework logs do not leak credentials", () => {
@@ -106,7 +135,11 @@ suite("serializers", () => {
 
     log.debug("Not found", {
       context: createContext(),
-      error: new BindenError(404),
+      body: { password: "secret-body" },
+      error: new BindenError(404, {
+        message: "secret-message",
+        cause: new Error("secret-cause"),
+      }),
     });
 
     deepStrictEqual(lines.length, 1);

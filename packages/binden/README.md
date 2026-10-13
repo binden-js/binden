@@ -57,9 +57,13 @@ const secureServer = app.createSecureServer({ key, cert });
 
 ### Logging
 
-Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` keep credentials out of the logs: the `Authorization`, `Cookie`, `Proxy-Authorization` and `Set-Cookie` headers are redacted, and the query string is dropped from the request URL.
+Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` keep credentials and the input of the requests out of the logs:
 
-A custom logger (for example with another level or destination) is passed with the `logger` option. The default `serializers` are exported to build on:
+- the `Authorization`, `Cookie`, `Proxy-Authorization` and `Set-Cookie` headers are redacted, and the query string is dropped from the request URL;
+- a logged `body` (e.g. the one that [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body) failed to parse) is redacted;
+- an `error` is reduced to its `type`, `status`, `expose` and `code`: its message, stack, cause and `json` may quote the input (e.g. an error of `JSON.parse()`).
+
+A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option. The default `serializers` are exported to build on:
 
 ```typescript
 import { Binden, serializers } from "binden";
@@ -67,7 +71,16 @@ import { Logger } from "@binden/logger";
 
 const logger = new Logger({ level: "debug", serializers });
 const app = new Binden({ logger });
+
+// Log the request bodies as well
+const verbose = new Logger({
+  level: "debug",
+  serializers: { ...serializers, body: (body: unknown): unknown => body },
+});
+const debugApp = new Binden({ logger: verbose });
 ```
+
+Likewise, `error` can be replaced with a serializer that keeps the details of the errors (e.g. `stdSerializers.err` of [pino](https://getpino.io/#/docs/api?id=pino-stdserializers)).
 
 ### Context
 
