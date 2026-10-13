@@ -99,10 +99,34 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: coverage/lcov.info
 
+  # The tests and the tooling (paths, line endings, child processes) on Windows
+  windows:
+    runs-on: windows-latest
+
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+          cache: npm
+
+      - name: Install dependencies and build the workspaces
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Tooling tests (release script, test runner)
+        run: npm run test:tooling
+
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-    needs: [lint, test]
+    needs: [lint, test, windows]
 
     runs-on: ubuntu-latest
 
