@@ -1,6 +1,7 @@
 /* eslint-disable init-declarations, sort-imports */
 import { deepStrictEqual, ok } from "node:assert";
 import { randomBytes, randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -466,7 +467,7 @@ describe("Compression", () => {
     },
   );
 
-  it("does not encode error responses of the following middlewares", async () => {
+  it("compresses error responses of the following middlewares", async () => {
     const message = "invalid request";
     app.use(new Compression({ format: "gzip" }), () => {
       throw new BindenError(400, { expose: true, message });
@@ -475,9 +476,97 @@ describe("Compression", () => {
     const response = await request(url);
 
     deepStrictEqual(response.statusCode, 400);
-    ok(typeof response.headers["content-encoding"] === "undefined");
-    deepStrictEqual(await response.body.text(), message);
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
+
+    const body = await response.body.arrayBuffer();
+    const actual = (await gunzip(Buffer.from(body))).toString();
+
+    deepStrictEqual(actual, message);
   });
+
+  it("compresses an error thrown after the first write", async () => {
+    const message = "invalid request";
+    app.use(new Compression({ format: "gzip" }), (ct: Context) => {
+      ct.response.write("prefix ");
+      throw new BindenError(400, { expose: true, message });
+    });
+
+    const response = await request(url);
+
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
+
+    const body = await response.body.arrayBuffer();
+    const actual = (await gunzip(Buffer.from(body))).toString();
+
+    ok(actual.startsWith("prefix "));
+  });
+
+  it(
+    "keeps the backpressure of `response.write()`",
+    { timeout: 10_000 },
+    async () => {
+      // Compressible data: the compressor fills up, the response does not
+      const expected = Buffer.alloc(1024 * 1024, "binden ");
+      const size = 64 * 1024;
+      const results: unknown[] = [];
+      app.use(new Compression({ format: "gzip" }), async (ct: Context) => {
+        for (let offset = 0; offset < expected.length; offset += size) {
+          const written = ct.response.write(
+            expected.subarray(offset, offset + size),
+          );
+          results.push(written);
+          if (!written) {
+            await once(ct.response, "drain");
+          }
+        }
+        await new Promise<void>((resolve) => {
+          ct.response.end(resolve);
+        });
+      });
+
+      const response = await request(url);
+      const body = Buffer.from(await response.body.arrayBuffer());
+
+      deepStrictEqual(await gunzip(body), expected);
+      ok(results.every((result) => typeof result === "boolean"));
+      ok(results.includes(false));
+    },
+  );
+
+  it(
+    "keeps the backpressure of `response.write()` (slow client)",
+    { timeout: 10_000 },
+    async () => {
+      const expected = randomBytes(1024 * 1024);
+      const size = 64 * 1024;
+      const results: unknown[] = [];
+      app.use(new Compression({ format: "gzip" }), async (ct: Context) => {
+        for (let offset = 0; offset < expected.length; offset += size) {
+          const written = ct.response.write(
+            expected.subarray(offset, offset + size),
+          );
+          results.push(written);
+          if (!written) {
+            await once(ct.response, "drain");
+          }
+        }
+        await new Promise<void>((resolve) => {
+          ct.response.end(resolve);
+        });
+      });
+
+      const response = await request(url);
+      // A slow client fills the response, so the compressor has to wait as well
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 200);
+      });
+      const body = Buffer.from(await response.body.arrayBuffer());
+
+      deepStrictEqual(await gunzip(body), expected);
+      ok(results.every((result) => typeof result === "boolean"));
+      ok(results.includes(false));
+    },
+  );
 
   it("does not compress when the headers have already been sent", async () => {
     const expected = "Hello World";

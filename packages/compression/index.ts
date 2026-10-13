@@ -1,5 +1,6 @@
 import { Context, type IMiddlewareParams, Middleware } from "binden";
 import { createBrotliCompress, createDeflate, createGzip } from "node:zlib";
+import { Writable } from "node:stream";
 
 export const DefaultCompression = "br";
 
@@ -8,6 +9,18 @@ export type IComressFormats = "auto" | "br" | "deflate" | "gzip";
 export interface ICompressionOptions extends IMiddlewareParams {
   format?: IComressFormats;
 }
+
+type IWrite = (
+  chunk: unknown,
+  encoding?: BufferEncoding | ((error?: Error | null) => void),
+  cb?: (error?: Error | null) => void,
+) => boolean;
+
+type IEnd = (
+  chunk?: unknown,
+  encoding?: BufferEncoding,
+  cb?: () => void,
+) => void;
 
 export class Compression extends Middleware {
   readonly #format: IComressFormats;
@@ -21,18 +34,18 @@ export class Compression extends Middleware {
     return this.#format;
   }
 
-  public run(context: Context): Context {
+  public run(context: Context): void {
+    const { response } = context;
+
     if (this.format === "auto") {
-      Compression.#varyOnAcceptEncoding(context);
+      Compression.#varyOnAcceptEncoding(response);
     }
 
     const format = Compression.#getFormat(context, this.format);
 
-    if (format === "identity") {
-      return context;
+    if (format === "identity" || response.headersSent) {
+      return;
     }
-
-    const { response } = context;
 
     const compress =
       format === "br"
@@ -41,9 +54,15 @@ export class Compression extends Middleware {
           ? createDeflate()
           : createGzip();
 
-    // Compression starts with the first body chunk written through this middleware,
-    // so responses written past it (e.g. by the error handler) stay unencoded, and
-    // a `Content-Length` of the uncompressed body (e.g. from `sendFile`) is dropped.
+    // `write`/`end` are replaced on the response itself, so that every writer
+    // (the following middlewares, `sendFile`, the error handler) goes through
+    // the compressor; several compressions chain their replaced methods.
+    const write = response.write.bind(response) as IWrite;
+    const end = response.end.bind(response) as IEnd;
+
+    // Compression starts with the first body chunk. A `Content-Length` of the
+    // uncompressed body (e.g. from `sendFile`) is dropped, and nothing is
+    // compressed when the headers have already been sent.
     let active: boolean | null = null;
     const activate = (): boolean => {
       if (active === null) {
@@ -57,58 +76,53 @@ export class Compression extends Middleware {
               : [...(Array.isArray(raw) ? raw : [`${raw}`]), format],
           );
           response.removeHeader("Content-Length");
-          compress.pipe(response);
+          // Backpressure in both directions: a compressed chunk is acknowledged
+          // once the response has flushed it (so `pipe` pauses the compressor
+          // while the response is full), and `drain` of the compressor is the
+          // `drain` that writers of the response wait for.
+          compress
+            .on("drain", () => response.emit("drain"))
+            .pipe(
+              new Writable({
+                write(chunk, _encoding, callback): void {
+                  write(chunk, () => {
+                    callback();
+                  });
+                },
+                final(callback): void {
+                  end();
+                  callback();
+                },
+              }),
+            );
         }
       }
       return active;
     };
 
-    const proxyResponse = new Proxy(response, {
-      get(_r, p: string): unknown {
-        if (p === "write") {
-          return function write(
-            data: unknown,
-            encoding: BufferEncoding,
-            cb?: (error?: Error | null) => void,
-          ): void {
-            if (activate()) {
-              compress.write(data, encoding, cb);
-            } else {
-              response.write(data, encoding, cb);
-            }
-          };
-        } else if (p === "end") {
-          return function end(
-            data: unknown,
-            encoding: BufferEncoding,
-            cb?: () => void,
-          ): void {
-            if (activate()) {
-              compress.end(data, encoding, cb);
-            } else {
-              response.end(data, encoding, cb);
-            }
-          };
-        }
+    response.write = ((
+      chunk: unknown,
+      encoding?: BufferEncoding,
+      cb?: (error?: Error | null) => void,
+    ): boolean => {
+      if (activate()) {
+        return compress.write(chunk, encoding as BufferEncoding, cb);
+      }
+      return write(chunk, encoding, cb);
+    }) as typeof response.write;
 
-        return (response as unknown as Record<string, unknown>)[p];
-      },
-    });
-
-    return new Proxy(context, {
-      get(_ct, p: string): unknown {
-        if (p === "response") {
-          return proxyResponse;
-        }
-
-        return (context as unknown as Record<string, unknown>)[p];
-      },
-
-      set(_ct, p: string, value: unknown): boolean {
-        (context as unknown as Record<string, unknown>)[p] = value;
-        return true;
-      },
-    });
+    response.end = ((
+      chunk?: unknown,
+      encoding?: BufferEncoding,
+      cb?: () => void,
+    ): typeof response => {
+      if (activate()) {
+        compress.end(chunk, encoding as BufferEncoding, cb);
+      } else {
+        end(chunk, encoding, cb);
+      }
+      return response;
+    }) as typeof response.end;
   }
 
   static #getFormat(
@@ -165,7 +179,7 @@ export class Compression extends Middleware {
   static readonly #formats = [DefaultCompression, "gzip", "deflate"] as const;
 
   /** The response depends on `Accept-Encoding` (keeps the existing `Vary` values) */
-  static #varyOnAcceptEncoding({ response }: Context): void {
+  static #varyOnAcceptEncoding(response: Context["response"]): void {
     const raw = response.getHeader("Vary");
     const values = (
       Array.isArray(raw) ? raw : typeof raw === "undefined" ? [] : [`${raw}`]
