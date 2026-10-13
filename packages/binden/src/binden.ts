@@ -286,14 +286,20 @@ export class Binden {
       Binden.#log(context, level, message, base);
     };
     if (response.writableEnded) {
-      log("debug", "`.end()` has been called. Destroying the socket");
+      // Sent (or being sent): destroying the socket would cut it
+      log("debug", "`.end()` has been called. Leaving the response");
+    } else if (response.started) {
+      // Part of the body may be sent (or compressed): ending the response would
+      // make a truncated body look complete
+      log("debug", "The response has been started. Destroying the socket");
 
       request.destroy();
-    } else if (response.headersSent) {
-      log("debug", "Headers has been sent. Ending the response");
-
-      response.end();
     } else {
+      // The framing and representation of the body that is not sent
+      for (const name of Binden.#representation) {
+        response.removeHeader(name);
+      }
+
       const errorStatus = Number((error as { status?: unknown }).status);
 
       const status =
@@ -365,6 +371,17 @@ export class Binden {
       throw error;
     }
   }
+
+  /** The headers of a body, which do not apply to an error that replaces it */
+  static readonly #representation = [
+    "Content-Disposition",
+    "Content-Encoding",
+    "Content-Length",
+    "Content-Range",
+    "ETag",
+    "Last-Modified",
+    "Transfer-Encoding",
+  ];
 
   /** Framework logs never break the handling of a request (e.g. a failing serializer) */
   static #log(

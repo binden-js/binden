@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations, sort-imports */
-import { deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, rejects } from "node:assert";
 import { randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { rm, writeFile } from "node:fs/promises";
@@ -538,21 +538,18 @@ describe("Compression", () => {
     deepStrictEqual(actual, message);
   });
 
-  it("compresses an error thrown after the first write", async () => {
-    const message = "invalid request";
+  it("cuts the response on an error thrown after the first write", async () => {
     app.use(new Compression({ format: "gzip" }), (ct: Context) => {
       ct.response.write("prefix ");
-      throw new BindenError(400, { expose: true, message });
+      throw new BindenError(400, { expose: true, message: "invalid request" });
     });
 
-    const response = await request(url);
-
-    deepStrictEqual(response.headers["content-encoding"], "gzip");
-
-    const body = await response.body.arrayBuffer();
-    const actual = (await gunzip(Buffer.from(body))).toString();
-
-    ok(actual.startsWith("prefix "));
+    // The connection is closed (with the headers or before them): a truncated
+    // body must not look complete
+    await rejects(async () => {
+      const response = await request(url);
+      await response.body.arrayBuffer();
+    });
   });
 
   it(

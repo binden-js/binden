@@ -878,14 +878,66 @@ suite("Binden", () => {
 
       app.use(new WM(), new EM());
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
 
       deepStrictEqual(response.status, 201);
       deepStrictEqual(response.headers.get("Content-Type"), html);
 
-      const received = await response.text();
+      // The connection is closed: a truncated body must not look complete
+      await rejects(
+        response.text(),
+        (error: Error) => error.name !== "AbortError",
+      );
+    });
 
-      deepStrictEqual(received, message);
+    test(".errorHandler() (resets the framing of the response)", async () => {
+      app.use((context: Context) => {
+        context.response.set({
+          "Content-Length": 99,
+          "Content-Encoding": "gzip",
+          ETag: `"etag"`,
+          "Set-Cookie": "kept=1",
+        });
+        throw new BindenError(400, { expose: true, message: "Bad request" });
+      });
+
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+
+      deepStrictEqual(response.status, 400);
+      deepStrictEqual(response.headers.get("Content-Encoding"), null);
+      deepStrictEqual(response.headers.get("ETag"), null);
+      deepStrictEqual(response.headers.get("Set-Cookie"), "kept=1");
+      deepStrictEqual(await response.text(), "Bad request");
+    });
+
+    test(".errorHandler() (a stream that fails before sending)", async () => {
+      app.use(async (context: Context) => {
+        const failing = new Readable({
+          read(): void {
+            this.destroy(new BindenError(503));
+          },
+        });
+        await context.send(failing);
+      });
+
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+
+      deepStrictEqual(response.status, 503);
+    });
+
+    test(".errorHandler() (an ended response is not cut)", async () => {
+      const size = 32 * 1024 * 1024;
+      app.use((context: Context) => {
+        context.response.end(Buffer.alloc(size));
+        throw new BindenError(500);
+      });
+
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      deepStrictEqual(response.status, 200);
+      deepStrictEqual((await response.arrayBuffer()).byteLength, size);
     });
 
     test(".errorHandler() (`writableEnded === true`)", async () => {

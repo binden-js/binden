@@ -160,6 +160,7 @@ export class BindenResponse<
    */
   #pipe(data: Readable): Promise<void> {
     let flushed = 0;
+    let written = false;
     const done = this.#finished(
       () =>
         this.req.method === "HEAD" ||
@@ -176,7 +177,8 @@ export class BindenResponse<
         .on("data", (chunk: Uint8Array | string) => {
           try {
             const size = Buffer.byteLength(chunk);
-            const written = this.write(chunk, (error?: Error | null) => {
+            written = true;
+            const accepted = this.write(chunk, (error?: Error | null) => {
               if (error) {
                 // Not delivered: the client went away (Node.js 24 may still
                 // emit `finish` once the response is ended)
@@ -186,7 +188,7 @@ export class BindenResponse<
                 flushed += size;
               }
             });
-            if (!written) {
+            if (!accepted) {
               data.pause();
               this.once("drain", () => {
                 data.resume();
@@ -200,7 +202,13 @@ export class BindenResponse<
         .once("end", () => {
           this.end();
         })
-        .once("error", reject);
+        .once("error", (error) => {
+          // Nothing sent yet: the error can still be replied (see `.started`)
+          if (!written) {
+            this.#started = false;
+          }
+          reject(error);
+        });
       done.then(resolve, (error: Error) => {
         data.destroy();
         reject(error);
