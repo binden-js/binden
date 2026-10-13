@@ -1,17 +1,18 @@
 /* eslint-disable init-declarations */
 import { deepEqual, ok, fail, throws } from "node:assert/strict";
 import { Server } from "node:http";
+import { afterEach, beforeEach, suite, test } from "node:test";
 import {
   brotliCompress as brotliCompressAsync,
   gzip as gzipAsync,
   deflate as deflateAsync,
-  InputType,
+  type InputType,
 } from "node:zlib";
-import AJV, { JTDDataType } from "ajv/dist/jtd.js";
+import { Ajv as AJV, type JTDDataType } from "ajv/dist/jtd.js";
 import { errors, request } from "undici";
 import { Binden, Context, ct_text, ct_json, ct_form } from "binden";
 
-import { BodyParser, IParse } from "../index.js";
+import { BodyParser, type IParse } from "../index.js";
 
 function brotliCompress(data: InputType): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
@@ -56,7 +57,7 @@ suite("BodyParser", () => {
   let app: Binden;
   let server: Server;
 
-  setup((done) => {
+  beforeEach((_t, done) => {
     app = new Binden();
     server = app.createServer().listen(port, done);
   });
@@ -291,7 +292,7 @@ suite("BodyParser", () => {
     deepEqual(text, "");
   });
 
-  teardown((done) => {
+  afterEach((_t, done) => {
     server.closeIdleConnections();
     server.close(done);
   });

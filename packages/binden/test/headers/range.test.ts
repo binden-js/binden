@@ -1,4 +1,5 @@
 import { deepStrictEqual } from "node:assert";
+import { suite, test } from "node:test";
 
 import { Range } from "../../index.js";
 

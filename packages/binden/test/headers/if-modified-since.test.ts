@@ -1,4 +1,5 @@
 import { deepStrictEqual, ok } from "node:assert";
+import { suite, test } from "node:test";
 
 import { IfModifiedSince } from "../../index.js";
 

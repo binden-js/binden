@@ -1,6 +1,7 @@
 /* eslint-disable init-declarations, @typescript-eslint/no-loop-func */
 import { ok, deepStrictEqual } from "node:assert";
 import { Server, createServer } from "node:http";
+import { afterEach, beforeEach, suite, test } from "node:test";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
 import sinon from "sinon";
@@ -18,7 +19,7 @@ const url = `http://localhost:${port}`;
 suite("Context", () => {
   let server: Server<typeof BindenRequest, typeof BindenResponse>;
 
-  setup((done) => {
+  beforeEach((_t, done) => {
     server = createServer({
       IncomingMessage: BindenRequest,
       ServerResponse: BindenResponse,
@@ -238,5 +239,5 @@ suite("Context", () => {
     await serverPromise;
   });
 
-  teardown((done) => server.close(done));
+  afterEach((_t, done) => server.close(done));
 });

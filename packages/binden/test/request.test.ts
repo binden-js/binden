@@ -2,6 +2,7 @@
 import { deepStrictEqual, ok } from "node:assert";
 import { Server, createServer } from "node:http";
 import { stringify, parse } from "node:querystring";
+import { afterEach, beforeEach, suite, test } from "node:test";
 import fetch from "node-fetch";
 
 import {
@@ -18,7 +19,7 @@ const url = `http://localhost:${port}`;
 suite("BindenRequest", () => {
   let server: Server<typeof BindenRequest>;
 
-  setup((done) => {
+  beforeEach((_t, done) => {
     server = createServer({ IncomingMessage: BindenRequest }).listen(
       port,
       done,
@@ -358,5 +359,5 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
-  teardown((done) => server.close(done));
+  afterEach((_t, done) => server.close(done));
 });

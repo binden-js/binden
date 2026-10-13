@@ -1,18 +1,19 @@
-/* eslint-disable init-declarations, class-methods-use-this, @typescript-eslint/no-throw-literal */
+/* eslint-disable init-declarations, class-methods-use-this, @typescript-eslint/only-throw-error */
 import { deepStrictEqual, throws } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Server } from "node:http";
 import { Agent } from "node:https";
+import { afterEach, beforeEach, suite, test } from "node:test";
 import fetch from "node-fetch";
 
 import {
   DefaultErrorCode,
   Binden,
   BindenError,
-  IBindenErrorOptions,
+  type IBindenErrorOptions,
   Middleware,
-  IMiddlewareParams,
+  type IMiddlewareParams,
   Context,
   Router,
   ct_text,
@@ -61,7 +62,7 @@ suite("Binden", () => {
   let app: Binden;
   let server: Server;
 
-  setup((done) => {
+  beforeEach((_t, done) => {
     app = new Binden();
     server = app.createServer().listen(port, done);
   });
@@ -535,5 +536,5 @@ suite("Binden", () => {
     });
   });
 
-  teardown((done) => server.close(done));
+  afterEach((_t, done) => server.close(done));
 });

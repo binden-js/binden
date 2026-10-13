@@ -1,4 +1,4 @@
-/* eslint-disable init-declarations, @typescript-eslint/no-floating-promises, sort-imports */
+/* eslint-disable init-declarations, sort-imports */
 import { deepStrictEqual, ok } from "node:assert";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, describe, it } from "node:test";

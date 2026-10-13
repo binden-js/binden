@@ -1,4 +1,5 @@
 import { deepStrictEqual, throws } from "node:assert";
+import { suite, test } from "node:test";
 
 import { Router, Middleware } from "../index.js";
 

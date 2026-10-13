@@ -1,4 +1,5 @@
 import { deepStrictEqual, ok, throws } from "node:assert";
+import { suite, test } from "node:test";
 
 import { ContentRange } from "../../index.js";
 

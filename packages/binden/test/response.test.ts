@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
 import type { Stats } from "node:fs";
+import { afterEach, beforeEach, suite, test } from "node:test";
 
 import {
   BindenResponse,
@@ -29,7 +30,7 @@ suite("BindenResponse", () => {
   let file_stats: Stats;
   let dir_stats: Stats;
 
-  setup(async () => {
+  beforeEach(async () => {
     msg = Buffer.from(randomUUID());
     await mkdir(dirPath);
     await writeFile(filePath, msg);
@@ -611,7 +612,7 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
-  teardown(async () => {
+  afterEach(async () => {
     await rmdir(dirPath);
     await rm(filePath);
     await new Promise<void>((resolve, reject) => {
