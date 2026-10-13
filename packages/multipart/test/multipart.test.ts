@@ -1,12 +1,12 @@
 /* eslint-disable init-declarations, sort-imports */
 import { deepEqual, ok } from "node:assert/strict";
 import { request, Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { Binden, Context } from "binden";
 import multipart, { Multipart } from "../index.js";
 
-const port = 8080;
-const url = `http://localhost:${port}/`;
+let url = "";
 
 describe("Multipart", () => {
   let app: Binden;
@@ -15,7 +15,10 @@ describe("Multipart", () => {
   beforeEach(async () => {
     app = new Binden();
     await new Promise<void>((resolve) => {
-      server = app.createServer().listen(port, resolve);
+      server = app.createServer().listen(0, () => {
+        url = `http://localhost:${(server.address() as AddressInfo).port}/`;
+        resolve();
+      });
     });
   });
 

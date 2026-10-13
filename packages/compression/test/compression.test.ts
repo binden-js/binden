@@ -61,8 +61,7 @@ function inflate(data: InputType): Promise<Buffer> {
   });
 }
 
-const port = 8080;
-const url = new URL(`http://localhost:${port}`);
+let url: URL;
 
 class TestMiddleware extends Middleware {
   readonly #data: Buffer | string | undefined;
@@ -83,7 +82,11 @@ describe("Compression", () => {
   beforeEach(async () => {
     await new Promise<void>((resolve) => {
       app = new Binden();
-      server = app.createServer().listen(port, resolve);
+      server = app.createServer().listen(0, () => {
+        const { port } = server.address() as AddressInfo;
+        url = new URL(`http://localhost:${port}`);
+        resolve();
+      });
     });
   });
 

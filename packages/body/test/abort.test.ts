@@ -1,13 +1,14 @@
 /* eslint-disable init-declarations */
 import { ok } from "node:assert/strict";
 import { type Server, request } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import { gzipSync } from "node:zlib";
 import { Binden, type Context, ct_text } from "binden";
 
 import { BodyParser } from "../index.js";
 
-const port = 8080;
+let port = 0;
 
 suite("BodyParser (aborted request)", () => {
   let server: Server;
@@ -35,7 +36,10 @@ suite("BodyParser (aborted request)", () => {
       }
     });
 
-    server = app.createServer().listen(port, done);
+    server = app.createServer().listen(0, () => {
+      ({ port } = server.address() as AddressInfo);
+      done();
+    });
   });
 
   test(

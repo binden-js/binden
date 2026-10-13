@@ -3,6 +3,7 @@ import { deepStrictEqual, ok, rejects, throws } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Server, request as httpRequest } from "node:http";
+import type { AddressInfo } from "node:net";
 import { Agent } from "node:https";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, suite, test } from "node:test";
@@ -59,8 +60,12 @@ class ErrorMiddleware extends CustomMiddleware {
   }
 }
 
-const port = 8080;
-const url = `http://localhost:${port}`;
+/** The port of a listening server */
+function portOf(server: { address(): unknown }): number {
+  return (server.address() as AddressInfo).port;
+}
+
+let url = "";
 
 interface ILoggedApp {
   app: Binden;
@@ -70,7 +75,7 @@ interface ILoggedApp {
   close(): Promise<void>;
 }
 
-/** An application (on `port + 1`) whose debug logs are captured */
+/** An application (on another port) whose debug logs are captured */
 async function loggedApp(
   options: IBindenOptions = {},
   logSerializers: LoggerOptions["serializers"] = serializers,
@@ -88,10 +93,10 @@ async function loggedApp(
   });
   const logged = new Binden({ ...options, logger });
   const loggedServer = logged.createServer();
-  const loggedUrl = `http://localhost:${port + 1}`;
   await new Promise<void>((resolve) => {
-    loggedServer.listen(port + 1, resolve);
+    loggedServer.listen(0, resolve);
   });
+  const loggedUrl = `http://localhost:${portOf(loggedServer)}`;
   return {
     app: logged,
     url: loggedUrl,
@@ -111,14 +116,16 @@ suite("Binden", () => {
 
   beforeEach((_t, done) => {
     app = new Binden();
-    server = app.createServer().listen(port, done);
+    server = app.createServer().listen(0, () => {
+      url = `http://localhost:${portOf(server)}`;
+      done();
+    });
   });
 
   test(".createSecureServer()", async () => {
     const newApp = new Binden();
     const path = new URL(url);
     const agent = new Agent({ rejectUnauthorized: false });
-    path.port = `${Number(path.port) + 1}`;
     path.protocol = "https:";
 
     const key = await readFile("./test/cert/key.pem", { encoding: "utf-8" });
@@ -127,8 +134,9 @@ suite("Binden", () => {
     const newServer = newApp.createSecureServer({ key, cert });
 
     await new Promise<void>((resolve) => {
-      newServer.listen(port + 1, resolve);
+      newServer.listen(0, resolve);
     });
+    path.port = `${portOf(newServer)}`;
 
     const m = new SendMiddleware();
     let protocol = "";
@@ -295,13 +303,13 @@ suite("Binden", () => {
     const logger = new Logger({ destination, level: "debug", serializers });
     const newApp = new Binden({ logger });
     const path = new URL(url);
-    path.port = `${Number(path.port) + 1}`;
 
     const newServer = newApp.createServer();
 
     await new Promise<void>((resolve) => {
-      newServer.listen(port + 1, resolve);
+      newServer.listen(0, resolve);
     });
+    path.port = `${portOf(newServer)}`;
 
     try {
       let id = "";
@@ -705,13 +713,13 @@ suite("Binden", () => {
   test("405 error (`guarded` router `auto_head === false`)", async () => {
     const newApp = new Binden({ auto_head: false });
     const path = new URL(url);
-    path.port = `${Number(path.port) + 1}`;
 
     const newServer = newApp.createServer();
 
     await new Promise<void>((resolve) => {
-      newServer.listen(port + 1, resolve);
+      newServer.listen(0, resolve);
     });
+    path.port = `${portOf(newServer)}`;
 
     const m = new CustomMiddleware();
     const router = new Router({ guarded: true }).patch(m).get(m);
@@ -735,13 +743,13 @@ suite("Binden", () => {
       }
       const newApp = new Binden({ error_handler });
       const path = new URL(url);
-      path.port = `${Number(path.port) + 1}`;
 
       const newServer = newApp.createServer();
 
       await new Promise<void>((resolve) => {
-        newServer.listen(port + 1, resolve);
+        newServer.listen(0, resolve);
       });
+      path.port = `${portOf(newServer)}`;
 
       const status = 405;
       const message = "Hello World!";

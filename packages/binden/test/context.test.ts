@@ -1,6 +1,7 @@
 /* eslint-disable init-declarations, @typescript-eslint/no-loop-func */
 import { ok, deepStrictEqual } from "node:assert";
 import { Server, createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
@@ -13,8 +14,12 @@ import {
   BindenResponse,
 } from "../index.js";
 
-const port = 8080;
-const url = `http://localhost:${port}`;
+/** The port of a listening server */
+function portOf(server: { address(): unknown }): number {
+  return (server.address() as AddressInfo).port;
+}
+
+let url = "";
 
 suite("Context", () => {
   let server: Server<typeof BindenRequest, typeof BindenResponse>;
@@ -23,7 +28,10 @@ suite("Context", () => {
     server = createServer({
       IncomingMessage: BindenRequest,
       ServerResponse: BindenResponse,
-    }).listen(port, done);
+    }).listen(0, () => {
+      url = `http://localhost:${portOf(server)}`;
+      done();
+    });
   });
 
   test("constructor", async () => {

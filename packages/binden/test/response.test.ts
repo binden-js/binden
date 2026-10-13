@@ -2,7 +2,7 @@
 import { deepStrictEqual, ok, throws, rejects } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
+import { writeFile, rm, mkdir, mkdtemp, stat } from "node:fs/promises";
 import { IncomingMessage, Server, createServer, get } from "node:http";
 import { type AddressInfo, Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -23,8 +23,12 @@ import {
   ct_html,
 } from "../index.js";
 
-const port = 8080;
-const url = `http://localhost:${port}`;
+/** The port of a listening server */
+function portOf(server: { address(): unknown }): number {
+  return (server.address() as AddressInfo).port;
+}
+
+let url = "";
 
 /** Requests `url` and goes away after the first chunk of the response body */
 function abortAfterFirstChunk(): Promise<void> {
@@ -52,8 +56,10 @@ function settle(promise: Promise<void>): Promise<unknown> {
 }
 
 suite("BindenResponse", () => {
-  const filePath = `${tmpdir()}/__binden.test.file`;
-  const dirPath = `${tmpdir()}/__binden.test.dir`;
+  // A new directory for every test
+  let root: string;
+  let filePath: string;
+  let dirPath: string;
   let msg: Buffer;
   let server: Server<typeof IncomingMessage, typeof BindenResponse>;
   let file_stats: Stats;
@@ -61,12 +67,16 @@ suite("BindenResponse", () => {
 
   beforeEach(async () => {
     msg = Buffer.from(randomUUID());
+    root = await mkdtemp(join(tmpdir(), "binden-response-"));
+    filePath = join(root, "file");
+    dirPath = join(root, "dir");
     await mkdir(dirPath);
     await writeFile(filePath, msg);
     await new Promise<void>((resolve) => {
       server = createServer<typeof IncomingMessage, typeof BindenResponse>({
         ServerResponse: BindenResponse,
-      }).listen(port, () => {
+      }).listen(0, () => {
+        url = `http://localhost:${portOf(server)}`;
         resolve();
       });
     });
@@ -871,7 +881,7 @@ suite("BindenResponse", () => {
     });
 
     await new Promise<void>((resolve) => {
-      newServer.listen(port + 1, resolve);
+      newServer.listen(0, resolve);
     });
 
     const end = 100;
@@ -885,7 +895,7 @@ suite("BindenResponse", () => {
     });
     const headers = { Range: `bytes=  - ${end} ` };
     try {
-      const response = await fetch(`http://localhost:${port + 1}`, {
+      const response = await fetch(`http://localhost:${portOf(newServer)}`, {
         headers,
       });
       await serverPromise;
@@ -1123,8 +1133,7 @@ suite("BindenResponse", () => {
   });
 
   afterEach(async () => {
-    await rmdir(dirPath);
-    await rm(filePath);
+    await rm(root, { recursive: true, force: true });
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {

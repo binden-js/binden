@@ -1,7 +1,7 @@
 /* eslint-disable init-declarations */
 import { deepStrictEqual, ok, throws } from "node:assert";
 import { Server, createServer } from "node:http";
-import { Socket } from "node:net";
+import { type AddressInfo, Socket } from "node:net";
 import { TLSSocket } from "node:tls";
 import { stringify, parse } from "node:querystring";
 import { afterEach, beforeEach, suite, test } from "node:test";
@@ -17,17 +17,21 @@ import {
   type ITrustProxy,
 } from "../index.js";
 
-const port = 8080;
-const url = `http://localhost:${port}`;
+/** The port of a listening server */
+function portOf(server: { address(): unknown }): number {
+  return (server.address() as AddressInfo).port;
+}
+
+let url = "";
 
 suite("BindenRequest", () => {
   let server: Server<typeof BindenRequest>;
 
   beforeEach((_t, done) => {
-    server = createServer({ IncomingMessage: BindenRequest }).listen(
-      port,
-      done,
-    );
+    server = createServer({ IncomingMessage: BindenRequest }).listen(0, () => {
+      url = `http://localhost:${portOf(server)}`;
+      done();
+    });
   });
 
   test(".accept_encoding", async () => {

@@ -1,5 +1,6 @@
 import { deepStrictEqual, ok } from "node:assert/strict";
 import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { suite, test } from "node:test";
 import { Logger } from "@binden/logger";
 import { Binden, ct_json, serializers } from "binden";
@@ -7,8 +8,6 @@ import { request } from "undici";
 
 import { BodyParser } from "../index.js";
 
-const port = 8080;
-const url = `http://localhost:${port}`;
 // Invalid JSON: the error of `JSON.parse()` quotes the body
 const body = '{"password": SECRET}';
 
@@ -25,8 +24,9 @@ async function post(
   const app = new Binden({ logger: logger(destination) }).use(new BodyParser());
   const server: Server = app.createServer();
   await new Promise<void>((resolve) => {
-    server.listen(port, resolve);
+    server.listen(0, resolve);
   });
+  const url = `http://localhost:${(server.address() as AddressInfo).port}`;
 
   try {
     const response = await request(url, {

@@ -3,10 +3,10 @@ import { Binden, type Context } from "binden";
 import { type Server, request } from "node:http";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { deepEqual, ok } from "node:assert/strict";
+import type { AddressInfo } from "node:net";
 import { Multipart } from "../index.js";
 
-const port = 8080;
-const url = `http://localhost:${port}/`;
+let url = "";
 
 function post(body: string, boundary: string): Promise<number> {
   return new Promise<number>((resolve, reject) => {
@@ -34,7 +34,10 @@ describe("Multipart (malformed body)", () => {
       ct.send("OK"),
     );
     await new Promise<void>((resolve) => {
-      server = app.createServer().listen(port, resolve);
+      server = app.createServer().listen(0, () => {
+        url = `http://localhost:${(server.address() as AddressInfo).port}/`;
+        resolve();
+      });
     });
   });
 
@@ -103,7 +106,10 @@ describe("Multipart (aborted request)", () => {
       }
     });
     await new Promise<void>((resolve) => {
-      server = app.createServer().listen(port, resolve);
+      server = app.createServer().listen(0, () => {
+        url = `http://localhost:${(server.address() as AddressInfo).port}/`;
+        resolve();
+      });
     });
   });
 

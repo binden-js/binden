@@ -1,6 +1,7 @@
 /* eslint-disable init-declarations */
 import { deepEqual, ok, fail, throws } from "node:assert/strict";
 import { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import {
   brotliCompress as brotliCompressAsync,
@@ -51,8 +52,7 @@ function deflate(data: InputType): Promise<Buffer> {
   });
 }
 
-const port = 8080;
-const url = `http://localhost:${port}/`;
+let url = "";
 
 suite("BodyParser", () => {
   let app: Binden;
@@ -60,7 +60,10 @@ suite("BodyParser", () => {
 
   beforeEach((_t, done) => {
     app = new Binden();
-    server = app.createServer().listen(port, done);
+    server = app.createServer().listen(0, () => {
+      url = `http://localhost:${(server.address() as AddressInfo).port}/`;
+      done();
+    });
   });
 
   test("constructor (with an invalid `parse` option)", () => {
