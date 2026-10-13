@@ -79,4 +79,31 @@ suite("Range", () => {
     deepStrictEqual(actual.start, range.start);
     deepStrictEqual(actual.toString(), range.toString());
   });
+
+  test(".fromString() (RFC 9110, section 14.1.1)", () => {
+    const parse = (input: string): string[] =>
+      Range.fromString(input).map((range) => range.toString());
+
+    // The unit is case-insensitive
+    deepStrictEqual(parse("Bytes=0-1"), ["bytes=0-1"]);
+    deepStrictEqual(parse("bytes=\t0-1 , 5-\t"), ["bytes=0-1", "bytes=5-"]);
+    // Only plain digits, no control characters
+    for (const input of [
+      "bytes=0-\r\n1",
+      "bytes=\r\n0-1",
+      "\r\nbytes=0-1\r\n",
+      "bytes=\u00a00-\u00a01",
+      "bytes=0x0-0x10",
+      "bytes=1e2-",
+      "bytes=+5-",
+      "bytes=1.5-2",
+      "bytes=5-10.5",
+      "bytes=0-1-2",
+      "bytes=Infinity-",
+      "bytes=99999999999999999999-",
+      "bytes=-99999999999999999999",
+    ]) {
+      deepStrictEqual(parse(input), [], JSON.stringify(input));
+    }
+  });
 });

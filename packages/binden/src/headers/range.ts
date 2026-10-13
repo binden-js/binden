@@ -34,36 +34,34 @@ export class Range implements IRange {
     return `${this.unit}=${this.start ?? ""}-${this.end ?? ""}`;
   }
 
+  /**
+   * The byte ranges (RFC 9110, section 14.1.1): `first-pos "-" [ last-pos ]` or
+   * `"-" suffix-length`, of plain digits. Spaces and tabs may surround them, and
+   * an invalid range is skipped.
+   */
   public static fromString(input?: string): Range[] {
-    if (typeof input !== "string" || !input) {
-      return [];
+    // The unit is case-insensitive (RFC 9110, section 14.1)
+    const ranges =
+      /^[ \t]*bytes=(?<ranges>.*)$/iu.exec(input ?? "")?.groups?.ranges ?? "";
+    const output: Range[] = [];
+
+    for (const element of ranges.split(",")) {
+      const { first = "", last = "" } =
+        /^[ \t]*(?<first>\d*)[ \t]*-[ \t]*(?<last>\d*)[ \t]*$/u.exec(element)
+          ?.groups ?? {};
+      const start = first === "" ? null : Number(first);
+      const end = last === "" ? null : Number(last);
+      const valid =
+        start === null
+          ? end !== null && end > 0
+          : Number.isSafeInteger(start) && (end === null || start <= end);
+
+      if (valid && (end === null || Number.isSafeInteger(end))) {
+        output.push(new Range({ start, end }));
+      }
     }
 
-    const trimmed = input.trim();
-
-    if (!trimmed.startsWith("bytes=")) {
-      return [];
-    }
-
-    return trimmed
-      .substring(6)
-      .split(",")
-      .map((e) => e.trim().split("-", 2))
-      .map(([start, end]) => [
-        start.trim(),
-        (end as string | undefined)?.trim() ?? "",
-      ])
-      .map(([start, end]) => [
-        start ? Number(start) : NaN,
-        end ? Number(end) : NaN,
-      ])
-      .filter(
-        ([start, end]) =>
-          (!isNaN(start) && !isNaN(end) && start >= 0 && start <= end) ||
-          (!isNaN(start) && isNaN(end) && start >= 0) ||
-          (isNaN(start) && !isNaN(end) && end > 0),
-      )
-      .map(([start, end]) => new Range({ start, end }));
+    return output;
   }
 }
 
