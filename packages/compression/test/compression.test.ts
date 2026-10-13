@@ -731,6 +731,22 @@ describe("Compression", () => {
     },
   );
 
+  it("keeps a response started by compressed data (`done`)", async () => {
+    app.use(new Compression({ format: "gzip" }), (ct: Context) => {
+      // Waits in the compressor: the headers are not sent yet
+      ct.response.write("x");
+      ct.done = true;
+      setTimeout(() => {
+        ct.response.end("y");
+      }, 50);
+    });
+
+    const response = await request(url);
+    const body = await response.body.arrayBuffer();
+
+    deepStrictEqual((await gunzip(Buffer.from(body))).toString(), "xy");
+  });
+
   it("does not compress when the headers have already been sent", async () => {
     const expected = "Hello World";
     app.use(new Compression({ format: "gzip" }), (ct: Context) => {

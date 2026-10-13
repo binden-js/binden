@@ -261,6 +261,28 @@ suite("BindenResponse", () => {
     },
   );
 
+  test(".started", async () => {
+    // Without a connection: nothing is actually sent
+    const create = (): BindenResponse =>
+      new BindenResponse(new IncomingMessage(new Socket()));
+
+    const sent = create();
+    ok(!sent.started);
+    sent.send("data").catch(() => {
+      // Never settles without a connection
+    });
+    ok(sent.started);
+
+    const piped = create();
+    Readable.from(["data"]).pipe(piped);
+    ok(piped.started);
+
+    // A `sendFile()` that fails before sending anything does not start it
+    const failed = create();
+    await rejects(() => failed.sendFile(dirPath, dir_stats));
+    ok(!failed.started);
+  });
+
   test(".send() (settles with the events of the response)", async () => {
     // Without a connection, `finish` never comes: the events are emitted here
     const create = (): BindenResponse =>

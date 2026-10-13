@@ -133,6 +133,19 @@ export class Compression extends Middleware {
       get: () => ended,
     });
 
+    // Written data goes into the compressor before the headers are sent: the
+    // response is started (see `BindenResponse.started`) once compression is
+    Object.defineProperty(response, "started", {
+      configurable: true,
+      get: (): boolean =>
+        active === true ||
+        (Reflect.get(
+          Object.getPrototypeOf(response) as object,
+          "started",
+          response,
+        ) as boolean),
+    });
+
     response.end = (...args: unknown[]): typeof response => {
       const callback = args.find((arg) => typeof arg === "function");
       if (typeof callback === "function") {

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Server } from "node:http";
 import { Agent } from "node:https";
+import { Readable } from "node:stream";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import { Logger, type LoggerOptions } from "@binden/logger";
 import fetch from "node-fetch";
@@ -465,6 +466,77 @@ suite("Binden", () => {
     deepStrictEqual(response.status, 404);
   });
 
+  test("`done` without a response sends an empty one", async () => {
+    app.use("/empty", (context: Context) => {
+      context.done = true;
+    });
+    app.use("/no-content", (context: Context) => {
+      context.status(204).setHeader("X-Header", "Value").done = true;
+    });
+    const signal = AbortSignal.timeout(5000);
+
+    const empty = await fetch(`${url}/empty`, { signal });
+    deepStrictEqual(empty.status, 200);
+    deepStrictEqual(await empty.text(), "");
+
+    const noContent = await fetch(`${url}/no-content`, { signal });
+    deepStrictEqual(noContent.status, 204);
+    deepStrictEqual(noContent.headers.get("X-Header"), "Value");
+  });
+
+  test("`done` with a response that is still starting", async () => {
+    // Sends "a" and "b" a little later (as a file is read after the stack)
+    const slow = (): Readable => {
+      let reading = false;
+      return new Readable({
+        read(): void {
+          if (!reading) {
+            reading = true;
+            setTimeout(() => {
+              this.push("a");
+              setTimeout(() => {
+                this.push("b");
+                this.push(null);
+              }, 20);
+            }, 20);
+          }
+        },
+      });
+    };
+    app.use("/send", (context: Context) => {
+      context.response.send(slow()).catch(() => {
+        // The body then fails the test
+      });
+      context.done = true;
+    });
+    app.use("/pipe", (context: Context) => {
+      slow().pipe(context.response);
+      context.done = true;
+    });
+    const signal = AbortSignal.timeout(5000);
+
+    deepStrictEqual(
+      await (await fetch(`${url}/send`, { signal })).text(),
+      "ab",
+    );
+    deepStrictEqual(
+      await (await fetch(`${url}/pipe`, { signal })).text(),
+      "ab",
+    );
+  });
+
+  test("a response ended without `done` is not cut by a 404", async () => {
+    const size = 32 * 1024 * 1024;
+    app.use((context: Context) => {
+      context.response.end(Buffer.alloc(size));
+    });
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+
+    deepStrictEqual(response.status, 200);
+    deepStrictEqual((await response.arrayBuffer()).byteLength, size);
+  });
+
   test("404 error (Empty `guarded` router)", async () => {
     app.use(new Router({ guarded: true }));
     const response = await fetch(url, { method: "POST" });
@@ -752,5 +824,9 @@ suite("Binden", () => {
     });
   });
 
-  afterEach((_t, done) => server.close(done));
+  afterEach((_t, done) => {
+    // Also the connections of a failed test, which would keep the process alive
+    server.closeAllConnections();
+    server.close(done);
+  });
 });

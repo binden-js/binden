@@ -227,6 +227,7 @@ export class Binden {
               next = await Binden.#runMiddleware(mw, next);
 
               if (next.done) {
+                await Binden.#complete(next);
                 return;
               }
             }
@@ -234,6 +235,7 @@ export class Binden {
             next = await Binden.#runMiddleware(item, next);
 
             if (next.done) {
+              await Binden.#complete(next);
               return;
             }
           }
@@ -241,7 +243,20 @@ export class Binden {
       }
     }
 
-    throw new BindenError(404);
+    // Nothing has handled the request, unless a middleware has started (or ended)
+    // the response without setting `done`: it is left to finish
+    if (!next.response.started) {
+      throw new BindenError(404);
+    }
+  }
+
+  /** A middleware has set `done`: a response that nothing has started is sent empty */
+  static async #complete(context: Context): Promise<void> {
+    if (!context.response.started) {
+      const extra = { context };
+      Binden.#log(context, "warn", "`done` without a response", extra);
+      await context.response.send();
+    }
   }
 
   /** Default error hanlder (uses the provided `error_handler`, if any) */

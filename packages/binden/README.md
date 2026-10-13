@@ -123,7 +123,7 @@ const { response } = context;
 const { id } = context;
 ```
 
-- `.done`
+- `.done` - stop passing the `context` to the following middlewares. The middleware should have started the response by then (e.g. `.send()` or a stream piped into it, even if not awaited); otherwise an empty response is sent, with the status and headers set so far. A middleware that starts the response without setting `.done` must finish it: the request is not passed on as `404 Not Found`.
 
 ```typescript
 import { type Context, Middleware } from "binden";
@@ -425,6 +425,8 @@ import { createServer } from "http";
 import { BindenResponse } from "binden";
 const server = createServer({ ServerResponse: BindenResponse });
 ```
+
+- `.started` - whether the response has been started: by `.send()` or `.sendFile()`, by a stream piped into it, or by its headers being sent
 
 - `.cookies` - The `.send()` method will add cookies to the response
 

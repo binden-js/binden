@@ -23,6 +23,16 @@ export class BindenResponse<
 > extends ServerResponse<Request> {
   #cookies?: Set<Cookie>;
   #ended = false;
+  #started = false;
+
+  public constructor(...args: [request: Request, options?: unknown]) {
+    // node:http passes its options as well
+    super(...(args as [Request]));
+    // `Readable.pipe()` emits `pipe` on its destination synchronously
+    this.once("pipe", () => {
+      this.#started = true;
+    });
+  }
 
   public get cookies(): Set<Cookie> {
     if (!this.#cookies) {
@@ -47,6 +57,14 @@ export class BindenResponse<
   public override end(...args: unknown[]): this {
     this.#ended = true;
     return super.end(...(args as [unknown, BufferEncoding]));
+  }
+
+  /**
+   * Whether the response has been started: by `.send()` or `.sendFile()`, by a
+   * stream piped into it, or by its headers being sent
+   */
+  public get started(): boolean {
+    return this.#started || this.headersSent || this.writableEnded;
   }
 
   /** Set the status code */
@@ -77,7 +95,11 @@ export class BindenResponse<
   ): Promise<void> {
     if (this.writableEnded) {
       return Promise.resolve();
-    } else if (!this.headersSent && this.cookies.size) {
+    }
+
+    this.#started = true;
+
+    if (!this.headersSent && this.cookies.size) {
       const setCookie = this.getHeader("Set-Cookie");
       const values = [...this.cookies].map((c) => c.toString());
 
@@ -233,6 +255,20 @@ export class BindenResponse<
   }
 
   public async sendFile(
+    path: URL | string,
+    options?: Pick<Stats, "isFile" | "mtime" | "size">,
+  ): Promise<void> {
+    // Started at once (see `.started`), unless it fails before sending anything
+    this.#started = true;
+    try {
+      await this.#sendFile(path, options);
+    } catch (error: unknown) {
+      this.#started = false;
+      throw error;
+    }
+  }
+
+  async #sendFile(
     path: URL | string,
     options?: Pick<Stats, "isFile" | "mtime" | "size">,
   ): Promise<void> {
