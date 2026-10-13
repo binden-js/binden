@@ -255,6 +255,21 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
+  test(".query (keeps its prototype)", () => {
+    const request = new BindenRequest(new Socket());
+    request.url = "/?__proto__=a&__proto__=b&x=1";
+    request.headers = { host: "localhost" };
+    const { query } = request;
+
+    deepStrictEqual(Object.getPrototypeOf(query), Object.prototype);
+    deepStrictEqual(
+      Object.getOwnPropertyDescriptor(query, "__proto__")?.value,
+      ["a", "b"],
+    );
+    deepStrictEqual(query.x, "1");
+    deepStrictEqual(Object.keys(query).sort(), ["__proto__", "x"]);
+  });
+
   test(".protocol (trusted proxies)", () => {
     const create = (
       trust: ITrustProxy,

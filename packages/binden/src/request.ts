@@ -141,14 +141,13 @@ export class BindenRequest extends IncomingMessage {
       this.#query = parse(this.URL.search.substring(1));
     }
 
-    const query: ParsedUrlQuery = {};
-
-    for (const key in this.#query) {
-      const value = this.#query[key];
-      query[key] = Array.isArray(value) ? [...value] : value;
-    }
-
-    return query;
+    // Defined, not assigned: a `__proto__` key is a key, not the prototype
+    return Object.fromEntries(
+      Object.entries(this.#query).map(([key, value]) => [
+        key,
+        Array.isArray(value) ? [...value] : value,
+      ]),
+    );
   }
 
   public get range(): Range[] {
