@@ -22,6 +22,7 @@ npm install @binden/body
 ## Usage
 
 ```typescript
+import { type Context, Middleware, Router } from "binden";
 import BodyParser from "@binden/body";
 
 class MyMiddleware extends Middleware {

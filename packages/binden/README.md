@@ -24,15 +24,14 @@ const middleware3 = (context) => context.json({ message: "Hello World!" });
 app.use("/path2", middleware3);
 ```
 
-- `.off()` - remove a `Middleware/Router` form the stack
+- `.off()` - remove a `Middleware/Router` from the stack (returns the removed items)
 
 ```typescript
 import { Binden } from "binden";
 
-const app = new Binden()
-  .use("/path", middleware1)
-  .use(middleware2)
-  .off("/path", middleware1);
+const app = new Binden().use("/path", middleware1).use(middleware2);
+// `.off()` returns the removed items
+const removed = app.off("/path", middleware1);
 ```
 
 - `.createServer()` - create a server (HTTP)
@@ -126,6 +125,8 @@ const { id } = context;
 - `.done`
 
 ```typescript
+import { type Context, Middleware } from "binden";
+
 class MyMiddleware extends Middleware {
   public run(context: Context): void {
     context.done = true; // Stop passing the `context` to other middlewares
@@ -154,6 +155,7 @@ log.trace("url search string", { search });
 - `.send()` - execute `context.response.send()` and set `context.done` to `true`
 
 ```typescript
+const data = "Hello World!";
 await context.send(data);
 // or
 await context.response.send(data);
@@ -170,11 +172,10 @@ await context.response.json(json);
 context.done = true;
 ```
 
-A custom `stringify` function (e.g. [fast-json-stringify](https://github.com/fastify/fast-json-stringify-stringify)) can pan passed as the second argument.
+A custom `stringify` function (e.g. [fast-json-stringify](https://github.com/fastify/fast-json-stringify)) can be passed as the second argument.
 
 ```typescript
-const json = { currency: "💶", value: 120 };
-const fastJSON = await import("fast-json-stringify");
+const { default: fastJSON } = await import("fast-json-stringify");
 const stringify = fastJSON({
   title: "Example Schema",
   type: "object",
@@ -252,7 +253,7 @@ import { Middleware, Context } from "binden";
 
 export class MyMiddleware extends Middleware {
   public async run(context: Context): Promise<void> {
-    const randomNumber = await new Promise((resolve, reject) => {
+    const randomNumber = await new Promise<number>((resolve, reject) => {
       randomInt(1, 100, (error, n) => {
         if (error) {
           reject(error);
@@ -334,7 +335,7 @@ export class MyMiddleware2 extends Middleware {
 import { Middleware, Context, BindenError } from "binden";
 
 export class MyMiddleware extends Middleware {
-  public run(context: Context): Promise<void> {
+  public async run(context: Context): Promise<void> {
     const { length } = context.request.cookies;
 
     if (!length) {
@@ -369,7 +370,7 @@ Simple usage with `http`
 ```typescript
 import { createServer } from "http";
 import { BindenRequest } from "binden";
-server = createServer({ IncomingMessage: BindenRequest });
+const server = createServer({ IncomingMessage: BindenRequest });
 ```
 
 - `.header()` - get a header by name
@@ -405,9 +406,11 @@ if (!secure) {
 - `.query` - A copy of `URL.search` parsed by the `querystring.parse()` method
 
 ```typescript
+import { parse } from "node:querystring";
+
 const { query } = request;
 // same as
-const query = { ...parse(this.URL.search.substring(1)) };
+const parsed = { ...parse(request.URL.search.substring(1)) };
 ```
 
 ### BindenResponse
@@ -417,7 +420,7 @@ Simple usage with `http`
 ```typescript
 import { createServer } from "http";
 import { BindenResponse } from "binden";
-server = createServer({ ServerResponse: BindenResponse });
+const server = createServer({ ServerResponse: BindenResponse });
 ```
 
 - `.cookies` - The `.send()` method will add cookies to the response
@@ -468,7 +471,7 @@ or using a custom `stringify` function
 
 ```typescript
 const json = { currency: "💶", value: 120 };
-const fastJSON = await import("fast-json-stringify");
+const { default: fastJSON } = await import("fast-json-stringify");
 const stringify = fastJSON({
   title: "Example Schema",
   type: "object",
@@ -483,7 +486,7 @@ const stringify = fastJSON({
   required: ["currency", "value"],
   additionalProperties: false,
 });
-await response.json(json);
+await response.json(json, stringify);
 ```
 
 - `.text()` - send text as `text/plain`
@@ -503,7 +506,11 @@ await response.html(html);
 - `.form()` - send `URLSearchParams`;
 
 ```typescript
-const form = new URLSearchParams({ a: "1", b: ["a", "c"] });
+const form = new URLSearchParams([
+  ["a", "1"],
+  ["b", "a"],
+  ["b", "c"],
+]);
 await response.form(form);
 ```
 
@@ -540,9 +547,7 @@ const { accept_encoding } = request;
 ```typescript
 import { Authorization } from "binden";
 
-const authorization = AcceptEncoding.fromString(
-  request.headers["Authorization"],
-);
+const credentials = Authorization.fromString(request.headers.authorization);
 // or using BindenRequest
 const { authorization } = request;
 ```
@@ -583,7 +588,7 @@ const { content_type } = request;
 ```typescript
 import { Cookie } from "binden";
 
-const cookies = Cookie.fromString(request.headers["cookie"]);
+const parsed = Cookie.fromString(request.headers.cookie);
 // or using BindenRequest
 const { cookies } = request;
 // or using BindenResponse
@@ -606,7 +611,7 @@ response.cookies.add(cookie1).add(cookie2);
 ```typescript
 import { Forwarded } from "binden";
 
-const forwarded = Forwarded.fromString(request.headers["forwarded"]);
+const proxies = Forwarded.fromString(request.headers.forwarded);
 // or using BindenRequest
 const { forwarded } = request;
 ```
@@ -616,9 +621,7 @@ const { forwarded } = request;
 ```typescript
 import { IfModifiedSince } from "binden";
 
-const if_modified_since = IfModifiedSince.fromString(
-  request.headers["if-modified-since"],
-);
+const ims = IfModifiedSince.fromString(request.headers["if-modified-since"]);
 // or using BindenRequest
 const { if_modified_since } = request;
 ```
@@ -628,7 +631,7 @@ const { if_modified_since } = request;
 ```typescript
 import { Range } from "binden";
 
-const range = Range.fromString(request.headers.range);
+const ranges = Range.fromString(request.headers.range);
 // or using BindenRequest
 const { range } = request;
 ```
