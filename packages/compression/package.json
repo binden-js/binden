@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "prebuild": "rm -rf dist",
+    "prebuild": "node ../../scripts/clean.mjs",
     "prepack": "npm run build",
     "test": "node ../../scripts/test.mjs"
   },

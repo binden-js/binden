@@ -50,7 +50,12 @@ describe("scripts/test.mjs", () => {
 
     beforeEach(() => {
       fixture = mkdtempSync(join(tmpdir(), "binden-test-runner-"));
-      symlinkSync(join(root, "node_modules"), join(fixture, "node_modules"));
+      // A junction does not need the privilege of a symbolic link on Windows
+      symlinkSync(
+        join(root, "node_modules"),
+        join(fixture, "node_modules"),
+        "junction",
+      );
       mkdirSync(join(fixture, "test"));
       writeFileSync(
         join(fixture, "test/setup.ts"),

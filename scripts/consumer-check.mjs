@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { npm } from "./npm.mjs";
 import { tmpdir } from "node:os";
 
 const root = join(import.meta.dirname, "..");
@@ -130,7 +131,9 @@ function writeExamples() {
   for (const workspace of workspaces) {
     const readme = readFileSync(join(root, workspace, "README.md"), "utf8");
     const name = workspace.split("/").at(-1);
-    const blocks = readme.matchAll(/^```typescript\n(?<code>[\s\S]*?)^```$/gmu);
+    const blocks = readme.matchAll(
+      /^```typescript\r?\n(?<code>[\s\S]*?)^```\r?$/gmu,
+    );
     for (const [index, { groups }] of [...blocks].entries()) {
       writeFileSync(join(examples, `${name}-${index + 1}.ts`), groups.code);
       count += 1;
@@ -146,7 +149,12 @@ function writeExamples() {
 
 function run(command, args, cwd = dir) {
   process.stderr.write(`[consumer] ${command} ${args.join(" ")}\n`);
-  execFileSync(command, args, { cwd, stdio: ["ignore", "inherit", "inherit"] });
+  const options = { cwd, stdio: ["ignore", "inherit", "inherit"] };
+  if (command === "npm") {
+    npm(args, options);
+  } else {
+    execFileSync(command, args, options);
+  }
 }
 
 try {

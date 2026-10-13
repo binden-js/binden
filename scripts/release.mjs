@@ -11,7 +11,7 @@
 // `publish --skip-existing` works outside of CI too.
 // Everything is logged to stderr: @semantic-release/exec parses the stdout of `publishCmd`.
 import { readFileSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { npm as execNpm } from "./npm.mjs";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
@@ -31,7 +31,7 @@ function log(message) {
 }
 
 function npm(args, options = {}) {
-  return execFileSync("npm", args, { cwd: root, encoding: "utf8", ...options });
+  return execNpm(args, { cwd: root, encoding: "utf8", ...options });
 }
 
 function workspaces() {

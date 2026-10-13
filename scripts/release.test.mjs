@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
-  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -14,11 +13,11 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
-// A fake `npm` that logs its arguments and emulates `npm view` (E404 unless the
-// package version is listed in FAKE_NPM_PUBLISHED, or a network error with
-// FAKE_NPM_OFFLINE). Every other command succeeds without doing anything.
-const fakeNpm = `#!/usr/bin/env node
-const { appendFileSync } = require("node:fs");
+// A fake npm CLI (run as `npm_execpath`, see scripts/npm.mjs) that logs its
+// arguments and emulates `npm view` (E404 unless the package version is listed in
+// FAKE_NPM_PUBLISHED, or a network error with FAKE_NPM_OFFLINE). Every other
+// command succeeds without doing anything.
+const fakeNpm = `const { appendFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args) + "\\n");
 if (args[0] === "view") {
@@ -65,7 +64,7 @@ describe("scripts/release.mjs", () => {
       encoding: "utf8",
       env: {
         ...process.env,
-        PATH: `${join(root, "bin")}:${process.env.PATH ?? ""}`,
+        npm_execpath: join(root, "npm.cjs"),
         FAKE_NPM_LOG: join(root, "npm.log"),
         ...env,
       },
@@ -85,13 +84,13 @@ describe("scripts/release.mjs", () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "binden-release-"));
     mkdirSync(join(root, "scripts"));
-    mkdirSync(join(root, "bin"));
-    copyFileSync(
-      join(import.meta.dirname, "release.mjs"),
-      join(root, "scripts/release.mjs"),
-    );
-    writeFileSync(join(root, "bin/npm"), fakeNpm);
-    chmodSync(join(root, "bin/npm"), 0o755);
+    for (const script of ["release.mjs", "npm.mjs"]) {
+      copyFileSync(
+        join(import.meta.dirname, script),
+        join(root, "scripts", script),
+      );
+    }
+    writeFileSync(join(root, "npm.cjs"), fakeNpm);
     writeJSON("package.json", {
       private: true,
       workspaces: Object.keys(manifests),
