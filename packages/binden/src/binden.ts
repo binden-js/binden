@@ -6,7 +6,7 @@ import { Context } from "./context.js";
 import { BindenError } from "./error.js";
 import defaultLogger from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
-import { BindenRequest } from "./request.js";
+import { BindenRequest, type ITrustProxy } from "./request.js";
 import { BindenResponse, ct_text, ct_json } from "./response.js";
 import { Router } from "./router.js";
 
@@ -25,6 +25,12 @@ export interface IBindenOptions {
   error_handler?: (context: Context, error: unknown) => Promise<void> | void;
   /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */
   logger?: Logger;
+  /**
+   * The proxies whose `Forwarded` elements `request.protocol` trusts: none
+   * (`false`, the default), all of them (`true`) or the given number of the
+   * nearest ones
+   */
+  trust_proxy?: ITrustProxy;
 }
 
 export class Binden {
@@ -33,16 +39,31 @@ export class Binden {
   readonly #error_handler:
     ((context: Context, error: unknown) => Promise<void> | void) | null;
   readonly #logger: Logger;
+  readonly #Request: typeof BindenRequest;
 
   public constructor({
     error_handler,
     auto_head = true,
     logger = defaultLogger,
+    trust_proxy = false,
   }: IBindenOptions = {}) {
+    if (
+      typeof trust_proxy === "number" &&
+      !(Number.isSafeInteger(trust_proxy) && trust_proxy >= 0)
+    ) {
+      throw new RangeError("`trust_proxy` is not a non-negative integer");
+    }
     this.#stack = [];
     this.#error_handler = error_handler ?? null;
     this.#auto_head = auto_head;
     this.#logger = logger;
+    // The requests of this application trust its proxies
+    this.#Request = class extends BindenRequest {
+      // eslint-disable-next-line class-methods-use-this -- the option of the app
+      protected override get trust_proxy(): ITrustProxy {
+        return trust_proxy;
+      }
+    };
   }
 
   public get stack(): IStack[] {
@@ -61,7 +82,7 @@ export class Binden {
     return http.createServer(
       {
         ...options,
-        IncomingMessage: BindenRequest,
+        IncomingMessage: this.#Request,
         ServerResponse: BindenResponse,
       },
       (request, response) => {
@@ -79,7 +100,7 @@ export class Binden {
     return https.createServer(
       {
         ...options,
-        IncomingMessage: BindenRequest,
+        IncomingMessage: this.#Request,
         ServerResponse: BindenResponse,
       },
       (request, response) => {

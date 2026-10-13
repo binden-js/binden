@@ -1,6 +1,8 @@
 /* eslint-disable init-declarations */
 import { deepStrictEqual, ok } from "node:assert";
 import { Server, createServer } from "node:http";
+import { Socket } from "node:net";
+import { TLSSocket } from "node:tls";
 import { stringify, parse } from "node:querystring";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import fetch from "node-fetch";
@@ -11,6 +13,7 @@ import {
   Forwarded,
   Cookie,
   IfModifiedSince,
+  type ITrustProxy,
 } from "../index.js";
 
 const port = 8080;
@@ -252,13 +255,53 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
+  test(".protocol (trusted proxies)", () => {
+    const create = (
+      trust: ITrustProxy,
+      forwarded?: string,
+      socket = new Socket(),
+    ): BindenRequest => {
+      class Trusting extends BindenRequest {
+        // eslint-disable-next-line class-methods-use-this -- a fixture
+        protected override get trust_proxy(): ITrustProxy {
+          return trust;
+        }
+      }
+      const request = new Trusting(socket);
+      if (typeof forwarded === "string") {
+        request.headers = { forwarded };
+      }
+      return request;
+    };
+    // The client sent the first element, the nearest proxy appended the last one
+    const header = "for=1.2.3.4;proto=https, for=203.0.113.9;proto=http";
+
+    deepStrictEqual(create(false, header).protocol, "http:");
+    deepStrictEqual(create(0, header).protocol, "http:");
+    deepStrictEqual(create(1, header).protocol, "http:");
+    deepStrictEqual(create(2, header).protocol, "https:");
+    deepStrictEqual(create(5, header).protocol, "https:");
+    deepStrictEqual(create(true, header).protocol, "https:");
+    // Without the header or its `proto`: the protocol of the connection
+    deepStrictEqual(create(true).protocol, "http:");
+    deepStrictEqual(create(true, "for=1.2.3.4").protocol, "http:");
+    deepStrictEqual(create(true, "for=1.2.3.4;proto=ftp").protocol, "http:");
+    // Over TLS, a trusted element without `proto` keeps `https:`
+    const tls = new TLSSocket(new Socket());
+    deepStrictEqual(create(true, "for=1.2.3.4", tls).protocol, "https:");
+    deepStrictEqual(create(true, header, tls).protocol, "https:");
+    deepStrictEqual(create(1, header, tls).protocol, "http:");
+    tls.destroy();
+  });
+
   test(".forwarded", async () => {
     const forwarded = new Forwarded({ for: "8:8:8:8", proto: "https" });
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
-          deepStrictEqual(request.protocol, "https:");
-          ok(request.secure);
+          // A client can send the header: proxies are not trusted by default
+          deepStrictEqual(request.protocol, "http:");
+          ok(!request.secure);
           deepStrictEqual(request.forwarded, [forwarded]);
           deepStrictEqual(request.forwarded[0].for, forwarded.for);
           deepStrictEqual(request.forwarded[0].proto, forwarded.proto);

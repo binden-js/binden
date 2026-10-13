@@ -17,6 +17,7 @@ npm install binden
 - `auto_head` (default `true`) - a `guarded` router that handles `GET` handles `HEAD` as well
 - `error_handler` - replaces the default reply to an error thrown by a middleware. It may be `async`: it is awaited, and the default reply is sent when it has not started a response. When it fails, the connection is closed.
 - `logger` - see [Logging](#logging)
+- `trust_proxy` (default `false`) - the proxies in front of the server whose [`Forwarded`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) elements `request.protocol` trusts: none (`false`), all of them (`true`), or the given number of the nearest ones (each proxy appends its element, so the leftmost ones come from the client)
 
 - `.use()` - Add a `Middleware/Router` to the stack
 
@@ -396,7 +397,7 @@ const rawHeader = request.header("X-Header");
 const { id } = request;
 ```
 
-- `.protocol` - respects the [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) header:
+- `.protocol` - the protocol of the connection or, behind trusted proxies (the `trust_proxy` option of `Binden`), the `proto` of the [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) element of the outermost of them. With `http.createServer()`, override the protected `trust_proxy` getter in a subclass of `BindenRequest`:
 
 ```typescript
 const { protocol } = request;

@@ -14,6 +14,12 @@ import Range from "./headers/range.js";
 
 export type IProtocol = "http:" | "https:";
 
+/**
+ * The proxies in front of the server that are trusted: none (`false`), all of
+ * them (`true`) or the given number of the nearest ones
+ */
+export type ITrustProxy = boolean | number;
+
 export class BindenRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
   #authorization?: Authorization | null;
@@ -102,12 +108,32 @@ export class BindenRequest extends IncomingMessage {
     return this.#if_modified_since;
   }
 
+  /**
+   * The protocol of the connection or, from trusted proxies (see
+   * `trust_proxy`), the one of the `Forwarded` element of the outermost of them
+   */
   public get protocol(): IProtocol {
-    const forwarded = this.forwarded.shift();
-    return (!forwarded && this.socket instanceof TLSSocket) ||
-      forwarded?.proto?.toLowerCase() === "https"
-      ? "https:"
-      : "http:";
+    const tls: IProtocol =
+      this.socket instanceof TLSSocket ? "https:" : "http:";
+    const trust = this.trust_proxy;
+    const { forwarded } = this;
+    if (trust === false || trust === 0 || forwarded.length === 0) {
+      return tls;
+    }
+    // Every proxy appends its element: the client controls the leftmost ones
+    const index = trust === true ? 0 : Math.max(0, forwarded.length - trust);
+    const proto = forwarded[index]?.proto?.toLowerCase();
+    return proto === "https" ? "https:" : proto === "http" ? "http:" : tls;
+  }
+
+  /**
+   * The proxies whose `Forwarded` elements are trusted (none by default).
+   * `Binden` sets it from its `trust_proxy` option; with `http.createServer()`,
+   * override it in a subclass.
+   */
+  // eslint-disable-next-line class-methods-use-this -- overridden by subclasses
+  protected get trust_proxy(): ITrustProxy {
+    return false;
   }
 
   public get query(): ParsedUrlQuery {

@@ -131,15 +131,47 @@ suite("Binden", () => {
     });
 
     const m = new SendMiddleware();
-    newApp.use(m);
-    const response = await fetch(path.toString(), { agent });
+    let protocol = "";
+    newApp.use((context: Context) => {
+      ({ protocol } = context.request);
+    }, m);
+    // An untrusted `Forwarded` does not change the protocol of the connection
+    const headers = { Forwarded: "for=1.2.3.4" };
+    const response = await fetch(path.toString(), { agent, headers });
     deepStrictEqual(response.status, 200);
     const data = await response.text();
     deepStrictEqual(data, m.id);
+    deepStrictEqual(protocol, "https:");
 
     await new Promise((resolve) => {
       newServer.close(resolve);
     });
+  });
+
+  test("`trust_proxy`", async () => {
+    const protocols: string[] = [];
+    const record = (context: Context): Promise<void> => {
+      protocols.push(context.request.protocol);
+      return context.send();
+    };
+    app.use(record);
+    const trusting = await loggedApp({ trust_proxy: 1 });
+    try {
+      trusting.app.use(record);
+      const headers = { Forwarded: "for=1.2.3.4;proto=https" };
+      const signal = AbortSignal.timeout(5000);
+
+      await fetch(url, { headers, signal });
+      await fetch(trusting.url, { headers, signal });
+
+      deepStrictEqual(protocols, ["http:", "https:"]);
+    } finally {
+      await trusting.close();
+    }
+
+    for (const trust_proxy of [-1, 1.5, Number.NaN]) {
+      throws(() => new Binden({ trust_proxy }), RangeError);
+    }
   });
 
   test("stack (use/off)", () => {
