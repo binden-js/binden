@@ -14,3 +14,4 @@ export * from "./src/middleware.js";
 export * from "./src/request.js";
 export * from "./src/response.js";
 export * from "./src/router.js";
+export { serializers } from "./src/logger.js";

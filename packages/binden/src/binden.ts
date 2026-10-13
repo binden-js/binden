@@ -1,8 +1,10 @@
 import http, { STATUS_CODES } from "node:http";
 import https from "node:https";
 import { isDeepStrictEqual } from "node:util";
+import type { Logger } from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
+import defaultLogger from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
 import { BindenRequest } from "./request.js";
 import { BindenResponse, ct_text, ct_json } from "./response.js";
@@ -18,17 +20,25 @@ export const DefaultErrorCode = 500;
 export interface IBindenOptions {
   auto_head?: boolean;
   error_handler?: (context: Context, error: unknown) => void;
+  /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */
+  logger?: Logger;
 }
 
 export class Binden {
   readonly #stack: IStack[];
   readonly #auto_head: boolean;
   readonly #error_handler: ((context: Context, error: unknown) => void) | null;
+  readonly #logger: Logger;
 
-  public constructor({ error_handler, auto_head = true }: IBindenOptions = {}) {
+  public constructor({
+    error_handler,
+    auto_head = true,
+    logger = defaultLogger,
+  }: IBindenOptions = {}) {
     this.#stack = [];
     this.#error_handler = error_handler ?? null;
     this.#auto_head = auto_head;
+    this.#logger = logger;
   }
 
   public get stack(): IStack[] {
@@ -169,7 +179,7 @@ export class Binden {
     request: BindenRequest,
     response: BindenResponse<BindenRequest>,
   ): void {
-    const context = new Context({ request, response });
+    const context = new Context({ request, response, logger: this.#logger });
     this.#handle(context).catch((error: unknown) => {
       this.#errorHandler(context, error);
     });

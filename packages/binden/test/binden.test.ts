@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { Server } from "node:http";
 import { Agent } from "node:https";
 import { afterEach, beforeEach, suite, test } from "node:test";
+import { Logger } from "@binden/logger";
 import fetch from "node-fetch";
 
 import {
@@ -19,6 +20,7 @@ import {
   ct_text,
   ct_json,
   ct_html,
+  serializers,
 } from "../index.js";
 
 class CustomMiddleware extends Middleware {
@@ -204,6 +206,48 @@ suite("Binden", () => {
 
     deepStrictEqual(app.off("/path3", m3, r1), [m3]);
     deepStrictEqual(app.stack, []);
+  });
+
+  test("custom `logger`", async () => {
+    const lines: Record<string, unknown>[] = [];
+    const destination = {
+      write: (line: string): void => {
+        lines.push(JSON.parse(line) as Record<string, unknown>);
+      },
+    };
+    const logger = new Logger({ destination, level: "debug", serializers });
+    const newApp = new Binden({ logger });
+    const path = new URL(url);
+    path.port = `${Number(path.port) + 1}`;
+
+    const newServer = newApp.createServer();
+
+    await new Promise<void>((resolve) => {
+      newServer.listen(port + 1, resolve);
+    });
+
+    try {
+      let id = "";
+      newApp.use((context: Context) => {
+        ({ id } = context);
+        context.log.info("Custom logger");
+        throw new BindenError(401);
+      });
+
+      const response = await fetch(path.toString());
+      deepStrictEqual(response.status, 401);
+      deepStrictEqual(
+        lines.map(({ msg, trace_id }) => ({ msg, trace_id })),
+        [
+          { msg: "Custom logger", trace_id: id },
+          { msg: "Error should not be exposed", trace_id: id },
+        ],
+      );
+    } finally {
+      await new Promise((resolve) => {
+        newServer.close(resolve);
+      });
+    }
   });
 
   test("Disabled middleware", async () => {

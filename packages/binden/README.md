@@ -55,6 +55,20 @@ const app = new Binden().use("/path", middleware).use("/path2", router);
 const secureServer = app.createSecureServer({ key, cert });
 ```
 
+### Logging
+
+Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` keep credentials out of the logs: the `Authorization`, `Cookie`, `Proxy-Authorization` and `Set-Cookie` headers are redacted, and the query string is dropped from the request URL.
+
+A custom logger (for example with another level or destination) is passed with the `logger` option. The default `serializers` are exported to build on:
+
+```typescript
+import { Binden, serializers } from "binden";
+import { Logger } from "@binden/logger";
+
+const logger = new Logger({ level: "debug", serializers });
+const app = new Binden({ logger });
+```
+
 ### Context
 
 - `.log` - get the logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger))

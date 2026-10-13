@@ -1,6 +1,6 @@
 import { Logger } from "@binden/logger";
 import { BindenError, type IBindenErrorOptions } from "./error.js";
-import logger from "./logger.js";
+import defaultLogger from "./logger.js";
 
 import type { Readable } from "node:stream";
 import type { BindenRequest } from "./request.js";
@@ -11,13 +11,22 @@ export interface IBaseContext {
   readonly response: BindenResponse<BindenRequest>;
 }
 
+export interface IContextOptions extends IBaseContext {
+  /** The logger whose child (with the `trace_id` of the context) is `context.log` */
+  readonly logger?: Logger;
+}
+
 export class Context implements IBaseContext {
   readonly #request: BindenRequest;
   readonly #response: BindenResponse<BindenRequest>;
   readonly #logger: Logger;
   #done: boolean;
 
-  public constructor({ request, response }: IBaseContext) {
+  public constructor({
+    request,
+    response,
+    logger = defaultLogger,
+  }: IContextOptions) {
     this.#request = request;
     this.#response = response;
     this.#done = false;
