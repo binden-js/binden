@@ -22,12 +22,31 @@ export class BindenResponse<
   Request extends IncomingMessage = IncomingMessage,
 > extends ServerResponse<Request> {
   #cookies?: Set<Cookie>;
+  #ended = false;
 
   public get cookies(): Set<Cookie> {
     if (!this.#cookies) {
       this.#cookies = new Set<Cookie>();
     }
     return this.#cookies;
+  }
+
+  /**
+   * End the response. Once called, the response is handed over to the connection:
+   * a close that comes before `finish` is no longer premature (see `.send()`).
+   */
+  public override end(cb?: () => void): this;
+  /** End the response with a last `chunk` (see the first signature) */
+  public override end(chunk: unknown, cb?: () => void): this;
+  /** End the response with a last `chunk` in an `encoding` (see the first signature) */
+  public override end(
+    chunk: unknown,
+    encoding: BufferEncoding,
+    cb?: () => void,
+  ): this;
+  public override end(...args: unknown[]): this {
+    this.#ended = true;
+    return super.end(...(args as [unknown, BufferEncoding]));
   }
 
   /** Set the status code */
@@ -72,14 +91,17 @@ export class BindenResponse<
       );
     }
 
+    if (data instanceof Readable) {
+      return this.#pipe(data);
+    }
+
+    // Settles once the response has finished, or rejects when it is closed
+    // before `end()` (e.g. the client went away)
+    const done = this.#finished(() => this.#ended);
+
     if (typeof data === "undefined" || data === "") {
-      return new Promise<void>((resolve) => {
-        this.end(resolve);
-      });
-    } else if (data instanceof Readable) {
-      return new Promise<void>((resolve, reject) => {
-        data.once("error", reject).once("end", resolve).pipe(this);
-      });
+      this.end();
+      return done;
     }
 
     if (
@@ -90,18 +112,14 @@ export class BindenResponse<
     }
 
     if (typeof data === "string" && encoding) {
-      return new Promise<void>((resolve) => {
-        this.end(data, encoding, resolve);
-      });
+      this.end(data, encoding);
     } else if (data instanceof Buffer || typeof data === "string") {
-      return new Promise<void>((resolve) => {
-        this.end(data, resolve);
-      });
+      this.end(data);
+    } else {
+      this.end(data.toString());
     }
 
-    return new Promise<void>((resolve) => {
-      this.end(data.toString(), resolve);
-    });
+    return done;
   }
 
   /** Send response as `application/json` */
@@ -130,6 +148,90 @@ export class BindenResponse<
   }
 
   /** Send a file */
+  /** Pipes a `Readable` into the response and settles like `#finished()` */
+  #pipe(data: Readable): Promise<void> {
+    // The client has the whole response (and may close the connection) once it
+    // has the `Content-Length` bytes (none for `HEAD`), maybe before the source
+    // ends. The header is read at the close: compression removes it.
+    let received = 0;
+    const done = this.#finished(
+      () =>
+        this.#ended ||
+        this.req.method === "HEAD" ||
+        received >= Number(this.getHeader("Content-Length")),
+    );
+    return new Promise<void>((resolve, reject) => {
+      this.once("close", () => {
+        // Releases the source (e.g. the file of `sendFile()`)
+        if (!data.readableEnded) {
+          data.destroy();
+        }
+      });
+      data
+        .on("data", (chunk: Uint8Array | string) => {
+          received += Buffer.byteLength(chunk);
+        })
+        .once("error", reject)
+        .pipe(this);
+      done.then(resolve, (error: Error) => {
+        data.destroy();
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Resolves when the response has finished, rejects when it is closed (e.g. the
+   * client went away) before it is `complete()` for the client: `end()` has
+   * handed it over to the connection (`#ended`), or the client has its body
+   */
+  #finished(complete: () => boolean): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const premature = (): Error =>
+        Object.assign(new Error("Premature close"), {
+          code: "ERR_STREAM_PREMATURE_CLOSE",
+        });
+      if (this.destroyed) {
+        reject(premature());
+        return;
+      }
+      const listeners: [string, (error?: Error) => void][] = [];
+      const settle = (error: Error | null): void => {
+        for (const [event, listener] of listeners) {
+          this.off(event, listener);
+        }
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      };
+      listeners.push(
+        [
+          "finish",
+          (): void => {
+            settle(null);
+          },
+        ],
+        [
+          "close",
+          (): void => {
+            settle(complete() ? null : premature());
+          },
+        ],
+        [
+          "error",
+          (error?: Error): void => {
+            settle(error ?? premature());
+          },
+        ],
+      );
+      for (const [event, listener] of listeners) {
+        this.once(event, listener);
+      }
+    });
+  }
+
   public async sendFile(
     path: URL | string,
     options?: Pick<Stats, "isFile" | "mtime" | "size">,

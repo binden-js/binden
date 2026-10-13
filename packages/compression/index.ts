@@ -132,7 +132,7 @@ export class Compression extends Middleware {
       get: () => ended,
     });
 
-    response.end = ((...args: unknown[]): typeof response => {
+    response.end = (...args: unknown[]): typeof response => {
       const callback = args.find((arg) => typeof arg === "function");
       if (typeof callback === "function") {
         response.once("finish", () => {
@@ -151,7 +151,7 @@ export class Compression extends Middleware {
         }
       }
       return response;
-    }) as typeof response.end;
+    };
   }
 
   static #getFormat(

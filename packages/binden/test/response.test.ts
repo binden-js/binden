@@ -2,11 +2,13 @@
 import { deepStrictEqual, ok, throws, rejects } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { writeFile, rm, mkdir, rmdir, stat } from "node:fs/promises";
-import { IncomingMessage, Server, createServer } from "node:http";
+import { IncomingMessage, Server, createServer, get } from "node:http";
+import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
 import type { Stats } from "node:fs";
+import { Readable } from "node:stream";
 import { afterEach, beforeEach, suite, test } from "node:test";
 
 import {
@@ -21,6 +23,28 @@ import {
 
 const port = 8080;
 const url = `http://localhost:${port}`;
+
+/** Requests `url` and goes away after the first chunk of the response body */
+function abortAfterFirstChunk(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    get(url, (response) => {
+      response.once("data", () => {
+        response.destroy();
+        resolve();
+      });
+    }).on("error", () => {
+      // The request is aborted on purpose
+    });
+  });
+}
+
+/** The error code of a settled `send()` (`null` when it has resolved) */
+function settle(promise: Promise<void>): Promise<unknown> {
+  return promise.then(
+    () => null,
+    (error: unknown) => (error as { code?: unknown }).code,
+  );
+}
 
 suite("BindenResponse", () => {
   const filePath = `${tmpdir()}/__binden.test.file`;
@@ -218,6 +242,152 @@ suite("BindenResponse", () => {
     );
     deepStrictEqual(data, buffer);
   });
+
+  test(
+    ".send() (rejects when the response has been destroyed)",
+    { timeout: 10_000 },
+    async () => {
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          response.destroy();
+          resolve(settle(response.send("data")));
+        });
+      });
+      get(url).on("error", () => {
+        // The response is destroyed on purpose
+      });
+
+      deepStrictEqual(await settled, "ERR_STREAM_PREMATURE_CLOSE");
+    },
+  );
+
+  test(".send() (settles with the events of the response)", async () => {
+    // Without a connection, `finish` never comes: the events are emitted here
+    const create = (): BindenResponse =>
+      new BindenResponse(new IncomingMessage(new Socket()));
+
+    // The connection may close before `finish` once `end()` has been called
+    const ended = create();
+    const sent = ended.send("data");
+    ended.emit("close");
+    deepStrictEqual(await settle(sent), null);
+
+    const failed = create();
+    const failing = failed.send("data");
+    failed.emit(
+      "error",
+      Object.assign(new Error("Failed"), { code: "EFAILED" }),
+    );
+    deepStrictEqual(await settle(failing), "EFAILED");
+
+    const unknown = create();
+    const unknownSent = unknown.send("data");
+    unknown.emit("error");
+    deepStrictEqual(await settle(unknownSent), "ERR_STREAM_PREMATURE_CLOSE");
+    deepStrictEqual(unknown.listenerCount("close"), 0);
+  });
+
+  test(
+    ".send() (resolves once the client has the whole `Content-Length`)",
+    { timeout: 10_000 },
+    async () => {
+      // The source ends only after the client has the body (and has closed
+      // the connection): that close is not premature
+      const stream = new Readable({
+        read(): void {
+          // The data is pushed below
+        },
+      });
+      stream.push("data");
+      const timer = setTimeout(() => {
+        stream.push(null);
+      }, 500);
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          response.setHeader("Content-Length", 4);
+          resolve(settle(response.send(stream)));
+        });
+      });
+      const body = await new Promise<string>((resolve) => {
+        get(url, (response) => {
+          let text = "";
+          response
+            .setEncoding("utf8")
+            .on("data", (chunk: string) => {
+              text += chunk;
+            })
+            .once("end", () => {
+              resolve(text);
+            });
+        });
+      });
+
+      deepStrictEqual(body, "data");
+      deepStrictEqual(await settled, null);
+      ok(stream.destroyed);
+      clearTimeout(timer);
+    },
+  );
+
+  test(".send() (a `Readable` without its whole `Content-Length`)", async () => {
+    // Without a connection: the events are emitted here
+    const create = (method: string): BindenResponse =>
+      new BindenResponse(
+        Object.assign(new IncomingMessage(new Socket()), { method }),
+      );
+    const source = (): Readable => {
+      const stream = new Readable({
+        read(): void {
+          // The data is pushed below
+        },
+      });
+      stream.push("data");
+      return stream;
+    };
+
+    const partial = create("GET");
+    partial.setHeader("Content-Length", 8);
+    const sent = partial.send(source());
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    partial.emit("close");
+    deepStrictEqual(await settle(sent), "ERR_STREAM_PREMATURE_CLOSE");
+
+    // A `HEAD` response has no body
+    const head = create("HEAD");
+    head.setHeader("Content-Length", 8);
+    const headSent = head.send(source());
+    head.emit("close");
+    deepStrictEqual(await settle(headSent), null);
+  });
+
+  test(
+    ".send() (destroys a `Readable` when the client goes away)",
+    { timeout: 10_000 },
+    async () => {
+      const chunk = Buffer.alloc(64 * 1024);
+      // A long source (256 MiB): the client goes away long before its end.
+      // Bounded, so that a source that is not destroyed fails the test instead
+      // of keeping it busy forever.
+      let left = 4096;
+      const stream = new Readable({
+        read(): void {
+          left -= 1;
+          this.push(left > 0 ? chunk : null);
+        },
+      });
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          resolve(settle(response.send(stream)));
+        });
+      });
+      await abortAfterFirstChunk();
+
+      deepStrictEqual(await settled, "ERR_STREAM_PREMATURE_CLOSE");
+      ok(stream.destroyed && !stream.readableEnded);
+    },
+  );
 
   test(".send() (number)", async () => {
     const number = 1;
@@ -549,21 +719,28 @@ suite("BindenResponse", () => {
       });
     });
     const headers = { Range: `bytes=  - ${end} ` };
-    const response = await fetch(`http://localhost:${port + 1}`, { headers });
-    await serverPromise;
-    const data = Buffer.from(await response.arrayBuffer());
-    deepStrictEqual(response.headers.get("Content-Range"), null);
-    deepStrictEqual(response.status, 200);
-    deepStrictEqual(data, msg.subarray(msg.byteLength - end));
-    await new Promise<void>((resolve, reject) => {
-      newServer.close((error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
+    try {
+      const response = await fetch(`http://localhost:${port + 1}`, {
+        headers,
       });
-    });
+      await serverPromise;
+      const data = Buffer.from(await response.arrayBuffer());
+      deepStrictEqual(response.headers.get("Content-Range"), null);
+      deepStrictEqual(response.status, 200);
+      deepStrictEqual(data, msg.subarray(msg.byteLength - end));
+    } finally {
+      // Also on a failure: a server left open keeps the test process alive
+      newServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        newServer.close((error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
   });
 
   test(".sendFile() (with `URL`)", async () => {
@@ -615,6 +792,7 @@ suite("BindenResponse", () => {
   afterEach(async () => {
     await rmdir(dirPath);
     await rm(filePath);
+    server.closeAllConnections();
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
         if (error) {
