@@ -16,6 +16,9 @@ const secrets = [
   "secret-cookie",
   "secret-query",
   "secret-set-cookie",
+  "secret-api-key",
+  "secret-header",
+  "secret-session",
   "secret-body",
   "secret-message",
   "secret-cause",
@@ -28,14 +31,22 @@ function createContext(): Context {
   request.url = "/path?token=secret-query";
   request.headers = {
     host: "localhost",
+    "user-agent": "test",
+    "content-type": "text/plain",
+    "content-length": "4",
     authorization: "Bearer secret-token",
     "proxy-authorization": "Basic secret-token",
     cookie: "session=secret-cookie",
+    "x-api-key": "secret-api-key",
   };
   const response = new BindenResponse(request);
   response.setHeader("Set-Cookie", "session=secret-set-cookie");
+  response.setHeader("X-Header", "secret-header");
   response.setHeader("Content-Type", "text/plain");
-  return new Context({ request, response });
+  // A field that the application has set on the context
+  return Object.assign(new Context({ request, response }), {
+    privateSession: "secret-session",
+  });
 }
 
 function assertNoSecrets(output: string): void {
@@ -45,43 +56,50 @@ function assertNoSecrets(output: string): void {
 }
 
 suite("serializers", () => {
-  test("request: no query and redacted credentials", () => {
+  test("request: an allowlist of details", () => {
     const { request } = createContext();
-    const serialized = serializers.request(request) as {
-      method: string;
-      url: string;
-      headers: Record<string, string>;
-    };
-    const { method, url, headers } = serialized;
 
-    deepStrictEqual({ method, url }, { method: "GET", url: "/path" });
-    ok(!("query" in serialized));
-    ok(!("params" in serialized));
-    deepStrictEqual(headers, {
-      host: "localhost",
-      authorization: "[Redacted]",
-      "proxy-authorization": "[Redacted]",
-      cookie: "[Redacted]",
+    deepStrictEqual(serializers.request(request), {
+      method: "GET",
+      url: "/path",
+      headers: {
+        host: "localhost",
+        "user-agent": "test",
+        "content-type": "text/plain",
+        "content-length": "4",
+      },
     });
+
+    // No URL at all (`url` is optional)
+    const bare = new BindenRequest(new Socket());
+    Reflect.deleteProperty(bare, "url");
+    deepStrictEqual(serializers.request(bare), {
+      method: null,
+      url: "",
+      headers: {},
+    });
+    deepStrictEqual(serializers.request("not a request"), "not a request");
   });
 
-  test("response: redacted cookies", () => {
+  test("response: an allowlist of details", () => {
     const { response } = createContext();
-    const { headers } = serializers.response(response) as {
-      headers: Record<string, string>;
-    };
 
-    deepStrictEqual(headers, {
-      "set-cookie": "[Redacted]",
-      "content-type": "text/plain",
+    deepStrictEqual(serializers.response(response), {
+      statusCode: 200,
+      headers: { "content-type": "text/plain" },
     });
+    deepStrictEqual(serializers.response("not a response"), "not a response");
   });
 
-  test("context", () => {
+  test("context: not its own fields", () => {
     const context = createContext();
-    const serialized = serializers.context(context);
 
-    assertNoSecrets(JSON.stringify(serialized));
+    deepStrictEqual(serializers.context(context), {
+      id: context.id,
+      request: serializers.request(context.request),
+      response: serializers.response(context.response),
+    });
+    assertNoSecrets(JSON.stringify(serializers.context(context)));
     deepStrictEqual(serializers.context("not a context"), "not a context");
   });
 
@@ -122,12 +140,12 @@ suite("serializers", () => {
     });
     deepStrictEqual(serializers.error(invalid), { type: "TypeError" });
 
-    // Only Node.js error codes: any other `code` may come from the input
+    // Only known codes: any other `code` may come from the input
     for (const code of [
       "secret-code",
       "SECRET-CODE",
-      "Esecret",
-      "ERR_secret",
+      "ESECRET",
+      "ERR_SECRET_ABC123",
     ]) {
       deepStrictEqual(serializers.error(Object.assign(new Error(), { code })), {
         type: "Error",
@@ -136,11 +154,43 @@ suite("serializers", () => {
 
     deepStrictEqual(
       serializers.error({ status: 400, expose: true, message: "secret" }),
-      { type: "Object", status: 400, expose: true },
+      { type: "object", status: 400, expose: true },
     );
-    deepStrictEqual(serializers.error({ status: 999 }), { type: "Object" });
+    deepStrictEqual(serializers.error({ status: 999 }), { type: "object" });
     deepStrictEqual(serializers.error("secret-message"), { type: "string" });
     deepStrictEqual(serializers.error(null), { type: "null" });
+  });
+
+  test("error: the type of a known error class only", () => {
+    // Names the application (or the input) chooses are not logged
+    class SECRET_CLASS extends RangeError {}
+    deepStrictEqual(serializers.error(new SECRET_CLASS()), {
+      type: "RangeError",
+    });
+
+    const tagged = Object.assign(new Error(), {
+      [Symbol.toStringTag]: "SECRET_TAG",
+      name: "SECRET_NAME",
+    });
+    deepStrictEqual(serializers.error(tagged), { type: "Error" });
+
+    const errors = [
+      new AggregateError([]),
+      new EvalError(),
+      new ReferenceError(),
+      new SyntaxError(),
+      new URIError(),
+    ];
+    deepStrictEqual(
+      errors.map((error) => serializers.error(error).type),
+      [
+        "AggregateError",
+        "EvalError",
+        "ReferenceError",
+        "SyntaxError",
+        "URIError",
+      ],
+    );
   });
 
   test("error: never throws", () => {
@@ -148,11 +198,6 @@ suite("serializers", () => {
       constructor: null,
     });
     deepStrictEqual(serializers.error(anonymous), { type: "Error" });
-
-    // An anonymous class
-    deepStrictEqual(serializers.error(new (class extends Error {})()), {
-      type: "Error",
-    });
 
     const getters = new Error("secret-message");
     for (const key of ["constructor", "status", "expose", "code"]) {
@@ -168,7 +213,7 @@ suite("serializers", () => {
       status: 404,
     });
     deepStrictEqual(serializers.error(prototypeless), {
-      type: "Object",
+      type: "object",
       status: 404,
     });
 
@@ -185,7 +230,7 @@ suite("serializers", () => {
     });
     deepStrictEqual(serializers.error(traps), { type: "object" });
 
-    deepStrictEqual(serializers.error(thrower), { type: "Function" });
+    deepStrictEqual(serializers.error(thrower), { type: "function" });
   });
 
   test("body", () => {

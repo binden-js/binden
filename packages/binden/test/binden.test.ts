@@ -376,6 +376,34 @@ suite("Binden", () => {
     }
   });
 
+  test("logs an allowlist of request details", async () => {
+    const logged = await loggedApp();
+    try {
+      class SECRET_CLASS extends Error {}
+      logged.app.use((context: Context) => {
+        Object.assign(context, { privateSession: "SECRET_SESSION" });
+        throw Object.assign(new SECRET_CLASS("SECRET_MESSAGE"), {
+          code: "ERR_SECRET_ABC123",
+          [Symbol.toStringTag]: "SECRET_TAG",
+        });
+      });
+
+      const response = await fetch(`${logged.url}/path?token=SECRET_QUERY`, {
+        headers: { "X-Api-Key": "SECRET_KEY", "User-Agent": "binden-test" },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, DefaultErrorCode);
+      const output = logged.output();
+      ok(!output.includes("SECRET"), output);
+      ok(output.includes(`"error":{"type":"Error"}`), output);
+      ok(output.includes(`"url":"/path"`), output);
+      ok(output.includes(`"user-agent":"binden-test"`), output);
+    } finally {
+      await logged.close();
+    }
+  });
+
   test("replies when the logger fails", async () => {
     const logged = await loggedApp(
       {},

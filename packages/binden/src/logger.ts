@@ -1,29 +1,40 @@
-import { STATUS_CODES } from "node:http";
-import Pino from "pino";
+import { IncomingMessage, ServerResponse, STATUS_CODES } from "node:http";
+import { constants } from "node:os";
 import { Logger } from "@binden/logger";
 import { Context } from "./context.js";
+import { BindenError } from "./error.js";
 
-const redacted = "[Redacted]";
+/** The request headers that the default logger keeps (others may carry credentials) */
+const requestHeaders = ["host", "user-agent", "content-type", "content-length"];
 
-/** Headers that carry credentials and must never be logged */
-const sensitive: ReadonlySet<string> = new Set([
-  "authorization",
-  "cookie",
-  "proxy-authorization",
-  "set-cookie",
+/** The response headers that the default logger keeps */
+const responseHeaders = ["content-type", "content-length"];
+
+/** The error classes the default logger names (a subclass gets the name of its parent) */
+const errorTypes: ReadonlyMap<object, string> = new Map<object, string>([
+  [BindenError.prototype, "BindenError"],
+  [AggregateError.prototype, "AggregateError"],
+  [EvalError.prototype, "EvalError"],
+  [RangeError.prototype, "RangeError"],
+  [ReferenceError.prototype, "ReferenceError"],
+  [SyntaxError.prototype, "SyntaxError"],
+  [TypeError.prototype, "TypeError"],
+  [URIError.prototype, "URIError"],
+  [Error.prototype, "Error"],
 ]);
 
-function redact(headers: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(headers).map(([name, value]) => [
-      name,
-      sensitive.has(name.toLowerCase()) ? redacted : value,
-    ]),
-  );
-}
-
-/** Node.js error codes: system (`ECONNRESET`) and internal (`ERR_STREAM_DESTROYED`) ones */
-const nodeErrorCode = /^(?:E[A-Z0-9]+|ERR_[A-Z0-9_]+)$/u;
+/** The error codes the default logger keeps: system errors and some stream/HTTP ones */
+const errorCodes: ReadonlySet<string> = new Set([
+  ...Object.keys(constants.errno),
+  "ERR_HTTP_HEADERS_SENT",
+  "ERR_HTTP_INVALID_HEADER_VALUE",
+  "ERR_INVALID_ARG_TYPE",
+  "ERR_INVALID_CHAR",
+  "ERR_STREAM_ALREADY_FINISHED",
+  "ERR_STREAM_DESTROYED",
+  "ERR_STREAM_PREMATURE_CLOSE",
+  "ERR_STREAM_WRITE_AFTER_END",
+]);
 
 /** Reads a property, so that a throwing getter (or proxy) cannot break the logs */
 function get(value: object, key: string): unknown {
@@ -34,29 +45,47 @@ function get(value: object, key: string): unknown {
   }
 }
 
-/** The name of the constructor (as pino), otherwise the `Object.prototype.toString()` tag */
+/** The name of the nearest known error class of a value (never one it defines itself) */
 function typeOf(value: object): string {
-  const constructor = get(value, "constructor");
-  const name =
-    typeof constructor === "function" ? get(constructor, "name") : null;
-  if (typeof name === "string" && name !== "") {
-    return name;
-  }
   try {
-    return Object.prototype.toString.call(value).slice(8, -1);
+    let prototype = Object.getPrototypeOf(value) as object | null;
+    while (prototype !== null) {
+      const type = errorTypes.get(prototype);
+      if (typeof type === "string") {
+        return type;
+      }
+      prototype = Object.getPrototypeOf(prototype) as object | null;
+    }
   } catch {
-    return typeof value;
+    // A proxy that refuses to tell its prototype
   }
+  return typeof value;
+}
+
+/** The given headers, when they are set */
+function pick(
+  names: readonly string[],
+  header: (name: string) => unknown,
+): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  for (const name of names) {
+    const value = header(name);
+    if (typeof value !== "undefined") {
+      picked[name] = value;
+    }
+  }
+  return picked;
 }
 
 /**
- * The serializers of the default logger, which keep credentials, query strings,
- * request bodies and error details (messages, stacks, causes and `json`, which
- * may quote the input, e.g. the one of `JSON.parse()`) out of the logs
+ * The serializers of the default logger. They log an allowlist of details only,
+ * which keeps credentials, query strings, request bodies, error details
+ * (messages, stacks, causes and `json`, which may quote the input) and the own
+ * fields of a context out of the logs.
  */
 export const serializers = {
-  // Only the kind of an error: its type, `status`, `expose` and a Node.js
-  // `code`. Never throws, whatever is thrown.
+  // The kind of an error: its type, `status`, `expose` and a known `code`. Never
+  // throws, whatever is thrown.
   error: (error: unknown): Record<string, unknown> => {
     if (error === null) {
       return { type: "null" };
@@ -72,31 +101,40 @@ export const serializers = {
         ? { status }
         : {}),
       ...(typeof expose === "boolean" ? { expose } : {}),
-      ...(typeof code === "string" && nodeErrorCode.test(code) ? { code } : {}),
+      ...(typeof code === "string" && errorCodes.has(code) ? { code } : {}),
     };
   },
-  body: (): string => redacted,
-  // The query string (and the parsed `query`/`params`) may contain tokens
-  request: Pino.stdSerializers.wrapRequestSerializer(
-    /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-    ({ id: _id, query: _query, params: _params, url, headers, ...rest }) => ({
-      ...rest,
-      url: url.split("?", 1)[0],
-      headers: redact(headers),
-    }),
-  ),
-  response: Pino.stdSerializers.wrapResponseSerializer(
-    ({ headers, ...rest }) => ({ ...rest, headers: redact(headers) }),
-  ),
-  context: (input: unknown): unknown => {
-    if (input instanceof Context) {
-      return {
-        ...input,
-        request: serializers.request(input.request),
-        response: serializers.response(input.response),
-      };
+  body: (): string => "[Redacted]",
+  // The method, the path (without the query string) and some headers
+  request: (request: unknown): unknown => {
+    if (!(request instanceof IncomingMessage)) {
+      return request;
     }
-    return input;
+    return {
+      method: request.method,
+      url: (request.url ?? "").split("?", 1)[0],
+      headers: pick(requestHeaders, (name) => request.headers[name]),
+    };
+  },
+  response: (response: unknown): unknown => {
+    if (!(response instanceof ServerResponse)) {
+      return response;
+    }
+    return {
+      statusCode: response.statusCode,
+      headers: pick(responseHeaders, (name) => response.getHeader(name)),
+    };
+  },
+  // Not the own fields of the context, which the application may have set
+  context: (input: unknown): unknown => {
+    if (!(input instanceof Context)) {
+      return input;
+    }
+    return {
+      id: input.id,
+      request: serializers.request(input.request),
+      response: serializers.response(input.response),
+    };
   },
 };
 

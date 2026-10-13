@@ -63,11 +63,13 @@ const secureServer = app.createSecureServer({ key, cert });
 
 ### Logging
 
-Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` keep credentials and the input of the requests out of the logs:
+Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` log an allowlist of details only, which keeps credentials and the input of the requests out of the logs:
 
-- the `Authorization`, `Cookie`, `Proxy-Authorization` and `Set-Cookie` headers are redacted, and the query string is dropped from the request URL;
+- a request is its method, its path (without the query string) and its `Host`, `User-Agent`, `Content-Type` and `Content-Length` headers;
+- a response is its status code and its `Content-Type` and `Content-Length` headers;
+- a context is its `id`, request and response (not the fields the application sets on it);
 - a logged `body` (e.g. the one that [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body) failed to parse) is redacted;
-- an `error` is reduced to its `type`, `status` and `expose`, and to its `code` when it is a Node.js error code (such as `ECONNRESET` or `ERR_STREAM_PREMATURE_CLOSE`): its message, stack, cause and `json` may quote the input (e.g. an error of `JSON.parse()`). The serializer never throws, whatever is thrown.
+- an `error` is reduced to its type (the nearest of `BindenError` and the built-in error classes, never a name the error defines), its `status` and `expose`, and its `code` when it is a system error code (such as `ECONNRESET`) or one of a few stream and HTTP codes (such as `ERR_STREAM_PREMATURE_CLOSE`). Its message, stack, cause and `json` may quote the input (e.g. an error of `JSON.parse()`). The serializer never throws, whatever is thrown.
 
 A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option. The default `serializers` are exported to build on:
 
