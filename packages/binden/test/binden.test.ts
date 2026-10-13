@@ -2,7 +2,7 @@
 import { deepStrictEqual, ok, rejects, throws } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { Server } from "node:http";
+import { Server, request as httpRequest } from "node:http";
 import { Agent } from "node:https";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, suite, test } from "node:test";
@@ -591,6 +591,22 @@ suite("Binden", () => {
     deepStrictEqual(response.status, 200);
     const text = await response.text();
     deepStrictEqual(text, m1.id);
+  });
+
+  test("400 error (an invalid `Host`)", async () => {
+    // Routing by path needs the URL
+    app.use("/", (context: Context) => context.send());
+
+    const status = await new Promise<number | undefined>((resolve, reject) => {
+      httpRequest(url, { headers: { host: "a b" } }, (response) => {
+        response.resume();
+        resolve(response.statusCode);
+      })
+        .on("error", reject)
+        .end();
+    });
+
+    deepStrictEqual(status, 400);
   });
 
   test("404 error (context.done === false)", async () => {

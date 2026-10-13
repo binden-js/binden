@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, throws } from "node:assert";
 import { Server, createServer } from "node:http";
 import { Socket } from "node:net";
 import { TLSSocket } from "node:tls";
@@ -9,6 +9,7 @@ import fetch from "node-fetch";
 
 import {
   Range,
+  BindenError,
   BindenRequest,
   Forwarded,
   Cookie,
@@ -256,6 +257,17 @@ suite("BindenRequest", () => {
 
     await fetch(url, { headers: { Cookie: "key=value" } });
     await serverPromise;
+  });
+
+  test(".URL (an invalid `Host`)", () => {
+    const request = new BindenRequest(new Socket());
+    request.url = "/";
+    request.headers = { host: "a b" };
+
+    throws(
+      () => request.URL,
+      (error: unknown) => error instanceof BindenError && error.status === 400,
+    );
   });
 
   test(".query (keeps its prototype)", () => {

@@ -3,6 +3,7 @@ import { IncomingMessage } from "node:http";
 import { parse, type ParsedUrlQuery } from "node:querystring";
 import { TLSSocket } from "node:tls";
 
+import { BindenError } from "./error.js";
 import AcceptEncoding from "./headers/accept-encoding.js";
 import Authorization from "./headers/authorization.js";
 import ContentEncoding from "./headers/content-encoding.js";
@@ -162,9 +163,15 @@ export class BindenRequest extends IncomingMessage {
     return this.URL.protocol === "https:";
   }
 
+  /** The URL of the request (a `400 Bad Request` error without a valid one) */
   public get URL(): URL {
     const { protocol, url = "/", headers } = this;
     const { host = "" } = headers;
-    return new URL(url, `${protocol}//${host}`);
+    const base = `${protocol}//${host}`;
+    // E.g. an invalid `Host` header
+    if (!URL.canParse(url, base)) {
+      throw new BindenError(400);
+    }
+    return new URL(url, base);
   }
 }
