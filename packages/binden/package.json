@@ -40,10 +40,10 @@
     "@binden/logger": "^0.0.0-development"
   },
   "devDependencies": {
-    "@types/sinon": "^17.0.3",
+    "@types/sinon": "^22.0.0",
     "fast-json-stringify": "^7.1.0",
     "node-fetch": "^3.3.2",
-    "sinon": "^19.0.2"
+    "sinon": "^22.1.0"
   },
   "publishConfig": {
     "access": "public"
