@@ -39,7 +39,8 @@ changing a package that others depend on.
 - With `@types/node` 26 and `skipLibCheck: false`, TypeScript reports
   `Namespace "worker_threads" has no exported member "TransferListItem"` in the types of
   [`thread-stream`](https://github.com/pinojs/thread-stream), which `pino` (used by
-  `@binden/logger`) depends on. Enable `skipLibCheck` until `thread-stream` is updated.
+  `@binden/logger`) depends on. Enable `skipLibCheck` until `thread-stream` is updated
+  ([pinojs/thread-stream#228](https://github.com/pinojs/thread-stream/issues/228)).
   `npm run consumer:check` type checks the packed packages with `@types/node` 24 (strict) and 26.
 
 ## Releases
