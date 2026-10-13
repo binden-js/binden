@@ -49,6 +49,9 @@ jobs:
       - name: ESLint
         run: npm run eslint
 
+      - name: Tooling tests (release script, test runner)
+        run: npm run test:tooling
+
       - name: Pack (test)
         run: npm run pack:check
 
