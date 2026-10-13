@@ -1,6 +1,6 @@
 {
   "name": "@binden/multipart",
-  "version": "3.0.0",
+  "version": "0.0.0-development",
   "description": "Binden middleware for parsing incoming FormData",
   "main": "dist/index.js",
   "type": "module",
@@ -41,7 +41,7 @@
   },
   "peerDependencies": {
     "@types/busboy": "^1.5.4",
-    "binden": "^3.0.0"
+    "binden": "^0.0.0-development"
   },
   "devDependencies": {
     "undici": "^8.3.0"

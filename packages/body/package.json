@@ -1,6 +1,6 @@
 {
   "name": "@binden/body",
-  "version": "3.0.0",
+  "version": "0.0.0-development",
   "description": "Binden body parser middleware",
   "main": "dist/index.js",
   "type": "module",
@@ -36,10 +36,10 @@
   },
   "homepage": "https://github.com/binden-js/binden/tree/main/packages/body#readme",
   "peerDependencies": {
-    "binden": "^3.0.0"
+    "binden": "^0.0.0-development"
   },
   "devDependencies": {
-    "@binden/logger": "^3.0.0",
+    "@binden/logger": "^0.0.0-development",
     "ajv": "^8.20.0",
     "undici": "^7.11.0"
   },

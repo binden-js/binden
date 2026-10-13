@@ -1,6 +1,6 @@
 {
   "name": "@binden/compression",
-  "version": "3.0.0",
+  "version": "0.0.0-development",
   "description": "binden compression middleware",
   "main": "dist/index.js",
   "type": "module",
@@ -39,7 +39,7 @@
   },
   "homepage": "https://github.com/binden-js/binden/tree/main/packages/compression#readme",
   "peerDependencies": {
-    "binden": "^3.0.0"
+    "binden": "^0.0.0-development"
   },
   "devDependencies": {
     "undici": "^8.3.0"

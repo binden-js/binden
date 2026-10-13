@@ -50,7 +50,7 @@ function errorCode(stdout) {
 }
 
 // Only a confirmed "not found" (E404) means "not published": registry, network or
-// authentication errors must stop the release before anything is committed or tagged.
+// authentication errors must stop the release before anything is tagged or published.
 function isPublished(name, version) {
   try {
     const stdout = npm(["view", `${name}@${version}`, "version", "--json"], {

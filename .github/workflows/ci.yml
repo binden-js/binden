@@ -128,39 +128,18 @@ jobs:
           check-latest: true
           registry-url: https://registry.npmjs.org
 
-      - name: Import GPG key
-        run: printf "%s" "$GPG_KEY" | base64 --decode | gpg --batch --import
-        env:
-          GPG_KEY: ${{ secrets.GPG_KEY }}
-
-      - name: Add the custom gpg executable
-        # The passphrase is read from the environment of the release step, quoted, so
-        # that it is passed as a single argument even if it contains spaces.
-        run: |
-          printf "%s\n" "#!/bin/sh" 'exec gpg --batch --pinentry-mode=loopback --passphrase "$GPG_KEY_PASSPHRASE" "$@"' > /tmp/gpg.sh
-          chmod +x /tmp/gpg.sh
-
-      - name: Setup git
-        run: |
-          git config commit.gpgsign true
-          git config user.signingkey "$GPG_KEY_ID"
-          git config gpg.program /tmp/gpg.sh
-        env:
-          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
-
       - name: Install dependencies and build the workspaces
         run: npm ci
 
-      # Publishes every workspace with the same version (see scripts/release.mjs).
+      # Tags the release, publishes every workspace with the same version (see
+      # scripts/release.mjs) and creates the GitHub Release, whose notes are the changelog.
+      # Nothing is committed to `main`, so its branch protection applies as usual.
       # npm uses trusted publishing (OIDC) when it is configured for a package and
       # falls back to NODE_AUTH_TOKEN otherwise.
       - name: Release
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GIT_COMMITTER_EMAIL: ${{ secrets.GIT_COMMITTER_EMAIL }}
-          GIT_COMMITTER_NAME: ${{ secrets.GIT_COMMITTER_NAME }}
-          GPG_KEY_PASSPHRASE: ${{ secrets.GPG_KEY_PASSPHRASE }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 

@@ -53,10 +53,18 @@ on every push to `main` (see [`.releaserc.json`](.releaserc.json)):
   last `v*` tag;
 - [`scripts/release.mjs`](scripts/release.mjs) sets that version in **every** workspace (and the
   internal dependency ranges to `^<version>`) and publishes all packages to npm in dependency order;
-- the release commit updates [`CHANGELOG.md`](CHANGELOG.md) for all packages.
+- the `v<version>` tag and a [GitHub Release](https://github.com/binden-js/binden/releases) with the
+  release notes are created: they are the changelog (see [`CHANGELOG.md`](CHANGELOG.md)).
+
+Nothing is committed back to `main`, as
+[recommended by semantic-release](https://semantic-release.gitbook.io/semantic-release/support/faq):
+a release commit would have to bypass the branch protection of `main`. The versions in the
+repository therefore stay at `0.0.0-development` (and the internal ranges at `^0.0.0-development`);
+the published version is set only in the checkout of the release job.
 
 `npm run release:check` verifies that all workspaces share one version. If a release fails after
-some packages were published, `node scripts/release.mjs publish --skip-existing` publishes the
+some packages were published, run `node scripts/release.mjs version <version>` and then
+`node scripts/release.mjs publish --skip-existing` (without committing the result) to publish the
 rest.
 
 The `CHANGELOG.md` files inside `packages/*` describe the history before the packages were merged
