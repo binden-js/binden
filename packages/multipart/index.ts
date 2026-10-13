@@ -70,6 +70,10 @@ export class Multipart extends Middleware {
         .on("file", (name, stream, { mimeType: type, filename }) => {
           const chunks: Buffer<ArrayBuffer>[] = [];
           stream
+            .once("error", (cause) => {
+              const message = "`busboy` file stream error";
+              reject(new BindenError(415, { message, cause }));
+            })
             .once("close", () => {
               // @types/busboy 1.5.5 types `filename` as optional; the value is passed through unchanged
               fd.append(name, new File(chunks, filename as string, { type }));
