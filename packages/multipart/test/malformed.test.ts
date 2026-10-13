@@ -2,8 +2,8 @@
 import { Binden, type Context } from "binden";
 import { type Server, request } from "node:http";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { deepEqual, ok } from "node:assert/strict";
 import { Multipart } from "../index.js";
-import { deepEqual } from "node:assert/strict";
 
 const port = 8080;
 const url = `http://localhost:${port}/`;
@@ -62,6 +62,84 @@ describe("Multipart (malformed body)", () => {
 
     deepEqual(await post(complete, boundary), 200);
   });
+
+  afterEach(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
+});
+
+describe("Multipart (aborted request)", () => {
+  let server: Server;
+  let started: Promise<void>;
+  let settled: Promise<unknown>;
+
+  beforeEach(async () => {
+    let start: () => void;
+    let settle: (value: unknown) => void;
+    started = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    settled = new Promise<unknown>((resolve) => {
+      settle = resolve;
+    });
+
+    const parser = new Multipart();
+    const app = new Binden().use(async (ct: Context) => {
+      start();
+      try {
+        await parser.run(ct);
+        settle(null);
+      } catch (error: unknown) {
+        settle(error);
+      }
+    });
+    await new Promise<void>((resolve) => {
+      server = app.createServer().listen(port, resolve);
+    });
+  });
+
+  it(
+    "Settles when the connection is closed in the middle of a file",
+    { timeout: 5000 },
+    async () => {
+      const boundary = "binden-boundary";
+      const head = [
+        `--${boundary}`,
+        'Content-Disposition: form-data; name="file"; filename="file.txt"',
+        "Content-Type: text/plain",
+        "",
+        "Hello",
+      ].join("\r\n");
+      const req = request(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": Buffer.byteLength(head) + 1024,
+        },
+      });
+      req.on("error", () => {
+        // The connection is closed on purpose
+      });
+      req.write(head);
+
+      await started;
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      req.destroy();
+
+      ok((await settled) instanceof Error);
+    },
+  );
 
   afterEach(async () => {
     server.closeAllConnections();

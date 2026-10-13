@@ -5,6 +5,7 @@ import {
   Middleware,
 } from "binden";
 import busboy, { type BusboyConfig } from "busboy";
+import { finished } from "node:stream";
 
 export type IMultipartConfig = Omit<BusboyConfig, "headers">;
 
@@ -121,6 +122,13 @@ export class Multipart extends Middleware {
             resolve();
           }
         });
+      // `pipe` does not forward a closed connection to busboy: destroy it, so
+      // that its `error` rejects this promise
+      finished(request, (error) => {
+        if (error) {
+          bb.destroy(error);
+        }
+      });
       request.pipe(bb);
     });
   }
