@@ -64,8 +64,16 @@ export class Multipart extends Middleware {
           request.body = fd;
           resolve();
         })
-        .on("field", (name, value) => {
-          fd.append(name, value);
+        .on("field", (name, value, { valueTruncated }) => {
+          // `nameTruncated` is never set for `multipart/form-data` (busboy applies
+          // `fieldNameSize` to `application/x-www-form-urlencoded` only)
+          if (this.#throw_limits && valueTruncated) {
+            const cause = new Error("`busboy` reached `fieldSize` limit ");
+            const error = new BindenError(415, { cause });
+            reject(error);
+          } else {
+            fd.append(name, value);
+          }
         })
         .on("file", (name, stream, { mimeType: type, filename }) => {
           const chunks: Buffer<ArrayBuffer>[] = [];

@@ -227,6 +227,40 @@ describe("Multipart", () => {
     deepEqual(response.status, 200);
   });
 
+  it("Replies with 415 error when a field reaches the `fieldSize` limit (by default)", async () => {
+    const body = new FormData();
+    body.append("k1", "abcdef");
+
+    app.use(multipart({ limits: { fieldSize: 3 } }));
+
+    const response = await fetch(url, { method: "POST", body });
+    await response.text();
+    deepEqual(response.status, 415);
+  });
+
+  it("Passes a truncated field when it reaches the `fieldSize` limit (`throw_limits = false`)", async () => {
+    const body = new FormData();
+    body.append("k1", "abcdef");
+
+    const assert = (context: Context): Promise<void> => {
+      ok(context.request.body instanceof FormData);
+      deepEqual(context.request.body.getAll("k1"), ["abc"]);
+      return context.send();
+    };
+
+    app.use(
+      new Multipart({
+        config: { limits: { fieldSize: 3 } },
+        throw_limits: false,
+      }),
+      assert,
+    );
+
+    const response = await fetch(url, { method: "POST", body });
+    await response.text();
+    deepEqual(response.status, 200);
+  });
+
   it("Replies with 415 error when FormData reaches the `files` limit (by default)", async () => {
     const body = new FormData();
     body.append("file1", new File([Buffer.allocUnsafe(50)], "file1.txt"));
