@@ -81,21 +81,24 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
+  test(".content_encoding (an unknown coding)", () => {
+    const request = new BindenRequest(new Socket());
+    request.headers = { "content-encoding": "gzip, foo" };
+
+    deepStrictEqual(request.content_encoding, null);
+    // Parsed once
+    deepStrictEqual(request.content_encoding, null);
+  });
+
   test(".content_encoding", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {
         try {
           const { content_encoding } = request;
-          deepStrictEqual(content_encoding.length, 3);
-
-          deepStrictEqual(content_encoding[0].encoding, "x-gzip");
-          deepStrictEqual(content_encoding[0].q_value, null);
-
-          deepStrictEqual(content_encoding[1].encoding, "br");
-          deepStrictEqual(content_encoding[1].q_value, null);
-
-          deepStrictEqual(content_encoding[2].encoding, "compress");
-          deepStrictEqual(content_encoding[2].q_value, null);
+          deepStrictEqual(
+            content_encoding?.map(({ encoding }) => encoding),
+            ["x-gzip", "br", "compress"],
+          );
         } catch (error) {
           reject(error);
         } finally {

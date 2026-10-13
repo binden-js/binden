@@ -12,19 +12,20 @@ suite("ContentEncoding", () => {
   });
 
   test("ContentEncoding.fromString()", () => {
-    deepStrictEqual(ContentEncoding.fromString(), []);
-    deepStrictEqual(ContentEncoding.fromString(""), []);
-    const input = " x-gzip , br , deflate , ignored ";
-    const parsed = ContentEncoding.fromString(input);
-    deepStrictEqual(parsed.length, 3);
+    const parse = (input?: string): string[] | null =>
+      ContentEncoding.fromString(input)?.map((e) => e.toString()) ?? null;
 
-    deepStrictEqual(parsed[0].encoding, "deflate");
-    deepStrictEqual(parsed[0].toString(), "deflate");
-
-    deepStrictEqual(parsed[1].encoding, "br");
-    deepStrictEqual(parsed[1].toString(), "br");
-
-    deepStrictEqual(parsed[2].encoding, "x-gzip");
-    deepStrictEqual(parsed[2].toString(), "x-gzip");
+    deepStrictEqual(parse(), []);
+    deepStrictEqual(parse(""), []);
+    // In the order to remove them; case-insensitive; empty elements ignored
+    deepStrictEqual(parse(" x-gzip , BR ,, deflate "), [
+      "deflate",
+      "br",
+      "x-gzip",
+    ]);
+    // An unknown or malformed coding: the content cannot be decoded
+    for (const input of ["gzip, ignored", "gzip;q=1", "gzip br", "identity"]) {
+      deepStrictEqual(parse(input), null, input);
+    }
   });
 });

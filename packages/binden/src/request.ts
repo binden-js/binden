@@ -24,7 +24,7 @@ export class BindenRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
   #authorization?: Authorization | null;
   #body?: unknown;
-  #content_encoding?: readonly ContentEncoding[];
+  #content_encoding?: readonly ContentEncoding[] | null;
   #content_type?: ContentType | null;
   #cookies?: readonly Cookie[];
   #forwarded?: readonly Forwarded[];
@@ -59,13 +59,14 @@ export class BindenRequest extends IncomingMessage {
     }
   }
 
-  public get content_encoding(): ContentEncoding[] {
-    if (!this.#content_encoding) {
+  /** The content codings of the body, or `null` when one of them is unknown */
+  public get content_encoding(): ContentEncoding[] | null {
+    if (typeof this.#content_encoding === "undefined") {
       this.#content_encoding = ContentEncoding.fromString(
         this.headers["content-encoding"],
       );
     }
-    return [...this.#content_encoding];
+    return this.#content_encoding === null ? null : [...this.#content_encoding];
   }
 
   public get content_type(): ContentType | null {

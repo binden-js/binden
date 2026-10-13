@@ -566,7 +566,7 @@ const credentials = Authorization.fromString(request.headers.authorization);
 const { authorization } = request;
 ```
 
-- [Content-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding)
+- [Content-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding) - the codings in the order to remove them, or `null` when one of them is unknown or malformed (the content cannot be decoded then)
 
 ```typescript
 import { ContentEncoding } from "binden";

@@ -6,6 +6,7 @@ import {
   brotliCompress as brotliCompressAsync,
   gzip as gzipAsync,
   deflate as deflateAsync,
+  gzipSync,
   type InputType,
 } from "node:zlib";
 import { Ajv as AJV, type JTDDataType } from "ajv/dist/jtd.js";
@@ -266,6 +267,33 @@ suite("BodyParser", () => {
     deepEqual(response.statusCode, 200);
     const text = await response.body.text();
     deepEqual(text, "");
+  });
+
+  test("`Content-Encoding` (case-insensitive, unknown codings)", async () => {
+    let parsed: unknown = null;
+    app.use(new BodyParser(), async (context: Context): Promise<void> => {
+      parsed = context.request.body;
+      await context.send();
+    });
+    const body = gzipSync("Hello World");
+
+    const upper = await request(url, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": ct_text, "Content-Encoding": "GZIP" },
+    });
+    deepEqual(upper.statusCode, 200);
+    await upper.body.dump();
+    deepEqual(parsed, "Hello World");
+
+    // An unknown coding makes the body undecodable
+    const unknown = await request(url, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": ct_text, "Content-Encoding": "gzip, foo" },
+    });
+    deepEqual(unknown.statusCode, 415);
+    await unknown.body.dump();
   });
 
   test("Unsupported `Content-Encoding`", async () => {

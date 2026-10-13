@@ -56,6 +56,12 @@ export class BodyParser<T = unknown> extends Middleware {
       return;
     }
 
+    if (content_encoding === null) {
+      // An unknown (or malformed) coding: the body cannot be decoded
+      log.debug("Unsupported encoding");
+      throw new BindenError(415);
+    }
+
     const streams: [string, Duplex][] = [];
 
     for (const { encoding } of content_encoding) {
