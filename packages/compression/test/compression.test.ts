@@ -189,8 +189,7 @@ describe("Compression", () => {
     const expected = "Hello World";
     app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
 
-    const headers = { "Accept-Encoding": "" };
-    const response = await request(url, { headers });
+    const response = await request(url);
 
     deepStrictEqual(response.headers["content-encoding"], DefaultCompression);
     deepStrictEqual(response.statusCode, 200);
@@ -199,6 +198,98 @@ describe("Compression", () => {
     const actual = (await brotliDecompress(body)).toString();
 
     deepStrictEqual(actual, expected);
+  });
+
+  it("auto (empty `Accept-Encoding` asks for no coding)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "" };
+    const response = await request(url, { headers });
+
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    deepStrictEqual(response.headers.vary, "Accept-Encoding");
+    deepStrictEqual(await response.body.text(), expected);
+  });
+
+  it("auto (codings refused with `q=0`)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "gzip;q=0, br;q=0, deflate;q=0" };
+    const response = await request(url, { headers });
+
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    deepStrictEqual(await response.body.text(), expected);
+  });
+
+  it("auto (`*` skips codings refused with `q=0`)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "br;q=0, *" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
+
+    const body = await response.body.arrayBuffer();
+    const actual = (await gunzip(Buffer.from(body))).toString();
+
+    deepStrictEqual(actual, expected);
+  });
+
+  it("auto (`*` with every coding refused)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "br;q=0, gzip;q=0, deflate;q=0, *" };
+    const response = await request(url, { headers });
+
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    deepStrictEqual(await response.body.text(), expected);
+  });
+
+  it("auto (adds `Accept-Encoding` to the existing `Vary`)", async () => {
+    const expected = "Hello World";
+    app.use(
+      (ct: Context) => {
+        ct.response.setHeader("Vary", "Origin");
+      },
+      new Compression({ format: "auto" }),
+      new TestMiddleware(expected),
+    );
+
+    const headers = { "Accept-Encoding": "gzip" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.headers.vary, "Origin, Accept-Encoding");
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
+  });
+
+  it("auto (keeps a `Vary` that already covers `Accept-Encoding`)", async () => {
+    const expected = "Hello World";
+    app.use(
+      (ct: Context) => {
+        ct.response.setHeader("Vary", ["Origin", "accept-encoding"]);
+      },
+      new Compression({ format: "auto" }),
+      new TestMiddleware(expected),
+    );
+
+    const headers = { "Accept-Encoding": "gzip" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.headers.vary, ["Origin", "accept-encoding"]);
+  });
+
+  it("does not add `Vary` for a fixed format", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "gzip" }), new TestMiddleware(expected));
+
+    const response = await request(url);
+
+    ok(typeof response.headers.vary === "undefined");
+    deepStrictEqual(response.headers["content-encoding"], "gzip");
   });
 
   it("auto (unsupported)", async () => {

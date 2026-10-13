@@ -22,6 +22,10 @@ export class Compression extends Middleware {
   }
 
   public run(context: Context): Context {
+    if (this.format === "auto") {
+      Compression.#varyOnAcceptEncoding(context);
+    }
+
     const format = Compression.#getFormat(context, this.format);
 
     if (format === "identity") {
@@ -115,17 +119,33 @@ export class Compression extends Middleware {
       return format;
     }
 
-    const { accept_encoding } = context.request;
+    const { request } = context;
 
-    if (!accept_encoding.length) {
+    // No `Accept-Encoding` means that any coding is acceptable, while an empty
+    // one (or one refusing everything with `q=0`) asks for no coding at all.
+    if (typeof request.headers["accept-encoding"] === "undefined") {
       return DefaultCompression;
     }
 
-    for (const { encoding } of accept_encoding) {
+    const { accept_encoding } = request;
+    const refused = new Set(
+      accept_encoding
+        .filter(({ q_value }) => q_value === 0)
+        .map(({ encoding }) => encoding),
+    );
+
+    for (const { encoding } of accept_encoding.filter(
+      ({ q_value }) => q_value !== 0,
+    )) {
       /* eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check */
       switch (encoding) {
-        case "*":
-          return DefaultCompression;
+        case "*": {
+          const any = Compression.#formats.find((f) => !refused.has(f));
+          if (typeof any !== "undefined") {
+            return any;
+          }
+          break;
+        }
         case "identity":
           return "identity";
         case "x-gzip":
@@ -140,6 +160,26 @@ export class Compression extends Middleware {
     }
 
     return "identity";
+  }
+
+  /** Response codings in the order of preference (the first one is the default) */
+  static readonly #formats = [DefaultCompression, "gzip", "deflate"] as const;
+
+  /** The response depends on `Accept-Encoding` (keeps the existing `Vary` values) */
+  static #varyOnAcceptEncoding({ response }: Context): void {
+    const raw = response.getHeader("Vary");
+    const values = (
+      Array.isArray(raw) ? raw : typeof raw === "undefined" ? [] : [`${raw}`]
+    )
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter((value) => value !== "");
+
+    if (
+      !values.some((v) => v === "*" || v.toLowerCase() === "accept-encoding")
+    ) {
+      response.setHeader("Vary", [...values, "Accept-Encoding"].join(", "));
+    }
   }
 }
 
