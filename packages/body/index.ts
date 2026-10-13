@@ -73,6 +73,7 @@ export class BodyParser<T = unknown> extends Middleware {
 
     const body = await new Promise<string>((resolve, reject) => {
       let { request: stream } = context as { request: Readable };
+      const source = stream;
 
       for (const [encoding, decompresser] of streams) {
         decompresser.once("error", (error) => {
@@ -82,6 +83,16 @@ export class BodyParser<T = unknown> extends Middleware {
         stream.pipe(decompresser);
         stream = decompresser;
       }
+
+      // `pipe` does not forward an aborted request to the decoders: destroy them,
+      // so that the last one finishes (with a premature close) and settles this promise
+      finished(source, (error) => {
+        if (error) {
+          for (const [, decompresser] of streams) {
+            decompresser.destroy();
+          }
+        }
+      });
 
       const chunks: Buffer[] = [];
 
