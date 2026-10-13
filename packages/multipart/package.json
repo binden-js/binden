@@ -40,7 +40,7 @@
     "busboy": "^1.6.0"
   },
   "peerDependencies": {
-    "@types/busboy": "^1.5.4",
+    "@types/busboy": "^1.5.5",
     "binden": "^0.0.0-development"
   },
   "devDependencies": {
