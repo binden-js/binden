@@ -39,33 +39,49 @@ export class Authorization implements IAuthorization {
   }
 
   public static fromString(input?: string): Authorization | null {
-    if (typeof input === "undefined" || input.length === 0) {
+    // auth-scheme [ 1*SP ( token68 / #auth-param ) ] (RFC 9110, section 11.4)
+    const { scheme = "", rest = "" } =
+      /^(?<scheme>[!#$%&'*+.^_`|~\w-]+)(?: +(?<rest>.*))?$/u.exec(
+        input?.trim() ?? "",
+      )?.groups ?? {};
+    // The scheme is case-insensitive (RFC 9110, section 11.1)
+    const type = Authorization.#types.get(scheme.toLowerCase());
+
+    if (typeof type === "undefined") {
       return null;
     }
 
-    const [type, credentials = ""] = input.trim().split(" ");
-
-    return Authorization.isValidType(type)
-      ? new Authorization({ type, credentials })
-      : null;
+    const credentials = rest.trim();
+    return new Authorization({
+      type,
+      credentials: credentials === "" ? null : credentials,
+    });
   }
 
+  /** The supported schemes by their lowercase names */
+  static readonly #types: ReadonlyMap<string, IAuthenticationType> = new Map(
+    (
+      [
+        "AWS4-HMAC-SHA256",
+        "Basic",
+        "Bearer",
+        "Digest",
+        "HOBA",
+        "Mutual",
+        "OAuth",
+        "SCRAM-SHA-1",
+        "SCRAM-SHA-256",
+        "vapid",
+      ] as const
+    ).map((type) => [type.toLowerCase(), type]),
+  );
+
+  /** Whether the input is a supported scheme, in its usual casing */
   public static isValidType(input?: string): input is IAuthenticationType {
-    switch (input) {
-      case "Basic":
-      case "Bearer":
-      case "Digest":
-      case "HOBA":
-      case "Mutual":
-      case "OAuth":
-      case "SCRAM-SHA-1":
-      case "SCRAM-SHA-256":
-      case "vapid":
-      case "AWS4-HMAC-SHA256":
-        return true;
-      default:
-        return false;
-    }
+    return (
+      typeof input === "string" &&
+      Authorization.#types.get(input.toLowerCase()) === input
+    );
   }
 }
 
