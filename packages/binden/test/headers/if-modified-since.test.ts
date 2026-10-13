@@ -23,6 +23,8 @@ suite("If-Modified-Since", () => {
     deepStrictEqual(IfModifiedSince.fromString(), null);
     deepStrictEqual(IfModifiedSince.fromString(""), null);
     deepStrictEqual(IfModifiedSince.fromString("notadate"), null);
+    // Only an HTTP-date (`Date.parse()` reads "3000" as a year)
+    deepStrictEqual(IfModifiedSince.fromString("3000"), null);
     const input = "    Wed, 21 Oct 2015 07:28:00 GMT   ";
     const parsed = IfModifiedSince.fromString(input);
     ok(parsed);

@@ -1,3 +1,5 @@
+import { parseHttpDate } from "./http-date.js";
+
 export interface IIfModifiedSince {
   readonly date: Date;
 }
@@ -17,14 +19,10 @@ export class IfModifiedSince implements IIfModifiedSince {
     return this.#date.toUTCString();
   }
 
+  /** An HTTP-date, or `null` (a recipient ignores any other value) */
   public static fromString(input?: string): IfModifiedSince | null {
-    if (typeof input !== "string" || !input) {
-      return null;
-    }
-
-    const date = new Date(input.trim());
-
-    return isNaN(date.getTime()) ? null : new IfModifiedSince({ date });
+    const date = parseHttpDate(input?.trim() ?? "");
+    return date ? new IfModifiedSince({ date }) : null;
   }
 }
 
