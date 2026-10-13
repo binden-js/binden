@@ -30,15 +30,6 @@ export class Compression extends Middleware {
 
     const { response } = context;
 
-    const raw = response.getHeader("Content-Encoding");
-
-    response.setHeader(
-      "Content-Encoding",
-      typeof raw === "undefined"
-        ? format
-        : [format, ...(Array.isArray(raw) ? raw : [`${raw}`])],
-    );
-
     const compress =
       format === "br"
         ? createBrotliCompress()
@@ -46,7 +37,27 @@ export class Compression extends Middleware {
           ? createDeflate()
           : createGzip();
 
-    compress.pipe(response);
+    // Compression starts with the first body chunk written through this middleware,
+    // so responses written past it (e.g. by the error handler) stay unencoded, and
+    // a `Content-Length` of the uncompressed body (e.g. from `sendFile`) is dropped.
+    let active: boolean | null = null;
+    const activate = (): boolean => {
+      if (active === null) {
+        active = !response.headersSent;
+        if (active) {
+          const raw = response.getHeader("Content-Encoding");
+          response.setHeader(
+            "Content-Encoding",
+            typeof raw === "undefined"
+              ? format
+              : [...(Array.isArray(raw) ? raw : [`${raw}`]), format],
+          );
+          response.removeHeader("Content-Length");
+          compress.pipe(response);
+        }
+      }
+      return active;
+    };
 
     const proxyResponse = new Proxy(response, {
       get(_r, p: string): unknown {
@@ -56,7 +67,11 @@ export class Compression extends Middleware {
             encoding: BufferEncoding,
             cb?: (error?: Error | null) => void,
           ): void {
-            compress.write(data, encoding, cb);
+            if (activate()) {
+              compress.write(data, encoding, cb);
+            } else {
+              response.write(data, encoding, cb);
+            }
           };
         } else if (p === "end") {
           return function end(
@@ -64,7 +79,11 @@ export class Compression extends Middleware {
             encoding: BufferEncoding,
             cb?: () => void,
           ): void {
-            compress.end(data, encoding, cb);
+            if (activate()) {
+              compress.end(data, encoding, cb);
+            } else {
+              response.end(data, encoding, cb);
+            }
           };
         }
 

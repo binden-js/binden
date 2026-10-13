@@ -1,5 +1,9 @@
 /* eslint-disable init-declarations, sort-imports */
 import { deepStrictEqual, ok } from "node:assert";
+import { randomBytes, randomUUID } from "node:crypto";
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
@@ -9,7 +13,7 @@ import {
   inflate as inflateAsync,
 } from "node:zlib";
 
-import { Binden, Context, Middleware } from "binden";
+import { Binden, BindenError, Context, Middleware } from "binden";
 import { request } from "undici";
 
 import {
@@ -284,6 +288,63 @@ describe("Compression", () => {
     const actual = (await inflate(br)).toString();
 
     deepStrictEqual(actual, expected);
+  });
+
+  it(
+    "sendFile (drops the `Content-Length` of the uncompressed file)",
+    { timeout: 10_000 },
+    async () => {
+      const expected = randomBytes(1024).toString("hex");
+      const path = join(tmpdir(), `binden-compression-${randomUUID()}.txt`);
+      await writeFile(path, expected);
+
+      try {
+        app.use(new Compression({ format: "gzip" }), (ct: Context) =>
+          ct.sendFile(path),
+        );
+
+        const response = await request(url);
+
+        deepStrictEqual(response.statusCode, 200);
+        deepStrictEqual(response.headers["content-encoding"], "gzip");
+        ok(typeof response.headers["content-length"] === "undefined");
+
+        const body = await response.body.arrayBuffer();
+        const actual = (await gunzip(Buffer.from(body))).toString();
+
+        deepStrictEqual(actual, expected);
+      } finally {
+        await rm(path);
+      }
+    },
+  );
+
+  it("does not encode error responses of the following middlewares", async () => {
+    const message = "invalid request";
+    app.use(new Compression({ format: "gzip" }), () => {
+      throw new BindenError(400, { expose: true, message });
+    });
+
+    const response = await request(url);
+
+    deepStrictEqual(response.statusCode, 400);
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    deepStrictEqual(await response.body.text(), message);
+  });
+
+  it("does not compress when the headers have already been sent", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "gzip" }), (ct: Context) => {
+      ct.response.flushHeaders();
+      ct.response.write("Hello ");
+      return ct.send("World");
+    });
+
+    const response = await request(url);
+
+    deepStrictEqual(response.statusCode, 200);
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    deepStrictEqual(await response.body.text(), expected);
   });
 
   afterEach(async () => {
