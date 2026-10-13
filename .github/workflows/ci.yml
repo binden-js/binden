@@ -170,8 +170,9 @@ jobs:
   pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-    # The documentation artifact is uploaded by the `lint` job.
-    needs: [release]
+    # The documentation artifact is uploaded by the `lint` job. The docs of `main` are
+    # deployed even when no release is due (or the release fails).
+    needs: [lint, test, windows]
 
     runs-on: ubuntu-latest
 
