@@ -35,6 +35,26 @@ Packages consume each other through the compiled `dist/` (`@binden/body`, `@bind
 `@binden/multipart` import `binden`, which imports `@binden/logger`): run `npm run build` after
 changing a package that others depend on.
 
+## Dependencies
+
+Dependencies are kept at their latest versions, except:
+
+- **TypeScript 7.** The repository is built with TypeScript 6: typescript-eslint and TypeDoc support
+  TypeScript up to 6.0 and need the JavaScript API of the compiler, which the native TypeScript 7
+  does not provide yet. The packages work with TypeScript 7: `npm run consumer:check` type checks
+  the packed packages and the README examples with it too.
+- **`@types/node` 26.** The type definitions follow the oldest supported Node.js (24), so that an API
+  added later cannot be used by accident (the tests run on Node.js 24 and 26).
+- **`conventional-changelog-conventionalcommits` 10.** semantic-release 25 generates the release
+  notes with `conventional-changelog-writer` 8, and the version 10 of the preset requires the
+  version 9 of the writer (the release fails).
+
+The published packages have no known vulnerabilities (`npm audit --omit=dev`). The advisories of the
+development dependencies come from the release tooling: `braces` (through `micromatch`, used by
+semantic-release) has no fixed version, and the other ones are bundled with npm 11.21.0, the latest
+version that `@semantic-release/npm` supports (bundled dependencies cannot be updated separately).
+They do not affect the published packages.
+
 ## Known issues
 
 - With `@types/node` 26 and `skipLibCheck: false`, TypeScript reports
@@ -42,7 +62,8 @@ changing a package that others depend on.
   [`thread-stream`](https://github.com/pinojs/thread-stream), which `pino` (used by
   `@binden/logger`) depends on. Enable `skipLibCheck` until `thread-stream` is updated
   ([pinojs/thread-stream#228](https://github.com/pinojs/thread-stream/issues/228)).
-  `npm run consumer:check` type checks the packed packages with `@types/node` 24 (strict) and 26.
+  `npm run consumer:check` type checks the packed packages with `@types/node` 24 (strict) and 26
+  (with `skipLibCheck`).
 
 ## Releases
 

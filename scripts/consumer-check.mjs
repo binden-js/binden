@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 // Checks the packed workspaces the way a consumer uses them: the tarballs are
-// installed into a fresh project, which is type checked (with `@types/node` 24
-// and 26) and then run as ESM against a real server. The TypeScript examples of
-// the READMEs are type checked against the same installation.
+// installed into a fresh project, which is type checked and then run as ESM
+// against a real server. The TypeScript examples of the READMEs are type checked
+// against the same installation. Each check runs with:
 //
-// `@types/node` 26 is checked with `skipLibCheck`: the types of `thread-stream`
-// (pulled in by `pino`, used by `@binden/logger`) still refer to
-// `worker_threads.TransferListItem`, which `@types/node` 26 removed.
+// - the TypeScript of this repository and `@types/node` 24;
+// - the same TypeScript and `@types/node` 26, with `skipLibCheck`: the types of
+//   `thread-stream` (pulled in by `pino`, used by `@binden/logger`) still refer to
+//   `worker_threads.TransferListItem`, which `@types/node` 26 removed;
+// - TypeScript 7 (the native compiler, which the tooling of this repository does
+//   not support yet) and `@types/node` 24.
 import {
   mkdirSync,
   mkdtempSync,
@@ -174,10 +177,18 @@ try {
   writeFileSync(join(dir, "consumer.ts"), consumer);
   const examples = writeExamples();
 
-  for (const [types, skipLibCheck] of [
-    ["24", false],
-    ["26", true],
+  for (const { typescript, types, skipLibCheck } of [
+    {
+      typescript: devDependencies.typescript,
+      types: "24",
+      skipLibCheck: false,
+    },
+    { typescript: devDependencies.typescript, types: "26", skipLibCheck: true },
+    { typescript: "7", types: "24", skipLibCheck: false },
   ]) {
+    process.stderr.write(
+      `[consumer] typescript@${typescript}, @types/node@${types}\n`,
+    );
     run("npm", [
       "install",
       // Every package gets its own node_modules: an import of a dependency that
@@ -187,7 +198,7 @@ try {
       "--no-fund",
       "--loglevel=warn",
       ...tarballs,
-      `typescript@${devDependencies.typescript}`,
+      `typescript@${typescript}`,
       `@types/node@${types}`,
       ...Object.entries(exampleDependencies).map(
         ([name, version]) => `${name}@${version}`,
