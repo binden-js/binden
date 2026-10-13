@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert";
+import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
 
 import { Cookie } from "../../index.js";
@@ -159,5 +159,65 @@ suite("Cookie", () => {
     deepStrictEqual(cookie2.http_only, two.http_only);
     deepStrictEqual(cookie2.same_site, two.same_site);
     deepStrictEqual(cookie2.toString(), two.toString());
+  });
+
+  test("constructor (invalid attributes)", () => {
+    const invalid: ConstructorParameters<typeof Cookie>[0][] = [
+      { key: "", value: "v" },
+      { key: "a=b; Max-Age=0; x", value: "v" },
+      { key: "a b", value: "v" },
+      { key: "k", value: "x; Domain=evil.example; Path=/admin" },
+      { key: "k", value: "a\r\nSet-Cookie: x=y" },
+      { key: "k", value: "a,b" },
+      { key: "k", value: `a"b` },
+      { key: "k", value: "v", path: "/; Domain=evil" },
+      { key: "k", value: "v", domain: "good.example; SameSite=None" },
+      { key: "k", value: "v", domain: "a b" },
+      { key: "k", value: "v", max_age: 1.5 },
+      { key: "k", value: "v", max_age: Number.NaN },
+      { key: "k", value: "v", max_age: Number.POSITIVE_INFINITY },
+      { key: "k", value: "v", expires: new Date("invalid") },
+      {
+        key: "k",
+        value: "v",
+        same_site: "Lax; Partitioned" as unknown as "Lax",
+      },
+    ];
+    for (const options of invalid) {
+      throws(() => new Cookie(options), TypeError, JSON.stringify(options));
+    }
+
+    // Valid values that look unusual
+    const cookie = new Cookie({
+      key: "token",
+      value: "abc==",
+      max_age: 0,
+      domain: ".example.com",
+      path: "/a b",
+    });
+    deepStrictEqual(
+      cookie.toString(),
+      "token=abc==; Max-Age=0; Domain=.example.com; Path=/a b; HttpOnly; SameSite=Lax",
+    );
+    deepStrictEqual(
+      new Cookie({ key: "q", value: `"quoted"` }).value,
+      `"quoted"`,
+    );
+  });
+
+  test(".fromString() (pairs, `=` in values and invalid cookies)", () => {
+    const parsed = Cookie.fromString(
+      `a=1;b=2; token=abc==; quoted="q"; bad key=3; empty=; =4; c=x\u0001; a=5`,
+    );
+
+    deepStrictEqual(
+      parsed.map(({ key, value }) => [key, value]),
+      [
+        ["a", "1"],
+        ["b", "2"],
+        ["token", "abc=="],
+        ["quoted", "q"],
+      ],
+    );
   });
 });

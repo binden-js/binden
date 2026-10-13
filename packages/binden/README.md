@@ -597,7 +597,7 @@ const type = ContentType.fromString(request.headers["content-type"]);
 const { content_type } = request;
 ```
 
-- [Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cookie)
+- [Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cookie) - `new Cookie()` throws a `TypeError` for a name, value or attribute that would change the `Set-Cookie` header (e.g. a value with `;`); `Cookie.fromString()` skips such cookies
 
 ```typescript
 import { Cookie } from "binden";

@@ -10,6 +10,22 @@ export interface ICookie {
   readonly same_site?: "Lax" | "None" | "Strict";
 }
 
+/** A token (RFC 9110, section 5.6.2) */
+const token = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+
+/** cookie-octets, maybe in double quotes (RFC 6265, section 4.1.1) */
+const cookieValue =
+  /^(?:"[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*"|[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*)$/u;
+
+/** Any character but the controls and `;` (RFC 6265, section 4.1.1) */
+const attributeValue = /^[\x20-\x3A\x3C-\x7E]*$/u;
+
+/** Labels of letters, digits and hyphens (a leading dot is allowed) */
+const domainValue =
+  /^\.?[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$/u;
+
+const sameSite: ReadonlySet<string> = new Set(["Lax", "None", "Strict"]);
+
 export class Cookie implements ICookie {
   readonly #key: string;
   readonly #value: string;
@@ -32,6 +48,23 @@ export class Cookie implements ICookie {
     http_only = true,
     same_site = "Lax",
   }: ICookie) {
+    // An invalid name or attribute could add attributes to `Set-Cookie`
+    if (!token.test(key)) {
+      throw new TypeError(`Invalid cookie name: ${key}`);
+    } else if (!cookieValue.test(value)) {
+      throw new TypeError("Invalid cookie value");
+    } else if (max_age !== null && !Number.isSafeInteger(max_age)) {
+      throw new TypeError(`Invalid cookie Max-Age: ${max_age}`);
+    } else if (expires instanceof Date && Number.isNaN(expires.getTime())) {
+      throw new TypeError("Invalid cookie Expires");
+    } else if (domain !== null && !domainValue.test(domain)) {
+      throw new TypeError(`Invalid cookie Domain: ${domain}`);
+    } else if (path !== null && !attributeValue.test(path)) {
+      throw new TypeError(`Invalid cookie Path: ${path}`);
+    } else if (!sameSite.has(same_site)) {
+      throw new TypeError(`Invalid cookie SameSite: ${same_site}`);
+    }
+
     this.#key = key;
     this.#value = value;
     this.#max_age = max_age;
@@ -105,26 +138,24 @@ export class Cookie implements ICookie {
       return [];
     }
 
-    const cookies = input
-      .trim()
-      .split("; ")
-      .map((e) => e.trim())
-      .filter((e) => e);
-
     const output: Cookie[] = [];
 
-    for (const cookie of cookies) {
-      const [key, rawValue = ""] = cookie.split("=", 2).map((a) => a.trim());
-
+    for (const pair of input.split(";")) {
+      // The value may contain `=` (e.g. base64)
+      const index = pair.indexOf("=");
+      const key = pair.slice(0, Math.max(index, 0)).trim();
+      const raw = pair.slice(index + 1).trim();
       const value =
-        rawValue.startsWith(`"`) && rawValue.endsWith(`"`)
-          ? rawValue.length > 2
-            ? rawValue.substring(1, rawValue.length - 1)
-            : ""
-          : rawValue;
+        raw.length >= 2 && raw.startsWith(`"`) && raw.endsWith(`"`)
+          ? raw.slice(1, -1)
+          : raw;
 
-      if (key && value && !output.find((c) => c.key === key)) {
-        output.push(new Cookie({ key, value }));
+      if (index > 0 && value && !output.some((c) => c.key === key)) {
+        try {
+          output.push(new Cookie({ key, value }));
+        } catch {
+          // Not a valid cookie: skipped
+        }
       }
     }
 
