@@ -125,8 +125,9 @@ export class Compression extends Middleware {
     }) as typeof response.write;
 
     // As for an uncompressed response, `writableEnded` is set by `end()`, the
-    // `end()` callback runs once the response has finished, and a second
-    // `end()` does nothing.
+    // `end()` callback runs once the response has finished (or, when it has
+    // already finished, with `ERR_STREAM_ALREADY_FINISHED`), and a second
+    // `end()` writes nothing.
     Object.defineProperty(response, "writableEnded", {
       configurable: true,
       get: () => ended,
@@ -135,9 +136,13 @@ export class Compression extends Middleware {
     response.end = (...args: unknown[]): typeof response => {
       const callback = args.find((arg) => typeof arg === "function");
       if (typeof callback === "function") {
-        response.once("finish", () => {
-          (callback as () => void)();
-        });
+        if (response.writableFinished) {
+          end(callback);
+        } else {
+          response.once("finish", () => {
+            (callback as () => void)();
+          });
+        }
       }
       if (!ended) {
         ended = true;

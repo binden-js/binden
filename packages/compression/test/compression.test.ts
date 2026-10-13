@@ -686,32 +686,48 @@ describe("Compression", () => {
   });
 
   it(
-    "does not resolve `send()` when the client goes away",
+    "rejects `send()` when the client goes away",
     { timeout: 10_000 },
     async () => {
-      let resolved = false;
-      let closed: Promise<unknown> = Promise.resolve();
-      app.use(new Compression({ format: "gzip" }), (ct: Context) => {
-        closed = once(ct.response, "close");
-        ct.send(randomBytes(4 * 1024 * 1024)).then(
-          () => {
-            resolved = true;
-          },
-          () => {
-            // A rejection is fine as well
-          },
-        );
-        ct.done = true;
+      let settle: (code: unknown) => void;
+      const settled = new Promise<unknown>((resolve) => {
+        settle = resolve;
+      });
+      app.use(new Compression({ format: "gzip" }), async (ct: Context) => {
+        try {
+          await ct.send(randomBytes(16 * 1024 * 1024));
+          settle(null);
+        } catch (error: unknown) {
+          settle((error as { code?: unknown }).code);
+        }
       });
 
       const response = await request(url);
       response.body.destroy();
-      await closed;
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 50);
+
+      deepStrictEqual(await settled, "ERR_STREAM_PREMATURE_CLOSE");
+    },
+  );
+
+  it(
+    "calls an `end()` callback after the response has finished",
+    { timeout: 5000 },
+    async () => {
+      const code = new Promise<unknown>((resolve) => {
+        app.use(new Compression({ format: "gzip" }), async (ct: Context) => {
+          await ct.send("ok");
+          // As Node.js, with `ERR_STREAM_ALREADY_FINISHED`
+          ct.response.end((error?: (Error & { code?: unknown }) | null) => {
+            resolve(error?.code);
+          });
+        });
       });
 
-      ok(!resolved);
+      const response = await request(url);
+      const body = await response.body.arrayBuffer();
+
+      deepStrictEqual((await gunzip(Buffer.from(body))).toString(), "ok");
+      deepStrictEqual(await code, "ERR_STREAM_ALREADY_FINISHED");
     },
   );
 
