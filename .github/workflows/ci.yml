@@ -55,6 +55,9 @@ jobs:
       - name: Pack (test)
         run: npm run pack:check
 
+      - name: Consumer check (packed packages, TypeScript and ESM)
+        run: npm run consumer:check
+
       - name: Docs
         run: npm run docs:build
 

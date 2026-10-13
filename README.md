@@ -34,6 +34,14 @@ Packages consume each other through the compiled `dist/` (`@binden/body`, `@bind
 `@binden/multipart` import `binden`, which imports `@binden/logger`): run `npm run build` after
 changing a package that others depend on.
 
+## Known issues
+
+- With `@types/node` 26 and `skipLibCheck: false`, TypeScript reports
+  `Namespace "worker_threads" has no exported member "TransferListItem"` in the types of
+  [`thread-stream`](https://github.com/pinojs/thread-stream), which `pino` (used by
+  `@binden/logger`) depends on. Enable `skipLibCheck` until `thread-stream` is updated.
+  `npm run consumer:check` type checks the packed packages with `@types/node` 24 (strict) and 26.
+
 ## Releases
 
 Releases are fully automated by [semantic-release](https://github.com/semantic-release/semantic-release)
