@@ -203,8 +203,7 @@ try {
     ]);
     run(process.execPath, [join(dir, "dist/consumer.js")]);
 
-    // Each example is a module (`moduleDetection`), and the parameters of their
-    // callbacks may be untyped (`noImplicitAny`)
+    // Each example is a module (`moduleDetection`), checked as strictly as the consumer
     writeFileSync(
       join(examples, "tsconfig.json"),
       `${JSON.stringify({
@@ -212,7 +211,6 @@ try {
           module: "nodenext",
           target: "es2022",
           strict: true,
-          noImplicitAny: false,
           moduleDetection: "force",
           noEmit: true,
           skipLibCheck,
