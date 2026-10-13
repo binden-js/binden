@@ -12,6 +12,12 @@ npm install binden
 
 ### Binden
 
+`new Binden(options)` takes the following options:
+
+- `auto_head` (default `true`) - a `guarded` router that handles `GET` handles `HEAD` as well
+- `error_handler` - replaces the default reply to an error thrown by a middleware. It may be `async`: it is awaited, and the default reply is sent when it has not started a response. When it fails, the connection is closed.
+- `logger` - see [Logging](#logging)
+
 - `.use()` - Add a `Middleware/Router` to the stack
 
 ```typescript

@@ -401,6 +401,79 @@ suite("Binden", () => {
     }
   });
 
+  test("awaits an async `error_handler`", async () => {
+    const logged = await loggedApp({
+      error_handler: async (context: Context): Promise<void> => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 20);
+        });
+        context.response.status(503).end("later");
+      },
+    });
+    try {
+      logged.app.use(() => {
+        throw new BindenError(400);
+      });
+
+      const response = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, 503);
+      deepStrictEqual(await response.text(), "later");
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("replies by default when the `error_handler` does not", async () => {
+    const logged = await loggedApp({
+      error_handler: (): void => {
+        // Only observes the error
+      },
+    });
+    try {
+      logged.app.use(() => {
+        throw new BindenError(418, { expose: true, message: "teapot" });
+      });
+
+      const response = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      deepStrictEqual(response.status, 418);
+      deepStrictEqual(await response.text(), "teapot");
+      ok(logged.output().includes("has not replied"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("closes the connection when an async error handler fails", async () => {
+    const logged = await loggedApp({
+      error_handler: async (): Promise<void> => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 20);
+        });
+        throw new Error("A failing error handler");
+      },
+    });
+    try {
+      logged.app.use(() => {
+        throw new BindenError(400);
+      });
+
+      // The connection is closed (not left open until the deadline)
+      await rejects(
+        fetch(logged.url, { signal: AbortSignal.timeout(5000) }),
+        (error: Error) => error.name !== "AbortError",
+      );
+      ok(logged.output().includes("The error handler failed"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
   test("closes the connection when the error handler fails", async () => {
     const logged = await loggedApp({
       error_handler: (): never => {

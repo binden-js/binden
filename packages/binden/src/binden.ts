@@ -21,7 +21,8 @@ type ILogLevel = "debug" | "error" | "trace" | "warn";
 
 export interface IBindenOptions {
   auto_head?: boolean;
-  error_handler?: (context: Context, error: unknown) => void;
+  /** Replaces the default reply to an error, unless it does not reply itself */
+  error_handler?: (context: Context, error: unknown) => Promise<void> | void;
   /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */
   logger?: Logger;
 }
@@ -29,7 +30,8 @@ export interface IBindenOptions {
 export class Binden {
   readonly #stack: IStack[];
   readonly #auto_head: boolean;
-  readonly #error_handler: ((context: Context, error: unknown) => void) | null;
+  readonly #error_handler:
+    ((context: Context, error: unknown) => Promise<void> | void) | null;
   readonly #logger: Logger;
 
   public constructor({
@@ -183,9 +185,7 @@ export class Binden {
   ): void {
     const context = new Context({ request, response, logger: this.#logger });
     this.#handle(context)
-      .catch((error: unknown) => {
-        this.#errorHandler(context, error);
-      })
+      .catch(async (error: unknown) => this.#errorHandler(context, error))
       .catch((error: unknown) => {
         // The error handler failed (e.g. a custom `error_handler` threw): the
         // response cannot be completed, but the process must not crash
@@ -259,19 +259,33 @@ export class Binden {
     }
   }
 
-  /** Default error hanlder (uses the provided `error_handler`, if any) */
-  #errorHandler(context: Context, error: unknown): void {
+  /** Error handler: the provided `error_handler` (awaited), then the default reply if needed */
+  async #errorHandler(context: Context, error: unknown): Promise<void> {
+    if (this.#error_handler) {
+      const base = { context, error };
+      const message = "Passing error to the provided `error_handler`";
+      Binden.#log(context, "trace", message, base);
+
+      await this.#error_handler(context, error);
+
+      if (context.response.started) {
+        return;
+      }
+      const ignored = "The provided `error_handler` has not replied";
+      Binden.#log(context, "debug", ignored, base);
+    }
+    Binden.#defaultErrorHandler(context, error);
+  }
+
+  /** Default reply to an error */
+  static #defaultErrorHandler(context: Context, error: unknown): void {
     const { response, request } = context;
     // Only the context and the error, whose serializers keep the input out of the logs
     const base = { context, error };
     const log = (level: ILogLevel, message: string): void => {
       Binden.#log(context, level, message, base);
     };
-    if (this.#error_handler) {
-      log("trace", "Passing error to the provided `error_handler`");
-
-      this.#error_handler(context, error);
-    } else if (response.writableEnded) {
+    if (response.writableEnded) {
       log("debug", "`.end()` has been called. Destroying the socket");
 
       request.destroy();
