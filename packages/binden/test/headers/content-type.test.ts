@@ -99,4 +99,64 @@ suite("ContentType", () => {
     deepStrictEqual(ContentType.fromString(";"), null);
     deepStrictEqual(ContentType.fromString(`  multipart/form-data   `), null);
   });
+
+  test(".fromString() (parameters, RFC 9110, section 5.6.6)", () => {
+    const parse = (
+      input: string,
+    ): [string, string | null, string | null] | null => {
+      const parsed = ContentType.fromString(input);
+      return parsed ? [parsed.type, parsed.charset, parsed.boundary] : null;
+    };
+    const form = "multipart/form-data";
+
+    // In any position, with case-insensitive names
+    deepStrictEqual(parse(`${form}; charset=utf-8; boundary=xyz`), [
+      form,
+      null,
+      "xyz",
+    ]);
+    deepStrictEqual(parse(`${form}; BOUNDARY=xyz`), [form, null, "xyz"]);
+    deepStrictEqual(parse("text/plain; format=flowed; charset=UTF-8"), [
+      "text/plain",
+      "utf-8",
+      null,
+    ]);
+    // Quoted strings (RFC 9110, section 5.6.4)
+    deepStrictEqual(parse(`${form}; boundary="----=_Part_0"`), [
+      form,
+      null,
+      "----=_Part_0",
+    ]);
+    deepStrictEqual(parse(`${form}; boundary="a;b"; charset=x`), [
+      form,
+      null,
+      "a;b",
+    ]);
+    deepStrictEqual(parse(`${form}; boundary="a\\"b"`), [form, null, `a"b`]);
+    // The first of a repeated parameter
+    deepStrictEqual(parse(`${form}; boundary=one; boundary=two`), [
+      form,
+      null,
+      "one",
+    ]);
+    // No value
+    deepStrictEqual(parse(`${form}; boundary=; charset=utf-8`), null);
+    deepStrictEqual(parse(`${form}; boundary`), null);
+  });
+
+  test(".toString() (quotes a boundary that is not a token)", () => {
+    const type = "multipart/form-data";
+    deepStrictEqual(
+      new ContentType({ type, boundary: "----=_Part_0" }).toString(),
+      `${type}; boundary="----=_Part_0"`,
+    );
+    deepStrictEqual(
+      new ContentType({ type, boundary: `a"b` }).toString(),
+      `${type}; boundary="a\\"b"`,
+    );
+    deepStrictEqual(
+      new ContentType({ type, boundary: "token" }).toString(),
+      `${type}; boundary=token`,
+    );
+  });
 });

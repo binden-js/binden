@@ -178,6 +178,35 @@ describe("Multipart", () => {
     deepEqual(data, msg);
   });
 
+  it("Parses a `boundary` that comes after another parameter", async () => {
+    const boundary = "binden-boundary";
+    const body = [
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="field"`,
+      "",
+      "value",
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+    let field: unknown = null;
+    app.use(multipart(), async (context: Context): Promise<void> => {
+      const { body: parsed } = context.request;
+      field = parsed instanceof FormData ? parsed.get("field") : null;
+      await context.send();
+    });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; charset=utf-8; boundary=${boundary}`,
+      },
+      body,
+    });
+
+    deepEqual(response.status, 200);
+    deepEqual(field, "value");
+  });
+
   it("Replies with 415 error when request body is not a valid FormData", async () => {
     const ct = "multipart/form-data; boundary=----formdata-undici-064882379910";
 

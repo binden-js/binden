@@ -37,49 +37,78 @@ export class ContentType implements IContentType {
 
   public toString(): string {
     return typeof this.boundary === "string"
-      ? `${this.type}; boundary=${this.boundary}`
+      ? `${this.type}; boundary=${ContentType.#quote(this.boundary)}`
       : typeof this.charset === "string" && this.charset
         ? `${this.type}; charset=${this.charset}`
         : this.type;
   }
 
+  /** `type/subtype *( OWS ";" OWS parameter )` (RFC 9110, section 8.3.1) */
   public static fromString(input?: string): ContentType | null {
-    if (typeof input === "undefined" || input.length === 0) {
+    const [rawType = "", ...rest] = ContentType.#split(input ?? "");
+    const type = rawType.trim().toLowerCase();
+
+    if (!type) {
       return null;
     }
 
-    const [rawType, extra = ""] = input.split(";").map((e) => e.trim());
-
-    if (!rawType) {
-      return null;
+    // Parameter names are case-insensitive (RFC 9110, section 5.6.6)
+    const parameters = new Map<string, string>();
+    for (const parameter of rest) {
+      const index = parameter.indexOf("=");
+      const name = parameter.slice(0, Math.max(index, 0)).trim().toLowerCase();
+      if (index > 0 && !parameters.has(name)) {
+        const value = parameter.slice(index + 1).trim();
+        parameters.set(name, ContentType.#unquote(value));
+      }
     }
-
-    const type = rawType.toLowerCase();
-
-    const [key = "", boundary = ""] = extra
-      .split("=")
-      .map((e) => e.trim())
-      .filter((e) => e);
 
     if (type === "multipart/form-data") {
-      return key.toLowerCase() !== "boundary" || !boundary
-        ? null
-        : new ContentType({ type, boundary });
+      const boundary = parameters.get("boundary") ?? "";
+      return boundary ? new ContentType({ type, boundary }) : null;
     }
 
-    if (key.toLowerCase() === "charset") {
-      return new ContentType({
-        type,
-        charset:
-          boundary.startsWith(`"`) && boundary.endsWith(`"`)
-            ? boundary.length > 2
-              ? boundary.substring(1, boundary.length - 1).toLowerCase()
-              : ""
-            : boundary.toLowerCase(),
-      });
-    }
+    const charset = parameters.get("charset")?.toLowerCase() ?? null;
+    return new ContentType({ type, charset });
+  }
 
-    return new ContentType({ type });
+  /** Splits on the `;` that are not in a quoted string */
+  static #split(input: string): string[] {
+    const parts: string[] = [];
+    let part = "";
+    let quoted = false;
+    let escaped = false;
+    for (const char of input) {
+      if (char === ";" && !quoted) {
+        parts.push(part);
+        part = "";
+      } else {
+        part += char;
+        if (escaped) {
+          escaped = false;
+        } else if (quoted && char === "\\") {
+          escaped = true;
+        } else if (char === `"`) {
+          quoted = !quoted;
+        }
+      }
+    }
+    parts.push(part);
+    return parts;
+  }
+
+  /** The value of a quoted string (RFC 9110, section 5.6.4) */
+  static #unquote(value: string): string {
+    return value.length >= 2 && value.startsWith(`"`) && value.endsWith(`"`)
+      ? value.slice(1, -1).replaceAll(/\\(?<char>.)/gu, "$<char>")
+      : value;
+  }
+
+  /** A token as is, anything else as a quoted string */
+  static #quote(value: string): string {
+    return /^[!#$%&'*+.^_`|~\w-]+$/u.test(value)
+      ? value
+      : `"${value.replaceAll(/(?<char>["\\])/gu, "\\$<char>")}"`;
   }
 }
 
