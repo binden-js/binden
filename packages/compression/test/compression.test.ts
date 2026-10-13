@@ -310,6 +310,19 @@ describe("Compression", () => {
     deepStrictEqual(actual, expected);
   });
 
+  it("auto (a weight that is not a qvalue drops its coding)", async () => {
+    const expected = "Hello World";
+    app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));
+
+    const headers = { "Accept-Encoding": "br;q=1, gzip;q=2" };
+    const response = await request(url, { headers });
+
+    deepStrictEqual(response.headers["content-encoding"], "br");
+
+    const body = await response.body.arrayBuffer();
+    deepStrictEqual((await brotliDecompress(body)).toString(), expected);
+  });
+
   it("auto (case-insensitive codings)", async () => {
     const expected = "Hello World";
     app.use(new Compression({ format: "auto" }), new TestMiddleware(expected));

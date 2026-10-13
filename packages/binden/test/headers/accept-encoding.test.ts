@@ -72,4 +72,30 @@ suite("AcceptEncoding", () => {
       ["deflate;q=1", "x-gzip", "gzip;q=0.5", "br;q=0.4"],
     );
   });
+
+  test("AcceptEncoding.fromString() (qvalues, RFC 9110, section 12.4.2)", () => {
+    const parse = (input: string): string[] =>
+      AcceptEncoding.fromString(input).map((e) => e.toString());
+
+    deepStrictEqual(parse("gzip;q=0.123, br;q=1.000, deflate;q=0."), [
+      "br;q=1",
+      "gzip;q=0.123",
+      "deflate;q=0",
+    ]);
+    // A weight out of 0..1 (or with more than 3 decimals) drops the element
+    deepStrictEqual(parse("br;q=1, gzip;q=2"), ["br;q=1"]);
+    for (const q of [
+      "-1",
+      "Infinity",
+      "0x1",
+      "1e0",
+      "0.12345",
+      "1.5",
+      "1.001",
+      "",
+      "abc",
+    ]) {
+      deepStrictEqual(parse(`gzip;q=${q}`), [], q);
+    }
+  });
 });

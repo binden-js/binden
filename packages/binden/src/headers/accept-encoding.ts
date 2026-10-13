@@ -50,22 +50,27 @@ export class AcceptEncoding implements IAcceptEncoding {
     // Content codings and the `q` parameter are case-insensitive (RFC 9110)
     return input
       .split(",")
-      .map<[string, number]>((part) => {
+      .map<[string, number | null] | null>((part) => {
         const [coding = "", ...params] = part
           .split(";")
           .map((param) => param.trim());
         const q = params
           .map((param) => /^q\s*=\s*(?<value>.*)$/iu.exec(param)?.groups?.value)
           .find((value) => typeof value === "string");
-        return [coding.toLowerCase(), Number(q?.trim())];
-      })
-      .filter((e): e is [IAcceptEncodings, number] => encodings.includes(e[0]))
-      .map(([encoding, q_value]) => {
-        if (isNaN(q_value)) {
-          return new AcceptEncoding({ encoding });
+        if (typeof q === "undefined") {
+          return [coding.toLowerCase(), null];
         }
-        return new AcceptEncoding({ encoding, q_value });
+        // A weight is a qvalue (RFC 9110, section 12.4.2), or the element is invalid
+        const value = q.trim();
+        return /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u.test(value)
+          ? [coding.toLowerCase(), Number(value)]
+          : null;
       })
+      .filter(
+        (e): e is [IAcceptEncodings, number | null] =>
+          e !== null && encodings.includes(e[0]),
+      )
+      .map(([encoding, q_value]) => new AcceptEncoding({ encoding, q_value }))
       .sort(({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1));
   }
 }
