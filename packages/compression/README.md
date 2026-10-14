@@ -26,8 +26,8 @@ app.createServer().listen(8080);
 other.createServer().listen(8081);
 ```
 
-The compression replaces `writeHead()`, `write()`, `end()`, `flush()` and `send()` on the response of
-each request, so that every writer (the following middlewares, `sendFile()`, the error handler, a
+The compression replaces `writeHead()`, `write()`, `end()` and `flush()` on the response of each
+request, so that every writer (the following middlewares, `send()`, `sendFile()`, the error handler, a
 piped stream) goes through it. It is installed once per response: a second compression on the
 same response does nothing.
 
@@ -141,8 +141,8 @@ negotiates).
   decision as the `200` that it stands for: the same `ETag` and `Vary`, without `Content-Length` and
   `Accept-Ranges` when the `200` is compressed, but without `Content-Encoding` (a cache that updates
   its stored response with it could mislabel an uncompressed one). The `threshold` applies to it by
-  the length of the body given to `send()`; without one (e.g. `sendFile()`), as to a body without a
-  length;
+  its `Content-Length`, the length of that `200` (binden keeps it on the `304` of `sendFile()` and of
+  its dynamic `ETag`); a `304` without one gets the decision of a body without a length;
 - errors and backpressure are kept: `write()` returns `false` while the compressor is full, the
   response emits `drain` once it is not, the callbacks of `write()` get the errors, the callback of
   `end()` runs once the response has finished, and `writableEnded` is set by `end()`. A client that

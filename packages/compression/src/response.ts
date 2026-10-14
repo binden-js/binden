@@ -3,7 +3,6 @@ import {
   type BindenResponse,
   ContentType,
   type Context,
-  ct_text,
 } from "binden";
 import {
   type ICompressEncodings,
@@ -106,21 +105,15 @@ function lengthOf(
   return Number.isSafeInteger(length) && length >= 0 ? length : null;
 }
 
-/** The size of a chunk of the body in bytes, or `null` when it is not one */
-function sizeOf(chunk: unknown, encoding: unknown): number | null {
-  if (typeof chunk === "string") {
-    const coding =
-      typeof encoding === "string" && Buffer.isEncoding(encoding)
-        ? encoding
-        : "utf8";
-    return Buffer.byteLength(chunk, coding);
-  } else if (chunk instanceof Uint8Array) {
-    return chunk.byteLength;
-  } else if (typeof chunk === "number" || typeof chunk === "bigint") {
-    // As `send()` sends them
-    return `${chunk}`.length;
-  }
-  return null;
+/**
+ * The size of the chunk of `end()` in bytes: a chunk that is not a string nor
+ * bytes throws the `TypeError` that `end()` of Node.js throws
+ */
+function sizeOf(chunk: unknown, encoding: string): number {
+  return Buffer.byteLength(
+    chunk as Uint8Array | string,
+    encoding as BufferEncoding,
+  );
 }
 
 /**
@@ -200,7 +193,6 @@ export class CompressedResponse {
   readonly #write: IResponse["write"];
   readonly #end: IResponse["end"];
   readonly #flush: IResponse["flush"];
-  readonly #send: IResponse["send"];
   #sink: ISink = "pending";
   #compressor: ICompressor | null = null;
   /** The flush of the coding of the compressor (see `flushKind()`) */
@@ -209,8 +201,6 @@ export class CompressedResponse {
   #ended = false;
   /** Set while `flush()` writes its marker (see `#onWrite()`) */
   #flushing = false;
-  /** The size of the body given to `send()`, which a `304` does not have */
-  #hint: number | null = null;
   /** The compressed bytes emitted, and those that the response has flushed */
   #produced = 0;
   #written = 0;
@@ -226,7 +216,6 @@ export class CompressedResponse {
     this.#write = response.write.bind(response);
     this.#end = response.end.bind(response);
     this.#flush = response.flush.bind(response);
-    this.#send = response.send.bind(response);
   }
 
   /**
@@ -262,12 +251,6 @@ export class CompressedResponse {
       } finally {
         this.#flushing = false;
       }
-    };
-    response.send = (...args: unknown[]): Promise<void> => {
-      if (this.#sink === "pending") {
-        this.#hint = sizeOf(args[0], args[1]);
-      }
-      return Reflect.apply(this.#send, response, args) as Promise<void>;
     };
     // As for an uncompressed response, `writableEnded` is set by `end()`
     // (a compressed response is ended once the compressor is)
@@ -425,7 +408,9 @@ export class CompressedResponse {
   /**
    * The decision, by the status and the headers of the response, the same
    * for `GET` and `HEAD`. A `304` gets the decision of the `200` that it
-   * stands for: the same validators and `Vary`, without a body.
+   * stands for: the same validators and `Vary`, without a body. Its
+   * `Content-Length`, when it has one, is the length of that `200` (binden
+   * keeps it on the `304` of its dynamic `ETag` and of `sendFile()`).
    */
   #decide(size: number | null): IOutcome {
     const { request } = this.#context;
@@ -458,9 +443,10 @@ export class CompressedResponse {
     }
 
     const head = request.method === "HEAD";
+    // The body that `end()` writes is not the one of the `200` of a `304`
     const length =
       lengthOf(response.getHeader("Content-Length")) ??
-      (status === 304 ? this.#hint : head ? null : size);
+      (status === 304 || head ? null : size);
     if (length === 0) {
       // No body
       return AS_IS;
@@ -495,10 +481,7 @@ export class CompressedResponse {
    */
   #filter(): boolean | null {
     const context = this.#context;
-    // `send()` sends a body as `text/plain` by default, but not with a `304`
-    const raw =
-      this.#response.getHeader("Content-Type") ??
-      (this.#hint === null ? null : ct_text);
+    const raw = this.#response.getHeader("Content-Type");
     const type = typeof raw === "string" ? ContentType.fromString(raw) : null;
     const outcome = attempt(() => this.#settings.filter(context, type));
     if (!outcome.ok) {
