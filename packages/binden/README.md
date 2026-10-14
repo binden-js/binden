@@ -626,7 +626,7 @@ const server = createServer({ ServerResponse: BindenResponse });
 
 - `.started` - whether the response has been started: by `.send()` or `.sendFile()`, by a stream piped into it, or by its headers being sent
 
-- `.cookies` - The `.send()` method will add cookies to the response
+- `.cookies` - the cookies to send. They are added to the `Set-Cookie` header once, when the headers are sent by any path (`.send()`, `writeHead()` with any of its arguments, `write()`, `end()`, `flushHeaders()` or a piped stream), after the `Set-Cookie` values set on the response or given to `writeHead()`
 
 ```typescript
 import { randomUUID } from "crypto";
@@ -637,6 +637,14 @@ const value = randomUUID();
 const cookie = new Cookie({ key, value });
 response.cookies.add(cookie);
 await response.send("Check the `Set-Cookie` header for a random UUID");
+```
+
+- `.clearCookie()` - remove a cookie from the client: an empty value that expires at once, with the `domain`, `path`, `secure`, `same_site` and `partitioned` of the cookie to remove (it replaces a cookie of the same name, domain and path in `.cookies`)
+
+```typescript
+response.clearCookie("session");
+response.clearCookie("__Host-chips", { same_site: "None", partitioned: true });
+await response.send();
 ```
 
 - `.status()` - Set the status code of the response: an integer from 100 to 599
@@ -655,7 +663,21 @@ const headers = {
 await response.status(402).set(headers).send("Payment is required");
 ```
 
-- `.send()` - send data, framed by the final status: a body gets its exact `Content-Length` (also a stale one is replaced), 1xx, 204 and 304 responses have none, and 205 has `Content-Length: 0`. A response without a body (to `HEAD`, or with a 1xx, 204, 205 or 304 status) sends none: a `Readable` is destroyed without being read, and a response to `HEAD` gets the `Content-Length` of the body it would send to `GET`. It resolves once the response is flushed to the connection, and rejects when it cannot be sent (e.g. the client went away), or when a `Readable` fails, closes before its end, or does not have its `Content-Length`. Nothing sent yet, such an error can still be replied; otherwise the response is cut, so that the client knows that it is truncated.
+- `.type()` - set the `Content-Type`: a media type with its parameters (a `TypeError` otherwise)
+
+- `.attachment()` - ask the client to save the response (`Content-Disposition: attachment`), with the name to save it as: `filename` in ASCII (other characters are replaced with `_`) and `filename*` in UTF-8 ([RFC 6266](https://www.rfc-editor.org/rfc/rfc6266.html), [RFC 8187](https://www.rfc-editor.org/rfc/rfc8187.html))
+
+- `.vary()` - add the names of the request headers that select the response to `Vary` (once each, after the values it has; `*` replaces them all)
+
+```typescript
+await response
+  .type("text/csv; charset=utf-8")
+  .attachment("отчёт.csv")
+  .vary("Accept-Language")
+  .send("a,b\n1,2\n");
+```
+
+- `.send()` - send data, framed by the final status: a body gets its exact `Content-Length` (also a stale one is replaced), 1xx, 204 and 304 responses have none, and 205 has `Content-Length: 0`. A response without a body (to `HEAD`, or with a 1xx, 204, 205 or 304 status) sends none: a `Readable` is destroyed without being read, and a response to `HEAD` gets the `Content-Length` of the body it would send to `GET`. It resolves once the response is flushed to the connection, and rejects when it cannot be sent (e.g. the client went away), or when a `Readable` fails, closes before its end, or does not have its `Content-Length`. Nothing sent yet, such an error can still be replied; otherwise the response is cut, so that the client knows that it is truncated. An unknown `encoding` of a string rejects with a `TypeError` before anything is sent.
 
 ```typescript
 await response.send(
@@ -663,14 +685,14 @@ await response.send(
 );
 ```
 
-- `.json()` - send an object as `application/json` using `JSON.stringify()`
+- `.json()` - send a JSON value (`null`, a number, a string, a boolean, an array or an object) as `application/json` using `JSON.stringify()`. A value without a JSON text (`undefined`, a function or a symbol), a `bigint` or a cyclic value rejects with a `TypeError` before the response is started, so that the error can still be replied
 
 ```typescript
 const json = { k: "v", k1: 1, m: "message", f: false };
 await response.json(json);
 ```
 
-or using a custom `stringify` function
+or using a custom `stringify` function, which must return a string
 
 ```typescript
 const json = { currency: "💶", value: 120 };
@@ -692,14 +714,14 @@ const stringify = fastJSON({
 await response.json(json, stringify);
 ```
 
-- `.text()` - send text as `text/plain`
+- `.text()` - send text as `text/plain; charset=utf-8`
 
 ```typescript
 const text = "Hello World!";
 await response.text(text);
 ```
 
-- `.html()` - send text as `text/html`
+- `.html()` - send text as `text/html; charset=utf-8`
 
 ```typescript
 const html = "<html></html>";
@@ -717,21 +739,78 @@ const form = new URLSearchParams([
 await response.form(form);
 ```
 
-- `.sendFile()` - Send a file with its `Last-Modified` (never in the future). Its metadata and its content are read from the one file it opens (a FIFO is not waited for), and no more than its size is sent. Follows [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) for the following headers, with the `ETag` set on the response (if any), in this order
+- `.redirect()` - redirect (`302 Found` by default, or `301`, `303`, `307` and `308`) with an empty body. `Location` is the [WHATWG URL](https://url.spec.whatwg.org/) serialization of the location, resolved against the URL of the request (a relative reference stays relative). Without `allow_external`, only a relative reference or an absolute URL of the origin of the request (`BindenRequest.URL`; none is known for other requests) is allowed, so that a location taken from the request cannot send the client to another site; a network-path reference (`//host/path`) needs `allow_external` too. A location with userinfo, a control character, whitespace, a backslash or a scheme other than `http` and `https` is never allowed. A refused location rejects with a `TypeError` before the response is started.
+
+```typescript
+await response.redirect("/login?next=%2Faccount", 303);
+// To another site
+await response.redirect("https://example.com/", 302, { allow_external: true });
+```
+
+- `.flush()` - send the headers, then resolve once what has been written so far is flushed to the connection (e.g. an event of a `text/event-stream`); it rejects when the response is closed before. [@binden/compression](https://github.com/binden-js/binden/tree/main/packages/compression) flushes its compressor as well.
+
+```typescript
+response.setHeader("Content-Type", "text/event-stream");
+response.write("data: 1\n\n");
+await response.flush();
+```
+
+- Dynamic `ETag` - with the `etag` option of the response (`false` by default), a `200` response to `GET` or `HEAD` whose body is a `Buffer` or a string (`.send()`, `.json()`, `.text()`, `.html()`, `.form()`) gets a strong `ETag` (the SHA-256 of the bytes that are sent, in base64url), unless it has an `ETag` already, and becomes `304 Not Modified` (without a body, with the same `ETag`, `Vary` and `Cache-Control`) when `If-None-Match` matches it by the weak comparison. With `http.createServer()`, set the option in a subclass
+
+```typescript
+import { createServer } from "http";
+import {
+  BindenResponse,
+  type IResponseOptions,
+  validateResponseOptions,
+} from "binden";
+
+class ETagResponse extends BindenResponse {
+  protected override get options(): Readonly<IResponseOptions> {
+    return validateResponseOptions({ etag: true });
+  }
+}
+const server = createServer({ ServerResponse: ETagResponse });
+```
+
+- `.sendFile()` - Send a file with its `Last-Modified` (never in the future), a weak `ETag` from its size and modification time (`W/"<size>-<mtime>"`, unless the response has an `ETag`), its `Content-Type` (by the extension of its name, from a table of common web types, otherwise `application/octet-stream`, unless the response has one), `Accept-Ranges: bytes` and `X-Content-Type-Options: nosniff`. Its metadata and its content are read from the one file it opens (a FIFO is not waited for), and no more than its size is sent. Follows [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) for the following headers, with the `ETag` of the response, in this order
   - [If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match) (or else [If-Unmodified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Unmodified-Since)) - `412 Precondition Failed` when it does not match (by the strong comparison; `*` matches the file)
 
   - [If-None-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match) (or else [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since), for `GET` and `HEAD`) - when it matches (by the weak comparison), `304 Not Modified` for `GET` and `HEAD`, `412 Precondition Failed` for other methods
 
-  - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) - for `GET` only: `206 Partial Content` for one range (overlapping or adjacent ranges are merged; several distinct ranges get the whole file), `416 Range Not Satisfiable` when no range can be satisfied
+  - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) - for `GET` only: `206 Partial Content` for one range (overlapping or adjacent ranges are merged; several distinct ranges get the whole file, as `multipart/byteranges` is not supported), `416 Range Not Satisfiable` when no range can be satisfied
 
-  - [If-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range) - the ranges apply when it is the strong `ETag` set on the response, or exactly the `Last-Modified` when that is at least a second old (a strong validator)
+  - [If-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range) - the ranges apply when it is a strong `ETag` of the response (a weak one gets the whole file), or exactly the `Last-Modified` when that is at least a second old (a strong validator)
 
   A response to `HEAD` gets the headers of the whole file, without reading it.
+
+  The path is a filesystem path (not URL-decoded) or a `file:` URL. Without `root`, it is trusted as it is: a missing file rejects with the error of the filesystem.
 
 ```typescript
 const path = "<path to file>";
 await response.sendFile(path);
 ```
+
+With the `root` option, the path must be a relative string (a `URL` throws a `TypeError`) that is served from inside the root directory (e.g. a parameter of the request): a path that is absolute or has an empty, `.` or `..` segment (or a NUL character, and on Windows a drive letter, a stream or a UNC path; the segments are split on `/`, and on Windows also on `\`), or a file that does not exist, is not a regular file, or whose real path (with every symbolic link or junction resolved) is not inside the real path of the root rejects with a `404` `BindenError`. A segment that starts with a dot, in the path or in its real path, follows `dotfiles`: `"ignore"` (`404`, the default), `"deny"` (`403`) or `"allow"`. The file is opened without following a symbolic link that replaced it since its real path was resolved.
+
+The guarantee has limits: the root directory (and the directories above it) must be trusted, and a race in which an attacker who can write inside the root replaces a directory of the path by a symbolic link between the check and the open is not prevented.
+
+```typescript
+await response.sendFile("css/site.css", {
+  root: new URL("./public/", import.meta.url),
+  dotfiles: "deny",
+  max_age: 31536000,
+  immutable: true,
+});
+```
+
+The other options (an invalid one rejects with a `TypeError` or a `RangeError` before the file is opened):
+
+- `etag` - the weak `ETag` from the size and the modification time (`true` by default)
+- `validator` - a strong `ETag` (`"…"`) that the application guarantees for the file (e.g. a hash of its content), sent instead
+- `last_modified` - the `Last-Modified` header (`true` by default); without it, `If-Modified-Since`, `If-Unmodified-Since` and a date in `If-Range` do not apply
+- `cache_control` - the `Cache-Control` header, or else `max_age` (in seconds: `public, max-age=<max_age>`) with `immutable` (which needs `max_age`)
+- `content_type` - the `Content-Type` (a media type), or `false` to leave it unset
 
 ### Headers
 
@@ -835,7 +914,7 @@ const type = ContentType.fromString(request.headers["content-type"]);
 const { content_type } = request;
 ```
 
-- [Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cookie) - `new Cookie()` throws a `TypeError` for a name, value or attribute that would change the `Set-Cookie` header (e.g. a value with `;`); `Cookie.fromString()` skips such cookies
+- [Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cookie) - `new Cookie()` throws a `TypeError` for a name, value or attribute that would change the `Set-Cookie` header (e.g. a value with `;`); `Cookie.fromString()` skips such cookies. A cookie is `Secure` with the `__Secure-` or `__Host-` prefix, `SameSite=None`, or `partitioned` ([CHIPS](https://developer.mozilla.org/en-US/docs/Web/Privacy/Guides/Privacy_sandbox/Partitioned_cookies), the `Partitioned` attribute)
 
 ```typescript
 import { Cookie } from "binden";
