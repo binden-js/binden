@@ -86,7 +86,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [24, 26]
+        # The oldest supported version (the `engines` of the packages), and the latest of each line
+        node-version: [24.14.1, 24, 26]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

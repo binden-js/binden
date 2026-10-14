@@ -16,7 +16,7 @@ API documentation: <https://binden-js.github.io/binden/>
 
 ## Development
 
-Requires Node.js `>=24.15.0` and npm `>=11.11.0`.
+Requires Node.js `>=24.14.1` and npm `>=11.11.0`, as the packages do.
 
 ```bash
 npm install            # installs all workspaces and builds them (`prepare`)
