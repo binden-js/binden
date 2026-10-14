@@ -15,6 +15,7 @@ import {
   redirectLocation,
 } from "./redirect.js";
 import { BindenRequest } from "./request.js";
+import { kSeal } from "./seal.js";
 import { type ISendFileOptions, matches, sendFileTo } from "./send-file.js";
 import { isStatus } from "./status.js";
 
@@ -90,11 +91,15 @@ function contentDisposition(filename?: string): string {
 /** A header field name (a token, RFC 9110, section 5.6.2) */
 const fieldName = /^[!#$%&'*+\-.^_`|~\dA-Za-z]+$/u;
 
+/** A late send is a no-op */
+const always = (): boolean => true;
+
 export class BindenResponse<
   Request extends IncomingMessage = IncomingMessage,
 > extends ServerResponse<Request> {
   #cookies?: Set<Cookie>;
   #started = false;
+  readonly #seals: (() => boolean)[] = [];
 
   public constructor(...args: [request: Request, options?: unknown]) {
     // node:http passes its options as well
@@ -332,6 +337,28 @@ export class BindenResponse<
         : [String(value)];
   }
 
+  /**
+   * Seals the response against late sends: while `late()` returns `true`
+   * (always without it, or when it throws), the sending methods resolve without
+   * writing anything
+   *
+   * @internal
+   */
+  public [kSeal](late: () => boolean = always): void {
+    this.#seals.push(late);
+  }
+
+  /** Whether a send is late (see `[kSeal]()`) */
+  #sealed(): boolean {
+    return this.#seals.some((late) => {
+      try {
+        return late();
+      } catch {
+        return true;
+      }
+    });
+  }
+
   /** Send a response */
   public send(
     data?: Buffer | Readable | bigint | number | string,
@@ -341,7 +368,7 @@ export class BindenResponse<
     data?: Buffer | Readable | bigint | number | string,
     encoding?: BufferEncoding,
   ): Promise<void> {
-    if (this.writableEnded) {
+    if (this.writableEnded || this.#sealed()) {
       if (data instanceof Readable) {
         // Nothing of it will be sent: release it (e.g. its file)
         BindenResponse.#discard(data);
@@ -470,6 +497,9 @@ export class BindenResponse<
     data: T,
     stringify?: (data: T) => string,
   ): Promise<void> {
+    if (this.#sealed()) {
+      return;
+    }
     const type = typeof data;
     if (
       type === "undefined" ||
@@ -487,23 +517,32 @@ export class BindenResponse<
     await this.setHeader("Content-Type", ct_json).send(body);
   }
 
-  /** Send response as `text/plain; charset=utf-8` */
-  public text(data: string): Promise<void> {
-    return this.setHeader("Content-Type", `${ct_text}; charset=utf-8`).send(
+  /** Send text as `text/plain; charset=utf-8` */
+  public async text(data: string): Promise<void> {
+    if (this.#sealed()) {
+      return;
+    }
+    await this.setHeader("Content-Type", `${ct_text}; charset=utf-8`).send(
       data,
     );
   }
 
-  /** Send response as `text/html; charset=utf-8` */
-  public html(data: string): Promise<void> {
-    return this.setHeader("Content-Type", `${ct_html}; charset=utf-8`).send(
+  /** Send text as `text/html; charset=utf-8` */
+  public async html(data: string): Promise<void> {
+    if (this.#sealed()) {
+      return;
+    }
+    await this.setHeader("Content-Type", `${ct_html}; charset=utf-8`).send(
       data,
     );
   }
 
-  /** Send response as `application/x-www-form-urlencoded` */
-  public form(params: URLSearchParams): Promise<void> {
-    return this.setHeader("Content-Type", ct_form).send(params.toString());
+  /** Send `URLSearchParams` as `application/x-www-form-urlencoded` */
+  public async form(params: URLSearchParams): Promise<void> {
+    if (this.#sealed()) {
+      return;
+    }
+    await this.setHeader("Content-Type", ct_form).send(params.toString());
   }
 
   /**
@@ -520,7 +559,9 @@ export class BindenResponse<
     status: IRedirectStatus = 302,
     { allow_external = false }: IRedirectOptions = {},
   ): Promise<void> {
-    if (!isRedirectStatus(status)) {
+    if (this.#sealed()) {
+      return;
+    } else if (!isRedirectStatus(status)) {
       throw new TypeError(`Status code ${String(status)} is not a redirect`);
     } else if (typeof allow_external !== "boolean") {
       throw new TypeError("`allow_external` is not a boolean");
@@ -561,7 +602,7 @@ export class BindenResponse<
    * the compressor as well.
    */
   public flush(): Promise<void> {
-    if (this.writableFinished) {
+    if (this.#sealed() || this.writableFinished) {
       return Promise.resolve();
     } else if (this.writableEnded || this.destroyed) {
       return this.#finished(() => false);
@@ -808,6 +849,9 @@ export class BindenResponse<
     path: URL | string,
     options?: ISendFileOptions,
   ): Promise<void> {
+    if (this.#sealed()) {
+      return;
+    }
     // Started at once (see `.started`), unless it fails before sending anything
     this.#started = true;
     try {

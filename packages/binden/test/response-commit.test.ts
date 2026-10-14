@@ -17,6 +17,7 @@ import {
   type IResponseOptions,
   validateResponseOptions,
 } from "../index.js";
+import { kSeal } from "../src/seal.js";
 import { type ITestServer, type IListenOptions, listen } from "./http.js";
 
 /** A response without a connection: nothing is actually sent */
@@ -520,5 +521,56 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     );
     ok(!response.started);
     ok(!response.hasHeader("Content-Length"));
+  });
+
+  test("[kSeal]() (late sends write nothing)", async () => {
+    const response = detached();
+    response[kSeal]();
+    const source = Readable.from(["data"]);
+    const sends: Promise<void>[] = [
+      response.send("data"),
+      response.send(source),
+      response.json({ a: 1 }),
+      // Not even validated
+      response.json(none),
+      response.text("text"),
+      response.html("<p>"),
+      response.form(new URLSearchParams({ a: "1" })),
+      response.redirect("https://example.com/"),
+      response.sendFile("/nonexistent/file"),
+      response.flush(),
+    ];
+    for (const sent of sends) {
+      deepStrictEqual(await settle(sent), null);
+    }
+    ok(!response.started);
+    ok(!response.headersSent);
+    deepStrictEqual(response.getHeaderNames(), []);
+    deepStrictEqual(response.statusCode, 200);
+    // Released
+    ok(source.destroyed);
+  });
+
+  test("[kSeal]() (while it is late)", async () => {
+    const app = await start();
+    let late = true;
+    const handled = app.handle(async (_request, response) => {
+      response[kSeal](() => late);
+      await response.json({ late: true });
+      ok(!response.started);
+      late = false;
+      await response.json({ late: false });
+    });
+    const { body } = await app.request();
+    deepStrictEqual(await handled, null);
+    deepStrictEqual(body.toString(), `{"late":false}`);
+
+    // A check that throws is late
+    const response = detached();
+    response[kSeal](() => {
+      throw new Error("check");
+    });
+    deepStrictEqual(await settle(response.text("late")), null);
+    ok(!response.started);
   });
 });
