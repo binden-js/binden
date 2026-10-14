@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
+about: Suggest an idea for binden or one of the @binden packages
 title: "[FEATURE-REQUEST]"
 labels: enhancement
 ---
