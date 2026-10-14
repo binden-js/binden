@@ -16,6 +16,7 @@ An application is a `Binden`: the root [stack](#stack-and-routing), whose option
 
 | Option                                                                   | Default                                  | Description                                                                                                                                                                                                                     |
 | ------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access_log`                                                             | `false`                                  | Logs every request once its response is closed: `true`, or `{ level, path }` (see [Access log](#access-log))                                                                                                                    |
 | `auto_head`                                                              | `true`                                   | A router without `HEAD` middlewares handles `HEAD` with its `GET` middlewares (see [Router](#router))                                                                                                                           |
 | `error_handler`                                                          | none                                     | Replaces the default reply to an error (see [Errors](#errors))                                                                                                                                                                  |
 | `error_handler_timeout`                                                  | `5000`                                   | The milliseconds that the `error_handler` has to settle (an integer from 1 to 2³¹−1)                                                                                                                                            |
@@ -180,6 +181,27 @@ const verbose = new Logger({
   serializers: { ...serializers, body: (body: unknown): unknown => body },
 });
 const debugApp = new Binden({ logger: verbose, log_error_details: true });
+```
+
+### Access log
+
+With the `access_log` option, every request is logged once (at `info`, or at `debug` with `{ level: "debug" }`) when its response is closed, also when it has been aborted:
+
+| Field         | Description                                                                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`      | The method of the request                                                                                                                            |
+| `route`       | The templates of the matched mounts and of the latest `route()` or `use()` layer that has run a middleware (e.g. `/api/users/:id`), or `<unmatched>` |
+| `path`        | The path of the request, without its query (with `{ path: "path" }` only: it may name a user or a resource)                                          |
+| `status`      | The status of the response, or `null` when it has been aborted before its headers were sent                                                          |
+| `duration_ms` | The milliseconds from the request to the close of its response                                                                                       |
+| `body_bytes`  | The bytes of the body, as written (e.g. compressed), without the headers                                                                             |
+| `id`          | The id of the request                                                                                                                                |
+| `aborted`     | Whether the request has been aborted (see [Lifecycle](#lifecycle))                                                                                   |
+
+```typescript
+import { Binden } from "binden";
+
+const app = new Binden({ access_log: { level: "info", path: "template" } });
 ```
 
 ### Lifecycle

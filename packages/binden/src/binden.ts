@@ -13,7 +13,7 @@ import {
   snapshot,
 } from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
-import { property } from "./property.js";
+import { pathOf, property } from "./property.js";
 import { BindenRequest, type ITrustProxy } from "./request.js";
 import { BindenResponse, ct_json } from "./response.js";
 import { matchPrefix, matchRoute, type IRoutingOptions } from "./route.js";
@@ -28,6 +28,23 @@ export type IErrorHandler<State extends object = Record<string, unknown>> = (
   context: Context<State>,
   error: unknown,
 ) => Promise<void> | void;
+
+/** The options of the access log (see `IBindenBaseOptions.access_log`) */
+export interface IAccessLogOptions {
+  /** The level of its records (`info`) */
+  level?: "debug" | "info" | undefined;
+  /**
+   * `template` (the default) logs the route only; `path` adds the path of the
+   * request (without its query), which may name a user or a resource
+   */
+  path?: "path" | "template" | undefined;
+}
+
+/** The options of the access log, with their defaults */
+interface IAccessLog {
+  readonly level: "debug" | "info";
+  readonly path: "path" | "template";
+}
 
 /** The options of `Binden`, but its `state` */
 export interface IBindenBaseOptions<
@@ -64,6 +81,11 @@ export interface IBindenBaseOptions<
   log_error_details?: boolean | undefined;
   /** The matching of the patterns of `route()` and `mount()` */
   routing?: IRoutingOptions | undefined;
+  /**
+   * Whether every request is logged once its response is closed (`false`):
+   * `true` or the options of the access log
+   */
+  access_log?: IAccessLogOptions | boolean | undefined;
   /**
    * The proxies whose `Forwarded` elements `request.protocol` trusts: none
    * (`false`, the default), all of them (`true`) or the given number of the
@@ -105,6 +127,8 @@ interface ILevel {
   readonly template: string;
   /** The rest of the path, which the items of a mount see */
   readonly rest: string;
+  /** The template of the layer that the access log names (`""` for none) */
+  readonly route: string;
 }
 
 /**
@@ -120,6 +144,7 @@ export class Binden<
   readonly #timeout: number;
   readonly #logger: ILogger;
   readonly #details: boolean;
+  readonly #access: IAccessLog | null;
   readonly #routing: Required<IRoutingOptions>;
   readonly #state: (() => object) | null;
   readonly #Request: typeof BindenRequest;
@@ -139,6 +164,7 @@ export class Binden<
       auto_head = true,
       logger,
       log_error_details = false,
+      access_log = false,
       routing = {},
       state,
       timeout = 0,
@@ -168,6 +194,7 @@ export class Binden<
       throw new TypeError("`routing` is not an object");
     }
     const { case_sensitive = true, strict = true } = routing;
+    this.#access = Binden.#accessOptions(access_log);
     Binden.#boolean("routing.case_sensitive", case_sensitive);
     Binden.#boolean("routing.strict", strict);
     markRoot(this);
@@ -282,6 +309,9 @@ export class Binden<
     });
     const exchange = Exchange.for(request, response);
     track(server, exchange, response);
+    if (this.#access) {
+      Binden.#accessLog(context, exchange, this.#access);
+    }
     if (this.#timeout > 0) {
       exchange.setTimeout(this.#timeout);
     }
@@ -437,6 +467,12 @@ export class Binden<
         const middlewares =
           item instanceof Router ? this.#methodOf(item, run, allow) : [item];
         for (const middleware of middlewares) {
+          // The route of the access log: the template of the latest layer
+          // that has run a middleware
+          const route = exchange.mount_template + level.route;
+          if (route !== "") {
+            exchange.route = route;
+          }
           context = await this.#runMiddleware(middleware, context, exchange);
           run.context = context;
           if (context.done) {
@@ -456,20 +492,30 @@ export class Binden<
    * and the prefix and the rest of the path of a mount), or `null`
    */
   #match(layer: ILayer, path: string): ILevel | null {
-    const none = { params: {}, prefix: "", template: "", rest: path };
+    const none = {
+      params: {},
+      prefix: "",
+      template: "",
+      rest: path,
+      route: "",
+    };
     if (layer.kind === "use") {
       const { path: match } = layer;
       return match === null ||
         (match instanceof RegExp ? match.test(path) : match === path)
-        ? none
+        ? { ...none, route: match === null ? "" : String(match) }
         : null;
     } else if (layer.kind === "route") {
       const params = matchRoute(layer.pattern, path, this.#routing);
-      return params === null ? null : { ...none, params };
+      return params === null
+        ? null
+        : { ...none, params, route: layer.pattern.source };
     }
     const { pattern } = layer;
     const match = matchPrefix(pattern, path, this.#routing);
-    return match === null ? null : { ...match, template: pattern.source };
+    return match === null
+      ? null
+      : { ...match, template: pattern.source, route: "" };
   }
 
   /**
@@ -860,6 +906,87 @@ export class Binden<
     } catch (error: unknown) {
       return { state: {}, failure: { error } };
     }
+  }
+
+  /** The options of the access log, or `null` when it is off */
+  static #accessOptions(option: unknown): IAccessLog | null {
+    if (option === false) {
+      return null;
+    } else if (option === true) {
+      return { level: "info", path: "template" };
+    } else if (typeof option !== "object" || option === null) {
+      throw new TypeError("`access_log` is not a boolean or an object");
+    }
+    const { level = "info", path = "template" } = option as Record<
+      string,
+      unknown
+    >;
+    if (level !== "info" && level !== "debug") {
+      throw new TypeError("`access_log.level` is not `info` or `debug`");
+    } else if (path !== "template" && path !== "path") {
+      throw new TypeError("`access_log.path` is not `template` or `path`");
+    }
+    return { level, path };
+  }
+
+  /**
+   * Logs a request once its response is closed: its method, route (the
+   * templates of the matched mounts and layer, or `<unmatched>`), status
+   * (`null` when the headers have not been sent), duration, the bytes of the
+   * body (as written, e.g. compressed), id and whether it has been aborted
+   */
+  static #accessLog(
+    context: Context,
+    exchange: Exchange,
+    { level, path }: IAccessLog,
+  ): void {
+    const { request, response } = context;
+    const start = performance.now();
+    let bytes = 0;
+    const count = (chunk: unknown, encoding: unknown): void => {
+      const { statusCode } = response;
+      if (
+        request.method === "HEAD" ||
+        statusCode < 200 ||
+        statusCode === 204 ||
+        statusCode === 304
+      ) {
+        // Node.js does not send a body
+        return;
+      } else if (typeof chunk === "string") {
+        const coding = typeof encoding === "string" ? encoding : "utf8";
+        bytes += Buffer.byteLength(chunk, coding as BufferEncoding);
+      } else if (ArrayBuffer.isView(chunk)) {
+        bytes += chunk.byteLength;
+      }
+    };
+    // Replaced on the response itself, before any middleware (e.g. a
+    // compression that writes the encoded body with them)
+    const write = response.write.bind(response);
+    const end = response.end.bind(response);
+    response.write = ((...args: unknown[]): boolean => {
+      count(args[0], args[1]);
+      return Reflect.apply(write, response, args) as boolean;
+    }) as typeof response.write;
+    response.end = ((...args: unknown[]): typeof response => {
+      count(args[0], args[1]);
+      return Reflect.apply(end, response, args) as typeof response;
+    }) as typeof response.end;
+
+    response.once("close", () => {
+      const duration = performance.now() - start;
+      context.log[level]("The request has completed", {
+        method: request.method,
+        route: exchange.route ?? "<unmatched>",
+        // A request of a server always has its request-target
+        ...(path === "path" ? { path: pathOf(request.url as string) } : {}),
+        status: response.headersSent ? response.statusCode : null,
+        duration_ms: Math.round(duration * 1000) / 1000,
+        body_bytes: bytes,
+        id: context.id,
+        aborted: exchange.signal.aborted,
+      });
+    });
   }
 
   /** A boolean option */

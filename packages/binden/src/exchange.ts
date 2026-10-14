@@ -59,6 +59,7 @@ export class Exchange {
   #params: Readonly<Record<string, string>>;
   #mount_path: string;
   #mount_template: string;
+  #route: string | null;
 
   private constructor(
     response: ServerResponse,
@@ -86,6 +87,7 @@ export class Exchange {
     this.#params = Object.freeze({});
     this.#mount_path = "";
     this.#mount_template = "";
+    this.#route = null;
 
     // `close` follows `finish`, unless the connection is closed before the
     // response is complete
@@ -195,6 +197,18 @@ export class Exchange {
       this.#mount_path = current.mount_path;
       this.#mount_template = current.mount_template;
     };
+  }
+
+  /**
+   * The route that the access log names: the templates of the matched mounts
+   * and of the latest layer that has run a middleware (`null` for none)
+   */
+  public get route(): string | null {
+    return this.#route;
+  }
+
+  public set route(route: string) {
+    this.#route = route;
   }
 
   public get phase(): IPhase {

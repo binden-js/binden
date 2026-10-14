@@ -9,3 +9,14 @@ export function property(value: unknown, key: string): unknown {
     return null;
   }
 }
+
+/**
+ * The path of a request-target: never its query or fragment, nor the scheme,
+ * the authority or the userinfo of an absolute-form target
+ */
+export function pathOf(target: string): string {
+  if (target.startsWith("/")) {
+    return target.replace(/[?#].*$/su, "");
+  }
+  return URL.canParse(target) ? new URL(target).pathname : "";
+}
