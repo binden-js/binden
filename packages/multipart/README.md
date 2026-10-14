@@ -14,7 +14,9 @@ npm install @binden/multipart
 import { type Context, Router } from "binden";
 import multipart from "@binden/multipart";
 
-const formDataParser = multipart({ limits: { fields: 2, fileSize: 1024 } });
+const formDataParser = multipart({
+  config: { limits: { fields: 2, fileSize: 1024 } },
+});
 
 const next = (context: Context): Promise<void> => {
   if (context.request.body instanceof FormData) {

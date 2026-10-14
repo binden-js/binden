@@ -1,7 +1,9 @@
-import { type IMultipartConfig, Multipart } from "./src/multipart.js";
+import type { IMultipartOptions } from "./src/options.js";
+import { Multipart } from "./src/multipart.js";
 
 export * from "./src/multipart.js";
+export type { IMultipartConfig, IMultipartOptions } from "./src/options.js";
 
-/** A `Multipart` with the configuration of busboy */
-export default (config: IMultipartConfig = {}): Multipart =>
-  new Multipart({ config });
+/** A `Multipart` of the options (see `IMultipartOptions`) */
+export default (options?: IMultipartOptions): Multipart =>
+  new Multipart(options);

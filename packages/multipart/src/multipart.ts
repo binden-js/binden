@@ -1,9 +1,10 @@
+import { BindenError, type Context, Middleware } from "binden";
 import {
-  BindenError,
-  type Context,
-  type IMiddlewareParams,
-  Middleware,
-} from "binden";
+  type IMultipartConfig,
+  type IMultipartOptions,
+  type IParserOptions,
+  validateOptions,
+} from "./options.js";
 import busboy, {
   type Busboy,
   type BusboyConfig,
@@ -11,26 +12,6 @@ import busboy, {
   type FileInfo,
 } from "busboy";
 import type { Readable } from "node:stream";
-
-/** The configuration of busboy (its `headers` are those of the request) */
-export type IMultipartConfig = Omit<BusboyConfig, "headers">;
-
-/** The options of `Multipart` */
-export interface IMultipartOptions extends IMiddlewareParams {
-  /** The configuration of busboy, e.g. its `limits` */
-  config?: IMultipartConfig | undefined;
-  /**
-   * Whether a request that reaches a limit of `config.limits` is refused
-   * with `413 Content Too Large` (`true`), instead of truncated
-   */
-  throw_limits?: boolean | undefined;
-  /**
-   * The largest body in bytes, all of its parts included (no limit by
-   * default): a larger one is not read further, and gets a
-   * `413 Content Too Large`, whatever `throw_limits`
-   */
-  limit?: number | undefined;
-}
 
 /** The logger of a context */
 type ILog = Context["log"];
@@ -107,11 +88,7 @@ class Parser {
   public constructor(
     context: Context,
     log: ILog,
-    {
-      config,
-      throw_limits,
-      limit,
-    }: { config: IMultipartConfig; throw_limits: boolean; limit: number },
+    { config, throw_limits, limit }: IParserOptions,
   ) {
     this.#context = context;
     this.#log = log;
@@ -347,26 +324,13 @@ class Parser {
  * request of another media type is skipped (its body is not read)
  */
 export class Multipart extends Middleware {
-  readonly #config: IMultipartConfig;
-  readonly #throw_limits: boolean;
-  readonly #limit: number;
+  readonly #options: IParserOptions;
 
-  public constructor({
-    config = {},
-    throw_limits = true,
-    limit,
-    ...rest
-  }: IMultipartOptions = {}) {
-    super(rest);
-    if (
-      typeof limit !== "undefined" &&
-      !(Number.isSafeInteger(limit) && limit >= 0)
-    ) {
-      throw new TypeError("`limit` is not a non-negative integer");
-    }
-    this.#config = config;
-    this.#throw_limits = throw_limits;
-    this.#limit = limit ?? Number.POSITIVE_INFINITY;
+  /** Checks the options: a `TypeError` or a `RangeError` for an invalid one */
+  public constructor(options: IMultipartOptions = {}) {
+    const { middleware, parser } = validateOptions(options);
+    super(middleware);
+    this.#options = parser;
   }
 
   /**
@@ -391,10 +355,6 @@ export class Multipart extends Middleware {
     }
     parsed.add(request);
 
-    await new Parser(context, log, {
-      config: this.#config,
-      throw_limits: this.#throw_limits,
-      limit: this.#limit,
-    }).run();
+    await new Parser(context, log, this.#options).run();
   }
 }

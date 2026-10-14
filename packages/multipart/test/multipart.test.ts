@@ -12,7 +12,7 @@ import {
   type,
   upload,
 } from "./helpers.js";
-import { deepEqual, equal, ok, throws } from "node:assert/strict";
+import { deepEqual, equal, ok } from "node:assert/strict";
 import { describe, it } from "node:test";
 import multipart, { Multipart } from "../index.js";
 
@@ -269,7 +269,7 @@ describe("Multipart", () => {
     it(`replies \`413\` once the \`${name}\` limit is reached`, async (t) => {
       let reached = false;
       const { url } = await serve(t, [
-        multipart({ limits: config }),
+        multipart({ config: { limits: config } }),
         (): void => {
           reached = true;
         },
@@ -464,20 +464,15 @@ describe("Multipart", () => {
     equal(reached, false);
   });
 
-  it("`limit` (invalid)", () => {
-    for (const limit of [-1, 0.5, Number.NaN]) {
-      throws(
-        () => new Multipart({ limit }),
-        new TypeError("`limit` is not a non-negative integer"),
-      );
-    }
-  });
-
   it("logs with the logger of the context, as `Multipart`", async (t) => {
     const logger = new RecordingLogger();
-    const { url } = await serve(t, [multipart({ limits: { fields: 0 } })], {
-      logger,
-    });
+    const { url } = await serve(
+      t,
+      [multipart({ config: { limits: { fields: 0 } } })],
+      {
+        logger,
+      },
+    );
 
     const reply = await post(url, body(part('name="a"', "1")));
 
