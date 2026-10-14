@@ -1298,11 +1298,15 @@ suite("BindenResponse", () => {
       [200, null, whole],
     );
 
-    // A file modified within the last second has a weak `Last-Modified`
+    // A `Last-Modified` within the last second is weak: the one of a file
+    // modified in the future is now. (Not a file written now: one written
+    // late in a second is a second old once its request is handled in the
+    // next one.)
     const recent = join(root, "recent");
     await writeFile(recent, msg);
-    const { mtime } = await statOf(recent);
-    const recentLm = new Date(Math.floor(mtime.getTime() / 1000) * 1000);
+    const future = new Date(Date.now() + 3600 * 1000);
+    await utimes(recent, future, future);
+    const recentLm = new Date(Math.floor(Date.now() / 1000) * 1000);
     deepStrictEqual(
       await send(
         { ...range, "If-Range": recentLm.toUTCString() },
