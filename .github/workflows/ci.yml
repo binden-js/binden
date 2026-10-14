@@ -67,6 +67,11 @@ jobs:
       - name: Consumer check (packed packages, TypeScript and ESM)
         run: npm run consumer:check
 
+      # The next version and its release notes, as semantic-release computes them (nothing is
+      # tagged or published)
+      - name: Release rehearsal
+        run: npm run release:rehearsal
+
       - name: Docs
         run: npm run docs:build
 

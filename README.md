@@ -26,6 +26,7 @@ npm run coverage       # tests with c8 coverage (coverage/lcov.info)
 npm run eslint         # type-aware ESLint for the whole repository
 npm run docs:build     # TypeDoc for all packages (docs/)
 npm run consumer:check # the packed packages and the README examples in a fresh project
+npm run release:rehearsal # the next version and its release notes, without releasing
 npm run ci:all         # everything CI runs
 ```
 
