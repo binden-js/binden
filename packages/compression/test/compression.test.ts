@@ -829,6 +829,27 @@ describe("Compression", () => {
     deepStrictEqual((await gunzip(Buffer.from(body))).toString(), "xy");
   });
 
+  it("leaves a response whose headers have been sent before it runs", async () => {
+    const expected = "Hello World";
+    app.use(
+      (ct: Context) => {
+        ct.response.flushHeaders();
+      },
+      new Compression({ format: "auto" }),
+      (ct: Context) => ct.send(expected),
+    );
+
+    const response = await request(url, {
+      headers: { "Accept-Encoding": "gzip" },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    deepStrictEqual(response.statusCode, 200);
+    ok(typeof response.headers["content-encoding"] === "undefined");
+    ok(typeof response.headers.vary === "undefined");
+    deepStrictEqual(await response.body.text(), expected);
+  });
+
   it("does not compress when the headers have already been sent", async () => {
     const expected = "Hello World";
     app.use(new Compression({ format: "gzip" }), (ct: Context) => {

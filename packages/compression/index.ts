@@ -37,13 +37,19 @@ export class Compression extends Middleware {
   public run(context: Context): void {
     const { response } = context;
 
+    // Sent headers can no longer change (not even `Vary`): the response is
+    // left as it is
+    if (response.headersSent) {
+      return;
+    }
+
     if (this.format === "auto") {
       Compression.#varyOnAcceptEncoding(response);
     }
 
     const format = Compression.#getFormat(context, this.format);
 
-    if (format === "identity" || response.headersSent) {
+    if (format === "identity") {
       return;
     }
 
