@@ -1,5 +1,5 @@
-import { createReadStream, Stats } from "node:fs";
-import { stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
@@ -403,86 +403,106 @@ export class BindenResponse<
     });
   }
 
-  public async sendFile(
-    path: URL | string,
-    options?: Pick<Stats, "isFile" | "mtime" | "size">,
-  ): Promise<void> {
+  /**
+   * Sends a file. Its metadata and its content are read from one file handle,
+   * so that they belong to the same file (also when the path is replaced), and
+   * no more than its size is sent.
+   */
+  public async sendFile(path: URL | string): Promise<void> {
     // Started at once (see `.started`), unless it fails before sending anything
     this.#started = true;
     try {
-      await this.#sendFile(path, options);
+      await this.#sendFile(path);
     } catch (error: unknown) {
       this.#started = false;
       throw error;
     }
   }
 
-  async #sendFile(
-    path: URL | string,
-    options?: Pick<Stats, "isFile" | "mtime" | "size">,
-  ): Promise<void> {
+  async #sendFile(path: URL | string): Promise<void> {
     const url = path instanceof URL ? new URL(path.href) : pathToFileURL(path);
 
     if (url.protocol !== "file:") {
       throw new TypeError(`Protocol ${url.protocol} is not supported`);
     }
 
-    const stats = options ?? (await stat(path));
+    // Without waiting for a writer of a FIFO (`O_NONBLOCK` is not defined on
+    // Windows, which has no FIFOs)
+    const handle = await open(url, constants.O_RDONLY | constants.O_NONBLOCK);
+    // Closed by the stream of its content, or else here
+    let stream: Readable | null = null;
+    try {
+      const stats = await handle.stat();
 
-    if (!stats.isFile()) {
-      throw new Error(`Provided path does not correspond to a regular file`);
+      if (!stats.isFile()) {
+        throw new Error("Provided path does not correspond to a regular file");
+      }
+
+      const { mtime, size } = stats;
+      // In seconds, as an HTTP-date, and not in the future (RFC 9110, section 8.8.2.1)
+      const lm = new Date(
+        Math.floor(Math.min(mtime.getTime(), Date.now()) / 1000) * 1000,
+      );
+
+      this.set({ "Last-Modified": lm.toUTCString(), "Accept-Ranges": "bytes" });
+
+      const { method = "GET", headers } = this.req;
+      const ims =
+        this.req instanceof BindenRequest
+          ? this.req.if_modified_since
+          : IfModifiedSince.fromString(headers["if-modified-since"]);
+
+      // If-None-Match takes precedence over If-Modified-Since (RFC 9110, 13.1.3)
+      if (
+        (method === "GET" || method === "HEAD") &&
+        typeof headers["if-none-match"] === "undefined" &&
+        ims &&
+        lm <= ims.date
+      ) {
+        await this.status(304).send();
+        return;
+      } else if (method === "HEAD") {
+        // The headers of the whole file, without reading it
+        await this.setHeader("Content-Length", size).send();
+        return;
+      }
+
+      // Ranges apply to GET only (RFC 9110, section 14.2)
+      const ranges =
+        method !== "GET" || !this.#ifRange(lm)
+          ? []
+          : this.req instanceof BindenRequest
+            ? this.req.range
+            : Range.fromString(headers.range);
+      const range = BindenResponse.#range(ranges, size);
+
+      if (range === "unsatisfiable") {
+        const cr = new ContentRange({ size }).toString();
+        await this.setHeader("Content-Range", cr).status(416).send();
+        return;
+      }
+
+      if (range === null && size === 0) {
+        await this.setHeader("Content-Length", 0).send();
+        return;
+      }
+
+      // No more than the size that is sent as its length
+      const { start, end } = range ?? { start: 0, end: size - 1 };
+      stream = handle.createReadStream({ start, end });
+      if (range === null) {
+        await this.setHeader("Content-Length", size).send(stream);
+        return;
+      }
+      const cr = new ContentRange({ size, start, end }).toString();
+      await this.set({ "Content-Length": end - start + 1, "Content-Range": cr })
+        .status(206)
+        .send(stream);
+    } finally {
+      if (stream === null) {
+        await handle.close();
+      }
     }
-
-    const { mtime, size } = stats;
-    // In seconds, as an HTTP-date, and not in the future (RFC 9110, section 8.8.2.1)
-    const lm = new Date(
-      Math.floor(Math.min(mtime.getTime(), Date.now()) / 1000) * 1000,
-    );
-
-    this.set({ "Last-Modified": lm.toUTCString(), "Accept-Ranges": "bytes" });
-
-    const { method = "GET", headers } = this.req;
-    const ims =
-      this.req instanceof BindenRequest
-        ? this.req.if_modified_since
-        : IfModifiedSince.fromString(headers["if-modified-since"]);
-
-    // If-None-Match takes precedence over If-Modified-Since (RFC 9110, 13.1.3)
-    if (
-      (method === "GET" || method === "HEAD") &&
-      typeof headers["if-none-match"] === "undefined" &&
-      ims &&
-      lm <= ims.date
-    ) {
-      return this.status(304).send();
-    } else if (method === "HEAD") {
-      // The headers of the whole file, without reading it
-      return this.setHeader("Content-Length", size).send();
-    }
-
-    // Ranges apply to GET only (RFC 9110, section 14.2)
-    const ranges =
-      method !== "GET" || !this.#ifRange(lm)
-        ? []
-        : this.req instanceof BindenRequest
-          ? this.req.range
-          : Range.fromString(headers.range);
-    const range = BindenResponse.#range(ranges, size);
-
-    if (range === null) {
-      const stream = createReadStream(url);
-      return this.setHeader("Content-Length", size).send(stream);
-    } else if (range === "unsatisfiable") {
-      const cr = new ContentRange({ size }).toString();
-      return this.setHeader("Content-Range", cr).status(416).send();
-    }
-
-    const { start, end } = range;
-    const stream = createReadStream(url, { start, end });
-    const cr = new ContentRange({ size, start, end }).toString();
-    return this.set({ "Content-Length": end - start + 1, "Content-Range": cr })
-      .status(206)
-      .send(stream);
   }
 
   /** Whether `If-Range`, when sent, matches the file (RFC 9110, section 13.1.5) */

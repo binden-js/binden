@@ -2,7 +2,19 @@
 import { deepStrictEqual, ok, throws, rejects } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { writeFile, rm, mkdir, mkdtemp, stat } from "node:fs/promises";
+import {
+  type FileHandle,
+  appendFile,
+  writeFile,
+  rm,
+  mkdir,
+  mkdtemp,
+  open,
+  rename,
+  stat as statOf,
+  utimes,
+} from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { IncomingMessage, Server, createServer, get } from "node:http";
 import { type AddressInfo, Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -114,7 +126,6 @@ suite("BindenResponse", () => {
   let msg: Buffer;
   let server: Server<typeof IncomingMessage, typeof BindenResponse>;
   let file_stats: Stats;
-  let dir_stats: Stats;
 
   beforeEach(async () => {
     msg = Buffer.from(randomUUID());
@@ -131,8 +142,7 @@ suite("BindenResponse", () => {
         resolve();
       });
     });
-    dir_stats = await stat(dirPath);
-    file_stats = await stat(filePath);
+    file_stats = await statOf(filePath);
   });
 
   test("ServerResponse", async () => {
@@ -383,7 +393,7 @@ suite("BindenResponse", () => {
 
     // A `sendFile()` that fails before sending anything does not start it
     const failed = create();
-    await rejects(() => failed.sendFile(dirPath, dir_stats));
+    await rejects(() => failed.sendFile(dirPath));
     ok(!failed.started);
   });
 
@@ -980,7 +990,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -997,7 +1007,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .then(() => {
             server.once("request", (_request2, response2) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
@@ -1030,7 +1040,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .then(() => {
             server.once("request", (_request2, response2) => {
               response2.sendFile(filePath).then(resolve).catch(reject);
@@ -1065,7 +1075,7 @@ suite("BindenResponse", () => {
         // A stale length would leave the client waiting for its bytes
         response
           .setHeader("Content-Length", 99)
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -1089,7 +1099,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -1111,7 +1121,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -1134,7 +1144,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -1319,14 +1329,10 @@ suite("BindenResponse", () => {
 
   test(".sendFile() (a modification date in the future)", async () => {
     const mtime = new Date(Date.now() + 3600 * 1000);
+    await utimes(filePath, mtime, mtime);
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
-        const stats = {
-          isFile: (): boolean => true,
-          mtime,
-          size: msg.byteLength,
-        };
-        response.sendFile(filePath, stats).then(resolve, reject);
+        response.sendFile(filePath).then(resolve, reject);
       });
     });
 
@@ -1368,7 +1374,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         response
-          .sendFile(filePath, file_stats)
+          .sendFile(filePath)
           .catch(reject)
           .finally(() => response.end(resolve));
       });
@@ -1384,7 +1390,7 @@ suite("BindenResponse", () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         rejects(
-          () => response.sendFile(path, file_stats),
+          () => response.sendFile(path),
           new TypeError(`Protocol ${path.protocol} is not supported`),
         )
           .catch(reject)
@@ -1395,11 +1401,74 @@ suite("BindenResponse", () => {
     await serverPromise;
   });
 
+  test(".sendFile() (the file that it has measured)", async () => {
+    // Changes the file (or its path) once `sendFile()` has its metadata
+    const probe = await open(filePath);
+    const prototype = Object.getPrototypeOf(probe) as {
+      stat(this: FileHandle): Promise<Stats>;
+    };
+    await probe.close();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called on a handle below
+    const original = prototype.stat;
+    const check = async (change: () => Promise<void>): Promise<void> => {
+      prototype.stat = async function stat(this: FileHandle): Promise<Stats> {
+        const stats = await original.call(this);
+        await change();
+        return stats;
+      };
+      try {
+        const sent = new Promise<void>((resolve, reject) => {
+          server.once("request", (_request, response) => {
+            response.sendFile(filePath).then(resolve, reject);
+          });
+        });
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(5000),
+        });
+        deepStrictEqual(await response.text(), msg.toString());
+        await sent;
+      } finally {
+        prototype.stat = original;
+      }
+    };
+
+    // No more than its size, which is its `Content-Length`
+    await check(() => appendFile(filePath, "appended"));
+    await writeFile(filePath, msg);
+    // The content of the file it has opened
+    await check(async () => {
+      await rename(filePath, join(root, "moved"));
+      await writeFile(filePath, "another file");
+    });
+  });
+
+  test(
+    ".sendFile() (a FIFO)",
+    { skip: process.platform === "win32", timeout: 10_000 },
+    async () => {
+      // Opened without waiting for a writer, which never comes
+      const fifo = join(root, "fifo");
+      execFileSync("mkfifo", [fifo]);
+      const sent = new Promise<void>((resolve, reject) => {
+        server.once("request", (_request, response) => {
+          rejects(
+            () => response.sendFile(fifo),
+            new Error("Provided path does not correspond to a regular file"),
+          )
+            .catch(reject)
+            .finally(() => response.end(resolve));
+        });
+      });
+      await (await fetch(url)).text();
+      await sent;
+    },
+  );
+
   test(".sendFile() (not a regular file)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         rejects(
-          () => response.sendFile(dirPath, dir_stats),
+          () => response.sendFile(dirPath),
           new Error(`Provided path does not correspond to a regular file`),
         )
           .catch(reject)
