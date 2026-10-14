@@ -478,22 +478,6 @@ suite("BindenRequest", () => {
     deepStrictEqual(request.query, { a: "1", b: "2" });
   });
 
-  test(".trust_proxy (deprecated)", () => {
-    class Trusting extends BindenRequest {
-      // eslint-disable-next-line class-methods-use-this -- a fixture
-      protected override get trust_proxy(): ITrustProxy {
-        return 1;
-      }
-    }
-    const socket = new Socket();
-    Object.defineProperty(socket, "remoteAddress", { value: "10.0.0.1" });
-    const request = new Trusting(socket);
-    request.headers = { forwarded: "for=1.1.1.1;proto=https" };
-    // The default `options` take it
-    deepStrictEqual([request.ip, request.protocol], ["1.1.1.1", "https:"]);
-    socket.destroy();
-  });
-
   test(".query (keeps its prototype)", () => {
     const request = new BindenRequest(new Socket());
     request.url = "/?__proto__=a&__proto__=b&x=1";

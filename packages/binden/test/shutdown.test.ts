@@ -311,10 +311,12 @@ suite("callback()", () => {
       context.send(String(context.request instanceof BindenRequest)),
     );
     const options = app.serverOptions();
-    ok(options.ServerResponse === BindenResponse);
-    ok(
-      new Binden().serverOptions().IncomingMessage !== options.IncomingMessage,
-    );
+    // The classes of the application, with its options
+    ok(options.IncomingMessage.prototype instanceof BindenRequest);
+    ok(options.ServerResponse.prototype instanceof BindenResponse);
+    const other = new Binden().serverOptions();
+    ok(other.IncomingMessage !== options.IncomingMessage);
+    ok(other.ServerResponse !== options.ServerResponse);
     const server = createServer(options);
     server.on("request", app.callback(server));
     server.listen(0);
@@ -342,8 +344,11 @@ suite("callback()", () => {
     for (const options of [
       {},
       { IncomingMessage: other.IncomingMessage },
-      // The response of the application, the request of another one
-      { ...other, ServerResponse: BindenResponse },
+      // The request of another application
+      { ...app.serverOptions(), IncomingMessage: other.IncomingMessage },
+      // The response of another application
+      { ...app.serverOptions(), ServerResponse: other.ServerResponse },
+      { ...app.serverOptions(), ServerResponse: BindenResponse },
     ]) {
       const server = createServer(options);
       server.on("request", app.callback(server));

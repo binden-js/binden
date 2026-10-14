@@ -89,10 +89,24 @@ export interface IRequestIdOptions {
 
 /** The request options as given (to `Binden`), every one of them optional */
 export interface IRequestOptionsInput {
+  /**
+   * The trusted proxies (none by default): `true` (all of them), a number of
+   * the nearest hops, a function of the address and the hop, or an object
+   * with one of them as `trust` and the `headers` that they set (`forwarded`
+   * by default, or `x-forwarded`)
+   */
   trust_proxy?: ITrustProxy | undefined;
+  /**
+   * Whether the path of a request-target (and so a route parameter) may have
+   * an encoded slash or backslash (`%2F`, `%5C`): `false` by default (a
+   * `400 Bad Request`)
+   */
   encoded_slashes?: boolean | undefined;
+  /** The hosts that the requests may have (any by default), see `IRequestOptions` */
   allowed_hosts?: IAllowedHosts | undefined;
+  /** The request ids (new ids, not sent back, by default) */
   request_id?: IRequestIdOptions | undefined;
+  /** The greatest number of keys that `request.query` parses (`1000`) */
   query?: { max_keys?: number | undefined } | undefined;
 }
 
@@ -413,23 +427,14 @@ export class BindenRequest extends IncomingMessage {
   }
 
   /**
-   * The settings of the requests (see `IRequestOptions`): the defaults, with
-   * the `trust_proxy` getter. `Binden` sets them from its options; with
+   * The settings of the requests (see `IRequestOptions`): the defaults.
+   * `Binden` sets them from its options in a subclass of its own; with
    * `http.createServer()`, override it in a subclass to return the result of
    * `validateRequestOptions()`.
    */
-  protected get options(): Readonly<IRequestOptions> {
-    return { ...defaults, trust_proxy: this.trust_proxy };
-  }
-
-  /**
-   * The trusted proxies (none by default), for the default `options`
-   *
-   * @deprecated Override `options` instead
-   */
   // eslint-disable-next-line class-methods-use-this -- overridden by subclasses
-  protected get trust_proxy(): ITrustProxy {
-    return false;
+  protected get options(): Readonly<IRequestOptions> {
+    return defaults;
   }
 
   /**

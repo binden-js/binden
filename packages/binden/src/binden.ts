@@ -14,8 +14,18 @@ import {
 } from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
 import { pathOf, property } from "./property.js";
-import { BindenRequest, type ITrustProxy } from "./request.js";
-import { BindenResponse, ct_json } from "./response.js";
+import {
+  BindenRequest,
+  type IRequestOptions,
+  type IRequestOptionsInput,
+  validateRequestOptions,
+} from "./request.js";
+import {
+  BindenResponse,
+  ct_json,
+  type IResponseOptions,
+  validateResponseOptions,
+} from "./response.js";
 import { matchPrefix, matchRoute, type IRoutingOptions } from "./route.js";
 import { Router } from "./router.js";
 import { isClosing, register, track } from "./shutdown.js";
@@ -46,10 +56,14 @@ interface IAccessLog {
   readonly path: "path" | "template";
 }
 
-/** The options of `Binden`, but its `state` */
+/**
+ * The options of `Binden`, but its `state`: with the options of its requests
+ * (`trust_proxy`, `allowed_hosts`, `request_id`, `encoded_slashes` and
+ * `query`, see `IRequestOptionsInput`) and of its responses (`etag`)
+ */
 export interface IBindenBaseOptions<
   State extends object = Record<string, unknown>,
-> {
+> extends IRequestOptionsInput {
   /**
    * Whether a router without `HEAD` middlewares handles `HEAD` with its `GET`
    * middlewares (`true`)
@@ -87,11 +101,11 @@ export interface IBindenBaseOptions<
    */
   access_log?: IAccessLogOptions | boolean | undefined;
   /**
-   * The proxies whose `Forwarded` elements `request.protocol` trusts: none
-   * (`false`, the default), all of them (`true`) or the given number of the
-   * nearest ones
+   * A strong `ETag` (the SHA-256 of the body) for the `200` responses to `GET`
+   * and `HEAD` sent from a `Buffer` or a string, and `304 Not Modified` when
+   * `If-None-Match` matches it (`false`, see `IResponseOptions`)
    */
-  trust_proxy?: ITrustProxy | undefined;
+  etag?: boolean | undefined;
 }
 
 /**
@@ -148,6 +162,7 @@ export class Binden<
   readonly #routing: Required<IRoutingOptions>;
   readonly #state: (() => object) | null;
   readonly #Request: typeof BindenRequest;
+  readonly #Response: typeof BindenResponse;
 
   public constructor(
     ...[options = {} as IBindenOptions<State>]: Record<
@@ -168,14 +183,22 @@ export class Binden<
       routing = {},
       state,
       timeout = 0,
-      trust_proxy = false,
+      trust_proxy,
+      encoded_slashes,
+      allowed_hosts,
+      request_id,
+      query,
+      etag,
     } = options;
-    if (
-      typeof trust_proxy === "number" &&
-      !(Number.isSafeInteger(trust_proxy) && trust_proxy >= 0)
-    ) {
-      throw new RangeError("`trust_proxy` is not a non-negative integer");
-    }
+    // Checked once: the requests and the responses of the application share them
+    const requests = validateRequestOptions({
+      trust_proxy,
+      encoded_slashes,
+      allowed_hosts,
+      request_id,
+      query,
+    });
+    const responses = validateResponseOptions({ etag });
     validateDelay("timeout", timeout, 0);
     validateDelay("error_handler_timeout", error_handler_timeout, 1);
     Binden.#boolean("auto_head", auto_head);
@@ -207,11 +230,19 @@ export class Binden<
     this.#details = log_error_details;
     this.#routing = { case_sensitive, strict };
     this.#state = state ?? null;
-    // The requests of this application trust its proxies
+    // The requests and the responses of this application, with its options
     this.#Request = class extends BindenRequest {
-      // eslint-disable-next-line class-methods-use-this -- the option of the app
-      protected override get trust_proxy(): ITrustProxy {
-        return trust_proxy;
+      // eslint-disable-next-line class-methods-use-this -- the options of the app
+      protected override get options(): IRequestOptions {
+        return requests;
+      }
+    };
+    this.#Response = class<
+      Request extends http.IncomingMessage = http.IncomingMessage,
+    > extends BindenResponse<Request> {
+      // eslint-disable-next-line class-methods-use-this -- the options of the app
+      protected override get options(): IResponseOptions {
+        return responses;
       }
     };
   }
@@ -254,7 +285,7 @@ export class Binden<
     IncomingMessage: typeof BindenRequest;
     ServerResponse: typeof BindenResponse;
   } {
-    return { IncomingMessage: this.#Request, ServerResponse: BindenResponse };
+    return { IncomingMessage: this.#Request, ServerResponse: this.#Response };
   }
 
   /**
@@ -276,7 +307,7 @@ export class Binden<
     return (request, response): void => {
       if (
         !(request instanceof this.#Request) ||
-        !(response instanceof BindenResponse)
+        !(response instanceof this.#Response)
       ) {
         const message =
           "The request and the response are not those of the application (`serverOptions()`)";
