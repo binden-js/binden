@@ -5,12 +5,15 @@
 //   verify <version>    none of the workspaces is published at <version> yet
 //   version <version>   set <version> everywhere and refresh package-lock.json
 //   publish             publish every workspace in the `workspaces` order
-//                       (`--skip-existing` skips already published ones, for manual recovery)
+//                       (`--skip-existing` skips already published ones, to recover a release
+//                       that failed half-way: from the commit of its tag only, and only when the
+//                       published ones come from that commit too)
 //
 // Provenance is enabled by the CI release job (NPM_CONFIG_PROVENANCE), so a manual
 // `publish --skip-existing` works outside of CI too.
 // Everything is logged to stderr: @semantic-release/exec parses the stdout of `publishCmd`.
 import { readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { npm as execNpm } from "./npm.mjs";
 import { join } from "node:path";
 
@@ -123,10 +126,39 @@ function setVersion(version) {
   check();
 }
 
+function git(args) {
+  return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+}
+
+// The commit that a published version was published from (npm records it as `gitHead`)
+function publishedFrom(name, version) {
+  const stdout = npm(["view", `${name}@${version}`, "gitHead", "--json"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return stdout.trim() === "" ? null : JSON.parse(stdout);
+}
+
 function publish(skipExisting) {
   check();
+  const [{ manifest: first }] = workspaces();
+  const head = skipExisting ? git(["rev-parse", "HEAD"]) : null;
+  if (skipExisting) {
+    // The tag of a release is pushed before its packages are published: the rest is
+    // published from the commit of the tag, not from a later one
+    const tag = `v${first.version}`;
+    const tagged = git(["rev-parse", "--verify", `${tag}^{commit}`]);
+    if (tagged !== head) {
+      throw new Error(`HEAD (${head}) is not the commit of ${tag} (${tagged})`);
+    }
+  }
   for (const { dir, manifest } of workspaces()) {
     if (skipExisting && isPublished(manifest.name, manifest.version)) {
+      const from = publishedFrom(manifest.name, manifest.version);
+      if (from !== head) {
+        throw new Error(
+          `${manifest.name}@${manifest.version} was published from ${from}, not from ${head}`,
+        );
+      }
       log(`skip ${manifest.name}@${manifest.version}: already published`);
     } else {
       log(`publish ${manifest.name}@${manifest.version}`);

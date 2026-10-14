@@ -15,8 +15,9 @@ import { tmpdir } from "node:os";
 
 // A fake npm CLI (run as `npm_execpath`, see scripts/npm.mjs) that logs its
 // arguments and emulates `npm view` (E404 unless the package version is listed in
-// FAKE_NPM_PUBLISHED, or a network error with FAKE_NPM_OFFLINE). Every other
-// command succeeds without doing anything.
+// FAKE_NPM_PUBLISHED, or a network error with FAKE_NPM_OFFLINE), whose `gitHead`
+// is FAKE_NPM_GITHEAD, and `npm publish`, which fails for the workspace in
+// FAKE_NPM_FAIL_PUBLISH. Every other command succeeds without doing anything.
 const fakeNpm = `const { appendFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args) + "\\n");
@@ -27,12 +28,18 @@ if (args[0] === "view") {
   }
   const spec = args[1];
   const published = (process.env.FAKE_NPM_PUBLISHED ?? "").split(",");
-  if (published.includes(spec)) {
-    process.stdout.write(JSON.stringify(spec.slice(spec.lastIndexOf("@") + 1)));
-  } else {
+  if (!published.includes(spec)) {
     process.stdout.write(JSON.stringify({ error: { code: "E404" } }));
     process.exit(1);
+  } else if (args[2] === "gitHead") {
+    const head = process.env.FAKE_NPM_GITHEAD;
+    process.stdout.write(head ? JSON.stringify(head) : "");
+  } else {
+    process.stdout.write(JSON.stringify(spec.slice(spec.lastIndexOf("@") + 1)));
   }
+} else if (args[0] === "publish" && args[2] === process.env.FAKE_NPM_FAIL_PUBLISH) {
+  process.stderr.write("npm error code E500\\n");
+  process.exit(1);
 }
 `;
 
@@ -69,6 +76,37 @@ describe("scripts/release.mjs", () => {
         ...env,
       },
     });
+
+  // A repository whose HEAD is the tagged release (without the hooks and the
+  // signing of the user)
+  const git = (...args) => {
+    const { status, stdout, stderr } = spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "-c",
+        "init.defaultBranch=main",
+        ...args,
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    equal(status, 0, stderr);
+    return stdout.trim();
+  };
+  const tagRelease = () => {
+    git("init", "-q");
+    git("add", "-A");
+    git("commit", "-q", "--no-verify", "-m", "release");
+    git("tag", "v1.0.0");
+    return git("rev-parse", "HEAD");
+  };
 
   const npmCalls = (command) => {
     const log = join(root, "npm.log");
@@ -198,14 +236,59 @@ describe("scripts/release.mjs", () => {
     deepEqual(npmCalls("publish"), []);
   });
 
-  it("publish --skip-existing skips published workspaces", () => {
-    const env = { FAKE_NPM_PUBLISHED: "@fixture/a@1.0.0" };
+  it("publish stops at the first workspace that fails", () => {
+    const env = { FAKE_NPM_FAIL_PUBLISH: "packages/b" };
+    const { status, stderr } = release(["publish"], env);
+    equal(status, 1);
+    match(stderr, /E500/u);
+    deepEqual(npmCalls("publish"), [
+      ["publish", "--workspace", "packages/a"],
+      ["publish", "--workspace", "packages/b"],
+    ]);
+  });
+
+  it("publish --skip-existing publishes the rest of the tagged release", () => {
+    const head = tagRelease();
+    const env = {
+      FAKE_NPM_PUBLISHED: "@fixture/a@1.0.0",
+      FAKE_NPM_GITHEAD: head,
+    };
     const { status } = release(["publish", "--skip-existing"], env);
     equal(status, 0);
     deepEqual(npmCalls("publish"), [
       ["publish", "--workspace", "packages/b"],
       ["publish", "--workspace", "packages/c"],
     ]);
+  });
+
+  it("publish --skip-existing refuses packages of another commit", () => {
+    tagRelease();
+    for (const head of ["0".repeat(40), ""]) {
+      const env = {
+        FAKE_NPM_PUBLISHED: "@fixture/a@1.0.0",
+        FAKE_NPM_GITHEAD: head,
+      };
+      const { status, stderr } = release(["publish", "--skip-existing"], env);
+      equal(status, 1);
+      match(stderr, /@fixture\/a@1\.0\.0 was published from/u);
+    }
+    deepEqual(npmCalls("publish"), []);
+  });
+
+  it("publish --skip-existing publishes from the commit of the tag only", () => {
+    tagRelease();
+    writeFileSync(join(root, "later"), "");
+    git("add", "-A");
+    git("commit", "-q", "--no-verify", "-m", "later");
+    const { status, stderr } = release(["publish", "--skip-existing"]);
+    equal(status, 1);
+    match(stderr, /is not the commit of v1\.0\.0/u);
+    deepEqual(npmCalls("publish"), []);
+
+    git("tag", "-d", "v1.0.0");
+    const untagged = release(["publish", "--skip-existing"]);
+    equal(untagged.status, 1);
+    deepEqual(npmCalls("publish"), []);
   });
 
   it("fails on an unknown command", () => {
