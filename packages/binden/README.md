@@ -14,8 +14,8 @@ npm install binden
 
 `new Binden(options)` takes the following options:
 
-- `auto_head` (default `true`) - a `guarded` router that handles `GET` handles `HEAD` as well
-- `error_handler` - replaces the default reply to an error thrown by a middleware. It may be `async`: it is awaited, and the default reply is sent when it has not started a response. When it fails, the connection is closed.
+- `auto_head` (default `true`) - a router without `HEAD` middlewares handles `HEAD` with its `GET` middlewares (see [Router](#router))
+- `error_handler` - replaces the default reply to an error thrown by a middleware (the thrown value may be anything, also `null`). It may be `async`: it is awaited, and it must have ended its reply when it settles. Nothing started then gets the default reply, while a reply that is not ended (e.g. a `write()` without `end()`) is cut by closing the connection. When it fails, the connection is closed. There is no deadline: a handler that never settles keeps its request.
 - `logger` - see [Logging](#logging)
 - `trust_proxy` (default `false`) - the proxies in front of the server whose [`Forwarded`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) elements `request.protocol` trusts: none (`false`), all of them (`true`), or the given number of the nearest ones (each proxy appends its element, so the leftmost ones come from the client)
 
@@ -31,6 +31,8 @@ const middleware3 = (context: Context): Promise<void> =>
   context.json({ message: "Hello World!" });
 app.use("/path2", middleware3);
 ```
+
+A RegExp path keeps its flags, except `g` and `y` (they would make `test()` stateful).
 
 - `.off()` - remove a `Middleware/Router` from the stack (returns the removed items)
 
@@ -66,7 +68,7 @@ const secureServer = app.createSecureServer({ key, cert });
 
 Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` log an allowlist of details only, which keeps credentials and the input of the requests out of the logs:
 
-- a request is its method, its path (without the query string) and its `Host`, `User-Agent`, `Content-Type` and `Content-Length` headers;
+- a request is its method, its path and its `Host`, `User-Agent`, `Content-Type` and `Content-Length` headers. The path is logged without the query string and the fragment, nor the scheme, authority and userinfo of an absolute-form request-target; anything secret in the path itself (e.g. a token) is logged;
 - a response is its status code and its `Content-Type` and `Content-Length` headers;
 - a context is its `id`, request and response (not the fields the application sets on it);
 - a logged `body` (e.g. the one that [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body) failed to parse) is redacted;
@@ -300,17 +302,14 @@ export class MyMiddleware1 extends Middleware {
 
 const mm1 = new MyMiddleware1({ disabled: true });
 
-export class MyMiddleware2 extends Middleware {
-  public async run(): Promise<void> {
-    // Disable `mm1` every hour
-    setInterval(
-      () => {
-        mm1.disabled = !mm1.disabled;
-      },
-      1000 * 60 * 60,
-    );
-  }
-}
+// Enable or disable `mm1` every hour
+setInterval(
+  () => {
+    mm1.disabled = !mm1.disabled;
+  },
+  1000 * 60 * 60,
+).unref();
+app.use(mm1);
 ```
 
 - `.ignore_errors` - ignore errors from `await this.run(context)`
@@ -329,19 +328,49 @@ export class MyMiddleware1 extends Middleware {
 
 const mm1 = new MyMiddleware1({ ignore_errors: true });
 
-export class MyMiddleware2 extends Middleware {
-  public async run(): Promise<void> {
-    // Throw errors from `mm1.run()` every minute
-    setInterval(() => {
-      mm1.ignore_errors = !mm1.ignore_errors;
-    }, 1000 * 60);
-  }
-}
+// Throw the errors of `mm1.run()` every other minute
+setInterval(() => {
+  mm1.ignore_errors = !mm1.ignore_errors;
+}, 1000 * 60).unref();
+app.use(mm1);
+```
+
+A middleware may return a context, which replaces the current one for the following middlewares: it must have the request and the response of the current context (otherwise the middleware fails with a `TypeError`).
+
+### Router
+
+A `Router` holds middlewares by method, for a path of the stack:
+
+```typescript
+import { Binden, type Context, Router } from "binden";
+
+const router = new Router()
+  .get((context: Context) => context.json({ items: [] }))
+  .post((context: Context) => context.status(201).send())
+  .on("PROPFIND", (context: Context) => context.status(207).send());
+const app = new Binden().use("/items", router);
+```
+
+- `.get()`, `.head()`, `.post()`, `.put()`, `.patch()`, `.delete()`, `.options()`, `.trace()`, and `.on()` for any other method of Node.js but `CONNECT`, which Node.js emits as a `connect` event of the server: its requests never reach the middlewares. `.off()` removes middlewares, and `.methods` lists the methods that have some.
+- `HEAD` is handled by the `HEAD` middlewares of a router, or else by its `GET` middlewares (unless the `auto_head` option of `Binden` is `false`). A response to `HEAD` sends no body.
+- A `guarded` router (`new Router({ guarded: true })`) that does not allow the method of a request passes it on. When nothing else handles the request, it gets `405 Method Not Allowed`, with the methods of every guarded router that has refused it in `Allow`.
+
+```typescript
+import { Binden, type Context, Router } from "binden";
+
+const list = new Router({ guarded: true }).get((context: Context) =>
+  context.send("list"),
+);
+const create = new Router({ guarded: true }).post((context: Context) =>
+  context.status(201).send(),
+);
+// `DELETE /items` gets 405, with `Allow: GET, HEAD, POST`
+const app = new Binden().use("/items", list, create);
 ```
 
 ### BindenError
 
-`BindenError` represents an HTTP error
+`BindenError` represents an HTTP error, with a status code from 400 to 599 (an integer: anything else throws a `TypeError`)
 
 ```typescript
 import { Middleware, Context, BindenError } from "binden";
@@ -397,7 +426,7 @@ const rawHeader = request.header("X-Header");
 const { id } = request;
 ```
 
-- `.protocol` - the protocol of the connection or, behind trusted proxies (the `trust_proxy` option of `Binden`), the `proto` of the [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) element of the outermost of them. With `http.createServer()`, override the protected `trust_proxy` getter in a subclass of `BindenRequest`:
+- `.protocol` - the protocol of the connection or, behind trusted proxies (the `trust_proxy` option of `Binden`), the `proto` of the [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) element of the outermost of them: the element in its position (counted from the nearest proxy), and the protocol of the connection when that element is invalid or has no `proto`. With `http.createServer()`, override the protected `trust_proxy` getter in a subclass of `BindenRequest`:
 
 ```typescript
 const { protocol } = request;
@@ -413,6 +442,12 @@ const { secure } = request;
 if (!secure) {
   console.error("The connection is not secure");
 }
+```
+
+- `.URL` - the URL of the request: the protocol of the connection (`.protocol`), the authority of an absolute-form request-target (otherwise of `Host`), and the path and query of the request-target, set as such (`//a/b` is a path). A request-target with a fragment, a backslash, an invalid percent-encoding or a dot-segment (`/a/../b`, also percent-encoded, which would route the request to another path), and a `Host` that is not a host and a port, throw a `BindenError` with the status 400 (which `Binden` replies)
+
+```typescript
+const { pathname } = request.URL;
 ```
 
 - `.query` - A copy of `URL.search` parsed by the `querystring.parse()` method
@@ -450,13 +485,13 @@ response.cookies.add(cookie);
 await response.send("Check the `Set-Cookie` header for a random UUID");
 ```
 
-- `.status()` - Set the status code of the response
+- `.status()` - Set the status code of the response: an integer from 100 to 599
 
 ```typescript
 await response.status(400).send();
 ```
 
-- `.set()` - Set the headers
+- `.set()` - Set the headers (the own properties of the object)
 
 ```typescript
 const headers = {
@@ -466,7 +501,7 @@ const headers = {
 await response.status(402).set(headers).send("Payment is required");
 ```
 
-- `.send()` - send data. A response without a body (to `HEAD`, or with a 1xx, 204, 205 or 304 status) sends none: a `Readable` is destroyed without being read, and a response to `HEAD` gets the `Content-Length` of the body it would send to `GET`
+- `.send()` - send data, framed by the final status: a body gets its exact `Content-Length` (also a stale one is replaced), 1xx, 204 and 304 responses have none, and 205 has `Content-Length: 0`. A response without a body (to `HEAD`, or with a 1xx, 204, 205 or 304 status) sends none: a `Readable` is destroyed without being read, and a response to `HEAD` gets the `Content-Length` of the body it would send to `GET`. It resolves once the response is flushed to the connection, and rejects when it cannot be sent (e.g. the client went away), or when a `Readable` fails, closes before its end, or does not have its `Content-Length`. Nothing sent yet, such an error can still be replied; otherwise the response is cut, so that the client knows that it is truncated.
 
 ```typescript
 await response.send(
@@ -528,22 +563,20 @@ const form = new URLSearchParams([
 await response.form(form);
 ```
 
-- `.sendFile()` - Send a file with its `Last-Modified` (never in the future). Follows [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) for the following headers
-  - [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since) - `304 Not Modified` for `GET` and `HEAD`, unless `If-None-Match` is sent
+- `.sendFile()` - Send a file with its `Last-Modified` (never in the future). Its metadata and its content are read from the one file it opens (a FIFO is not waited for), and no more than its size is sent. Follows [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) for the following headers, with the `ETag` set on the response (if any), in this order
+  - [If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match) (or else [If-Unmodified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Unmodified-Since)) - `412 Precondition Failed` when it does not match (by the strong comparison; `*` matches the file)
+
+  - [If-None-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match) (or else [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since), for `GET` and `HEAD`) - when it matches (by the weak comparison), `304 Not Modified` for `GET` and `HEAD`, `412 Precondition Failed` for other methods
 
   - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) - for `GET` only: `206 Partial Content` for one range (overlapping or adjacent ranges are merged; several distinct ranges get the whole file), `416 Range Not Satisfiable` when no range can be satisfied
 
-  - [If-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range) - the ranges apply when it is exactly the `Last-Modified`, or the strong `ETag` set on the response
+  - [If-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range) - the ranges apply when it is the strong `ETag` set on the response, or exactly the `Last-Modified` when that is at least a second old (a strong validator)
 
   A response to `HEAD` gets the headers of the whole file, without reading it.
 
 ```typescript
 const path = "<path to file>";
 await response.sendFile(path);
-// Or with custom Stats
-import { stat } from "node:fs/promises";
-const stats = await stat("<PATH>");
-await response.sendFile(path, stats);
 ```
 
 ### Headers
@@ -580,7 +613,9 @@ const encodings = ContentEncoding.fromString(
 const { content_encoding } = request;
 ```
 
-- [Content-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range)
+The constructors of the headers throw a `TypeError` for what their parsers reject (e.g. a reversed `Range`, a weight that is not a qvalue, or a `Content-Type` parameter with control characters).
+
+- [Content-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range) - `bytes <first>-<last>/<size>` (the size may be `*`) or an unsatisfied range, with decimal positions only
 
 ```typescript
 import { ContentRange } from "binden";
@@ -589,7 +624,7 @@ const cr = new ContentRange({ start: 0, end: 499, size: 1000 });
 response.setHeader("Content-Range", cr.toString());
 ```
 
-- [Content-Type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type)
+- [Content-Type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type) - a media type and all of its parameters (`.parameters`, by lowercase name), serialized as quoted strings when they are not tokens
 
 ```typescript
 import { ContentType } from "binden";
@@ -622,11 +657,12 @@ const cookie2 = new Cookie({
 response.cookies.add(cookie1).add(cookie2);
 ```
 
-- [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded)
+- [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) - `Forwarded.parse()` returns the elements in their positions (`null` for an invalid one: a parameter that is not `name=value`, or that is given twice), and `Forwarded.fromString()` the valid ones
 
 ```typescript
 import { Forwarded } from "binden";
 
+const elements = Forwarded.parse(request.headers.forwarded);
 const proxies = Forwarded.fromString(request.headers.forwarded);
 // or using BindenRequest
 const { forwarded } = request;

@@ -31,6 +31,10 @@ npm run ci:all         # everything CI runs
 
 Commands for a single package: `npm test -w packages/binden`.
 
+`npm run consumer:check` runs a consumer of the packed packages against a real server, but only
+type checks the TypeScript examples of the READMEs: the placeholders that they use (`app`,
+`context`, …) are declared, and their behaviour is not tested.
+
 Packages consume each other through the compiled `dist/` (`@binden/body`, `@binden/compression` and
 `@binden/multipart` import `binden`, which imports `@binden/logger`): run `npm run build` after
 changing a package that others depend on.
