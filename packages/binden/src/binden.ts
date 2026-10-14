@@ -33,6 +33,7 @@ import {
   type IRoutingOptions,
 } from "./route.js";
 import { Router } from "./router.js";
+import { kSeal } from "./seal.js";
 import { isClosing, register, track } from "./shutdown.js";
 import { type ILayer, layersOf, markRoot, Stack } from "./stack.js";
 
@@ -351,6 +352,10 @@ export class Binden<
     });
     const exchange = Exchange.for(request, response);
     track(server, exchange, response);
+    // Once the exchange is sealed (e.g. after the deadline), the sends of
+    // the response (`send()`, `json()`, `redirect()`, `sendFile()`, …) do
+    // nothing, but those of the reply of the framework
+    response[kSeal](() => !exchange.may_reply);
     if (this.#request_id?.echo === true) {
       // Every reply sends it back, also the error replies of the framework
       response.setHeader(this.#request_id.header, request.id);

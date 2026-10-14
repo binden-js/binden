@@ -215,7 +215,7 @@ Every request has an abort signal, `context.signal`, aborted at most once (its `
 
 The deadline of a request is the `timeout` option of `Binden` (none by default). A middleware restarts it from now with `context.setTimeout(ms)`, or removes it with `context.setTimeout(0)` (e.g. for a stream of server-sent events). Once the deadline has passed:
 
-- the stack stops: no other middleware runs, and the result of the running one is ignored (a later failure is logged at `debug`, and its later replies through the context, such as `context.send()`, do nothing);
+- the stack stops: no other middleware runs, and the result of the running one is ignored (a later failure is logged at `debug`). Its later replies through the context or the response (`send()`, `json()`, `text()`, `html()`, `form()`, `redirect()`, `sendFile()` and `flush()`) do nothing, so that they cannot replace the reply of the error handler. The methods of Node.js (`write()`, `end()`, `writeHead()`, `flushHeaders()`, or a stream piped into the response) are not guarded: a middleware that writes with them must stop once `context.signal` is aborted;
 - a request whose reply has not started gets a `BindenError(503, { code: "deadline" })`, which goes to the error handler;
 - a reply that has started (or a response that has not finished once the stack has completed) is cut by closing the connection.
 

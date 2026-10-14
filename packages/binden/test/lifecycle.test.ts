@@ -386,3 +386,45 @@ suite("Lifecycle", () => {
     });
   });
 });
+
+suite("Lifecycle (late sends of the response)", () => {
+  const late: Partial<Record<string, (context: Context) => Promise<void>>> = {
+    "/send": (context) => context.response.send("late"),
+    "/json": (context) => context.response.json({ late: true }),
+    "/text": (context) => context.response.text("late"),
+    "/redirect": (context) => context.response.redirect("/elsewhere"),
+    "/sendFile": (context) => context.response.sendFile(import.meta.filename),
+    // It would send the headers
+    "/flush": (context) => context.response.flush(),
+  };
+
+  test("a send of the response after the deadline does not replace the reply of the error handler", async () => {
+    await withApp(
+      {
+        timeout: 20,
+        error_handler: async (context: Context): Promise<void> => {
+          // The late send comes first
+          await sleep(80);
+          await context.status(503).send("handler");
+        },
+      },
+      (app) => {
+        app.use(async (context: Context) => {
+          await sleep(40);
+          await late[context.url.pathname]?.(context);
+        });
+      },
+      async ({ port }) => {
+        for (const path of Object.keys(late)) {
+          const response = await send(port, { path });
+          deepStrictEqual(
+            [response.status, response.body],
+            [503, "handler"],
+            path,
+          );
+          ok(!("location" in response.headers), path);
+        }
+      },
+    );
+  });
+});
