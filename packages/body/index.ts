@@ -18,17 +18,29 @@ export type IParse<T = unknown> = (input: string) => T | undefined;
 
 export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
   parse?: IParse<T>;
+  /**
+   * The largest body in bytes, once decoded (no limit by default): a larger
+   * one is not read further, and gets a `413 Content Too Large`
+   */
+  limit?: number;
 }
 
 export class BodyParser<T = unknown> extends Middleware {
   readonly #parse: IParse<T>;
+  readonly #limit: number | null;
 
-  public constructor({ parse, ...rest }: IBodyParserOptions = {}) {
+  public constructor({ parse, limit, ...rest }: IBodyParserOptions = {}) {
     super(rest);
     if (typeof parse !== "undefined" && typeof parse !== "function") {
       throw new TypeError("`parse` is not a function");
+    } else if (
+      typeof limit !== "undefined" &&
+      !(Number.isSafeInteger(limit) && limit >= 0)
+    ) {
+      throw new TypeError("`limit` is not a non-negative integer");
     }
     this.#parse = parse ?? JSON.parse;
+    this.#limit = limit ?? null;
   }
 
   public async run(context: Context): Promise<void> {
@@ -101,8 +113,27 @@ export class BodyParser<T = unknown> extends Middleware {
       });
 
       const chunks: Buffer[] = [];
+      let size = 0;
+      const limit = this.#limit;
 
-      stream.on("data", (data: Buffer) => chunks.push(data));
+      stream.on("data", (data: Buffer) => {
+        size += data.byteLength;
+        if (limit === null || size <= limit) {
+          chunks.push(data);
+          return;
+        }
+        // Not read further (e.g. a small compressed body that would decode to
+        // gigabytes): the connection is closed after the reply
+        log.debug("The body is too large", { limit });
+        source.unpipe();
+        source.pause();
+        stream.removeAllListeners("data");
+        for (const [, decompresser] of streams) {
+          decompresser.destroy();
+        }
+        context.setHeader("Connection", "close");
+        reject(new BindenError(413));
+      });
 
       finished(stream, (error) => {
         if (error) {

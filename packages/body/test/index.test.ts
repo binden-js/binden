@@ -11,7 +11,7 @@ import {
   type InputType,
 } from "node:zlib";
 import { Ajv as AJV, type JTDDataType } from "ajv/dist/jtd.js";
-import { errors, request } from "undici";
+import { Agent, errors, request } from "undici";
 import { Binden, Context, ct_text, ct_json, ct_form } from "binden";
 
 import { BodyParser, type IParse } from "../index.js";
@@ -71,6 +71,48 @@ suite("BodyParser", () => {
       () => new BodyParser({ parse: 2 as unknown as IParse }),
       new TypeError("`parse` is not a function"),
     );
+  });
+
+  test("constructor (with an invalid `limit` option)", () => {
+    for (const limit of [-1, 1.5, Number.NaN, "1" as unknown as number]) {
+      throws(
+        () => new BodyParser({ limit }),
+        new TypeError("`limit` is not a non-negative integer"),
+      );
+    }
+  });
+
+  test("`limit` (the size of the decoded body)", async () => {
+    const received: unknown[] = [];
+    app.use(new BodyParser({ limit: 1024 }), (ct: Context) => {
+      received.push(ct.request.body);
+      return ct.send();
+    });
+    // Keeps its connections (unlike the global dispatcher of the tests)
+    const dispatcher = new Agent();
+    const send = async (
+      body: Buffer | string,
+      headers: Record<string, string> = {},
+    ): Promise<[number, unknown]> => {
+      const response = await request(url, {
+        method: "POST",
+        body,
+        dispatcher,
+        headers: { "Content-Type": ct_text, ...headers },
+      });
+      await response.body.text();
+      return [response.statusCode, response.headers.connection];
+    };
+
+    deepEqual(await send("a".repeat(1024)), [200, "keep-alive"]);
+    // Not read further: the connection is closed after the reply
+    deepEqual(await send("a".repeat(1025)), [413, "close"]);
+    // A small compressed body that decodes to more than the limit
+    const bomb = gzipSync(Buffer.alloc(64 * 1024));
+    ok(bomb.byteLength < 1024);
+    deepEqual(await send(bomb, { "Content-Encoding": "gzip" }), [413, "close"]);
+    deepEqual(received, ["a".repeat(1024)]);
+    await dispatcher.close();
   });
 
   test("text", async () => {

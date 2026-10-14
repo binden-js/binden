@@ -35,6 +35,19 @@ class MyMiddleware extends Middleware {
 app.use("/deposit", new Router().post(BodyParser, new MyMiddleware()));
 ```
 
+### Body size
+
+The body is read into memory, and nothing limits its size by default: a small compressed body
+may decode to gigabytes. Set `limit` (in bytes, of the decoded body) to reply
+`413 Content Too Large` to a larger body, which is then not read further (the connection is
+closed after the reply), for example 1 MiB:
+
+```typescript
+import { BodyParser } from "@binden/body";
+
+const body_parser = new BodyParser({ limit: 1024 * 1024 });
+```
+
 ### Custom `parse` function
 
 ```typescript
