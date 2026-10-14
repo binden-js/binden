@@ -627,6 +627,7 @@ suite("validateRequestOptions()", () => {
       trust_proxy: { trust: false, headers: "forwarded" },
       encoded_slashes: false,
       allowed_hosts: null,
+      request_id: null,
       query: { max_keys: 1000 },
     });
     ok(Object.isFrozen(options));

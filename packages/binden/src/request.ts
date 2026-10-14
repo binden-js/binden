@@ -14,6 +14,7 @@ import ContentType from "./headers/content-type.js";
 import Cookie from "./headers/cookie.js";
 import Forwarded from "./headers/forwarded.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
+import { token } from "./headers/list.js";
 import Range from "./headers/range.js";
 import {
   type IProxyResult,
@@ -46,6 +47,12 @@ export interface IRequestOptions {
    * (`hostname` for any port, or `hostname:port`), or a function of the host.
    */
   readonly allowed_hosts: IAllowedHosts | null;
+  /**
+   * The request ids: their field name (in lowercase), whether an incoming id
+   * is trusted, and whether the id is sent back in the response (by
+   * `Binden`). `null` (by default): new ids, not sent back.
+   */
+  readonly request_id: IRequestIdSettings | null;
   /** The greatest number of keys that `request.query` parses (1000) */
   readonly query: { readonly max_keys: number };
 }
@@ -57,11 +64,33 @@ export interface IRequestOptions {
  */
 export type IAllowedHosts = readonly string[] | ((host: string) => boolean);
 
+/** The settings of the request ids, checked and with their defaults */
+export interface IRequestIdSettings {
+  readonly header: string;
+  readonly trust_incoming: boolean;
+  readonly echo: boolean;
+}
+
+/** The request ids, as given */
+export interface IRequestIdOptions {
+  /** The field of the id (`x-request-id` by default) */
+  header?: string | undefined;
+  /**
+   * Whether the id of the request (one field line of 1 to 128 letters, digits,
+   * `.`, `_`, `:` and `-`) is used instead of a new one (`false` by default):
+   * only when the proxies in front of the server set or check it
+   */
+  trust_incoming?: boolean | undefined;
+  /** Whether the response sends the id back (`true` by default) */
+  echo?: boolean | undefined;
+}
+
 /** The request options as given (to `Binden`), every one of them optional */
 export interface IRequestOptionsInput {
   trust_proxy?: ITrustProxy | undefined;
   encoded_slashes?: boolean | undefined;
   allowed_hosts?: IAllowedHosts | undefined;
+  request_id?: IRequestIdOptions | undefined;
   query?: { max_keys?: number | undefined } | undefined;
 }
 
@@ -136,6 +165,29 @@ function isAllowed(entry: string, url: URL): boolean {
   return name === url.hostname && (port === "" || port === effective);
 }
 
+/** The checked `request_id` option, with its defaults (`null` without it) */
+function checkRequestId(value: unknown): IRequestIdSettings | null {
+  if (typeof value === "undefined") {
+    return null;
+  }
+  const {
+    header = "x-request-id",
+    trust_incoming = false,
+    echo = true,
+  } = optionalObject(value, "request_id");
+  if (typeof header !== "string" || !token.test(header)) {
+    throw new TypeError("`request_id.header` is not a field name");
+  } else if (typeof trust_incoming !== "boolean") {
+    throw new TypeError("`request_id.trust_incoming` is not a boolean");
+  } else if (typeof echo !== "boolean") {
+    throw new TypeError("`request_id.echo` is not a boolean");
+  }
+  return Object.freeze({ header: header.toLowerCase(), trust_incoming, echo });
+}
+
+/** An id that a request may carry */
+const incomingId = /^[\w.:-]{1,128}$/u;
+
 /**
  * The request options with their defaults, checked: a `TypeError` for a value
  * of another type, a `RangeError` for a number out of its range (e.g.
@@ -149,6 +201,7 @@ export function validateRequestOptions(
     trust_proxy = false,
     encoded_slashes = false,
     allowed_hosts,
+    request_id,
     query,
   } = optionalObject(input, "options");
   const { max_keys = 1000 } = optionalObject(query, "query");
@@ -166,6 +219,7 @@ export function validateRequestOptions(
     trust_proxy: checkTrustProxy(trust_proxy),
     encoded_slashes,
     allowed_hosts: checkAllowedHosts(allowed_hosts),
+    request_id: checkRequestId(request_id),
     query: Object.freeze({ max_keys }),
   });
 }
@@ -280,10 +334,13 @@ export class BindenRequest extends IncomingMessage {
     return this.headers[name.toLowerCase()];
   }
 
+  /**
+   * The id of the request: a new UUID or, with `request_id.trust_incoming`,
+   * the one of the request (one field line of 1 to 128 letters, digits, `.`,
+   * `_`, `:` and `-`)
+   */
   public get id(): string {
-    if (typeof this.#id === "undefined") {
-      this.#id = randomUUID();
-    }
+    this.#id ??= this.#incomingId() ?? randomUUID();
     return this.#id;
   }
 
@@ -414,6 +471,16 @@ export class BindenRequest extends IncomingMessage {
     url.pathname = path;
     url.search = query === "" ? "" : `?${query}`;
     return url;
+  }
+
+  /** The trusted id of the request, or `null` */
+  #incomingId(): string | null {
+    const { request_id } = this.options;
+    if (request_id?.trust_incoming !== true) {
+      return null;
+    }
+    const values = this.headersDistinct[request_id.header.toLowerCase()] ?? [];
+    return values.length === 1 && incomingId.test(values[0]) ? values[0] : null;
   }
 
   /** What the trusted proxies tell about the client, found once */
