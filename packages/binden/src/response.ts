@@ -8,6 +8,7 @@ import {
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import ContentRange from "./headers/content-range.js";
+import ContentType from "./headers/content-type.js";
 import Cookie from "./headers/cookie.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
 import { parseHttpDate } from "./headers/http-date.js";
@@ -24,6 +25,38 @@ export const ct_form = "application/x-www-form-urlencoded";
 export type IHeadersValue = number | string | readonly string[];
 
 export type IHeaders = Record<string, IHeadersValue>;
+
+/** The characters of `attr-char` (RFC 8187, section 3.2.1) */
+const attrChar = /^[\w!#$&+.^`|~-]$/u;
+
+/**
+ * The `Content-Disposition` of an attachment (RFC 6266): an ASCII `filename`
+ * (other characters replaced with `_`) and the UTF-8 `filename*` (RFC 8187)
+ */
+function contentDisposition(filename?: string): string {
+  if (typeof filename === "undefined") {
+    return "attachment";
+  } else if (
+    typeof filename !== "string" ||
+    filename === "" ||
+    !filename.isWellFormed()
+  ) {
+    throw new TypeError("The filename is not a non-empty well-formed string");
+  }
+  const ascii = filename.replaceAll(/[^\x20-\x7E]|["\\]/gu, "_");
+  const encoded = [...new TextEncoder().encode(filename)]
+    .map((byte) => {
+      const char = String.fromCharCode(byte);
+      return attrChar.test(char)
+        ? char
+        : `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    })
+    .join("");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
+/** A header field name (a token, RFC 9110, section 5.6.2) */
+const fieldName = /^[!#$%&'*+\-.^_`|~\dA-Za-z]+$/u;
 
 export class BindenResponse<
   Request extends IncomingMessage = IncomingMessage,
@@ -70,6 +103,55 @@ export class BindenResponse<
       this.setHeader(name, value);
     }
     return this;
+  }
+
+  /** Set the `Content-Type`: a media type with its parameters (a `TypeError` otherwise) */
+  public type(media_type: string): this {
+    const parsed = ContentType.fromString(media_type);
+    if (parsed === null) {
+      throw new TypeError(`Invalid media type: ${media_type}`);
+    }
+    return this.setHeader("Content-Type", parsed.toString());
+  }
+
+  /**
+   * Send the response as an attachment (`Content-Disposition`), with the name
+   * to save it as: in ASCII (`filename`) and in UTF-8 (`filename*`, RFC 8187)
+   */
+  public attachment(filename?: string): this {
+    return this.setHeader("Content-Disposition", contentDisposition(filename));
+  }
+
+  /**
+   * Add the names of request headers that select the response to `Vary`
+   * (once each, case-insensitively); `*` replaces them all
+   */
+  public vary(...fields: string[]): this {
+    for (const field of fields) {
+      if (!fieldName.test(field)) {
+        throw new TypeError(`Invalid field name: ${field}`);
+      }
+    }
+    const raw = this.getHeader("Vary");
+    const values = (Array.isArray(raw) ? raw : [`${raw ?? ""}`])
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter((value) => value !== "");
+    const names = new Set(values.map((value) => value.toLowerCase()));
+    if (names.has("*")) {
+      return this;
+    } else if (fields.includes("*")) {
+      return this.setHeader("Vary", "*");
+    }
+    for (const field of fields) {
+      if (!names.has(field.toLowerCase())) {
+        names.add(field.toLowerCase());
+        values.push(field);
+      }
+    }
+    return values.length === 0
+      ? this
+      : this.setHeader("Vary", values.join(", "));
   }
 
   /** Send a response */

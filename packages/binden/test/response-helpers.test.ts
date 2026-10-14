@@ -1,5 +1,5 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, throws } from "node:assert";
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
 import { afterEach, beforeEach, suite, test } from "node:test";
@@ -108,5 +108,92 @@ suite("BindenResponse helpers", () => {
     deepStrictEqual(await html, null);
     deepStrictEqual(page.headers["content-type"], "text/html; charset=utf-8");
     deepStrictEqual(page.body.toString(), "<p>");
+  });
+
+  test(".type()", () => {
+    const response = detached();
+    ok(response.type(" Text/HTML ; Charset=UTF-8; q=x") === response);
+    deepStrictEqual(
+      response.getHeader("Content-Type"),
+      "text/html; charset=utf-8; q=x",
+    );
+    for (const invalid of ["text", "text/html\r\nX-Injected: 1", "", "a b/c"]) {
+      throws(
+        () => response.type(invalid),
+        new TypeError(`Invalid media type: ${invalid}`),
+      );
+    }
+    deepStrictEqual(
+      response.getHeader("Content-Type"),
+      "text/html; charset=utf-8; q=x",
+    );
+  });
+
+  test(".attachment()", () => {
+    const response = detached();
+    ok(response.attachment() === response);
+    deepStrictEqual(response.getHeader("Content-Disposition"), "attachment");
+
+    const cases: [string, string, string][] = [
+      ["report.pdf", "report.pdf", "report.pdf"],
+      // Not `attr-char` (RFC 8187): percent-encoded
+      ["a b'(c)*%.txt", "a b'(c)*%.txt", "a%20b%27%28c%29%2A%25.txt"],
+      // Not in a quoted string, nor ASCII
+      [`"q"\\.txt`, "_q__.txt", "%22q%22%5C.txt"],
+      [
+        "отчёт €.csv",
+        "_____ _.csv",
+        "%D0%BE%D1%82%D1%87%D1%91%D1%82%20%E2%82%AC.csv",
+      ],
+      ["tab\t\r\n.txt", "tab___.txt", "tab%09%0D%0A.txt"],
+      ["!#$&+-.^_`|~", "!#$&+-.^_`|~", "!#$&+-.^_`|~"],
+    ];
+    for (const [name, ascii, encoded] of cases) {
+      response.attachment(name);
+      deepStrictEqual(
+        response.getHeader("Content-Disposition"),
+        `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`,
+      );
+    }
+
+    for (const invalid of ["", "\uD800.txt", 1 as unknown as string]) {
+      throws(
+        () => response.attachment(invalid),
+        new TypeError("The filename is not a non-empty well-formed string"),
+      );
+    }
+  });
+
+  test(".vary()", () => {
+    const response = detached();
+    ok(response.vary() === response);
+    ok(!response.hasHeader("Vary"));
+
+    response.vary("Accept-Encoding");
+    deepStrictEqual(response.getHeader("Vary"), "Accept-Encoding");
+    // Once each, case-insensitively, after the values set before
+    response.setHeader("Vary", ["Origin, accept-encoding", " ", "Cookie"]);
+    response.vary("Accept-Encoding", "Accept", "ACCEPT", "Cookie");
+    deepStrictEqual(
+      response.getHeader("Vary"),
+      "Origin, accept-encoding, Cookie, Accept",
+    );
+    response.setHeader("Vary", "Origin");
+    response.vary();
+    deepStrictEqual(response.getHeader("Vary"), "Origin");
+
+    // `*` replaces them all, and stays
+    response.vary("Accept", "*");
+    deepStrictEqual(response.getHeader("Vary"), "*");
+    response.vary("Accept");
+    deepStrictEqual(response.getHeader("Vary"), "*");
+
+    for (const invalid of ["", "A B", "X\r\nY: z", "a,b"]) {
+      throws(
+        () => response.vary("Accept", invalid),
+        new TypeError(`Invalid field name: ${invalid}`),
+      );
+    }
+    deepStrictEqual(response.getHeader("Vary"), "*");
   });
 });
