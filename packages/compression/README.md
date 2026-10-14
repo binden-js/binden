@@ -1,6 +1,6 @@
 # @binden/compression [![CI Status](https://github.com/binden-js/binden/actions/workflows/ci.yml/badge.svg)](https://github.com/binden-js/binden/actions/workflows/ci.yml) [![version](https://img.shields.io/npm/v/@binden/compression?style=plastic)](https://www.npmjs.com/package/@binden/compression) [![Coverage Status](https://coveralls.io/repos/github/binden-js/binden/badge.svg?branch=main)](https://coveralls.io/github/binden-js/binden?branch=main) [![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://github.com/prettier/prettier) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](https://github.com/binden-js/binden/blob/main/CODE_OF_CONDUCT.md) [![semantic-release](https://img.shields.io/badge/semantic--release-conventional--commits-e10079.svg?logo=semantic-release)](https://github.com/semantic-release/semantic-release) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org) ![node version](https://img.shields.io/node/v/@binden/compression) ![npm downloads](https://img.shields.io/npm/dt/@binden/compression) [![License](https://img.shields.io/npm/l/@binden/compression)](https://github.com/binden-js/binden/blob/main/packages/compression/LICENSE)
 
-[Binden](https://github.com/binden-js/binden) compression middleware (supports `br`, `gzip` and `deflate`).
+[Binden](https://github.com/binden-js/binden) compression middleware: `br`, `gzip`, `deflate` and (opt-in) `zstd`.
 
 ## Installation
 
@@ -11,22 +11,193 @@ npm install @binden/compression
 ## Usage
 
 ```typescript
-import Compression from "@binden/compression";
+import { Binden } from "binden";
+import compression, { Compression } from "@binden/compression";
 
-app.use(Compression);
+// With the default options
+const app = new Binden().use(compression);
+
+// Or with options of its own
+const other = new Binden().use(
+  new Compression({ threshold: 2048, encodings: ["br", "gzip"] }),
+);
+
+app.createServer().listen(8080);
+other.createServer().listen(8081);
+```
+
+The compression replaces `writeHead()`, `write()`, `end()`, `flush()` and `send()` on the response of
+each request, so that every writer (the following middlewares, `sendFile()`, the error handler, a
+piped stream) goes through it. It is installed once per response: a second compression on the
+same response does nothing.
+
+## Options
+
+| Option                      | Default                     | Description                                                                                                                |
+| --------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `format`                    | `"auto"`                    | `"auto"` negotiates the coding with `Accept-Encoding`; `"br"`, `"gzip"`, `"deflate"` or `"zstd"` always uses that coding   |
+| `encodings`                 | `["br", "gzip", "deflate"]` | The codings that `"auto"` offers, the preferred first (only with `"auto"`). `zstd` is offered only when listed             |
+| `threshold`                 | `1024`                      | A response whose `Content-Length` is smaller (in bytes) is not compressed; a response without a length is                  |
+| `filter`                    | `isCompressible`            | `(context, content_type) => boolean`: whether a response is compressed, by its `Content-Type` (`null` without a valid one) |
+| `gzip`, `deflate`           | `{}`                        | The [options](https://nodejs.org/api/zlib.html#class-options) of the compressors                                           |
+| `brotli`                    | `BROTLI_PARAM_QUALITY` `4`  | The [options](https://nodejs.org/api/zlib.html#class-brotlioptions) of the `br` compressor                                 |
+| `zstd`                      | `{}`                        | The [options](https://nodejs.org/api/zlib.html#class-zstdoptions) of the `zstd` compressor                                 |
+| `disabled`, `ignore_errors` | `false`                     | As for every `Middleware`                                                                                                  |
+
+Invalid options throw a `TypeError` (or a `RangeError`) in the constructor: also invalid options of a
+compressor (one is created to check them), and `zstd` (by `format` or `encodings`) on a version of
+Node.js whose `node:zlib` does not have it.
+
+The quality of `br` is 4 by default, rather than the 11 of `node:zlib`: 11 is meant for compressing
+ahead of time, and is far too slow for responses compressed as they are sent. Set it with
+`brotli: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }` (e.g. for a few large responses
+that are cached).
+
+### `filter`
+
+The default filter, `isCompressible()`, compresses text (`text/*`, but `text/event-stream`), JSON and
+XML (also as `+json` and `+xml`, such as `image/svg+xml`), JavaScript, WebAssembly, and uncompressed
+fonts and images (`font/ttf`, `font/otf`, `image/bmp`, …). A response without a valid `Content-Type` is
+not compressed.
+
+`filter` is called synchronously, when the headers of a response are committed. It must return a
+boolean: anything else (a promise as well) is a configuration error, which is logged (`error`) and
+replaces the response with an empty `500 Internal Server Error`, as does a filter that throws.
+
+```typescript
+import { Binden, type ContentType, type Context } from "binden";
+import { Compression, isCompressible } from "@binden/compression";
+
+// Also compresses `application/x-ndjson`, but never the responses of `/download`
+const compression = new Compression({
+  filter: (context: Context, type: ContentType | null): boolean =>
+    !context.url.pathname.startsWith("/download") &&
+    (type?.type === "application/x-ndjson" || isCompressible(type)),
+});
+
+new Binden().use(compression).createServer().listen(8080);
+```
+
+## When a response is compressed
+
+The decision is taken for each response when its headers are committed (by `writeHead()`,
+`flushHeaders()`, `flush()`, or the first `write()` or `end()`), when its status and its
+representation are known: whatever the following middlewares set before is taken into account. A
+response to `HEAD` gets exactly the headers of the response to `GET`.
+
+A response is sent as it is when:
+
+- it has no body: a `1xx`, `204`, `205` or `304` status, or an empty body (`Content-Length: 0`);
+- it is a range (`206`, or any `Content-Range`): ranges refer to the representation as it is;
+- it is encoded already (`Content-Encoding` other than `identity`; an `identity` is removed);
+- it has `Cache-Control: no-transform`;
+- `skipCompression()` has been called for it;
+- the `filter` refuses it, or its `Content-Length` is below the `threshold`;
+- the compression ran once its headers had been sent (the response is not changed at all).
+
+A fixed `format` does not bypass any of these, and such a response is sent whatever the request
+accepts (also with `identity;q=0`).
+
+```typescript
+import { Binden, type Context } from "binden";
+import compression, { skipCompression } from "@binden/compression";
+
+// A response that is never compressed: before its headers are committed
+const handler = (context: Context): Promise<void> => {
+  skipCompression(context.response);
+  return context.text("as it is");
+};
+
+new Binden().use(compression).use("/raw", handler).createServer().listen(8080);
 ```
 
 ### Content negotiation
 
-With the default `format: "auto"`, the content coding is chosen from the `Accept-Encoding` request header ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3)):
+With `format: "auto"`, the coding is chosen with the `Accept-Encoding` of the request
+([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3)), and `Vary: Accept-Encoding`
+is added to the response:
 
-- without the header, `br` is used;
-- otherwise, the coding (`br`, `gzip`, `deflate`) with the highest effective quality wins: its own `q` value, or the one of `*`, while `q=0` refuses a coding. Ties are resolved in the order `br`, `gzip`, `deflate`;
-- the response is not compressed when `identity` is explicitly preferred, or when no supported coding is acceptable (the header is then disregarded instead of replying with `406 Not Acceptable`);
-- `Vary: Accept-Encoding` is added to the response.
+- without `Accept-Encoding`, or with an empty one, the response is not compressed;
+- otherwise, the coding of `encodings` with the greatest weight (its own `q`, or the one of `*`; `x-gzip`
+  is `gzip`) wins, the earlier one of `encodings` on a tie, unless `identity` weighs more. Browsers
+  (`gzip, deflate, br, zstd`) get `br`;
+- when `identity` is refused (`identity;q=0`, or `*;q=0` without `identity`) and no coding of
+  `encodings` is acceptable, the response is replaced with `406 Not Acceptable`: an empty body
+  (`Content-Length: 0`) without the headers of the representation. What the application writes
+  afterwards is discarded (the callbacks of its writes still run).
 
-A fixed `format` (`br`, `gzip` or `deflate`) compresses every response regardless of the request.
+A fixed `format` compresses every response that may be compressed, whatever the request accepts (and
+without `Vary`): use it when every client is known to support it (e.g. behind a proxy that
+negotiates).
 
-Partial responses (`206 Partial Content`, or any response with a `Content-Range` header, such as `416 Range Not Satisfiable`) are never compressed, because their ranges refer to the uncompressed body. Neither are responses without a body (1xx, `204`, `205`, `304`) or whose headers have already been sent. A response to `HEAD` gets the headers of the compressed response, without a body.
+### A compressed response
 
-A strong `ETag` of a compressed response becomes weak (`W/"…"`): it was set for the uncompressed body, whose bytes differ. It still validates caches (`If-None-Match` compares weakly), but no longer ranges and `If-Match`.
+- `Content-Encoding` names the coding; `Content-Length` and `Accept-Ranges` are removed (ranges of
+  the compressed body are not served);
+- a strong `ETag` becomes weak (`W/"…"`, [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8.3.3)):
+  it was set for the bytes of the uncompressed body. It still validates caches (`If-None-Match`
+  compares weakly), but no longer ranges (`If-Range`) nor `If-Match`;
+- a `304 Not Modified` (e.g. of `sendFile()`, or of the dynamic `ETag` of binden) gets the same
+  decision as the `200` that it stands for: the same `ETag` and `Vary`, without `Content-Length` and
+  `Accept-Ranges` when the `200` is compressed, but without `Content-Encoding` (a cache that updates
+  its stored response with it could mislabel an uncompressed one). The `threshold` applies to it by
+  the length of the body given to `send()`; without one (e.g. `sendFile()`), as to a body without a
+  length;
+- errors and backpressure are kept: `write()` returns `false` while the compressor is full, the
+  response emits `drain` once it is not, the callbacks of `write()` get the errors, the callback of
+  `end()` runs once the response has finished, and `writableEnded` is set by `end()`. A client that
+  goes away closes the compressor (its pending writes fail).
+
+## `flush()` and server-sent events
+
+`response.flush()` of a compressed response flushes the compressor (`Z_SYNC_FLUSH`,
+`BROTLI_OPERATION_FLUSH` or `ZSTD_e_flush`): what has been written so far can be decompressed by the
+client. Its promise resolves once the response has written the flushed bytes, and rejects if the
+response is closed (or fails) before. Without a compressor, it is the `flush()` of binden.
+
+Server-sent events (`text/event-stream`) are not compressed by default: an event would wait in the
+compressor. A filter may compress them, with a `flush()` after each complete event:
+
+```typescript
+import { Binden, type ContentType, type Context } from "binden";
+import { Compression, isCompressible } from "@binden/compression";
+
+const sse = new Compression({
+  filter: (_context: Context, type: ContentType | null): boolean =>
+    type?.type === "text/event-stream" || isCompressible(type),
+});
+
+const events = async (context: Context): Promise<void> => {
+  const { response } = context;
+  context.done = true;
+  response.setHeader("Content-Type", "text/event-stream");
+  response.setHeader("Cache-Control", "no-cache");
+  for (let id = 1; id <= 3 && !context.signal.aborted; id += 1) {
+    response.write(`id: ${id}\ndata: ${new Date().toISOString()}\n\n`);
+    // The event reaches the client now
+    await response.flush();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000);
+    });
+  }
+  response.end();
+};
+
+new Binden().use("/events", sse, events).createServer().listen(8080);
+```
+
+## zstd
+
+`zstd` is offered only when it is listed in `encodings` (or set as the `format`): it needs a version of
+Node.js whose `node:zlib` has it (22.15, 23.8 and later; it is tested from 24.14.1), and not every
+client supports it (e.g. Safari does not). Without it in `node:zlib`, the constructor throws a
+`TypeError`.
+
+```typescript
+import { Binden } from "binden";
+import { Compression } from "@binden/compression";
+
+const compression = new Compression({ encodings: ["zstd", "br", "gzip"] });
+
+new Binden().use(compression).createServer().listen(8080);
+```
