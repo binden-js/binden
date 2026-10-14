@@ -684,6 +684,32 @@ suite("Binden", () => {
     deepStrictEqual(response.status, 200);
   });
 
+  test("auto_head (an explicit `HEAD` middleware)", async () => {
+    app.use(
+      "/both",
+      new Router()
+        .get((context: Context) => context.setHeader("X-Handler", "GET").send())
+        .head((context: Context) =>
+          context.setHeader("X-Handler", "HEAD").send(),
+        ),
+    );
+    app.use(
+      "/head",
+      new Router({ guarded: true }).head((context: Context) =>
+        context.setHeader("X-Handler", "HEAD").send(),
+      ),
+    );
+    const handler = async (path: string, method: string): Promise<unknown> => {
+      const response = await fetch(`${url}${path}`, { method });
+      await response.text();
+      return [response.status, response.headers.get("X-Handler")];
+    };
+
+    deepStrictEqual(await handler("/both", "HEAD"), [200, "HEAD"]);
+    deepStrictEqual(await handler("/both", "GET"), [200, "GET"]);
+    deepStrictEqual(await handler("/head", "HEAD"), [200, "HEAD"]);
+  });
+
   test("function middlewares", async () => {
     const message = { message: "Hello World!" };
     const m = (context: Context): Promise<void> => context.json(message);

@@ -230,6 +230,8 @@ export class Binden {
           if (item instanceof Router) {
             const { guarded, middlewares, methods } = item;
             const { method = "GET" } = next.request;
+            // `HEAD` is handled by the `GET` middlewares, unless it has its own
+            const head = methods.has("HEAD");
 
             if (guarded && methods.size) {
               if (methods.has("GET") && this.#auto_head) {
@@ -243,7 +245,8 @@ export class Binden {
               }
             }
 
-            const m = method === "HEAD" && this.#auto_head ? "GET" : method;
+            const m =
+              method === "HEAD" && this.#auto_head && !head ? "GET" : method;
             const methodMiddlewares = middlewares(m);
 
             for (const mw of methodMiddlewares) {
