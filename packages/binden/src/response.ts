@@ -1,12 +1,17 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { IncomingMessage, ServerResponse } from "node:http";
+import {
+  type IncomingHttpHeaders,
+  IncomingMessage,
+  ServerResponse,
+} from "node:http";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import ContentRange from "./headers/content-range.js";
 import Cookie from "./headers/cookie.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
 import { parseHttpDate } from "./headers/http-date.js";
+import { split } from "./headers/list.js";
 import Range from "./headers/range.js";
 import { BindenRequest } from "./request.js";
 import { isStatus } from "./status.js";
@@ -452,14 +457,15 @@ export class BindenResponse<
           ? this.req.if_modified_since
           : IfModifiedSince.fromString(headers["if-modified-since"]);
 
-      // If-None-Match takes precedence over If-Modified-Since (RFC 9110, 13.1.3)
-      if (
-        (method === "GET" || method === "HEAD") &&
-        typeof headers["if-none-match"] === "undefined" &&
-        ims &&
-        lm <= ims.date
-      ) {
-        await this.status(304).send();
+      const failed = BindenResponse.#preconditions(
+        headers,
+        this.getHeader("ETag"),
+        lm,
+        method === "GET" || method === "HEAD",
+        ims,
+      );
+      if (failed !== null) {
+        await this.status(failed).send();
         return;
       } else if (method === "HEAD") {
         // The headers of the whole file, without reading it
@@ -505,6 +511,58 @@ export class BindenResponse<
     }
   }
 
+  /**
+   * The status of a request whose precondition fails, in the order of RFC 9110
+   * (section 13.2.2), or `null` when they pass: `If-Match` (or else
+   * `If-Unmodified-Since`), then `If-None-Match` (or else `If-Modified-Since`,
+   * for `GET` and `HEAD`), with the `ETag` set on the response
+   */
+  static #preconditions(
+    headers: IncomingHttpHeaders,
+    etag: unknown,
+    lm: Date,
+    read: boolean,
+    ims: IfModifiedSince | null,
+  ): 304 | 412 | null {
+    const tag = typeof etag === "string" ? etag : null;
+    const ifMatch = headers["if-match"];
+    const ius = parseHttpDate(headers["if-unmodified-since"]?.trim() ?? "");
+    const ifNoneMatch = headers["if-none-match"];
+    if (typeof ifMatch === "string") {
+      if (!BindenResponse.#matches(ifMatch, tag, true)) {
+        return 412;
+      }
+    } else if (ius !== null && lm > ius) {
+      return 412;
+    }
+    if (typeof ifNoneMatch === "string") {
+      if (BindenResponse.#matches(ifNoneMatch, tag, false)) {
+        return read ? 304 : 412;
+      }
+    } else if (read && ims !== null && lm <= ims.date) {
+      return 304;
+    }
+    return null;
+  }
+
+  /**
+   * Whether a list of entity-tags (or `*`, as the file exists) matches the
+   * `ETag` of the response, by the strong or the weak comparison (RFC 9110,
+   * section 8.8.3.2)
+   */
+  static #matches(list: string, etag: string | null, strong: boolean): boolean {
+    if (list.trim() === "*") {
+      return true;
+    } else if (etag === null || (strong && etag.startsWith("W/"))) {
+      return false;
+    }
+    const opaque = etag.replace(/^W\//u, "");
+    return split(list, ",").some((value) => {
+      const tag = value.trim();
+      return strong ? tag === etag : tag.replace(/^W\//u, "") === opaque;
+    });
+  }
+
   /** Whether `If-Range`, when sent, matches the file (RFC 9110, section 13.1.5) */
   #ifRange(lm: Date): boolean {
     const raw = this.req.headers["if-range"];
@@ -517,8 +575,13 @@ export class BindenResponse<
       const etag = this.getHeader("ETag");
       return etag === value && !value.startsWith("W/");
     }
-    // An HTTP-date matches the `Last-Modified` exactly
-    return parseHttpDate(value)?.getTime() === lm.getTime();
+    // An HTTP-date matches the `Last-Modified` exactly, when it is a strong
+    // validator: at least a second before now (RFC 9110, section 8.8.2.2)
+    const now = Math.floor(Date.now() / 1000) * 1000;
+    return (
+      parseHttpDate(value)?.getTime() === lm.getTime() &&
+      now - lm.getTime() >= 1000
+    );
   }
 
   /**

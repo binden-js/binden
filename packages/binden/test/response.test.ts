@@ -1230,7 +1230,9 @@ suite("BindenResponse", () => {
     };
     const whole = msg.toString();
     const size = msg.byteLength;
-    const seconds = Math.floor(file_stats.mtime.getTime() / 1000) * 1000;
+    // Modified an hour ago: its `Last-Modified` is a strong validator
+    const seconds = Math.floor(Date.now() / 1000) * 1000 - 3600 * 1000;
+    await utimes(filePath, new Date(seconds), new Date(seconds));
     const lm = new Date(seconds).toUTCString();
     const range = { Range: "bytes=0-1" };
     const partial = [206, `bytes 0-1/${size}`, whole.slice(0, 2)];
@@ -1290,11 +1292,69 @@ suite("BindenResponse", () => {
       [200, null, whole],
     );
 
+    // A file modified within the last second has a weak `Last-Modified`
+    const recent = join(root, "recent");
+    await writeFile(recent, msg);
+    const { mtime } = await statOf(recent);
+    const recentLm = new Date(Math.floor(mtime.getTime() / 1000) * 1000);
+    deepStrictEqual(
+      await send(
+        { ...range, "If-Range": recentLm.toUTCString() },
+        { path: recent },
+      ),
+      [200, null, whole],
+    );
+
     // If-None-Match takes precedence over If-Modified-Since
     deepStrictEqual((await send({ "If-Modified-Since": lm }))[0], 304);
     deepStrictEqual(
       await send({ "If-Modified-Since": lm, "If-None-Match": `"x"` }),
       [200, null, whole],
+    );
+
+    // The preconditions in their order (RFC 9110, section 13.2.2)
+    const status = async (
+      headers: Record<string, string>,
+      { method = "GET", etag = `"tag"` } = {},
+    ): Promise<number> => (await send(headers, { method, etag }))[0];
+    const old = new Date(seconds - 1000).toUTCString();
+    const now = new Date().toUTCString();
+    // If-Match: the strong comparison, `*` for a file that exists
+    deepStrictEqual(await status({ "If-Match": `"other"` }), 412);
+    deepStrictEqual(await status({ "If-Match": `"other", "tag"` }), 200);
+    deepStrictEqual(await status({ "If-Match": "*" }), 200);
+    deepStrictEqual(await status({ "If-Match": `W/"tag"` }), 412);
+    deepStrictEqual(
+      await status({ "If-Match": `W/"tag"` }, { etag: `W/"tag"` }),
+      412,
+    );
+    deepStrictEqual(await status({ "If-Match": `"tag"` }, { etag: "" }), 412);
+    // If-Unmodified-Since, unless If-Match is sent
+    deepStrictEqual(await status({ "If-Unmodified-Since": old }), 412);
+    deepStrictEqual(await status({ "If-Unmodified-Since": now }), 200);
+    deepStrictEqual(await status({ "If-Unmodified-Since": "garbage" }), 200);
+    deepStrictEqual(
+      await status({ "If-Match": `"tag"`, "If-Unmodified-Since": old }),
+      200,
+    );
+    // If-None-Match: the weak comparison, 412 for other methods
+    deepStrictEqual(await status({ "If-None-Match": `"tag"` }), 304);
+    deepStrictEqual(await status({ "If-None-Match": `W/"tag"` }), 304);
+    deepStrictEqual(await status({ "If-None-Match": `"a", "tag"` }), 304);
+    deepStrictEqual(await status({ "If-None-Match": "*" }), 304);
+    deepStrictEqual(await status({ "If-None-Match": `"other"` }), 200);
+    deepStrictEqual(
+      await status({ "If-None-Match": `"tag"` }, { method: "POST" }),
+      412,
+    );
+    deepStrictEqual(
+      await status({ "If-None-Match": `"tag"` }, { method: "HEAD" }),
+      304,
+    );
+    // If-Match passes, If-None-Match fails
+    deepStrictEqual(
+      await status({ "If-Match": `"tag"`, "If-None-Match": `"tag"` }),
+      304,
     );
   });
 
