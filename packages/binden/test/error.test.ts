@@ -53,6 +53,18 @@ suite("BindenError", () => {
       () => new BindenError(600),
       new RangeError("Status code is greater than 599"),
     );
-    throws(() => new BindenError(499), new TypeError("Invalid status code"));
+    // Not an integer (e.g. a string from an untyped caller)
+    for (const status of [400.5, Number.NaN, "400"]) {
+      throws(
+        () => new BindenError(status as number),
+        new TypeError("Invalid status code"),
+      );
+    }
+  });
+
+  test("constructor (an unregistered status code)", () => {
+    const error = new BindenError(499);
+    deepStrictEqual(error.status, 499);
+    deepStrictEqual(error.message, "");
   });
 });

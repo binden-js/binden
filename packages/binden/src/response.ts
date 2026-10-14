@@ -1,6 +1,6 @@
 import { createReadStream, Stats } from "node:fs";
 import { stat } from "node:fs/promises";
-import { IncomingMessage, ServerResponse, STATUS_CODES } from "node:http";
+import { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import ContentRange from "./headers/content-range.js";
@@ -9,6 +9,7 @@ import IfModifiedSince from "./headers/if-modified-since.js";
 import { parseHttpDate } from "./headers/http-date.js";
 import Range from "./headers/range.js";
 import { BindenRequest } from "./request.js";
+import { isStatus } from "./status.js";
 
 export const ct_json = "application/json";
 export const ct_text = "text/plain";
@@ -49,9 +50,9 @@ export class BindenResponse<
     return this.#started || this.headersSent || this.writableEnded;
   }
 
-  /** Set the status code */
+  /** Set the status code: an integer from 100 to 599 */
   public status(code: number): this {
-    if (typeof STATUS_CODES[code] === "undefined") {
+    if (!isStatus(code)) {
       throw new TypeError(`Status code ${code} is invalid`);
     }
     this.statusCode = code;

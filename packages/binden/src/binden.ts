@@ -1,4 +1,4 @@
-import http, { STATUS_CODES } from "node:http";
+import http from "node:http";
 import https from "node:https";
 import { isDeepStrictEqual } from "node:util";
 import type { Logger } from "@binden/logger";
@@ -10,6 +10,7 @@ import { property } from "./property.js";
 import { BindenRequest, type ITrustProxy } from "./request.js";
 import { BindenResponse, ct_json } from "./response.js";
 import { Router } from "./router.js";
+import { isStatus } from "./status.js";
 
 type IUseOptions = IStackItem | RegExp | string | null | undefined;
 
@@ -347,11 +348,7 @@ export class Binden {
     const raw = property(error, "status");
     const errorStatus =
       typeof raw === "number" || typeof raw === "string" ? Number(raw) : NaN;
-    response.status(
-      typeof STATUS_CODES[errorStatus] === "undefined"
-        ? DefaultErrorCode
-        : errorStatus,
-    );
+    response.status(isStatus(errorStatus) ? errorStatus : DefaultErrorCode);
 
     // Sent like any other response: with its cookies, framed by its status
     const reply = (): Promise<void> => {

@@ -172,15 +172,21 @@ suite("BindenResponse", () => {
   });
 
   test(".status() (throws TypeError with unsupported code)", async () => {
-    const status = 499;
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
         try {
-          throws(
-            () => response.status(status),
-            new TypeError(`Status code ${status} is invalid`),
-          );
+          for (const status of [99, 600, 200.5, Number.NaN, "200"]) {
+            throws(
+              () => response.status(status as number),
+              new TypeError(`Status code ${status} is invalid`),
+            );
+          }
           deepStrictEqual(response.statusCode, 200);
+          // Any status code from 100 to 599, registered or not
+          for (const status of [100, 430, 499, 599]) {
+            deepStrictEqual(response.status(status).statusCode, status);
+          }
+          response.status(200);
         } catch (error) {
           reject(error);
         } finally {

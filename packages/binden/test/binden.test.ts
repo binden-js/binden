@@ -591,6 +591,17 @@ suite("Binden", () => {
     }
   });
 
+  test("replies with an unregistered status code of an error", async () => {
+    app.use(() => {
+      throw new BindenError(499);
+    });
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+
+    deepStrictEqual(response.status, 499);
+    await response.text();
+  });
+
   test("sends the cookies of the response with an error reply", async () => {
     app.use((context: Context) => {
       context.response.cookies.add(new Cookie({ key: "session", value: "1" }));

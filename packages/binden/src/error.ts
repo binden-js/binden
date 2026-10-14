@@ -20,10 +20,10 @@ export class BindenError extends Error {
       cause,
     }: IBindenErrorOptions = {},
   ) {
-    if (status > 599) {
-      throw new RangeError("Status code is greater than 599");
-    } else if (typeof STATUS_CODES[status] === "undefined") {
+    if (!Number.isInteger(status)) {
       throw new TypeError("Invalid status code");
+    } else if (status > 599) {
+      throw new RangeError("Status code is greater than 599");
     } else if (status < 400) {
       throw new RangeError("Status code is less than 400");
     }

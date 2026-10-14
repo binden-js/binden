@@ -157,6 +157,11 @@ suite("serializers", () => {
       { type: "object", status: 400, expose: true },
     );
     deepStrictEqual(serializers.error({ status: 999 }), { type: "object" });
+    deepStrictEqual(serializers.error({ status: "400" }), { type: "object" });
+    deepStrictEqual(serializers.error({ status: 499 }), {
+      type: "object",
+      status: 499,
+    });
     deepStrictEqual(serializers.error("secret-message"), { type: "string" });
     deepStrictEqual(serializers.error(null), { type: "null" });
   });

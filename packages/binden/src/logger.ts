@@ -1,9 +1,10 @@
-import { IncomingMessage, ServerResponse, STATUS_CODES } from "node:http";
+import { IncomingMessage, ServerResponse } from "node:http";
 import { constants } from "node:os";
 import { Logger } from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
 import { property as get } from "./property.js";
+import { isStatus } from "./status.js";
 
 /** The request headers that the default logger keeps (others may carry credentials) */
 const requestHeaders = ["host", "user-agent", "content-type", "content-length"];
@@ -90,9 +91,7 @@ export const serializers = {
     const code = get(error, "code");
     return {
       type: typeOf(error),
-      ...(typeof status === "number" && typeof STATUS_CODES[status] === "string"
-        ? { status }
-        : {}),
+      ...(isStatus(status) ? { status } : {}),
       ...(typeof expose === "boolean" ? { expose } : {}),
       ...(typeof code === "string" && errorCodes.has(code) ? { code } : {}),
     };
