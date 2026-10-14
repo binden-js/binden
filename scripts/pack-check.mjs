@@ -8,7 +8,9 @@
 //
 //   node scripts/pack-check.mjs                    `npm pack --dry-run` of the workspaces,
 //                                                  which must be built before (their
-//                                                  `prepack` does not run)
+//                                                  `prepack` does not run, only their
+//                                                  `documents` script, which copies the
+//                                                  documents of the root that they ship)
 //   node scripts/pack-check.mjs --tarballs <dir>   the archives that `scripts/release.mjs
 //                                                  pack <dir>` prepared, without packing
 //                                                  again (their integrity is checked)
@@ -40,6 +42,10 @@ function workspaceDirs() {
 
 // The packed files of each package, and how to read them: { name: { paths, read } }
 function packedFiles() {
+  npm(["run", "documents", "--workspaces", "--if-present"], {
+    cwd: root,
+    stdio: ["ignore", process.stderr, "inherit"],
+  });
   const packed = JSON.parse(
     npm(["pack", "--dry-run", "--json", "--workspaces", "--ignore-scripts"], {
       cwd: root,

@@ -24,3 +24,8 @@ docs/
 .env
 .env.*
 !.env.example
+
+# Documents of the root that `prepack` copies into the binden package
+# (scripts/copy-documents.mjs)
+packages/binden/MIGRATION-4.md
+packages/binden/PRODUCTION.md

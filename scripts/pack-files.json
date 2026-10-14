@@ -11,6 +11,8 @@
   ],
   "binden": [
     "LICENSE",
+    "MIGRATION-4.md",
+    "PRODUCTION.md",
     "README.md",
     "dist/index.d.ts",
     "dist/index.d.ts.map",

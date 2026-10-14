@@ -9,7 +9,9 @@
     "dist",
     "!dist/test",
     "index.ts",
-    "src"
+    "src",
+    "MIGRATION-4.md",
+    "PRODUCTION.md"
   ],
   "engines": {
     "node": ">=24.14.1",
@@ -17,8 +19,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "prebuild": "node ../../scripts/clean.mjs",
-    "prepack": "npm run build",
+    "documents": "node ../../scripts/copy-documents.mjs MIGRATION-4.md PRODUCTION.md",
+    "prebuild": "node ../../scripts/clean.mjs MIGRATION-4.md PRODUCTION.md",
+    "prepack": "npm run build && npm run documents",
     "test": "node ../../scripts/test.mjs"
   },
   "repository": {

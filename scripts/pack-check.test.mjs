@@ -15,9 +15,13 @@ import { npmTarball } from "./fixtures/tar.mjs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
-// A fake npm CLI (run as `npm_execpath`) whose `npm pack --json` prints FAKE_NPM_PACK,
-// and that fails for anything else
-const fakeNpm = `if (process.argv[2] !== "pack") process.exit(1);
+// A fake npm CLI (run as `npm_execpath`) that logs its arguments to FAKE_NPM_LOG, whose
+// `npm pack --json` prints FAKE_NPM_PACK, whose `npm run` does nothing, and that fails
+// for anything else
+const fakeNpm = `const { appendFileSync } = require("node:fs");
+appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
+if (process.argv[2] === "run") process.exit(0);
+if (process.argv[2] !== "pack") process.exit(1);
 process.stdout.write(process.env.FAKE_NPM_PACK);\n`;
 
 // A source map of `sources`, with a relative `sourceRoot` as `tsc` writes it
@@ -60,9 +64,17 @@ describe("scripts/pack-check.mjs", () => {
           ...process.env,
           npm_execpath: join(root, "npm.cjs"),
           FAKE_NPM_PACK: packed(files),
+          FAKE_NPM_LOG: join(root, "npm.log"),
         },
       },
     );
+
+  // The commands that the fake npm ran
+  const npmCalls = () =>
+    readFileSync(join(root, "npm.log"), "utf8")
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line) => JSON.parse(line));
 
   // A workspace `packages/<name>` of the root with `files` ({ path: content })
   const workspace = (name, files) => {
@@ -139,6 +151,29 @@ describe("scripts/pack-check.mjs", () => {
     });
     equal(status, 0);
     match(stderr, /1 workspaces with the expected files/u);
+  });
+
+  it("copies the documents of the workspaces before packing them", () => {
+    const { status } = check({
+      a: ["dist/index.js", "package.json", "LICENSE"],
+    });
+    equal(status, 0);
+    deepEqual(npmCalls(), [
+      ["run", "documents", "--workspaces", "--if-present"],
+      ["pack", "--dry-run", "--json", "--workspaces", "--ignore-scripts"],
+    ]);
+  });
+
+  it("fails when the documents cannot be copied", () => {
+    writeFileSync(
+      join(root, "npm.cjs"),
+      `process.exit(process.argv[2] === "run" ? 1 : 0);\n`,
+    );
+    const { status, stderr } = check({
+      a: ["dist/index.js", "package.json", "LICENSE"],
+    });
+    equal(status, 1);
+    match(stderr, /Command failed: .*run documents --workspaces --if-present/u);
   });
 
   it("refuses tests, certificates and secrets even when they are expected", () => {
