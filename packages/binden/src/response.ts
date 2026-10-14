@@ -169,14 +169,31 @@ export class BindenResponse<
     });
   }
 
-  /** Send response as `application/json` */
-  public async json(
-    data: Record<string, unknown> | unknown[],
-    stringify = (input: Record<string, unknown> | unknown[]): string =>
-      JSON.stringify(input),
+  /**
+   * Send a JSON value as `application/json`. A value that has no JSON text
+   * (`undefined`, a function or a symbol), a `bigint` or a cyclic value
+   * rejects with a `TypeError` before the response is started, as does a
+   * custom `stringify` that does not return a string.
+   */
+  public async json<T = unknown>(
+    data: T,
+    stringify?: (data: T) => string,
   ): Promise<void> {
-    const msg = stringify(data);
-    return this.setHeader("Content-Type", ct_json).send(msg);
+    const type = typeof data;
+    if (
+      type === "undefined" ||
+      type === "function" ||
+      type === "symbol" ||
+      type === "bigint"
+    ) {
+      throw new TypeError(`A ${type} is not a JSON value`);
+    }
+    const body: unknown =
+      typeof stringify === "undefined" ? JSON.stringify(data) : stringify(data);
+    if (typeof body !== "string") {
+      throw new TypeError("The JSON text is not a string");
+    }
+    await this.setHeader("Content-Type", ct_json).send(body);
   }
 
   /** Send response as `text/plain; charset=utf-8` */
