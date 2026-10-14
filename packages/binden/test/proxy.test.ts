@@ -4,7 +4,13 @@ import { type AddressInfo, Socket, connect } from "node:net";
 import { TLSSocket } from "node:tls";
 import { after, suite, test } from "node:test";
 
-import { BindenError, BindenRequest, type ITrustProxy } from "../index.js";
+import {
+  BindenError,
+  BindenRequest,
+  type IRequestOptions,
+  type ITrustProxy,
+  validateRequestOptions,
+} from "../index.js";
 
 interface IFixture {
   /** The address of the peer (none: `undefined`) */
@@ -24,8 +30,9 @@ function create(
 ): BindenRequest {
   class Trusting extends BindenRequest {
     // eslint-disable-next-line class-methods-use-this -- a fixture
-    protected override get trust_proxy(): ITrustProxy {
-      return trust;
+    protected override get options(): IRequestOptions {
+      // Not checked: a request checks it too
+      return { ...validateRequestOptions(), trust_proxy: trust };
     }
   }
   const socket = tls ? new TLSSocket(new Socket()) : new Socket();
@@ -613,10 +620,13 @@ suite("Trusted proxies", () => {
   });
 
   test("a real connection", { timeout: 5000 }, async () => {
+    const options = validateRequestOptions({
+      trust_proxy: { trust: true, headers: "x-forwarded" },
+    });
     class Trusting extends BindenRequest {
       // eslint-disable-next-line class-methods-use-this -- a fixture
-      protected override get trust_proxy(): ITrustProxy {
-        return { trust: true, headers: "x-forwarded" };
+      protected override get options(): IRequestOptions {
+        return options;
       }
     }
     const server = createServer({ IncomingMessage: Trusting });

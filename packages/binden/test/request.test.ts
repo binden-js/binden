@@ -14,6 +14,10 @@ import {
   Forwarded,
   Cookie,
   IfModifiedSince,
+  type IRequestOptions,
+  type IRequestOptionsInput,
+  type ITrustProxy,
+  validateRequestOptions,
 } from "../index.js";
 
 /** The port of a listening server */
@@ -394,6 +398,53 @@ suite("BindenRequest", () => {
     tls.destroy();
   });
 
+  test(".query (`query.max_keys`)", () => {
+    const create = (input?: IRequestOptionsInput): BindenRequest => {
+      const options = validateRequestOptions(input);
+      class Limited extends BindenRequest {
+        // eslint-disable-next-line class-methods-use-this -- a fixture
+        protected override get options(): IRequestOptions {
+          return options;
+        }
+      }
+      const request = new Limited(new Socket());
+      request.url = `/?${Array.from({ length: 1002 }, (_, i) => `k${i}=${i}`).join("&")}`;
+      request.headers = { host: "localhost" };
+      return request;
+    };
+    // 1000 keys by default, the others are ignored
+    deepStrictEqual(Object.keys(create().query).length, 1000);
+    deepStrictEqual(Object.keys(create().query).at(-1), "k999");
+    const two = create({ query: { max_keys: 2 } }).query;
+    deepStrictEqual(two, { k0: "0", k1: "1" });
+    deepStrictEqual(
+      Object.keys(create({ query: { max_keys: Infinity } }).query).length,
+      1002,
+    );
+    deepStrictEqual(Object.keys(create({ query: {} }).query).length, 1000);
+    // The default options of a request
+    const request = new BindenRequest(new Socket());
+    request.url = "/?a=1&b=2";
+    request.headers = { host: "localhost" };
+    deepStrictEqual(request.query, { a: "1", b: "2" });
+  });
+
+  test(".trust_proxy (deprecated)", () => {
+    class Trusting extends BindenRequest {
+      // eslint-disable-next-line class-methods-use-this -- a fixture
+      protected override get trust_proxy(): ITrustProxy {
+        return 1;
+      }
+    }
+    const socket = new Socket();
+    Object.defineProperty(socket, "remoteAddress", { value: "10.0.0.1" });
+    const request = new Trusting(socket);
+    request.headers = { forwarded: "for=1.1.1.1;proto=https" };
+    // The default `options` take it
+    deepStrictEqual([request.ip, request.protocol], ["1.1.1.1", "https:"]);
+    socket.destroy();
+  });
+
   test(".query (keeps its prototype)", () => {
     const request = new BindenRequest(new Socket());
     request.url = "/?__proto__=a&__proto__=b&x=1";
@@ -518,4 +569,85 @@ suite("BindenRequest", () => {
   });
 
   afterEach((_t, done) => server.close(done));
+});
+
+suite("validateRequestOptions()", () => {
+  test("defaults", () => {
+    const options = validateRequestOptions();
+    deepStrictEqual(options, {
+      trust_proxy: { trust: false, headers: "forwarded" },
+      query: { max_keys: 1000 },
+    });
+    ok(Object.isFrozen(options));
+    ok(Object.isFrozen(options.query));
+    ok(Object.isFrozen(options.trust_proxy));
+    deepStrictEqual(validateRequestOptions({}), options);
+    // Other options are ignored
+    deepStrictEqual(
+      validateRequestOptions({ auto_head: true } as IRequestOptionsInput),
+      options,
+    );
+  });
+
+  test("`trust_proxy`", () => {
+    const trust = (): boolean => true;
+    deepStrictEqual(validateRequestOptions({ trust_proxy: 2 }).trust_proxy, {
+      trust: 2,
+      headers: "forwarded",
+    });
+    deepStrictEqual(
+      validateRequestOptions({
+        trust_proxy: { trust, headers: "x-forwarded" },
+      }).trust_proxy,
+      { trust, headers: "x-forwarded" },
+    );
+    throws(
+      () => validateRequestOptions({ trust_proxy: -1 }),
+      new RangeError("`trust_proxy` is not a non-negative integer"),
+    );
+    throws(
+      () =>
+        validateRequestOptions({ trust_proxy: "1" as unknown as ITrustProxy }),
+      new TypeError("`trust_proxy` is not a boolean, number or function"),
+    );
+  });
+
+  test("`query`", () => {
+    deepStrictEqual(validateRequestOptions({ query: { max_keys: 1 } }).query, {
+      max_keys: 1,
+    });
+    deepStrictEqual(
+      validateRequestOptions({ query: { max_keys: Infinity } }).query,
+      { max_keys: Infinity },
+    );
+    for (const max_keys of [0, -1, 1.5, Number.NaN, 2 ** 53, -Infinity]) {
+      throws(
+        () => validateRequestOptions({ query: { max_keys } }),
+        new RangeError("`query.max_keys` is not a positive integer"),
+        `${max_keys}`,
+      );
+    }
+    throws(
+      () =>
+        validateRequestOptions({
+          query: { max_keys: "1" as unknown as number },
+        }),
+      new TypeError("`query.max_keys` is not a number"),
+    );
+    for (const query of [null, 1, "a"]) {
+      throws(
+        () =>
+          validateRequestOptions({
+            query: query as unknown as IRequestOptionsInput["query"],
+          }),
+        new TypeError("`query` is not an object"),
+      );
+    }
+    for (const input of [null, 1, "a"]) {
+      throws(
+        () => validateRequestOptions(input as unknown as IRequestOptionsInput),
+        new TypeError("`options` is not an object"),
+      );
+    }
+  });
 });

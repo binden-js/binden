@@ -27,6 +27,61 @@ export type { IProxyHeaders, ITrustFn, ITrustProxy } from "./proxy.js";
 
 export type IProtocol = "http:" | "https:";
 
+/**
+ * The settings of the requests of an application, checked and with their
+ * defaults (see `validateRequestOptions()`)
+ */
+export interface IRequestOptions {
+  /** The trusted proxies and their headers (none by default) */
+  readonly trust_proxy: ITrustProxy;
+  /** The greatest number of keys that `request.query` parses (1000) */
+  readonly query: { readonly max_keys: number };
+}
+
+/** The request options as given (to `Binden`), every one of them optional */
+export interface IRequestOptionsInput {
+  trust_proxy?: ITrustProxy | undefined;
+  query?: { max_keys?: number | undefined } | undefined;
+}
+
+/** Throws unless the value is an object (or `undefined`, for the default) */
+function optionalObject(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value === "undefined") {
+    return {};
+  } else if (typeof value !== "object" || value === null) {
+    throw new TypeError(`\`${name}\` is not an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+/**
+ * The request options with their defaults, checked: a `TypeError` for a value
+ * of another type, a `RangeError` for a number out of its range (e.g.
+ * `trust_proxy: -1`, or `query.max_keys` that is not a positive integer or
+ * `Infinity`). Other properties of the input are ignored.
+ */
+export function validateRequestOptions(
+  input?: IRequestOptionsInput,
+): IRequestOptions {
+  const { trust_proxy = false, query } = optionalObject(input, "options");
+  const { max_keys = 1000 } = optionalObject(query, "query");
+  if (typeof max_keys !== "number") {
+    throw new TypeError("`query.max_keys` is not a number");
+  } else if (
+    max_keys !== Number.POSITIVE_INFINITY &&
+    !(Number.isSafeInteger(max_keys) && max_keys > 0)
+  ) {
+    throw new RangeError("`query.max_keys` is not a positive integer");
+  }
+  return Object.freeze({
+    trust_proxy: checkTrustProxy(trust_proxy),
+    query: Object.freeze({ max_keys }),
+  });
+}
+
+/** The default options of the requests */
+const defaults = validateRequestOptions();
+
 export class BindenRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
   #authorization?: Authorization | null;
@@ -193,18 +248,36 @@ export class BindenRequest extends IncomingMessage {
   }
 
   /**
-   * The proxies in front of the server that are trusted, and their headers
-   * (none by default). `Binden` sets it from its `trust_proxy` option; with
-   * `http.createServer()`, override it in a subclass.
+   * The settings of the requests (see `IRequestOptions`): the defaults, with
+   * the `trust_proxy` getter. `Binden` sets them from its options; with
+   * `http.createServer()`, override it in a subclass to return the result of
+   * `validateRequestOptions()`.
+   */
+  protected get options(): Readonly<IRequestOptions> {
+    return { ...defaults, trust_proxy: this.trust_proxy };
+  }
+
+  /**
+   * The trusted proxies (none by default), for the default `options`
+   *
+   * @deprecated Override `options` instead
    */
   // eslint-disable-next-line class-methods-use-this -- overridden by subclasses
   protected get trust_proxy(): ITrustProxy {
     return false;
   }
 
+  /**
+   * The query of `URL`, parsed by `querystring.parse()`: a copy, with the
+   * first `query.max_keys` keys of the options (the others are ignored)
+   */
   public get query(): ParsedUrlQuery {
     if (!this.#query) {
-      this.#query = parse(this.URL.search.substring(1));
+      const { max_keys } = this.options.query;
+      this.#query = parse(this.URL.search.substring(1), "&", "=", {
+        // `0` is no limit
+        maxKeys: max_keys === Number.POSITIVE_INFINITY ? 0 : max_keys,
+      });
     }
 
     // Defined, not assigned: a `__proto__` key is a key, not the prototype
@@ -256,7 +329,7 @@ export class BindenRequest extends IncomingMessage {
   #resolve(): IProxyResult {
     this.#proxy ??= resolveProxy(
       this.socket.remoteAddress,
-      checkTrustProxy(this.trust_proxy),
+      checkTrustProxy(this.options.trust_proxy),
       this.headers,
       this.headersDistinct,
     );
