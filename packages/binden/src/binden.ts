@@ -3,6 +3,7 @@ import https from "node:https";
 import type { ILogger } from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
+import { validateDelay } from "./delay.js";
 import { BindenAbortError, Exchange } from "./exchange.js";
 import defaultLogger from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
@@ -11,6 +12,7 @@ import { BindenRequest, type ITrustProxy } from "./request.js";
 import { BindenResponse, ct_json } from "./response.js";
 import { matchPrefix, matchRoute, type IRoutingOptions } from "./route.js";
 import { Router } from "./router.js";
+import { isClosing, register, track } from "./shutdown.js";
 import { type ILayer, layersOf, markRoot, Stack } from "./stack.js";
 import { isStatus } from "./status.js";
 
@@ -71,9 +73,6 @@ export type IBindenOptions<State extends object = Record<string, unknown>> =
     (Record<never, never> extends State
       ? { state?: (() => State) | undefined }
       : { state: () => State });
-
-/** The greatest delay of a Node.js timer */
-const MAX_DELAY = 2 ** 31 - 1;
 
 /** Thrown through the stack once the request has been aborted: the stack stops */
 const ABORTED = new Error("The request has been aborted");
@@ -141,8 +140,8 @@ export class Binden<
     ) {
       throw new RangeError("`trust_proxy` is not a non-negative integer");
     }
-    Binden.#delay("timeout", timeout, 0);
-    Binden.#delay("error_handler_timeout", error_handler_timeout, 1);
+    validateDelay("timeout", timeout, 0);
+    validateDelay("error_handler_timeout", error_handler_timeout, 1);
     Binden.#boolean("auto_head", auto_head);
     if (
       typeof error_handler !== "undefined" &&
@@ -175,55 +174,95 @@ export class Binden<
     };
   }
 
-  /** Creates an HTTP server that handles its requests with the application */
+  /**
+   * Creates an HTTP server that handles its requests with the application
+   * (registered for `shutdown()`)
+   */
   public createServer(
     options: Omit<
       http.ServerOptions,
       "IncomingMessage" | "ServerResponse"
     > = {},
   ): http.Server<typeof BindenRequest, typeof BindenResponse> {
-    return http.createServer(
-      {
-        ...options,
-        IncomingMessage: this.#Request,
-        ServerResponse: BindenResponse,
-      },
-      (request, response) => {
-        this.#requestListener(request, response);
-      },
-    );
+    const server = http.createServer({ ...options, ...this.serverOptions() });
+    server.on("request", this.callback(server));
+    return server;
   }
 
-  /** Creates an HTTPS server that handles its requests with the application */
+  /**
+   * Creates an HTTPS server that handles its requests with the application
+   * (registered for `shutdown()`)
+   */
   public createSecureServer(
     options: Omit<
       https.ServerOptions,
       "IncomingMessage" | "ServerResponse"
     > = {},
   ): https.Server<typeof BindenRequest, typeof BindenResponse> {
-    return https.createServer(
-      {
-        ...options,
-        IncomingMessage: this.#Request,
-        ServerResponse: BindenResponse,
-      },
-      (request, response) => {
-        this.#requestListener(request, response);
-      },
-    );
+    const server = https.createServer({ ...options, ...this.serverOptions() });
+    server.on("request", this.callback(server));
+    return server;
+  }
+
+  /**
+   * The request and response classes of the application, for a server that
+   * `callback()` handles the requests of (e.g. `http2` is not supported)
+   */
+  public serverOptions(): {
+    IncomingMessage: typeof BindenRequest;
+    ServerResponse: typeof BindenResponse;
+  } {
+    return { IncomingMessage: this.#Request, ServerResponse: BindenResponse };
+  }
+
+  /**
+   * The request listener of a server created with `serverOptions()`, which
+   * is registered for `shutdown()` at once. A request of another kind (e.g. of
+   * a server created without them) is logged, and its connection closed.
+   */
+  public callback(
+    server: http.Server | https.Server,
+  ): (request: http.IncomingMessage, response: http.ServerResponse) => void {
+    register(server, (message, error) => {
+      this.#logRoot("error", message, { error });
+    });
+    return (request, response): void => {
+      if (
+        !(request instanceof this.#Request) ||
+        !(response instanceof BindenResponse)
+      ) {
+        const message =
+          "The request and the response are not those of the application (`serverOptions()`)";
+        this.#logRoot("error", message, {});
+        request.socket.destroy();
+        return;
+      }
+      this.#requestListener(
+        server,
+        request,
+        response as BindenResponse<BindenRequest>,
+      );
+    };
   }
 
   #requestListener(
+    server: http.Server | https.Server,
     request: BindenRequest,
     response: BindenResponse<BindenRequest>,
   ): void {
     const { state, failure } = this.#createState();
     const exchange = Exchange.for(request, response, { state });
+    track(server, exchange, response);
     const context = new Context({ request, response, logger: this.#logger });
     if (this.#timeout > 0) {
       exchange.setTimeout(this.#timeout);
     }
-    this.#run(context, exchange, failure).catch((error: unknown) => {
+    // A request on a connection that was open once the server is closing
+    // gets 503: the stack does not run
+    const handled = isClosing(server)
+      ? Binden.#closing(context)
+      : this.#run(context, exchange, failure);
+    handled.catch((error: unknown) => {
       // Unexpected (every failure is handled): the process must not crash
       Binden.#log(context, "error", "The request has failed", { error });
       response.destroy();
@@ -566,9 +605,20 @@ export class Binden<
     for (const name of [...Binden.#representation, "Content-Type"]) {
       response.removeHeader(name);
     }
-    response.status(DefaultErrorCode);
+    await Binden.#empty(context, DefaultErrorCode);
+  }
+
+  /** `503 Service Unavailable` to a request that arrives once closing */
+  static async #closing(context: Context): Promise<void> {
+    context.response.setHeader("Connection", "close");
+    await Binden.#empty(context, 503);
+  }
+
+  /** An empty reply of the framework (a failure to send it is logged) */
+  static async #empty(context: Context, status: number): Promise<void> {
+    context.response.status(status);
     try {
-      await response.send();
+      await context.response.send();
     } catch {
       Binden.#log(context, "debug", "The error reply has not been sent", {
         context,
@@ -733,6 +783,19 @@ export class Binden<
     "Transfer-Encoding",
   ];
 
+  /** Logs with the logger of the application (never throws) */
+  #logRoot(
+    level: ILogLevel,
+    message: string,
+    extra: Record<string, unknown>,
+  ): void {
+    try {
+      this.#logger[level](message, extra);
+    } catch {
+      // Nothing else to report it to
+    }
+  }
+
   /** Framework logs never break the handling of a request (e.g. a failing serializer) */
   static #log(
     context: Context,
@@ -744,17 +807,6 @@ export class Binden<
       context.log[level](message, extra);
     } catch {
       // Nothing else to report it to
-    }
-  }
-
-  /** A delay of a timer: an integer from `min` to the greatest delay of Node.js */
-  static #delay(name: string, value: unknown, min: number): void {
-    if (typeof value !== "number" || !Number.isInteger(value)) {
-      throw new TypeError(`\`${name}\` is not an integer`);
-    } else if (value < min || value > MAX_DELAY) {
-      throw new RangeError(
-        `\`${name}\` is not between ${min} and ${MAX_DELAY}`,
-      );
     }
   }
 

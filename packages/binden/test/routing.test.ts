@@ -353,11 +353,12 @@ suite("Routing", () => {
         });
         return replaced;
       });
-      const app = new Binden()
-        .mount("/", nested)
-        .use((context: Context) =>
-          context.json({ same: context === replaced }),
-        );
+      const app = new Binden().mount(
+        "/",
+        nested,
+        // In the same layer as the mounted stack
+        (context: Context) => context.json({ same: context === replaced }),
+      );
       await withApp(app, async ({ port }) => {
         deepStrictEqual(await get(port, "/"), [200, { same: true }]);
       });

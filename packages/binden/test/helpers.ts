@@ -17,6 +17,19 @@ export function sleep(ms: number): Promise<void> {
   });
 }
 
+/** The result of a promise, which must settle within `ms` milliseconds */
+export async function within<T>(promise: Promise<T>, ms = 2000): Promise<T> {
+  const { promise: expired, reject } = Promise.withResolvers<never>();
+  const timer = setTimeout(() => {
+    reject(new Error(`Not settled within ${ms} ms`));
+  }, ms);
+  try {
+    return await Promise.race([promise, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** A promise that never settles (e.g. a middleware that hangs) */
 export function never<T = void>(): Promise<T> {
   return new Promise<T>(() => {

@@ -20,6 +20,12 @@ export * from "./src/response.js";
 export type { IRedirectOptions, IRedirectStatus } from "./src/redirect.js";
 export type { ISendFileOptions } from "./src/send-file.js";
 export * from "./src/router.js";
+export {
+  isClosing,
+  shutdown,
+  type IServer,
+  type IShutdownOptions,
+} from "./src/shutdown.js";
 export type { IRouteParams, IRoutingOptions } from "./src/route.js";
 export {
   Stack,

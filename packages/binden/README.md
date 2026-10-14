@@ -45,6 +45,20 @@ const app = new Binden().use("/path", middleware).use("/path2", router);
 const secureServer = app.createSecureServer({ key, cert });
 ```
 
+- `.serverOptions()` and `.callback(server)` - the request and response classes of the application, and the request listener of a server created with them (e.g. a server of another library). `.callback(server)` registers the server for [`shutdown()`](#shutdown) at once; a request of a server created without these classes is logged (`error`), and its connection closed. HTTP/2 is not supported: use a reverse proxy in front.
+
+```typescript
+import { createServer } from "node:http";
+import { Binden } from "binden";
+
+const app = new Binden().use(middleware);
+const server = createServer({
+  ...app.serverOptions(),
+  keepAliveTimeout: 65_000,
+});
+server.on("request", app.callback(server));
+```
+
 The state of a request is typed by the application, and so is every middleware added to it:
 
 ```typescript
@@ -178,6 +192,36 @@ const app = new Binden({ timeout: 30_000 }).use(async (context: Context) => {
     context.log.debug("The request is complete");
   });
   await context.text(await upstream.text());
+});
+```
+
+### Shutdown
+
+`shutdown(server, { timeout = 10000, cleanup_timeout = 1000 })` closes a server gracefully (a server created by `createServer()`, `createSecureServer()` or registered by `callback()`):
+
+1. at once, `isClosing(server)` becomes `true`, the server stops accepting connections, the idle connections are closed (and every other one as soon as it is idle), and the responses in progress get `Connection: close` when their headers have not been sent yet. A request that still arrives on an open connection gets `503 Service Unavailable` with `Connection: close`, without running the stack;
+2. the requests in progress have `timeout` milliseconds to complete;
+3. then, at once, their signal is aborted (`shutdown`), and every connection is closed, including those that have been upgraded (e.g. WebSocket) or tunnelled (`CONNECT`);
+4. the promise resolves once the server has closed and the cleanups of the requests (see `context.onCleanup()`) have run. Cleanups that take longer than `cleanup_timeout` milliseconds once the server has closed reject it (and are logged).
+
+Another call returns the same promise. A server that is not listening (before `listen()`, or once closed) only waits for the cleanups of its requests.
+
+```typescript
+import { Binden, shutdown } from "binden";
+
+const app = new Binden({ timeout: 30_000 }).use(middleware);
+const server = app.createServer().listen(8080);
+
+process.once("SIGTERM", () => {
+  shutdown(server, { timeout: 10_000 }).then(
+    () => {
+      process.exitCode = 0;
+    },
+    (error: unknown) => {
+      process.stderr.write(`${String(error)}\n`);
+      process.exitCode = 1;
+    },
+  );
 });
 ```
 

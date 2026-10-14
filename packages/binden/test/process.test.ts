@@ -42,6 +42,14 @@ suite("Process safety", () => {
     });
   });
 
+  test("SIGTERM shuts the server down gracefully", () => {
+    deepStrictEqual(run("sigterm.ts"), {
+      status: 0,
+      stdout: "200 close done false\n",
+      stderr: "",
+    });
+  });
+
   test("a logger whose `child()` throws does not crash the process", () => {
     deepStrictEqual(run("throwing-logger.ts"), {
       status: 0,
