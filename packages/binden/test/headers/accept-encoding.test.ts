@@ -1,7 +1,7 @@
-import { deepStrictEqual } from "node:assert";
+import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
 
-import { AcceptEncoding } from "../../index.js";
+import { AcceptEncoding, type IAcceptEncodings } from "../../index.js";
 
 suite("AcceptEncoding", () => {
   test("constructor", () => {
@@ -97,5 +97,31 @@ suite("AcceptEncoding", () => {
     ]) {
       deepStrictEqual(parse(`gzip;q=${q}`), [], q);
     }
+  });
+
+  test("constructor (invalid input)", () => {
+    for (const q_value of [
+      2,
+      -0.5,
+      0.0001,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      throws(
+        () => new AcceptEncoding({ encoding: "gzip", q_value }),
+        new TypeError(`\`q_value\` is not a qvalue: ${q_value}`),
+      );
+    }
+    throws(
+      () =>
+        new AcceptEncoding({
+          encoding: "gzip, br;q=1" as IAcceptEncodings,
+        }),
+      new TypeError("Unknown content coding: gzip, br;q=1"),
+    );
+    deepStrictEqual(
+      new AcceptEncoding({ encoding: "br", q_value: 0.5 }).toString(),
+      "br;q=0.5",
+    );
   });
 });

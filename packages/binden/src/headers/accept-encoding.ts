@@ -6,11 +6,19 @@ export interface IAcceptEncoding {
   q_value?: number | null;
 }
 
+/** A weight from 0 to 1, with at most 3 decimals (RFC 9110, section 12.4.2) */
+const qvalue = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u;
+
 export class AcceptEncoding implements IAcceptEncoding {
   readonly #encoding: IAcceptEncodings;
   readonly #q_value: number | null;
 
   public constructor({ encoding, q_value = null }: IAcceptEncoding) {
+    if (!AcceptEncoding.#encodings.includes(encoding)) {
+      throw new TypeError(`Unknown content coding: ${String(encoding)}`);
+    } else if (q_value !== null && !qvalue.test(`${q_value}`)) {
+      throw new TypeError(`\`q_value\` is not a qvalue: ${q_value}`);
+    }
     this.#encoding = encoding;
     this.#q_value = q_value;
   }
@@ -37,16 +45,6 @@ export class AcceptEncoding implements IAcceptEncoding {
       input = input.join(",");
     }
 
-    const encodings = [
-      "gzip",
-      "x-gzip",
-      "compress",
-      "deflate",
-      "br",
-      "*",
-      "identity",
-    ];
-
     // Content codings and the `q` parameter are case-insensitive (RFC 9110)
     return input
       .split(",")
@@ -62,17 +60,27 @@ export class AcceptEncoding implements IAcceptEncoding {
         }
         // A weight is a qvalue (RFC 9110, section 12.4.2), or the element is invalid
         const value = q.trim();
-        return /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u.test(value)
+        return qvalue.test(value)
           ? [coding.toLowerCase(), Number(value)]
           : null;
       })
       .filter(
         (e): e is [IAcceptEncodings, number | null] =>
-          e !== null && encodings.includes(e[0]),
+          e !== null && AcceptEncoding.#encodings.includes(e[0]),
       )
       .map(([encoding, q_value]) => new AcceptEncoding({ encoding, q_value }))
       .sort(({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1));
   }
+
+  static readonly #encodings: readonly string[] = [
+    "gzip",
+    "x-gzip",
+    "compress",
+    "deflate",
+    "br",
+    "*",
+    "identity",
+  ];
 }
 
 export default AcceptEncoding;

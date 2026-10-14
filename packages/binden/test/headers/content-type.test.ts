@@ -159,4 +159,59 @@ suite("ContentType", () => {
       `${type}; boundary=token`,
     );
   });
+
+  test("constructor (invalid input)", () => {
+    for (const type of ["text", "text/plain; x=y", "te xt/plain", ""]) {
+      throws(
+        () => new ContentType({ type }),
+        new TypeError(`Invalid media type: ${type}`),
+      );
+    }
+    throws(
+      () => new ContentType({ type: "text/plain", parameters: { "a b": "c" } }),
+      new TypeError("Invalid parameter name: a b"),
+    );
+    throws(
+      () => new ContentType({ type: "text/plain", charset: "utf-8\r\nX: y" }),
+      new TypeError("Invalid value of the parameter charset"),
+    );
+  });
+
+  test("parameters (quoted when they are not tokens)", () => {
+    // The value of `charset` cannot add a parameter
+    const injected = new ContentType({
+      type: "text/plain",
+      charset: "utf-8; boundary=attacker",
+    });
+    deepStrictEqual(
+      injected.toString(),
+      `text/plain; charset="utf-8; boundary=attacker"`,
+    );
+    deepStrictEqual(ContentType.fromString(injected.toString())?.parameters, {
+      charset: "utf-8; boundary=attacker",
+    });
+
+    // Every parameter is kept, by its name in lowercase
+    const parsed = ContentType.fromString(
+      "text/plain; Format=flowed; charset=UTF-8; delsp=yes; a b=c",
+    );
+    deepStrictEqual(parsed?.parameters, {
+      format: "flowed",
+      charset: "utf-8",
+      delsp: "yes",
+    });
+    deepStrictEqual(
+      parsed.toString(),
+      "text/plain; format=flowed; charset=utf-8; delsp=yes",
+    );
+    deepStrictEqual(
+      new ContentType({
+        type: "text/plain",
+        parameters: { Format: "flowed", format: "fixed" },
+      }).toString(),
+      "text/plain; format=flowed",
+    );
+    // Not a media type
+    deepStrictEqual(ContentType.fromString("text"), null);
+  });
 });

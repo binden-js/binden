@@ -4,25 +4,78 @@ export interface IContentType {
   type: string;
   charset?: string | null;
   boundary?: string | null;
+  /** Other parameters (their names are case-insensitive) */
+  parameters?: Readonly<Record<string, string>>;
 }
+
+const token = "[!#$%&'*+.^_`|~\\w-]+";
+
+/** `type/subtype` */
+const mediaType = new RegExp(`^${token}/${token}$`, "u");
+
+/** The name of a parameter */
+const parameterName = new RegExp(`^${token}$`, "u");
+
+/** A value without control characters (but tabs), which a quoted string cannot have */
+// eslint-disable-next-line no-control-regex -- control characters on purpose
+const parameterValue = /^[^\u0000-\u0008\u000A-\u001F\u007F]*$/u;
 
 export class ContentType implements IContentType {
   readonly #type: string;
   readonly #charset: string | null;
   readonly #boundary: string | null;
+  readonly #parameters: ReadonlyMap<string, string>;
 
-  public constructor({ type, charset = null, boundary = null }: IContentType) {
+  /**
+   * A media type (`type/subtype`, of tokens) with its parameters: a token as
+   * name, and a value without control characters (sent as a quoted string
+   * when it is not a token). Invalid ones throw a `TypeError`.
+   */
+  public constructor({
+    type,
+    charset = null,
+    boundary = null,
+    parameters = {},
+  }: IContentType) {
+    if (!mediaType.test(type)) {
+      throw new TypeError(`Invalid media type: ${type}`);
+    }
+    const all = new Map<string, string>();
+    for (const [name, value] of Object.entries(parameters)) {
+      const key = name.toLowerCase();
+      if (!all.has(key)) {
+        all.set(key, value);
+      }
+    }
     this.#type = type;
     this.#boundary = null;
     this.#charset = null;
+    // `boundary` (of `multipart/form-data` only) and `charset` (of the other
+    // types) are the options themselves
     if (type === "multipart/form-data") {
       if (typeof boundary !== "string" || !boundary) {
         throw new TypeError("`boundary` is missing");
       }
       this.#boundary = boundary;
-    } else if (typeof charset === "string" && charset) {
-      this.#charset = charset;
+      all.set("boundary", boundary);
+      all.delete("charset");
+    } else {
+      all.delete("boundary");
+      if (typeof charset === "string" && charset) {
+        this.#charset = charset;
+        all.set("charset", charset);
+      } else {
+        all.delete("charset");
+      }
     }
+    for (const [name, value] of all) {
+      if (!parameterName.test(name)) {
+        throw new TypeError(`Invalid parameter name: ${name}`);
+      } else if (!parameterValue.test(value)) {
+        throw new TypeError(`Invalid value of the parameter ${name}`);
+      }
+    }
+    this.#parameters = all;
   }
 
   public get type(): string {
@@ -37,12 +90,18 @@ export class ContentType implements IContentType {
     return this.#boundary;
   }
 
+  /** Every parameter, by its name in lowercase */
+  public get parameters(): Record<string, string> {
+    return Object.fromEntries(this.#parameters);
+  }
+
   public toString(): string {
-    return typeof this.boundary === "string"
-      ? `${this.type}; boundary=${ContentType.#quote(this.boundary)}`
-      : typeof this.charset === "string" && this.charset
-        ? `${this.type}; charset=${this.charset}`
-        : this.type;
+    return [
+      this.type,
+      ...[...this.#parameters].map(
+        ([name, value]) => `${name}=${ContentType.#quote(value)}`,
+      ),
+    ].join("; ");
   }
 
   /** `type/subtype *( OWS ";" OWS parameter )` (RFC 9110, section 8.3.1) */
@@ -50,28 +109,28 @@ export class ContentType implements IContentType {
     const [rawType = "", ...rest] = split(input ?? "", ";");
     const type = rawType.trim().toLowerCase();
 
-    if (!type) {
-      return null;
-    }
-
     // Parameter names are case-insensitive (RFC 9110, section 5.6.6)
     const parameters = new Map<string, string>();
     for (const parameter of rest) {
       const index = parameter.indexOf("=");
       const name = parameter.slice(0, Math.max(index, 0)).trim().toLowerCase();
-      if (index > 0 && !parameters.has(name)) {
-        const value = parameter.slice(index + 1).trim();
-        parameters.set(name, unquote(value));
+      if (parameterName.test(name) && !parameters.has(name)) {
+        const value = unquote(parameter.slice(index + 1).trim());
+        parameters.set(name, name === "charset" ? value.toLowerCase() : value);
       }
     }
 
-    if (type === "multipart/form-data") {
-      const boundary = parameters.get("boundary") ?? "";
-      return boundary ? new ContentType({ type, boundary }) : null;
+    try {
+      return new ContentType({
+        type,
+        charset: parameters.get("charset") ?? null,
+        boundary: parameters.get("boundary") ?? null,
+        parameters: Object.fromEntries(parameters),
+      });
+    } catch {
+      // E.g. not a media type, or `multipart/form-data` without a boundary
+      return null;
     }
-
-    const charset = parameters.get("charset")?.toLowerCase() ?? null;
-    return new ContentType({ type, charset });
   }
 
   /** A token as is, anything else as a quoted string */

@@ -10,12 +10,28 @@ export class Range implements IRange {
   readonly #end: number | null;
   readonly #unit: IUnit;
 
+  /**
+   * A range of `start` to `end` (non-negative integers), from `start` to the
+   * end (without `end`), or of the last `end` bytes (without `start`)
+   */
   public constructor({ start = null, end = null }: IRange) {
+    for (const [name, value] of [
+      ["start", start],
+      ["end", end],
+    ] as const) {
+      if (value !== null && !(Number.isSafeInteger(value) && value >= 0)) {
+        throw new TypeError(`\`${name}\` is not a non-negative integer`);
+      }
+    }
+    // Only an unsatisfied `ContentRange` has neither
+    if (new.target === Range && start === null && end === null) {
+      throw new TypeError("A range has a `start` or an `end`");
+    } else if (start !== null && end !== null && end < start) {
+      throw new TypeError("`end` is less than `start`");
+    }
     this.#unit = "bytes";
-    this.#start =
-      typeof start === "number" && Number.isSafeInteger(start) ? start : null;
-    this.#end =
-      typeof end === "number" && Number.isSafeInteger(end) ? end : null;
+    this.#start = start;
+    this.#end = end;
   }
 
   public get unit(): IUnit {

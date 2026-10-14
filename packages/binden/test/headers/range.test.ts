@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert";
+import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
 
 import { Range } from "../../index.js";
@@ -15,23 +15,31 @@ suite("Range", () => {
   });
 
   test("constructor (no `start`)", () => {
-    const start = 0.1;
-    const end = 500;
-    const range = new Range({ start, end });
-    deepStrictEqual(range.end, end);
+    const range = new Range({ end: 500 });
     deepStrictEqual(range.start, null);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes=-${end}`);
+    deepStrictEqual(range.end, 500);
+    deepStrictEqual(range.toString(), "bytes=-500");
   });
 
   test("constructor (no `end`)", () => {
-    const end = 499.9;
-    const start = 0;
-    const range = new Range({ start, end });
-    deepStrictEqual(range.start, start);
+    const range = new Range({ start: 0 });
+    deepStrictEqual(range.start, 0);
     deepStrictEqual(range.end, null);
-    deepStrictEqual(range.unit, "bytes");
-    deepStrictEqual(range.toString(), `bytes=${start}-`);
+    deepStrictEqual(range.toString(), "bytes=0-");
+  });
+
+  test("constructor (invalid ranges)", () => {
+    for (const [range, message] of [
+      [{ start: 0.1, end: 500 }, "`start` is not a non-negative integer"],
+      [{ start: -1 }, "`start` is not a non-negative integer"],
+      [{ start: 0, end: 499.9 }, "`end` is not a non-negative integer"],
+      [{ end: Number.NaN }, "`end` is not a non-negative integer"],
+      [{ start: 2 ** 53 }, "`start` is not a non-negative integer"],
+      [{}, "A range has a `start` or an `end`"],
+      [{ start: 5, end: 1 }, "`end` is less than `start`"],
+    ] as const) {
+      throws(() => new Range(range), new TypeError(message));
+    }
   });
 
   test(".fromString()", () => {
