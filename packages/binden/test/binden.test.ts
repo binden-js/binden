@@ -720,6 +720,24 @@ suite("Binden", () => {
     deepStrictEqual(status, 400);
   });
 
+  test("400 error (an invalid request-target)", async () => {
+    app.use("/b", (context: Context) => context.send("b"));
+    // Sent as it is (a URL would be normalized by the client)
+    const status = (path: string): Promise<number | undefined> =>
+      new Promise((resolve, reject) => {
+        httpRequest({ path, port: portOf(server) }, (response) => {
+          response.resume();
+          resolve(response.statusCode);
+        })
+          .on("error", reject)
+          .end();
+      });
+
+    deepStrictEqual(await status("/b"), 200);
+    deepStrictEqual(await status("/a/../b"), 400);
+    deepStrictEqual(await status("/%zz"), 400);
+  });
+
   test("404 error (context.done === false)", async () => {
     app.use(new CustomMiddleware());
     const response = await fetch(url);

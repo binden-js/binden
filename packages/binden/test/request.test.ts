@@ -274,6 +274,98 @@ suite("BindenRequest", () => {
     );
   });
 
+  test(".URL (request-targets)", () => {
+    const create = (
+      target: string,
+      method = "GET",
+      host = "trusted.test",
+    ): BindenRequest => {
+      const request = new BindenRequest(new Socket());
+      request.url = target;
+      request.method = method;
+      request.headers = { host };
+      return request;
+    };
+    const valid: [string, string, string][] = [
+      ["/p?a=1", "GET", "http://trusted.test/p?a=1"],
+      // A path, not the authority of a network-path reference
+      ["//evil.test/x", "GET", "http://trusted.test//evil.test/x"],
+      [
+        "/a%20b/:@!$&'()*+,;=",
+        "GET",
+        "http://trusted.test/a%20b/:@!$&'()*+,;=",
+      ],
+      ["/a?b?c", "GET", "http://trusted.test/a?b?c"],
+      ["/a??b", "GET", "http://trusted.test/a??b"],
+      ["/a?", "GET", "http://trusted.test/a"],
+      ["/...", "GET", "http://trusted.test/..."],
+      // Absolute-form: its authority, but the protocol of the connection
+      ["https://evil.test/x?y", "GET", "http://evil.test/x?y"],
+      ["HTTP://evil.test:8080", "GET", "http://evil.test:8080/"],
+      ["http://evil.test?x=1", "GET", "http://evil.test/?x=1"],
+      ["*", "OPTIONS", "http://trusted.test/*"],
+    ];
+    for (const [target, method, expected] of valid) {
+      deepStrictEqual(create(target, method).URL.href, expected, target);
+    }
+    deepStrictEqual(create("https://evil.test/x").secure, false);
+    // Of the connection: known without a valid URL
+    deepStrictEqual(create("/%zz", "GET", "a b").secure, false);
+    // Without a request-target (not parsed from a request): `/`
+    const bare = create("/");
+    Reflect.deleteProperty(bare, "url");
+    deepStrictEqual(bare.URL.href, "http://trusted.test/");
+    // Without `Host` (e.g. HTTP/1.0)
+    const anonymous = create("/");
+    anonymous.headers = {};
+    throws(
+      () => anonymous.URL,
+      (error: unknown) => error instanceof BindenError && error.status === 400,
+    );
+
+    const invalid: [string, string, string][] = [
+      ["/\\evil.test/x", "GET", "trusted.test"],
+      ["/%zz", "GET", "trusted.test"],
+      ["/a%2", "GET", "trusted.test"],
+      ["/a#b", "GET", "trusted.test"],
+      ["/a?b#c", "GET", "trusted.test"],
+      // Dot-segments (also percent-encoded) route to another path
+      ["/a/../b", "GET", "trusted.test"],
+      ["/a/./b", "GET", "trusted.test"],
+      ["/..", "GET", "trusted.test"],
+      ["/a/%2e%2E/b", "GET", "trusted.test"],
+      ["/a/.%2e", "GET", "trusted.test"],
+      ["http://user:pw@trusted.test/x", "GET", "trusted.test"],
+      ["http://user@trusted.test/x", "GET", "trusted.test"],
+      ["ftp://trusted.test/x", "GET", "trusted.test"],
+      ["http:///x", "GET", "trusted.test"],
+      ["*", "GET", "trusted.test"],
+      ["x", "GET", "trusted.test"],
+      ["?a", "GET", "trusted.test"],
+      // `Host` is only a host and a port
+      ["/", "GET", "trusted.test/x"],
+      ["/", "GET", "user@trusted.test"],
+      ["/", "GET", "trusted.test#x"],
+      ["/", "GET", ""],
+    ];
+    for (const [target, method, host] of invalid) {
+      throws(
+        () => create(target, method, host).URL,
+        (error: unknown) =>
+          error instanceof BindenError && error.status === 400,
+        `${target} (Host: ${host})`,
+      );
+    }
+  });
+
+  test(".secure (the protocol of the connection)", () => {
+    const tls = new TLSSocket(new Socket());
+    const request = new BindenRequest(tls);
+    request.url = "http://trusted.test/";
+    deepStrictEqual(request.secure, true);
+    tls.destroy();
+  });
+
   test(".query (keeps its prototype)", () => {
     const request = new BindenRequest(new Socket());
     request.url = "/?__proto__=a&__proto__=b&x=1";

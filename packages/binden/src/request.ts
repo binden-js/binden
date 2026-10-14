@@ -159,19 +159,81 @@ export class BindenRequest extends IncomingMessage {
     return [...this.#range];
   }
 
+  /** Whether the protocol is `https:` (see `protocol`) */
   public get secure(): boolean {
-    return this.URL.protocol === "https:";
+    return this.protocol === "https:";
   }
 
-  /** The URL of the request (a `400 Bad Request` error without a valid one) */
+  /**
+   * The URL of the request: the protocol of the connection (see `protocol`),
+   * the authority of the request-target in absolute-form (otherwise of
+   * `Host`), and the path and query of the request-target (RFC 9112, section
+   * 3.2). A `400 Bad Request` error without a valid one.
+   */
   public get URL(): URL {
-    const { protocol, url = "/", headers } = this;
-    const { host = "" } = headers;
-    const base = `${protocol}//${host}`;
-    // E.g. an invalid `Host` header
-    if (!URL.canParse(url, base)) {
+    const { authority, path, query } = BindenRequest.#target(
+      this.url ?? "/",
+      this.method ?? "GET",
+    );
+    const host = authority ?? this.headers.host ?? "";
+    const base = `${this.protocol}//${host}`;
+    // `uri-host [ ":" port ]`: nothing that ends the authority, nor userinfo
+    if (/[\s/?#@\\]/u.test(host) || !URL.canParse(base)) {
       throw new BindenError(400);
     }
-    return new URL(url, base);
+    const url = new URL(base);
+    // Set as a path: `//evil.test/x` is a path, not the authority of the URL
+    url.pathname = path;
+    url.search = query === "" ? "" : `?${query}`;
+    return url;
+  }
+
+  /**
+   * The authority (of the absolute-form), the path and the query of a
+   * request-target, which must be in origin-form (or absolute-form with `http`
+   * or `https`, or `*` for `OPTIONS`), without a fragment, a backslash, an
+   * invalid percent-encoding, or dot-segments (which the URL parser would
+   * remove, so that the request would be routed to another path).
+   */
+  static #target(
+    target: string,
+    method: string,
+  ): { authority: string | null; path: string; query: string } {
+    if (target === "*" && method === "OPTIONS") {
+      return { authority: null, path: "*", query: "" };
+    }
+
+    let authority: string | null = null;
+    let rest = target;
+    const absolute =
+      /^(?<scheme>[a-z][\d+.a-z-]*):\/\/(?<host>[^/?]*)(?<tail>.*)$/iu.exec(
+        target,
+      )?.groups;
+    if (absolute) {
+      const { scheme = "", host = "", tail = "" } = absolute;
+      // The authority is then checked as `Host` (e.g. for userinfo)
+      if (!["http", "https"].includes(scheme.toLowerCase()) || host === "") {
+        throw new BindenError(400);
+      }
+      authority = host;
+      // An empty path is `/`
+      rest = tail.startsWith("/") ? tail : `/${tail}`;
+    }
+
+    if (
+      !rest.startsWith("/") ||
+      /[#\\]/u.test(rest) ||
+      /%(?![\da-f]{2})/iu.test(rest)
+    ) {
+      throw new BindenError(400);
+    }
+
+    const index = rest.indexOf("?");
+    const path = index === -1 ? rest : rest.slice(0, index);
+    const query = index === -1 ? "" : rest.slice(index + 1);
+    if (path.split("/").some((part) => /^(?:\.|%2e){1,2}$/iu.test(part))) {
+      throw new BindenError(400);
+    }
+    return { authority, path, query };
   }
 }
