@@ -74,6 +74,59 @@ suite("BindenError", () => {
     );
   });
 
+  test("constructor (`headers`)", () => {
+    const headers = {
+      "Retry-After": "120",
+      "WWW-Authenticate": ["Basic", "Bearer"],
+    };
+    const error = new BindenError(503, { headers });
+    deepStrictEqual(error.headers, headers);
+    // A frozen copy
+    headers["Retry-After"] = "1";
+    deepStrictEqual(error.headers["Retry-After"], "120");
+    ok(Object.isFrozen(error.headers));
+    ok(Object.isFrozen(error.headers["WWW-Authenticate"]));
+    deepStrictEqual(new BindenError(400).headers, {});
+  });
+
+  test("constructor (invalid `headers`)", () => {
+    const invalid: [unknown, string][] = [
+      [null, "`headers` is not an object"],
+      ["Allow: GET", "`headers` is not an object"],
+      [["Allow", "GET"], "`headers` is not an object"],
+      [{ "Bad Name": "x" }, "Invalid header name: Bad Name"],
+      [{ "": "x" }, "Invalid header name: "],
+      [{ "X-A": "x\r\nSet-Cookie: a=1" }, "Invalid value of the `X-A` header"],
+      [{ "X-A": "x\n" }, "Invalid value of the `X-A` header"],
+      [{ "X-A": "x\u0000" }, "Invalid value of the `X-A` header"],
+      [{ "X-A": ["ok", "x\r"] }, "Invalid value of the `X-A` header"],
+      [{ "X-A": 1 }, "Invalid value of the `X-A` header"],
+      [{ "X-A": "a", "x-a": "b" }, "Duplicate header: x-a"],
+    ];
+    for (const name of [
+      "Content-Length",
+      "transfer-encoding",
+      "Content-Encoding",
+      "CONTENT-RANGE",
+      "Content-Type",
+      "Connection",
+    ]) {
+      invalid.push([
+        { [name]: "x" },
+        `The \`${name}\` header cannot be set by an error`,
+      ]);
+    }
+    for (const [headers, message] of invalid) {
+      throws(
+        () =>
+          new BindenError(400, {
+            headers: headers as Record<string, string>,
+          }),
+        new TypeError(message),
+      );
+    }
+  });
+
   test("constructor (an unregistered status code)", () => {
     const error = new BindenError(499);
     deepStrictEqual(error.status, 499);

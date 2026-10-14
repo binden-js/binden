@@ -1,7 +1,7 @@
 import type { ILogger } from "@binden/logger";
 import { BindenError, type IBindenErrorOptions } from "./error.js";
-import { Exchange } from "./exchange.js";
-import defaultLogger from "./logger.js";
+import { Exchange, type IExchangeReport } from "./exchange.js";
+import { defaultLogger, safe, snapshot } from "./logger.js";
 
 import type { Readable } from "node:stream";
 import type { BindenRequest } from "./request.js";
@@ -20,6 +20,11 @@ export interface IContextOptions extends IBaseContext {
    * (the others share it)
    */
   readonly state?: object | undefined;
+  /**
+   * Reports a failure of a cleanup of the request (used by the first context
+   * of the request only): logged by default (`error`)
+   */
+  readonly report?: IExchangeReport | undefined;
 }
 
 export type IParams = Record<string, string>;
@@ -37,32 +42,32 @@ export class Context<
   public constructor({
     request,
     response,
-    logger = defaultLogger,
+    logger,
     state,
+    report,
   }: IContextOptions) {
     this.#request = request;
     this.#response = response;
-    this.#parent = logger;
+    this.#parent = safe(logger ?? defaultLogger());
     this.#exchange = Exchange.for(request, response, {
       state,
-      report: (message, error) => this.log.error(message, { error }),
+      report:
+        report ??
+        ((message, error): void => {
+          const options = { location: "cleanup", details: false } as const;
+          this.log.error(message, { failure: snapshot(error, options) });
+        }),
     });
   }
 
   /**
    * A child of the logger with the `trace_id` of the context, created when it
-   * is first used. A logger that fails to create one (e.g. a custom logger
-   * whose `child()` throws) is used itself: logging never prevents the context
-   * from being created.
+   * is first used. Its calls never fail (e.g. a custom logger that throws, or
+   * whose `child()` throws, is ignored, and its rejected promises observed):
+   * logging never prevents the request from being handled.
    */
   public get log(): ILogger {
-    if (!this.#logger) {
-      try {
-        this.#logger = this.#parent.child({ trace_id: this.id });
-      } catch {
-        this.#logger = this.#parent;
-      }
-    }
+    this.#logger ??= this.#parent.child({ trace_id: this.id });
     return this.#logger;
   }
 
@@ -188,6 +193,9 @@ export class Context<
     if (!this.#exchange.may_reply) {
       this.log.debug("A late reply has been ignored");
       return;
+    } else if (this.response.started) {
+      // E.g. a second `send()`: the response is not sent again
+      this.log.warn("The response has already been started");
     }
     await send();
     this.done = true;

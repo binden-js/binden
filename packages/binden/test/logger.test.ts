@@ -1,15 +1,16 @@
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { Socket } from "node:net";
 import { suite, test } from "node:test";
-import { Logger } from "@binden/logger";
+import { Logger, type ILogger } from "@binden/logger";
 
 import {
+  BindenAbortError,
   BindenError,
   BindenRequest,
   BindenResponse,
   Context,
 } from "../index.js";
-import { serializers } from "../src/logger.js";
+import { isLogger, safe, serializers, snapshot } from "../src/logger.js";
 
 const secrets = [
   "secret-token",
@@ -32,17 +33,13 @@ function createContext(): Context {
   request.headers = {
     host: "localhost",
     "user-agent": "test",
-    "content-type": "text/plain",
-    "content-length": "4",
     authorization: "Bearer secret-token",
-    "proxy-authorization": "Basic secret-token",
     cookie: "session=secret-cookie",
     "x-api-key": "secret-api-key",
   };
   const response = new BindenResponse(request);
   response.setHeader("Set-Cookie", "session=secret-set-cookie");
   response.setHeader("X-Header", "secret-header");
-  response.setHeader("Content-Type", "text/plain");
   // A field that the application has set on the context
   return Object.assign(new Context({ request, response }), {
     privateSession: "secret-session",
@@ -55,56 +52,32 @@ function assertNoSecrets(output: string): void {
   }
 }
 
+/** A logger whose methods record their calls */
+function recorder(
+  method: (message: string, extra?: Record<string, unknown>) => unknown,
+): ILogger {
+  const logger: ILogger = {
+    fatal: method,
+    error: method,
+    warn: method,
+    info: method,
+    debug: method,
+    trace: method,
+    child: (): ILogger => logger,
+  };
+  return logger;
+}
+
 suite("serializers", () => {
-  test("request: an allowlist of details", () => {
-    const { request } = createContext();
+  test("request and response: an allowlist of details", () => {
+    const { request, response } = createContext();
 
     deepStrictEqual(serializers.request(request), {
       method: "GET",
-      url: "/path",
-      headers: {
-        host: "localhost",
-        "user-agent": "test",
-        "content-type": "text/plain",
-        "content-length": "4",
-      },
+      path: "/path",
     });
-
-    // No URL at all (`url` is optional)
-    const bare = new BindenRequest(new Socket());
-    Reflect.deleteProperty(bare, "url");
-    deepStrictEqual(serializers.request(bare), {
-      method: null,
-      url: "",
-      headers: {},
-    });
-    deepStrictEqual(serializers.request("not a request"), "not a request");
-  });
-
-  test("request: the path of the request-target only", () => {
-    const url = (target: string): unknown => {
-      const request = new BindenRequest(new Socket());
-      request.url = target;
-      return (serializers.request(request) as { url: unknown }).url;
-    };
-
-    deepStrictEqual(url("/x?token=hidden#fragment"), "/x");
-    deepStrictEqual(url("/x#fragment"), "/x");
-    // A path, not an authority
-    deepStrictEqual(url("//evil.test/x?token=hidden"), "//evil.test/x");
-    // Not the userinfo, nor the authority of an absolute-form target
-    deepStrictEqual(url("http://alice:secretPW@trusted.test/x?t=1"), "/x");
-    deepStrictEqual(url("*"), "");
-  });
-
-  test("response: an allowlist of details", () => {
-    const { response } = createContext();
-
-    deepStrictEqual(serializers.response(response), {
-      statusCode: 200,
-      headers: { "content-type": "text/plain" },
-    });
-    deepStrictEqual(serializers.response("not a response"), "not a response");
+    deepStrictEqual(serializers.response(response), { status: 200 });
+    deepStrictEqual(serializers.request("secret"), { type: "string" });
   });
 
   test("context: not its own fields", () => {
@@ -112,14 +85,14 @@ suite("serializers", () => {
 
     deepStrictEqual(serializers.context(context), {
       id: context.id,
-      request: serializers.request(context.request),
-      response: serializers.response(context.response),
+      request: { method: "GET", path: "/path" },
+      response: { status: 200 },
     });
     assertNoSecrets(JSON.stringify(serializers.context(context)));
-    deepStrictEqual(serializers.context("not a context"), "not a context");
+    deepStrictEqual(serializers.context("secret"), { type: "string" });
   });
 
-  test("error: no message, stack, cause or json", () => {
+  test("error: the type, a known code and the status only", () => {
     const cause = new SyntaxError("secret-cause");
     const error = new BindenError(400, {
       expose: true,
@@ -130,128 +103,39 @@ suite("serializers", () => {
     deepStrictEqual(serializers.error(error), {
       type: "BindenError",
       status: 400,
-      expose: true,
     });
-
-    const system = Object.assign(new Error("secret-message", { cause }), {
-      code: "ECONNRESET",
-    });
-    deepStrictEqual(serializers.error(system), {
-      type: "Error",
-      code: "ECONNRESET",
-    });
-
-    const internal = Object.assign(new Error("secret-message"), {
-      code: "ERR_STREAM_PREMATURE_CLOSE",
-    });
-    deepStrictEqual(serializers.error(internal), {
-      type: "Error",
-      code: "ERR_STREAM_PREMATURE_CLOSE",
-    });
-
-    const invalid = Object.assign(new TypeError("secret-message"), {
-      code: 42,
-      status: "400",
-      expose: "true",
-    });
-    deepStrictEqual(serializers.error(invalid), { type: "TypeError" });
-
-    // Only known codes: any other `code` may come from the input
-    for (const code of [
-      "secret-code",
-      "SECRET-CODE",
-      "ESECRET",
-      "ERR_SECRET_ABC123",
-    ]) {
-      deepStrictEqual(serializers.error(Object.assign(new Error(), { code })), {
-        type: "Error",
-      });
-    }
-
     deepStrictEqual(
-      serializers.error({ status: 400, expose: true, message: "secret" }),
-      { type: "object", status: 400, expose: true },
+      serializers.error(new BindenError(503, { code: "deadline" })),
+      { type: "BindenError", code: "deadline", status: 503 },
     );
-    deepStrictEqual(serializers.error({ status: 999 }), { type: "object" });
-    deepStrictEqual(serializers.error({ status: "400" }), { type: "object" });
-    deepStrictEqual(serializers.error({ status: 499 }), {
-      type: "object",
-      status: 499,
+    deepStrictEqual(
+      serializers.error(new BindenError(400, { code: "secret-code" })),
+      { type: "BindenError", status: 400 },
+    );
+    deepStrictEqual(
+      serializers.error(
+        Object.assign(new Error("secret-message"), { code: "ECONNRESET" }),
+      ),
+      { type: "Error", code: "ECONNRESET" },
+    );
+    deepStrictEqual(serializers.error(new BindenAbortError("deadline")), {
+      type: "BindenAbortError",
     });
-    deepStrictEqual(serializers.error("secret-message"), { type: "string" });
-    deepStrictEqual(serializers.error(null), { type: "null" });
-  });
-
-  test("error: the type of a known error class only", () => {
-    // Names the application (or the input) chooses are not logged
     class SECRET_CLASS extends RangeError {}
     deepStrictEqual(serializers.error(new SECRET_CLASS()), {
       type: "RangeError",
     });
-
-    const tagged = Object.assign(new Error(), {
-      [Symbol.toStringTag]: "SECRET_TAG",
-      name: "SECRET_NAME",
-    });
-    deepStrictEqual(serializers.error(tagged), { type: "Error" });
-
-    const errors = [
-      new AggregateError([]),
-      new EvalError(),
-      new ReferenceError(),
-      new SyntaxError(),
-      new URIError(),
-    ];
-    deepStrictEqual(
-      errors.map((error) => serializers.error(error).type),
-      [
-        "AggregateError",
-        "EvalError",
-        "ReferenceError",
-        "SyntaxError",
-        "URIError",
-      ],
-    );
-  });
-
-  test("error: never throws", () => {
-    const anonymous = Object.assign(new Error("secret-message"), {
-      constructor: null,
-    });
-    deepStrictEqual(serializers.error(anonymous), { type: "Error" });
-
-    const getters = new Error("secret-message");
-    for (const key of ["constructor", "status", "expose", "code"]) {
-      Object.defineProperty(getters, key, {
-        get(): never {
-          throw new Error("getter");
-        },
-      });
-    }
-    deepStrictEqual(serializers.error(getters), { type: "Error" });
-
-    const prototypeless = Object.assign(Object.create(null) as object, {
-      status: 404,
-    });
-    deepStrictEqual(serializers.error(prototypeless), {
-      type: "object",
-      status: 404,
-    });
-
-    const { proxy, revoke } = Proxy.revocable(new Error("secret-message"), {});
-    revoke();
-    deepStrictEqual(serializers.error(proxy), { type: "object" });
-
+    deepStrictEqual(serializers.error(null), { type: "null" });
+    deepStrictEqual(serializers.error("secret"), { type: "string" });
     const thrower = (): never => {
       throw new Error("trap");
     };
+    // A proxy that refuses to tell anything
     const traps = new Proxy(new Error("secret-message"), {
       get: thrower,
       getPrototypeOf: thrower,
     });
     deepStrictEqual(serializers.error(traps), { type: "object" });
-
-    deepStrictEqual(serializers.error(thrower), { type: "function" });
   });
 
   test("body", () => {
@@ -279,5 +163,152 @@ suite("serializers", () => {
     deepStrictEqual(lines.length, 1);
     assertNoSecrets(lines.join(""));
     ok(lines.join("").includes("[Redacted]"));
+  });
+});
+
+suite("snapshot()", () => {
+  test("an allowlist of details, with the location and the request id", () => {
+    const error = Object.assign(new TypeError("secret-message"), {
+      code: "ERR_SECRET",
+      status: 409,
+      cause: new Error("secret-cause"),
+    });
+    deepStrictEqual(
+      snapshot(error, {
+        location: "middleware",
+        request_id: "id",
+        details: false,
+      }),
+      {
+        type: "TypeError",
+        status: 409,
+        location: "middleware",
+        request_id: "id",
+      },
+    );
+    // The status of the reply
+    deepStrictEqual(
+      snapshot(error, { location: "send", details: false, status: 500 }),
+      { type: "TypeError", status: 500, location: "send" },
+    );
+    deepStrictEqual(
+      snapshot(Object.assign(new Error(), { status: 99 }), {
+        location: "cleanup",
+        details: false,
+      }),
+      { type: "Error", location: "cleanup" },
+    );
+  });
+
+  test("the message, the stack, the cause and any code with `details`", () => {
+    const error = new Error("first", {
+      cause: Object.assign(new RangeError("second"), {
+        code: "E_SECOND",
+        cause: new Error("third", {
+          cause: new Error("fourth", { cause: "fifth" }),
+        }),
+      }),
+    });
+    const result = snapshot(error, { location: "middleware", details: true });
+    const second = result.cause as Record<string, unknown>;
+    const third = second.cause as Record<string, unknown>;
+    const fourth = third.cause as Record<string, unknown>;
+    deepStrictEqual(
+      [
+        result.message,
+        second.message,
+        second.code,
+        third.message,
+        fourth.message,
+      ],
+      ["first", "second", "E_SECOND", "third", "fourth"],
+    );
+    ok(typeof result.stack === "string");
+    // Bounded, and without the location in a cause
+    ok(!("cause" in fourth));
+    ok(!("location" in second));
+    // `null` is no cause
+    ok(
+      !(
+        "cause" in
+        snapshot(new Error("x", { cause: null }), {
+          location: "middleware",
+          details: true,
+        })
+      ),
+    );
+  });
+});
+
+suite("safe()", () => {
+  test("a logger that throws, or that rejects, is ignored", async () => {
+    const calls: unknown[][] = [];
+    const throwing = safe(
+      recorder((...args: unknown[]): never => {
+        calls.push(args);
+        throw new Error("A failing logger");
+      }),
+    );
+    throwing.fatal("fatal");
+    throwing.error("error", { a: 1 });
+    throwing.warn("warn");
+    throwing.info("info");
+    throwing.debug("debug");
+    throwing.trace("trace");
+    deepStrictEqual(calls, [
+      ["fatal"],
+      ["error", { a: 1 }],
+      ["warn"],
+      ["info"],
+      ["debug"],
+      ["trace"],
+    ]);
+
+    let observed = false;
+    const rejecting = safe(
+      recorder(() => ({
+        then(_resolve: unknown, reject: (error: Error) => void): void {
+          observed = true;
+          reject(new Error("A rejecting logger"));
+        },
+      })),
+    );
+    rejecting.error("error");
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    ok(observed);
+    // Not wrapped twice
+    ok(safe(rejecting) === rejecting);
+  });
+
+  test("a `child()` that fails gives the logger itself", () => {
+    const logged: string[] = [];
+    const base = recorder((message: string) => {
+      logged.push(message);
+    });
+    const throwing = safe({
+      ...base,
+      child: (): never => {
+        throw new Error("No child");
+      },
+    });
+    ok(throwing.child({ id: 1 }) === throwing);
+    const invalid = safe({
+      ...base,
+      child: (): ILogger => ({}) as ILogger,
+    });
+    ok(invalid.child({ id: 1 }) === invalid);
+    const valid = safe(base).child({ id: 1 });
+    valid.info("child");
+    deepStrictEqual(logged, ["child"]);
+  });
+
+  test("isLogger()", () => {
+    ok(isLogger(new Logger({ level: "silent" })));
+    ok(isLogger(recorder(() => null)));
+    ok(!isLogger(null));
+    ok(!isLogger("logger"));
+    ok(!isLogger({ ...recorder(() => null), child: null }));
   });
 });

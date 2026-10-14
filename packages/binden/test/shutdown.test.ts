@@ -3,7 +3,6 @@ import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import { connect, type Socket } from "node:net";
 import { suite, test } from "node:test";
-import type { Logger } from "@binden/logger";
 
 import {
   Binden,
@@ -246,7 +245,8 @@ suite("shutdown()", () => {
       within(shutdown(server, { cleanup_timeout: 30 })),
       new Error("The cleanup of the requests has not completed within 30 ms"),
     );
-    await captured.waitFor("The shutdown has failed");
+    const record = await captured.waitFor("The shutdown has failed");
+    deepStrictEqual(record.failure, { type: "Error", location: "shutdown" });
   });
 
   test("before `listen()`, and once closed, waits for the cleanups only", async () => {
@@ -361,16 +361,19 @@ suite("callback()", () => {
     );
 
     // Even with a logger that fails
+    const fail = (): never => {
+      throw new Error("A failing logger");
+    };
     const failing = new Binden({
       logger: {
-        ...captured.logger,
-        error: (): never => {
-          throw new Error("A failing logger");
-        },
-        child: (): never => {
-          throw new Error("A failing logger");
-        },
-      } as unknown as Logger,
+        fatal: fail,
+        error: fail,
+        warn: fail,
+        info: fail,
+        debug: fail,
+        trace: fail,
+        child: fail,
+      },
     });
     const server = createServer();
     server.on("request", failing.callback(server));

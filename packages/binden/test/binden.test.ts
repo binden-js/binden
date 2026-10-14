@@ -326,7 +326,8 @@ suite("Binden", () => {
         lines.map(({ msg, trace_id }) => ({ msg, trace_id })),
         [
           { msg: "Custom logger", trace_id: id },
-          { msg: "Error should not be exposed", trace_id: id },
+          // A client error is logged at `debug`
+          { msg: "The request has failed", trace_id: id },
         ],
       );
     } finally {
@@ -349,7 +350,10 @@ suite("Binden", () => {
       });
 
       deepStrictEqual(response.status, DefaultErrorCode);
-      ok(logged.output().includes(`"error":{"type":"Error"}`), logged.output());
+      ok(
+        logged.output().includes(`"failure":{"type":"Error","status":500,`),
+        logged.output(),
+      );
     } finally {
       await logged.close();
     }
@@ -410,7 +414,10 @@ suite("Binden", () => {
       });
 
       deepStrictEqual(response.status, DefaultErrorCode);
-      ok(logged.output().includes(`"error":{"type":"Error"}`), logged.output());
+      ok(
+        logged.output().includes(`"failure":{"type":"Error","status":500,`),
+        logged.output(),
+      );
       ok(!logged.output().includes("SECRET"), logged.output());
     } finally {
       await logged.close();
@@ -437,9 +444,7 @@ suite("Binden", () => {
       deepStrictEqual(response.status, DefaultErrorCode);
       const output = logged.output();
       ok(!output.includes("SECRET"), output);
-      ok(output.includes(`"error":{"type":"Error"}`), output);
-      ok(output.includes(`"url":"/path"`), output);
-      ok(output.includes(`"user-agent":"binden-test"`), output);
+      ok(output.includes(`"failure":{"type":"Error","status":500,`), output);
     } finally {
       await logged.close();
     }

@@ -5,7 +5,13 @@ import { Context } from "./context.js";
 import { BindenError } from "./error.js";
 import { validateDelay } from "./delay.js";
 import { BindenAbortError, Exchange } from "./exchange.js";
-import defaultLogger from "./logger.js";
+import {
+  defaultLogger,
+  type ILocation,
+  isLogger,
+  safe,
+  snapshot,
+} from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
 import { property } from "./property.js";
 import { BindenRequest, type ITrustProxy } from "./request.js";
@@ -14,11 +20,8 @@ import { matchPrefix, matchRoute, type IRoutingOptions } from "./route.js";
 import { Router } from "./router.js";
 import { isClosing, register, track } from "./shutdown.js";
 import { type ILayer, layersOf, markRoot, Stack } from "./stack.js";
-import { isStatus } from "./status.js";
 
 export const DefaultErrorCode = 500;
-
-type ILogLevel = "debug" | "error" | "trace" | "warn";
 
 /** Replaces the default reply to an error (see `IBindenOptions.error_handler`) */
 export type IErrorHandler<State extends object = Record<string, unknown>> = (
@@ -54,6 +57,11 @@ export interface IBindenBaseOptions<
   timeout?: number | undefined;
   /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */
   logger?: ILogger | undefined;
+  /**
+   * Whether the errors that the framework logs include their message, stack,
+   * cause and any `code` (`false`): they may quote the input of a request
+   */
+  log_error_details?: boolean | undefined;
   /** The matching of the patterns of `route()` and `mount()` */
   routing?: IRoutingOptions | undefined;
   /**
@@ -111,6 +119,7 @@ export class Binden<
   readonly #error_handler_timeout: number;
   readonly #timeout: number;
   readonly #logger: ILogger;
+  readonly #details: boolean;
   readonly #routing: Required<IRoutingOptions>;
   readonly #state: (() => object) | null;
   readonly #Request: typeof BindenRequest;
@@ -128,7 +137,8 @@ export class Binden<
       error_handler,
       error_handler_timeout = 5000,
       auto_head = true,
-      logger = defaultLogger,
+      logger,
+      log_error_details = false,
       routing = {},
       state,
       timeout = 0,
@@ -143,6 +153,10 @@ export class Binden<
     validateDelay("timeout", timeout, 0);
     validateDelay("error_handler_timeout", error_handler_timeout, 1);
     Binden.#boolean("auto_head", auto_head);
+    Binden.#boolean("log_error_details", log_error_details);
+    if (typeof logger !== "undefined" && !isLogger(logger)) {
+      throw new TypeError("`logger` is not a logger");
+    }
     if (
       typeof error_handler !== "undefined" &&
       typeof error_handler !== "function"
@@ -162,7 +176,8 @@ export class Binden<
     this.#error_handler_timeout = error_handler_timeout;
     this.#timeout = timeout;
     this.#auto_head = auto_head;
-    this.#logger = logger;
+    this.#logger = safe(logger ?? defaultLogger());
+    this.#details = log_error_details;
     this.#routing = { case_sensitive, strict };
     this.#state = state ?? null;
     // The requests of this application trust its proxies
@@ -224,7 +239,12 @@ export class Binden<
     server: http.Server | https.Server,
   ): (request: http.IncomingMessage, response: http.ServerResponse) => void {
     register(server, (message, error) => {
-      this.#logRoot("error", message, { error });
+      this.#logger.error(message, {
+        failure: snapshot(error, {
+          location: "shutdown",
+          details: this.#details,
+        }),
+      });
     });
     return (request, response): void => {
       if (
@@ -233,7 +253,7 @@ export class Binden<
       ) {
         const message =
           "The request and the response are not those of the application (`serverOptions()`)";
-        this.#logRoot("error", message, {});
+        this.#logger.error(message);
         request.socket.destroy();
         return;
       }
@@ -251,20 +271,29 @@ export class Binden<
     response: BindenResponse<BindenRequest>,
   ): void {
     const { state, failure } = this.#createState();
-    const exchange = Exchange.for(request, response, { state });
+    const context = new Context({
+      request,
+      response,
+      state,
+      logger: this.#logger,
+      report: (message, error): void => {
+        context.log.error(message, this.#failure(context, error, "cleanup"));
+      },
+    });
+    const exchange = Exchange.for(request, response);
     track(server, exchange, response);
-    const context = new Context({ request, response, logger: this.#logger });
     if (this.#timeout > 0) {
       exchange.setTimeout(this.#timeout);
     }
     // A request on a connection that was open once the server is closing
     // gets 503: the stack does not run
     const handled = isClosing(server)
-      ? Binden.#closing(context)
+      ? this.#closing(context)
       : this.#run(context, exchange, failure);
     handled.catch((error: unknown) => {
       // Unexpected (every failure is handled): the process must not crash
-      Binden.#log(context, "error", "The request has failed", { error });
+      const message = "The request has failed";
+      context.log.error(message, this.#failure(context, error, "send"));
       response.destroy();
     });
   }
@@ -314,7 +343,7 @@ export class Binden<
             !context.response.writableFinished
           ) {
             const message = "The deadline has passed. Destroying the socket";
-            Binden.#log(context, "debug", message, {});
+            context.log.debug(message);
             context.response.destroy();
           }
         },
@@ -349,8 +378,7 @@ export class Binden<
         await response.send();
         return;
       }
-      response.setHeader("Allow", methods);
-      throw new BindenError(405);
+      throw new BindenError(405, { headers: { Allow: methods } });
     }
     throw new BindenError(404);
   }
@@ -409,7 +437,7 @@ export class Binden<
         const middlewares =
           item instanceof Router ? this.#methodOf(item, run, allow) : [item];
         for (const middleware of middlewares) {
-          context = await Binden.#runMiddleware(middleware, context, exchange);
+          context = await this.#runMiddleware(middleware, context, exchange);
           run.context = context;
           if (context.done) {
             await Binden.#complete(context);
@@ -493,7 +521,7 @@ export class Binden<
     }
     if (!response.writableFinished) {
       const message = "The request has been aborted. Destroying the socket";
-      Binden.#log(context, "debug", message, { reason: reason.reason });
+      context.log.debug(message, { reason: reason.reason });
       response.destroy();
     }
   }
@@ -501,10 +529,26 @@ export class Binden<
   /** A middleware has set `done`: a response that nothing has started is sent empty */
   static async #complete(context: Context): Promise<void> {
     if (!context.response.started) {
-      const extra = { context };
-      Binden.#log(context, "warn", "`done` without a response", extra);
+      context.log.warn("`done` without a response");
       await context.response.send();
     }
+  }
+
+  /** What the framework logs of an error (see `log_error_details`) */
+  #failure(
+    context: Context,
+    error: unknown,
+    location: ILocation,
+    status?: number,
+  ): { failure: Record<string, unknown> } {
+    return {
+      failure: snapshot(error, {
+        location,
+        request_id: context.id,
+        details: this.#details,
+        status,
+      }),
+    };
   }
 
   /**
@@ -517,9 +561,8 @@ export class Binden<
     error: unknown,
   ): Promise<void> {
     if (this.#error_handler) {
-      const base = { context, error };
       const message = "Passing error to the provided `error_handler`";
-      Binden.#log(context, "trace", message, base);
+      context.log.trace(message, this.#failure(context, error, "middleware"));
 
       const outcome = await this.#bounded(this.#error_handler, context, error);
 
@@ -528,17 +571,21 @@ export class Binden<
         // The handler has failed, or has not settled in time: it may no
         // longer reply, and the request gets an opaque error
         exchange.seal();
-        const failed =
-          outcome === EXPIRED
-            ? "The provided `error_handler` has not settled in time"
-            : "The provided `error_handler` has failed";
-        const extra =
-          outcome === EXPIRED ? { context } : { context, error: outcome.error };
-        Binden.#log(context, "error", failed, extra);
+        if (outcome === EXPIRED) {
+          const late = "The provided `error_handler` has not settled in time";
+          context.log.error(
+            late,
+            this.#failure(context, error, "error_handler"),
+          );
+        } else {
+          const failed = "The provided `error_handler` has failed";
+          const extra = this.#failure(context, outcome.error, "error_handler");
+          context.log.error(failed, extra);
+        }
         if (response.started) {
           response.destroy();
         } else {
-          await exchange.reply(async () => Binden.#opaque(context));
+          await exchange.reply(async () => this.#opaque(context));
         }
         return;
       } else if (response.writableEnded) {
@@ -547,20 +594,21 @@ export class Binden<
         // A reply that is not ended once the handler has settled (e.g. a
         // `write()` without `end()`) would leave the client waiting
         const unfinished =
-          "The provided `error_handler` has not ended its reply";
-        Binden.#log(
-          context,
-          "warn",
-          `${unfinished}. Destroying the socket`,
-          base,
+          "The provided `error_handler` has not ended its reply. Destroying the socket";
+        context.log.warn(
+          unfinished,
+          this.#failure(context, error, "error_handler"),
         );
         response.destroy();
         return;
       }
       const ignored = "The provided `error_handler` has not replied";
-      Binden.#log(context, "debug", ignored, base);
+      context.log.debug(
+        ignored,
+        this.#failure(context, error, "error_handler"),
+      );
     }
-    await Binden.#defaultErrorHandler(context, error);
+    await this.#defaultErrorHandler(context, error);
   }
 
   /**
@@ -581,7 +629,10 @@ export class Binden<
       (failure: unknown) => {
         if (expired) {
           const late = "The provided `error_handler` has failed late";
-          Binden.#log(context, "debug", late, { context, error: failure });
+          context.log.debug(
+            late,
+            this.#failure(context, failure, "error_handler"),
+          );
         }
         return { error: failure };
       },
@@ -600,67 +651,71 @@ export class Binden<
    * An empty `500 Internal Server Error`, without the headers of the body that
    * a failed handler may have set
    */
-  static async #opaque(context: Context): Promise<void> {
+  async #opaque(context: Context): Promise<void> {
     const { response } = context;
     for (const name of [...Binden.#representation, "Content-Type"]) {
       response.removeHeader(name);
     }
-    await Binden.#empty(context, DefaultErrorCode);
+    await this.#empty(context, DefaultErrorCode);
   }
 
   /** `503 Service Unavailable` to a request that arrives once closing */
-  static async #closing(context: Context): Promise<void> {
+  async #closing(context: Context): Promise<void> {
     context.response.setHeader("Connection", "close");
-    await Binden.#empty(context, 503);
+    await this.#empty(context, 503);
   }
 
   /** An empty reply of the framework (a failure to send it is logged) */
-  static async #empty(context: Context, status: number): Promise<void> {
+  async #empty(context: Context, status: number): Promise<void> {
     context.response.status(status);
     try {
       await context.response.send();
-    } catch {
-      Binden.#log(context, "debug", "The error reply has not been sent", {
-        context,
-      });
+    } catch (error: unknown) {
+      const message = "The error reply has not been sent";
+      context.log.debug(message, this.#failure(context, error, "send"));
     }
   }
 
   /**
    * Default reply to an error, which may be any thrown value: its properties
-   * are read without trusting them (e.g. `throw null`, or a throwing getter)
+   * are read without trusting them (e.g. `throw null`, or a throwing getter).
+   * Its status is the `status` of the error (an integer from 400 to 599, or
+   * `500`), with the `headers` of a `BindenError`; a server error (5xx) is
+   * logged at `error`, a client one at `debug`.
    */
-  static async #defaultErrorHandler(
-    context: Context,
-    error: unknown,
-  ): Promise<void> {
-    const { response, request } = context;
-    // Only the context and the error, whose serializers keep the input out of the logs
-    const base = { context, error };
-    const log = (level: ILogLevel, message: string): void => {
-      Binden.#log(context, level, message, base);
-    };
+  async #defaultErrorHandler(context: Context, error: unknown): Promise<void> {
+    const { response } = context;
+    const raw = property(error, "status");
+    const status =
+      Number.isInteger(raw) && Number(raw) >= 400 && Number(raw) <= 599
+        ? Number(raw)
+        : DefaultErrorCode;
+    const extra = this.#failure(context, error, "middleware", status);
+    const level = status >= 500 ? "error" : "debug";
     if (response.writableEnded) {
       // Sent (or being sent): destroying the socket would cut it
-      log("debug", "`.end()` has been called. Leaving the response");
+      const ended = "The request has failed once its response was ended";
+      context.log[level](ended, extra);
       return;
     } else if (response.started) {
       // Part of the body may be sent (or compressed): ending the response would
       // make a truncated body look complete
-      log("debug", "The response has been started. Destroying the socket");
-      request.destroy();
+      const started =
+        "The request has failed once its response was started. Destroying the socket";
+      context.log[level](started, extra);
+      response.destroy();
       return;
     }
+    context.log[level]("The request has failed", extra);
 
     // The framing and representation of the body that is not sent
     for (const name of Binden.#representation) {
       response.removeHeader(name);
     }
-
-    const raw = property(error, "status");
-    const errorStatus =
-      typeof raw === "number" || typeof raw === "string" ? Number(raw) : NaN;
-    response.status(isStatus(errorStatus) ? errorStatus : DefaultErrorCode);
+    response.status(status);
+    if (error instanceof BindenError) {
+      response.set(error.headers);
+    }
 
     // Sent like any other response: with its cookies, framed by its status
     const reply = (): Promise<void> => {
@@ -668,18 +723,17 @@ export class Binden<
       const json = property(error, "json");
       const message = property(error, "message");
       if (!expose) {
-        log("debug", "Error should not be exposed");
         return response.send();
       } else if (typeof json === "object" && json !== null) {
         try {
           const body = JSON.stringify(json);
           return response.setHeader("Content-Type", ct_json).send(body);
         } catch {
-          log("warn", "`JSON.stringify` failed");
+          context.log.warn("`JSON.stringify` failed", extra);
           return response.send();
         }
       } else if (typeof message !== "string" || !message) {
-        log("debug", "`message` is not a valid string");
+        context.log.debug("`message` is not a valid string", extra);
         return response.send();
       }
       return response.send(message);
@@ -687,13 +741,14 @@ export class Binden<
 
     try {
       await reply();
-    } catch {
+    } catch (failure: unknown) {
       // E.g. the client went away
-      log("debug", "The error reply has not been sent");
+      const message = "The error reply has not been sent";
+      context.log.debug(message, this.#failure(context, failure, "send"));
     }
   }
 
-  static async #runMiddleware(
+  async #runMiddleware(
     middleware: IMiddleware,
     context: Context,
     exchange: Exchange,
@@ -701,7 +756,7 @@ export class Binden<
     const { name } = middleware.constructor;
 
     if (middleware instanceof Middleware && middleware.disabled) {
-      Binden.#log(context, "debug", "Middleware is disabled", { name });
+      context.log.debug("Middleware is disabled", { middleware: name });
       return context;
     }
 
@@ -712,7 +767,7 @@ export class Binden<
           : middleware.run(context);
       const next =
         typeof property(result, "then") === "function"
-          ? await Binden.#race(result, context, exchange)
+          ? await this.#race(result, context, exchange)
           : result;
       if (!(next instanceof Context)) {
         return context;
@@ -731,8 +786,10 @@ export class Binden<
       if (error === ABORTED) {
         throw error;
       } else if (middleware instanceof Middleware && middleware.ignore_errors) {
-        const extra = { error, name };
-        Binden.#log(context, "debug", "Middleware ignores errors", extra);
+        context.log.debug("Middleware ignores errors", {
+          middleware: name,
+          ...this.#failure(context, error, "middleware"),
+        });
         return context;
       }
 
@@ -744,7 +801,7 @@ export class Binden<
    * The result of a middleware, unless the request is aborted first: its late
    * result is then ignored (and a late failure logged)
    */
-  static async #race(
+  async #race(
     result: unknown,
     context: Context,
     exchange: Exchange,
@@ -755,7 +812,10 @@ export class Binden<
         if (exchange.signal.aborted) {
           const message =
             "A middleware has failed after the request was aborted";
-          Binden.#log(context, "debug", message, { context, error });
+          context.log.debug(
+            message,
+            this.#failure(context, error, "middleware"),
+          );
         }
         return { ok: false, error } as const;
       },
@@ -782,33 +842,6 @@ export class Binden<
     "Last-Modified",
     "Transfer-Encoding",
   ];
-
-  /** Logs with the logger of the application (never throws) */
-  #logRoot(
-    level: ILogLevel,
-    message: string,
-    extra: Record<string, unknown>,
-  ): void {
-    try {
-      this.#logger[level](message, extra);
-    } catch {
-      // Nothing else to report it to
-    }
-  }
-
-  /** Framework logs never break the handling of a request (e.g. a failing serializer) */
-  static #log(
-    context: Context,
-    level: ILogLevel,
-    message: string,
-    extra: Record<string, unknown>,
-  ): void {
-    try {
-      context.log[level](message, extra);
-    } catch {
-      // Nothing else to report it to
-    }
-  }
 
   /**
    * The state of a request, from the `state` option: a factory that fails (or

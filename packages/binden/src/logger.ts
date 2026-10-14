@@ -1,20 +1,23 @@
-import { IncomingMessage, ServerResponse } from "node:http";
 import { constants } from "node:os";
-import { Logger } from "@binden/logger";
+import {
+  type ILogger,
+  Logger,
+  serializers as defaultSerializers,
+} from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
-import { property as get } from "./property.js";
+import { BindenAbortError } from "./exchange.js";
+import { property } from "./property.js";
 import { isStatus } from "./status.js";
 
-/** The request headers that the default logger keeps (others may carry credentials) */
-const requestHeaders = ["host", "user-agent", "content-type", "content-length"];
+/** Where the framework has met an error */
+export type ILocation =
+  "cleanup" | "error_handler" | "middleware" | "send" | "shutdown";
 
-/** The response headers that the default logger keeps */
-const responseHeaders = ["content-type", "content-length"];
-
-/** The error classes the default logger names (a subclass gets the name of its parent) */
+/** The error classes that a snapshot names (a subclass gets the name of its parent) */
 const errorTypes: ReadonlyMap<object, string> = new Map<object, string>([
   [BindenError.prototype, "BindenError"],
+  [BindenAbortError.prototype, "BindenAbortError"],
   [AggregateError.prototype, "AggregateError"],
   [EvalError.prototype, "EvalError"],
   [RangeError.prototype, "RangeError"],
@@ -25,7 +28,10 @@ const errorTypes: ReadonlyMap<object, string> = new Map<object, string>([
   [Error.prototype, "Error"],
 ]);
 
-/** The error codes the default logger keeps: system errors and some stream/HTTP ones */
+/**
+ * The codes that a snapshot keeps: system errors, some stream and HTTP ones,
+ * and the codes of the framework
+ */
 const errorCodes: ReadonlySet<string> = new Set([
   ...Object.keys(constants.errno),
   "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
@@ -37,10 +43,17 @@ const errorCodes: ReadonlySet<string> = new Set([
   "ERR_STREAM_DESTROYED",
   "ERR_STREAM_PREMATURE_CLOSE",
   "ERR_STREAM_WRITE_AFTER_END",
+  "aborted",
+  "deadline",
 ]);
 
 /** The name of the nearest known error class of a value (never one it defines itself) */
-function typeOf(value: object): string {
+function typeOf(value: unknown): string {
+  if (value === null) {
+    return "null";
+  } else if (typeof value !== "object" && typeof value !== "function") {
+    return typeof value;
+  }
   try {
     // Bounded: a proxy may return itself, or another proxy every time
     const seen = new Set<object>();
@@ -59,89 +72,191 @@ function typeOf(value: object): string {
   return typeof value;
 }
 
-/**
- * The path of a request-target: never its query or fragment, nor the scheme,
- * the authority or the userinfo of an absolute-form target
- */
-function pathOf(target: string): string {
-  if (target.startsWith("/")) {
-    return target.replace(/[?#].*$/su, "");
-  }
-  return URL.canParse(target) ? new URL(target).pathname : "";
+/** The options of a snapshot */
+export interface ISnapshotOptions {
+  readonly location: ILocation;
+  /** The id of the request, if any */
+  readonly request_id?: string | undefined;
+  /** Whether the message, the stack, the cause and any `code` are added */
+  readonly details: boolean;
+  /** The status of the reply, instead of the one of the error */
+  readonly status?: number | undefined;
 }
 
-/** The given headers, when they are set */
-function pick(
-  names: readonly string[],
-  header: (name: string) => unknown,
+/**
+ * What the framework logs of an error: an allowlist of details read without
+ * trusting the value (whatever is thrown), so that the input of a request
+ * (which an error message, its stack or its cause may quote) stays out of
+ * the logs unless `details` is `true`
+ */
+export function snapshot(
+  error: unknown,
+  { location, request_id, details, status }: ISnapshotOptions,
+  depth = 0,
 ): Record<string, unknown> {
-  const picked: Record<string, unknown> = {};
-  for (const name of names) {
-    const value = header(name);
-    if (typeof value !== "undefined") {
-      picked[name] = value;
+  const own = property(error, "status");
+  const code = property(error, "code");
+  const kept = typeof code === "string" && (details || errorCodes.has(code));
+  const message = details ? property(error, "message") : null;
+  const stack = details ? property(error, "stack") : null;
+  const cause = details && depth < 3 ? property(error, "cause") : null;
+  return {
+    type: typeOf(error),
+    ...(kept ? { code } : {}),
+    ...(typeof status === "number"
+      ? { status }
+      : isStatus(own)
+        ? { status: own }
+        : {}),
+    ...(depth === 0
+      ? {
+          location,
+          ...(typeof request_id === "string" ? { request_id } : {}),
+        }
+      : {}),
+    ...(typeof message === "string" ? { message } : {}),
+    ...(typeof stack === "string" ? { stack } : {}),
+    ...(cause === null || typeof cause === "undefined"
+      ? {}
+      : { cause: snapshot(cause, { location, details }, depth + 1) }),
+  };
+}
+
+type ILevel = "debug" | "error" | "fatal" | "info" | "trace" | "warn";
+
+const levels: readonly ILevel[] = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+];
+
+/** Whether a value has the methods of a logger */
+export function isLogger(value: unknown): value is ILogger {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    [...levels, "child" as const].every(
+      (method) => typeof property(value, method) === "function",
+    )
+  );
+}
+
+/** Does nothing (e.g. with a rejection that is observed) */
+function ignore(): void {
+  // Observed
+}
+
+/**
+ * A logger whose calls never fail: a method (or `child()`) that throws is
+ * ignored, and a rejected promise that it returns is observed. A `child()`
+ * that fails (or that does not return a logger) gives the logger itself.
+ */
+class SafeLogger implements ILogger {
+  readonly #logger: ILogger;
+
+  public constructor(logger: ILogger) {
+    this.#logger = logger;
+  }
+
+  public fatal(message: string, extra?: Record<string, unknown>): void {
+    this.#call("fatal", message, extra);
+  }
+
+  public error(message: string, extra?: Record<string, unknown>): void {
+    this.#call("error", message, extra);
+  }
+
+  public warn(message: string, extra?: Record<string, unknown>): void {
+    this.#call("warn", message, extra);
+  }
+
+  public info(message: string, extra?: Record<string, unknown>): void {
+    this.#call("info", message, extra);
+  }
+
+  public debug(message: string, extra?: Record<string, unknown>): void {
+    this.#call("debug", message, extra);
+  }
+
+  public trace(message: string, extra?: Record<string, unknown>): void {
+    this.#call("trace", message, extra);
+  }
+
+  public child(bindings: Record<string, unknown>): ILogger {
+    try {
+      const child: unknown = this.#logger.child(bindings);
+      if (isLogger(child)) {
+        return new SafeLogger(child);
+      }
+    } catch {
+      // The logger itself
+    }
+    return this;
+  }
+
+  #call(level: ILevel, message: string, extra?: Record<string, unknown>): void {
+    try {
+      const result: unknown =
+        typeof extra === "undefined"
+          ? this.#logger[level](message)
+          : this.#logger[level](message, extra);
+      if (typeof property(result, "then") === "function") {
+        Promise.resolve(result).catch(ignore);
+      }
+    } catch {
+      // Nothing else to report it to
     }
   }
-  return picked;
+}
+
+/** A logger whose calls never fail (see `SafeLogger`) */
+export function safe(logger: ILogger): ILogger {
+  return logger instanceof SafeLogger ? logger : new SafeLogger(logger);
 }
 
 /**
- * The serializers of the default logger. They log an allowlist of details only,
- * which keeps credentials, query strings, request bodies, error details
- * (messages, stacks, causes and `json`, which may quote the input) and the own
- * fields of a context out of the logs.
+ * The serializers of the default logger of binden: those of
+ * `@binden/logger` (an allowlist of the details of a request and a
+ * response), an `error` that names the errors of binden, a redacted `body`
+ * and a `context` without the fields that the application sets on it
  */
 export const serializers = {
-  // The kind of an error: its type, `status`, `expose` and a known `code`. Never
-  // throws, whatever is thrown.
+  ...defaultSerializers,
+  // The type of an error, a known `code` and its `status`
   error: (error: unknown): Record<string, unknown> => {
-    if (error === null) {
-      return { type: "null" };
-    } else if (typeof error !== "object" && typeof error !== "function") {
-      return { type: typeof error };
-    }
-    const status = get(error, "status");
-    const expose = get(error, "expose");
-    const code = get(error, "code");
+    const { type, code, status } = snapshot(error, {
+      location: "middleware",
+      details: false,
+    });
     return {
-      type: typeOf(error),
-      ...(isStatus(status) ? { status } : {}),
-      ...(typeof expose === "boolean" ? { expose } : {}),
-      ...(typeof code === "string" && errorCodes.has(code) ? { code } : {}),
+      type,
+      ...(typeof code === "string" ? { code } : {}),
+      ...(typeof status === "number" ? { status } : {}),
     };
   },
   body: (): string => "[Redacted]",
-  // The method, the path (without the query string) and some headers
-  request: (request: unknown): unknown => {
-    if (!(request instanceof IncomingMessage)) {
-      return request;
-    }
-    return {
-      method: request.method,
-      url: pathOf(request.url ?? ""),
-      headers: pick(requestHeaders, (name) => request.headers[name]),
-    };
-  },
-  response: (response: unknown): unknown => {
-    if (!(response instanceof ServerResponse)) {
-      return response;
-    }
-    return {
-      statusCode: response.statusCode,
-      headers: pick(responseHeaders, (name) => response.getHeader(name)),
-    };
-  },
-  // Not the own fields of the context, which the application may have set
-  context: (input: unknown): unknown => {
+  context: (input: unknown): Record<string, unknown> => {
     if (!(input instanceof Context)) {
-      return input;
+      return { type: typeOf(input) };
     }
     return {
       id: input.id,
-      request: serializers.request(input.request),
-      response: serializers.response(input.response),
+      request: defaultSerializers.request(input.request),
+      response: defaultSerializers.response(input.response),
     };
   },
 };
 
-export default new Logger({ serializers });
+let instance: ILogger | null = null;
+
+/**
+ * The default logger of binden, created on first use: its level is
+ * `BINDEN_LOG_LEVEL` (`silent` without it)
+ */
+export function defaultLogger(): ILogger {
+  instance ??= new Logger({ serializers });
+  return instance;
+}

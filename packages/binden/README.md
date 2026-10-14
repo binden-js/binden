@@ -21,6 +21,7 @@ An application is a `Binden`: the root [stack](#stack-and-routing), whose option
 | `error_handler_timeout`                                                  | `5000`                                   | The milliseconds that the `error_handler` has to settle (an integer from 1 to 2³¹−1)                                                                                                                                            |
 | `timeout`                                                                | `0` (none)                               | The deadline of every request in milliseconds (an integer from 0 to 2³¹−1, see [Lifecycle](#lifecycle))                                                                                                                         |
 | `logger`                                                                 | silent unless `BINDEN_LOG_LEVEL` is set  | See [Logging](#logging)                                                                                                                                                                                                         |
+| `log_error_details`                                                      | `false`                                  | Whether the errors that the framework logs include their message, stack, cause and any `code` (they may quote the input of a request, see [Logging](#logging))                                                                  |
 | `routing`                                                                | `{ case_sensitive: true, strict: true }` | The matching of the patterns of `route()` and `mount()`: `case_sensitive: false` compares their literal segments without their case, and `strict: false` ignores one trailing `/` (see [Stack and routing](#stack-and-routing)) |
 | `state`                                                                  | `() => ({})`                             | Creates `context.state` for every request (required by the types when the state has required fields)                                                                                                                            |
 | `trust_proxy`, `allowed_hosts`, `request_id`, `encoded_slashes`, `query` | see [Request options](#request-options)  | The options of the requests                                                                                                                                                                                                     |
@@ -137,15 +138,33 @@ const removed = app.off("/path", middleware1);
 
 ### Logging
 
-Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` log an allowlist of details only, which keeps credentials and the input of the requests out of the logs:
+Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. Its calls never fail: a logger that throws (or whose `child()` throws) is ignored, and a promise it returns is observed, so that logging never breaks the handling of a request (also in the other packages, which log through it).
 
-- a request is its method, its path and its `Host`, `User-Agent`, `Content-Type` and `Content-Length` headers. The path is logged without the query string and the fragment, nor the scheme, authority and userinfo of an absolute-form request-target; anything secret in the path itself (e.g. a token) is logged;
-- a response is its status code and its `Content-Type` and `Content-Length` headers;
-- a context is its `id`, request and response (not the fields the application sets on it);
-- a logged `body` (e.g. the one that [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body) failed to parse) is redacted;
-- an `error` is reduced to its type (the nearest of `BindenError` and the built-in error classes, never a name the error defines), its `status` and `expose`, and its `code` when it is a system error code (such as `ECONNRESET`) or one of a few stream and HTTP codes (such as `ERR_STREAM_PREMATURE_CLOSE`). Its message, stack, cause and `json` may quote the input (e.g. an error of `JSON.parse()`). The serializer never throws, whatever is thrown.
+The framework logs only snapshots that it builds itself, under the `failure` key: the type of the error (the nearest of `BindenError`, `BindenAbortError` and the built-in error classes, never a name that the error defines), its `code` when it is a system error code (such as `ECONNRESET`), one of a few stream and HTTP codes (such as `ERR_STREAM_PREMATURE_CLOSE`) or a code of the framework (`deadline`, `aborted`), its `status`, the `request_id` and the `location` in the framework (`middleware`, `error_handler`, `send`, `cleanup` or `shutdown`). The message, the stack, the cause and any other `code` of an error may quote the input of a request (e.g. an error of `JSON.parse()`): they are added only with the `log_error_details: true` option.
 
-A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option. The default `serializers` are exported to build on:
+```json
+{
+  "level": 50,
+  "trace_id": "3f6c…",
+  "failure": {
+    "type": "TypeError",
+    "status": 500,
+    "location": "middleware",
+    "request_id": "3f6c…"
+  },
+  "msg": "The request has failed"
+}
+```
+
+The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger)) is created when an application (or a context) first needs it. It is silent unless the `BINDEN_LOG_LEVEL` environment variable sets a level, and its `serializers` log an allowlist of details only, which keeps credentials and the input of the requests out of the logs:
+
+- a `request` is its method and its path (without the query string and the fragment, nor the scheme, authority and userinfo of an absolute-form request-target; anything secret in the path itself, e.g. a token, is logged);
+- a `response` is its status code;
+- a `context` is its `id`, request and response (not the fields the application sets on it);
+- a `body` (e.g. the one that [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body) failed to parse) is redacted;
+- an `error` is reduced to its type, a known `code` and its `status`, as in the snapshots.
+
+A value of another kind under these keys is reduced to its type. A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option: any object with the methods of `ILogger` (`fatal`, `error`, `warn`, `info`, `debug`, `trace` and `child`). The default `serializers` are exported to build on:
 
 ```typescript
 import { Binden, serializers } from "binden";
@@ -154,15 +173,14 @@ import { Logger } from "@binden/logger";
 const logger = new Logger({ level: "debug", serializers });
 const app = new Binden({ logger });
 
-// Log the request bodies as well
+// Log the request bodies, and the details of the errors, as well
 const verbose = new Logger({
   level: "debug",
+  error_details: true,
   serializers: { ...serializers, body: (body: unknown): unknown => body },
 });
-const debugApp = new Binden({ logger: verbose });
+const debugApp = new Binden({ logger: verbose, log_error_details: true });
 ```
-
-Likewise, `error` can be replaced with a serializer that keeps the details of the errors (e.g. `stdSerializers.err` of [pino](https://getpino.io/#/docs/api?id=pino-stdserializers)).
 
 ### Lifecycle
 
@@ -227,7 +245,7 @@ process.once("SIGTERM", () => {
 
 ### Context
 
-- `.log` - get the logger (see [`@binden/logger`](https://github.com/binden-js/binden/tree/main/packages/logger))
+- `.log` - get the logger: a child of the logger of the application, with the `trace_id` of the context, whose calls never fail (see [Logging](#logging))
 
 ```typescript
 const { log } = context;
@@ -298,7 +316,7 @@ const {
 log.trace("url search string", { search });
 ```
 
-- `.send()` - execute `context.response.send()` and set `context.done` to `true`
+- `.send()` - execute `context.response.send()` and set `context.done` to `true`. Like `.json()`, `.text()`, `.html()`, `.form()` and `.sendFile()`, it logs a warning when the response has already been started (e.g. a second reply, which is not sent), and does nothing once the deadline has passed (see [Lifecycle](#lifecycle))
 
 ```typescript
 const data = "Hello World!";
@@ -503,7 +521,11 @@ const app = new Binden().use("/items", list, create);
 
 ### Errors
 
-A middleware that throws (or rejects) passes the error to the error handler. The default one replies with the status of a `BindenError` (see below), or `500 Internal Server Error` for any other value; a reply that has already started is cut by closing the connection instead.
+A middleware that throws (or rejects) passes the error to the error handler. The default one:
+
+- replies with the `status` of the error when it is an integer from 400 to 599 (e.g. of a [`BindenError`](#bindenerror)), and `500 Internal Server Error` otherwise (for any thrown value, also `null`), with the `headers` of a `BindenError` and its exposed `json` or `message`. The framing and representation headers set for the body that is not sent (e.g. `Content-Length`, `Content-Encoding` or `ETag`) are removed, and the cookies of the response are sent;
+- logs a server error (5xx) at `error`, and a client error (4xx) at `debug` (see [Logging](#logging));
+- cuts a reply that has already started by closing the connection, and leaves a reply that has ended.
 
 The `error_handler` option replaces it. It gets the context and the thrown value (which may be anything, also `null`), may be `async` (it is awaited), and must have ended its reply when it settles: nothing started then gets the default reply, while a reply that is not ended (e.g. a `write()` without `end()`) is cut by closing the connection. A handler that throws, rejects or does not settle within `error_handler_timeout` gets an empty `500 Internal Server Error` instead (without the framing and representation headers it may have set), or the connection is closed when its reply has started; its later reply is ignored, and its later failure is logged (`debug`).
 
@@ -520,7 +542,22 @@ const app = new Binden({
 
 ### BindenError
 
-`BindenError` represents an HTTP error, with a status code from 400 to 599 (an integer: anything else throws a `TypeError`)
+`BindenError` represents an HTTP error, with a status code from 400 to 599 (an integer: anything else throws a `TypeError`, and one out of this range a `RangeError`). Its options:
+
+- `expose` (default `false`) - whether the default error handler sends `json` (as `application/json`) or `message` (as `text/plain`); otherwise the reply is empty;
+- `json`, `message` (default: the reason phrase of the status) and `cause`;
+- `code` - a machine-readable reason (such as `deadline`), which is logged but not sent;
+- `headers` - headers that the default error handler sends with the error (e.g. `Allow`, `Retry-After` or `WWW-Authenticate`). They are copied (and frozen) when the error is created, and checked: an invalid name or value (e.g. with `CR` or `LF`), a duplicate name, or a header of the framing, the representation or the connection (`Content-Length`, `Transfer-Encoding`, `Content-Encoding`, `Content-Range`, `Content-Type` or `Connection`) throws a `TypeError`.
+
+```typescript
+import { BindenError } from "binden";
+
+throw new BindenError(429, {
+  expose: true,
+  json: { error: "Too many requests" },
+  headers: { "Retry-After": "60" },
+});
+```
 
 ```typescript
 import { Middleware, Context, BindenError } from "binden";

@@ -208,9 +208,13 @@ suite("Exchange", () => {
         "A cleanup of the request has failed",
       ],
     );
+    // Without the details of the errors
     deepStrictEqual(
-      errors.map(([, extra]) => (extra?.error as Error).message),
-      ["A rejected cleanup", "A failing cleanup"],
+      errors.map(([, extra]) => extra?.failure),
+      [
+        { type: "Error", location: "cleanup" },
+        { type: "Error", location: "cleanup" },
+      ],
     );
 
     throws(() => {
@@ -230,6 +234,7 @@ suite("Exchange", () => {
     };
     const context = new Context({ request, response, logger: failing });
     let ran = false;
+    let reported = false;
 
     context.onCleanup(() => {
       ran = true;
@@ -241,6 +246,27 @@ suite("Exchange", () => {
     response.end();
     await Exchange.for(request, response).finished;
     ok(ran);
+
+    // Nor a report that fails
+    const [otherRequest, otherResponse] = await exchange();
+    const other = new Context({
+      request: otherRequest,
+      response: otherResponse,
+      report: (): never => {
+        reported = true;
+        throw new Error("The report fails");
+      },
+    });
+    let otherRan = false;
+    other.onCleanup(() => {
+      otherRan = true;
+    });
+    other.onCleanup(() => {
+      throw new Error("A failing cleanup");
+    });
+    otherResponse.end();
+    await Exchange.for(otherRequest, otherResponse).finished;
+    deepStrictEqual([otherRan, reported], [true, true]);
   });
 
   test("a cleanup cannot be registered while the cleanups run", async () => {
