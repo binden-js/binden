@@ -4,7 +4,7 @@
 
 - `application/json`
 - `application/x-www-form-urlencoded`
-- `plain/text`
+- `text/plain`
 
 and any combination of the following [encodings](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding)
 
@@ -49,6 +49,10 @@ const body_parser = new BodyParser({ limit: 1024 * 1024 });
 ```
 
 ### Custom `parse` function
+
+`parse` replaces `JSON.parse()` for `application/json`. A body that it cannot parse (it throws, or
+returns `undefined`, as the parsers of [Ajv](https://ajv.js.org/guide/getting-started.html#parsing-and-serializing-json)
+do) gets a `415 Unsupported Media Type`.
 
 ```typescript
 import { Binden, type Context, Router } from "binden";

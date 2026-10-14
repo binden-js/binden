@@ -158,7 +158,7 @@ export class BodyParser<T = unknown> extends Middleware {
     try {
       request.body =
         type === ct_json
-          ? this.#parse(body)
+          ? this.#json(body)
           : type === ct_form
             ? new URLSearchParams(body)
             : body;
@@ -171,6 +171,21 @@ export class BodyParser<T = unknown> extends Middleware {
 
       throw new BindenError(415, { cause: error as Error });
     }
+  }
+
+  /**
+   * The value of a JSON body: `parse` throws, or returns `undefined` (e.g. a
+   * parser of `ajv`, which tells why in its `message`), when it cannot parse it
+   */
+  #json(body: string): T {
+    const parsed = this.#parse(body);
+    if (typeof parsed === "undefined") {
+      const { message } = this.#parse as { message?: unknown };
+      throw new Error(
+        typeof message === "string" ? message : "The body could not be parsed",
+      );
+    }
+    return parsed;
   }
 
   /** Set of methods with no request body */

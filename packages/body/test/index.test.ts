@@ -252,6 +252,43 @@ suite("BodyParser", () => {
     deepEqual(text, "");
   });
 
+  test("JSON (a custom `parse` that cannot parse the body)", async () => {
+    const ajv = new AJV();
+    const schema = {
+      properties: { username: { type: "string" } },
+      additionalProperties: false,
+    } as const;
+    const parsers: [string, IParse][] = [
+      ["/ajv", ajv.compileParser<JTDDataType<typeof schema>>(schema)],
+      // Returns `undefined`
+      ["/undefined", (): unknown => Reflect.get({}, "nothing")],
+    ];
+    const received: unknown[] = [];
+    for (const [path, parse] of parsers) {
+      app.use(path, new BodyParser({ parse }), (ct: Context) => {
+        received.push(ct.request.body);
+        return ct.send();
+      });
+    }
+    const send = async (path: string, body: string): Promise<number> => {
+      const headers = { "Content-Type": ct_json };
+      const response = await request(new URL(path, url), {
+        method: "POST",
+        body,
+        headers,
+      });
+      await response.body.text();
+      return response.statusCode;
+    };
+
+    // `undefined` is a failure, which `ajv` explains in its `message`
+    deepEqual(await send("/ajv", `{"username":1}`), 415);
+    deepEqual(await send("/ajv", `{"x":1}`), 415);
+    deepEqual(await send("/ajv", `{"username":"a"}`), 200);
+    deepEqual(await send("/undefined", "{}"), 415);
+    deepEqual(received, [{ username: "a" }]);
+  });
+
   test("JSON (invalid)", async () => {
     app.use(new BodyParser());
 
