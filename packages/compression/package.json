@@ -30,6 +30,7 @@
     "br",
     "gzip",
     "deflate",
+    "zstd",
     "binden"
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",

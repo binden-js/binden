@@ -1,272 +1,151 @@
-import { Context, type IMiddlewareParams, Middleware } from "binden";
-import { Writable, pipeline } from "node:stream";
-import { createBrotliCompress, createDeflate, createGzip } from "node:zlib";
+import {
+  BindenResponse,
+  type ContentType,
+  type Context,
+  type IMiddlewareParams,
+  Middleware,
+} from "binden";
+import { CompressedResponse, type ISettings, skip } from "./src/response.js";
+import { type ICompressEncodings, codings, hasZstd } from "./src/codings.js";
+import { type ICompressionFilter, isCompressible } from "./src/filter.js";
 
+export { type ICompressionFilter, isCompressible } from "./src/filter.js";
+export type { ICompressEncodings } from "./src/codings.js";
+
+/** The preferred content coding: the first of the default `encodings` */
 export const DefaultCompression = "br";
 
 /** The `format` of a compression: `auto` negotiates it, the others are fixed */
-export type ICompressFormats = "auto" | "br" | "deflate" | "gzip";
+export type ICompressFormats = ICompressEncodings | "auto";
 
+/** The options of a `Compression` */
 export interface ICompressionOptions extends IMiddlewareParams {
-  format?: ICompressFormats;
+  /**
+   * The content coding: `auto` (the default) negotiates it with
+   * `Accept-Encoding` among `encodings`; a fixed one compresses every response
+   * that may be compressed, whatever the request accepts
+   */
+  format?: ICompressFormats | undefined;
+  /**
+   * The codings that `auto` offers, the preferred first (`["br", "gzip",
+   * "deflate"]`): `zstd` is offered only when listed
+   */
+  encodings?: readonly ICompressEncodings[] | undefined;
+  /**
+   * The `Content-Length` (in bytes) below which a response is not compressed
+   * (`1024`); a response without one is compressed
+   */
+  threshold?: number | undefined;
+  /**
+   * Whether a response is compressed, by its `Content-Type` (`null` without a
+   * valid one), called synchronously when its headers are committed: it must
+   * return a boolean, anything else (e.g. a promise) is a configuration error
+   * that replaces the response with `500`. `isCompressible()` by default.
+   */
+  filter?: ICompressionFilter | undefined;
 }
 
-type IWrite = (
-  chunk: unknown,
-  encoding?: BufferEncoding | ((error?: Error | null) => void),
-  cb?: (error?: Error | null) => void,
-) => boolean;
+const formats: readonly unknown[] = ["auto", ...codings];
 
-type IEnd = (
-  chunk?: unknown,
-  encoding?: BufferEncoding,
-  cb?: () => void,
-) => void;
+const defaultEncodings: readonly ICompressEncodings[] = [
+  "br",
+  "gzip",
+  "deflate",
+];
 
+/** The codings of `encodings`: a non-empty list of distinct codings */
+function checkEncodings(encodings: unknown): readonly ICompressEncodings[] {
+  if (
+    !Array.isArray(encodings) ||
+    encodings.length === 0 ||
+    !encodings.every((coding) =>
+      codings.includes(coding as ICompressEncodings),
+    ) ||
+    new Set(encodings).size !== encodings.length
+  ) {
+    throw new TypeError(
+      "`encodings` is not a non-empty list of distinct codings (br, deflate, gzip, zstd)",
+    );
+  }
+  return Object.freeze([...(encodings as ICompressEncodings[])]);
+}
+
+/**
+ * Compresses the responses (`br`, `gzip`, `deflate` and `zstd`). The decision
+ * is taken for each response when its headers are committed: see the README.
+ */
 export class Compression extends Middleware {
-  readonly #format: ICompressFormats;
+  readonly #settings: ISettings;
 
-  public constructor({ format = "auto", ...rest }: ICompressionOptions = {}) {
+  /**
+   * Validates the options: a `TypeError` (or `RangeError`) for an invalid one,
+   * also for `zstd` when `node:zlib` does not have it
+   */
+  public constructor(options: ICompressionOptions = {}) {
+    const {
+      format = "auto",
+      encodings,
+      threshold = 1024,
+      filter = (_context: Context, type: ContentType | null): boolean =>
+        isCompressible(type),
+      ...rest
+    } = options;
     super(rest);
-    this.#format = format;
+    if (!formats.includes(format)) {
+      throw new TypeError(
+        "`format` is not one of auto, br, deflate, gzip and zstd",
+      );
+    } else if (typeof encodings !== "undefined" && format !== "auto") {
+      throw new TypeError("`encodings` applies to the `auto` format only");
+    } else if (typeof threshold !== "number") {
+      throw new TypeError("`threshold` is not a number");
+    } else if (!Number.isSafeInteger(threshold) || threshold < 0) {
+      throw new RangeError("`threshold` is not a non-negative integer");
+    } else if (typeof filter !== "function") {
+      throw new TypeError("`filter` is not a function");
+    }
+    const offered =
+      typeof encodings === "undefined"
+        ? defaultEncodings
+        : checkEncodings(encodings);
+    const used = format === "auto" ? offered : [format];
+    if (used.includes("zstd") && !hasZstd()) {
+      throw new TypeError("zstd is not supported by this version of Node.js");
+    }
+
+    this.#settings = Object.freeze({
+      format,
+      encodings: offered,
+      threshold,
+      filter,
+    });
   }
 
+  /** The `format` of the compression */
   public get format(): ICompressFormats {
-    return this.#format;
+    return this.#settings.format;
   }
 
+  /**
+   * Installs the compression on the response, unless its headers have been
+   * sent (it is then left as it is) or a compression is installed on it
+   * already: the decision is taken when its headers are committed
+   */
   public run(context: Context): void {
-    const { response } = context;
-
-    // Sent headers can no longer change (not even `Vary`): the response is
-    // left as it is
-    if (response.headersSent) {
-      return;
-    }
-
-    if (this.format === "auto") {
-      Compression.#varyOnAcceptEncoding(response);
-    }
-
-    const format = Compression.#getFormat(context, this.format);
-
-    if (format === "identity") {
-      return;
-    }
-
-    const compress =
-      format === "br"
-        ? createBrotliCompress()
-        : format === "deflate"
-          ? createDeflate()
-          : createGzip();
-
-    // `write`/`end` are replaced on the response itself, so that every writer
-    // (the following middlewares, `sendFile`, the error handler) goes through
-    // the compressor; several compressions chain their replaced methods.
-    const write = response.write.bind(response) as IWrite;
-    const end = response.end.bind(response) as IEnd;
-
-    // Compression starts with the first body chunk. A `Content-Length` of the
-    // uncompressed body (e.g. from `sendFile`) is dropped. Nothing is compressed
-    // when the headers have already been sent, nor without a body (1xx, 204,
-    // 205, 304), nor for partial responses: their ranges refer to the
-    // uncompressed body (RFC 9110, section 14.1.2). A response to `HEAD` gets
-    // the headers of the compressed response, but no body.
-    const head = context.request.method === "HEAD";
-    let active: boolean | null = null;
-    let ended = false;
-    const activate = (): boolean => {
-      if (active === null) {
-        const { statusCode } = response;
-        active =
-          !response.headersSent &&
-          statusCode >= 200 &&
-          statusCode !== 204 &&
-          statusCode !== 205 &&
-          statusCode !== 304 &&
-          statusCode !== 206 &&
-          !response.hasHeader("Content-Range");
-        if (!active || head) {
-          compress.destroy();
-        }
-        if (active) {
-          const raw = response.getHeader("Content-Encoding");
-          response.setHeader(
-            "Content-Encoding",
-            typeof raw === "undefined"
-              ? format
-              : [...(Array.isArray(raw) ? raw : [`${raw}`]), format],
-          );
-          response.removeHeader("Content-Length");
-          // A strong validator of the uncompressed body does not validate the
-          // compressed one (RFC 9110, section 8.8.3.3): it becomes weak
-          const etag = response.getHeader("ETag");
-          if (typeof etag === "string" && !etag.startsWith("W/")) {
-            response.setHeader("ETag", `W/${etag}`);
-          }
-        }
-        if (active && !head) {
-          // Backpressure in both directions: a compressed chunk is acknowledged
-          // once the response has flushed it (so the compressor waits while the
-          // response is full), and `drain` of the compressor is the `drain`
-          // that writers of the response wait for. Errors of the chain and a
-          // response closed early (client gone) end both sides.
-          pipeline(
-            compress.on("drain", () => response.emit("drain")),
-            new Writable({
-              write(chunk, _encoding, callback): void {
-                write(chunk, () => {
-                  callback();
-                });
-              },
-              final(callback): void {
-                end();
-                callback();
-              },
-            }),
-            (error) => {
-              if (error) {
-                response.destroy();
-              }
-            },
-          );
-          response.once("close", () => {
-            compress.destroy();
-          });
-        }
-      }
-      return active && !head;
-    };
-
-    response.write = ((
-      chunk: unknown,
-      encoding?: BufferEncoding,
-      cb?: (error?: Error | null) => void,
-    ): boolean => {
-      if (activate()) {
-        return compress.write(chunk, encoding as BufferEncoding, cb);
-      }
-      return write(chunk, encoding, cb);
-    }) as typeof response.write;
-
-    // As for an uncompressed response, `writableEnded` is set by `end()`, the
-    // `end()` callback runs once the response has finished (or, when it has
-    // already finished, with `ERR_STREAM_ALREADY_FINISHED`), and a second
-    // `end()` writes nothing.
-    Object.defineProperty(response, "writableEnded", {
-      configurable: true,
-      get: () => ended,
-    });
-
-    // Written data goes into the compressor before the headers are sent: the
-    // response is started (see `BindenResponse.started`) once compression is
-    Object.defineProperty(response, "started", {
-      configurable: true,
-      get: (): boolean =>
-        active === true ||
-        (Reflect.get(
-          Object.getPrototypeOf(response) as object,
-          "started",
-          response,
-        ) as boolean),
-    });
-
-    response.end = (...args: unknown[]): typeof response => {
-      const callback = args.find((arg) => typeof arg === "function");
-      if (typeof callback === "function") {
-        if (response.writableFinished) {
-          end(callback);
-        } else {
-          response.once("finish", () => {
-            (callback as () => void)();
-          });
-        }
-      }
-      if (!ended) {
-        ended = true;
-        const [chunk, encoding] = args.filter(
-          (arg) => typeof arg !== "function",
-        ) as [unknown, BufferEncoding];
-        if (activate()) {
-          compress.end(chunk, encoding);
-        } else {
-          end(chunk, encoding);
-        }
-      }
-      return response;
-    };
-  }
-
-  static #getFormat(
-    context: Context,
-    format: ICompressFormats,
-  ): Exclude<ICompressFormats, "auto"> | "identity" {
-    if (format !== "auto") {
-      return format;
-    }
-
-    const { request } = context;
-
-    // No `Accept-Encoding` means that any coding is acceptable
-    if (typeof request.headers["accept-encoding"] === "undefined") {
-      return DefaultCompression;
-    }
-
-    // The effective quality of a coding is its own `q` (`x-gzip` is `gzip`),
-    // otherwise the one of `*`, otherwise 0 (not acceptable)
-    const qualities = new Map<string, number>();
-    for (const { encoding, q_value } of request.accept_encoding) {
-      qualities.set(encoding === "x-gzip" ? "gzip" : encoding, q_value ?? 1);
-    }
-    const wildcard = qualities.get("*") ?? 0;
-    const quality = (coding: string): number =>
-      qualities.get(coding) ?? wildcard;
-
-    // The best acceptable coding (on a tie, in the order of `#formats`)
-    let best: Exclude<ICompressFormats, "auto"> | null = null;
-    for (const coding of Compression.#formats) {
-      if (
-        quality(coding) > 0 &&
-        (best === null || quality(coding) > quality(best))
-      ) {
-        best = coding;
-      }
-    }
-
-    // `identity` wins only when it is explicitly preferred. When no coding is
-    // acceptable, the header is disregarded and the response is not encoded
-    // (RFC 9110, section 12.5.3) instead of replying with 406.
-    const identity = qualities.get("identity");
-    if (
-      best === null ||
-      (typeof identity === "number" && identity > quality(best))
-    ) {
-      return "identity";
-    }
-
-    return best;
-  }
-
-  /** Response codings in the order of preference (the first one is the default) */
-  static readonly #formats = [DefaultCompression, "gzip", "deflate"] as const;
-
-  /** The response depends on `Accept-Encoding` (keeps the existing `Vary` values) */
-  static #varyOnAcceptEncoding(response: Context["response"]): void {
-    const raw = response.getHeader("Vary");
-    const values = (
-      Array.isArray(raw) ? raw : typeof raw === "undefined" ? [] : [`${raw}`]
-    )
-      .flatMap((value) => value.split(","))
-      .map((value) => value.trim())
-      .filter((value) => value !== "");
-
-    if (
-      !values.some((v) => v === "*" || v.toLowerCase() === "accept-encoding")
-    ) {
-      response.setHeader("Vary", [...values, "Accept-Encoding"].join(", "));
-    }
+    CompressedResponse.install(context, this.#settings);
   }
 }
 
+/**
+ * Leaves one response uncompressed (e.g. a stream that must not wait in a
+ * compressor): call it before its headers are committed
+ */
+export function skipCompression(response: BindenResponse): void {
+  if (!(response instanceof BindenResponse)) {
+    throw new TypeError("The response is not a `BindenResponse`");
+  }
+  skip(response);
+}
+
+/** A compression with the default options */
 export default new Compression();
