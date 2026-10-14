@@ -15,14 +15,17 @@ import Cookie from "./headers/cookie.js";
 import Forwarded from "./headers/forwarded.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
 import Range from "./headers/range.js";
+import {
+  type IProxyResult,
+  type ITrustProxy,
+  checkTrustProxy,
+  isAuthority,
+  resolveProxy,
+} from "./proxy.js";
+
+export type { IProxyHeaders, ITrustFn, ITrustProxy } from "./proxy.js";
 
 export type IProtocol = "http:" | "https:";
-
-/**
- * The proxies in front of the server that are trusted: none (`false`), all of
- * them (`true`) or the given number of the nearest ones
- */
-export type ITrustProxy = boolean | number;
 
 export class BindenRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
@@ -34,6 +37,7 @@ export class BindenRequest extends IncomingMessage {
   #forwarded?: readonly Forwarded[];
   #id?: string;
   #if_modified_since?: IfModifiedSince | null;
+  #proxy?: IProxyResult;
   #range?: readonly Range[];
   #query?: ParsedUrlQuery;
 
@@ -146,28 +150,52 @@ export class BindenRequest extends IncomingMessage {
   }
 
   /**
-   * The protocol of the connection or, from trusted proxies (see
-   * `trust_proxy`), the one of the `Forwarded` element of the outermost of them
+   * The effective host of the request (`hostname[:port]`, in lowercase, without
+   * the default port of the protocol): the authority of a request-target in
+   * absolute-form, otherwise the host from a trusted proxy (see `trust_proxy`),
+   * otherwise `Host`. `null` without any, and a `BindenError` (400) for an
+   * invalid one.
    */
-  public get protocol(): IProtocol {
-    const tls: IProtocol =
-      this.socket instanceof TLSSocket ? "https:" : "http:";
-    const trust = this.trust_proxy;
-    // In their positions: an element that is not valid is not skipped
-    const forwarded = Forwarded.parse(this.headers.forwarded);
-    if (trust === false || trust === 0 || forwarded.length === 0) {
-      return tls;
-    }
-    // Every proxy appends its element: the client controls the leftmost ones
-    const index = trust === true ? 0 : Math.max(0, forwarded.length - trust);
-    const proto = forwarded[index]?.proto?.toLowerCase();
-    return proto === "https" ? "https:" : proto === "http" ? "http:" : tls;
+  public get host(): string | null {
+    const { authority } = BindenRequest.#split(this.url ?? "/");
+    const origin = this.#origin(authority);
+    return origin === null ? null : new URL(origin).host;
   }
 
   /**
-   * The proxies whose `Forwarded` elements are trusted (none by default).
-   * `Binden` sets it from its `trust_proxy` option; with `http.createServer()`,
-   * override it in a subclass.
+   * The address of the client: the peer (without the `::ffff:` prefix of an
+   * IPv4-mapped address) or, behind trusted proxies (see `trust_proxy`), the
+   * first address of their header that is not trusted (the leftmost one when
+   * all of them are). `null` when it is unknown (e.g. `for=unknown`, or an
+   * invalid element on the way).
+   */
+  public get ip(): string | null {
+    return this.#resolve().ip;
+  }
+
+  /** The address of the client (unless unknown) and of the trusted proxies, left to right */
+  public get ips(): readonly string[] {
+    return [...this.#resolve().ips];
+  }
+
+  /**
+   * The protocol of the connection or, behind trusted proxies (see
+   * `trust_proxy`), the one that they have received: the `proto` of the
+   * `Forwarded` element of the farthest trusted proxy, or the
+   * `X-Forwarded-Proto` that a trusted peer has set
+   */
+  public get protocol(): IProtocol {
+    const { protocol } = this.#resolve();
+    if (protocol === null) {
+      return this.socket instanceof TLSSocket ? "https:" : "http:";
+    }
+    return `${protocol}:`;
+  }
+
+  /**
+   * The proxies in front of the server that are trusted, and their headers
+   * (none by default). `Binden` sets it from its `trust_proxy` option; with
+   * `http.createServer()`, override it in a subclass.
    */
   // eslint-disable-next-line class-methods-use-this -- overridden by subclasses
   protected get trust_proxy(): ITrustProxy {
@@ -207,55 +235,78 @@ export class BindenRequest extends IncomingMessage {
    * 3.2). A `400 Bad Request` error without a valid one.
    */
   public get URL(): URL {
-    const { authority, path, query } = BindenRequest.#target(
-      this.url ?? "/",
-      this.method ?? "GET",
-    );
-    const host = authority ?? this.headers.host ?? "";
-    const base = `${this.protocol}//${host}`;
-    // `uri-host [ ":" port ]`: nothing that ends the authority, nor userinfo
-    if (/[\s/?#@\\]/u.test(host) || !URL.canParse(base)) {
+    const target = this.url ?? "/";
+    const { authority, rest } = BindenRequest.#split(target);
+    const { path, query } =
+      target === "*" && this.method === "OPTIONS"
+        ? { path: "*", query: "" }
+        : BindenRequest.#target(rest);
+    const origin = this.#origin(authority);
+    if (origin === null) {
       throw new BindenError(400);
     }
-    const url = new URL(base);
+    const url = new URL(origin);
     // Set as a path: `//evil.test/x` is a path, not the authority of the URL
     url.pathname = path;
     url.search = query === "" ? "" : `?${query}`;
     return url;
   }
 
-  /**
-   * The authority (of the absolute-form), the path and the query of a
-   * request-target, which must be in origin-form (or absolute-form with `http`
-   * or `https`, or `*` for `OPTIONS`), without a fragment, a backslash, an
-   * invalid percent-encoding, or dot-segments (which the URL parser would
-   * remove, so that the request would be routed to another path).
-   */
-  static #target(
-    target: string,
-    method: string,
-  ): { authority: string | null; path: string; query: string } {
-    if (target === "*" && method === "OPTIONS") {
-      return { authority: null, path: "*", query: "" };
-    }
+  /** What the trusted proxies tell about the client, found once */
+  #resolve(): IProxyResult {
+    this.#proxy ??= resolveProxy(
+      this.socket.remoteAddress,
+      checkTrustProxy(this.trust_proxy),
+      this.headers,
+      this.headersDistinct,
+    );
+    return this.#proxy;
+  }
 
-    let authority: string | null = null;
-    let rest = target;
+  /**
+   * The protocol and the effective authority of the request (see `host`), or
+   * `null` without an authority. A `BindenError` (400) for an invalid one (not
+   * `uri-host [ ":" port ]`, e.g. with userinfo).
+   */
+  #origin(target: string | null): string | null {
+    const authority = target ?? this.#resolve().host ?? this.headers.host;
+    if (typeof authority === "undefined") {
+      return null;
+    } else if (!isAuthority(authority)) {
+      throw new BindenError(400);
+    }
+    return `${this.protocol}//${authority}`;
+  }
+
+  /**
+   * The authority of a request-target in absolute-form (`null` otherwise) and
+   * the rest of it: a `BindenError` (400) for another scheme than `http` and
+   * `https`, or an empty authority
+   */
+  static #split(target: string): { authority: string | null; rest: string } {
     const absolute =
       /^(?<scheme>[a-z][\d+.a-z-]*):\/\/(?<host>[^/?]*)(?<tail>.*)$/iu.exec(
         target,
       )?.groups;
-    if (absolute) {
-      const { scheme = "", host = "", tail = "" } = absolute;
-      // The authority is then checked as `Host` (e.g. for userinfo)
-      if (!["http", "https"].includes(scheme.toLowerCase()) || host === "") {
-        throw new BindenError(400);
-      }
-      authority = host;
-      // An empty path is `/`
-      rest = tail.startsWith("/") ? tail : `/${tail}`;
+    if (!absolute) {
+      return { authority: null, rest: target };
     }
+    const { scheme = "", host = "", tail = "" } = absolute;
+    // The authority is then checked as `Host` (e.g. for userinfo)
+    if (!["http", "https"].includes(scheme.toLowerCase()) || host === "") {
+      throw new BindenError(400);
+    }
+    // An empty path is `/`
+    return { authority: host, rest: tail.startsWith("/") ? tail : `/${tail}` };
+  }
 
+  /**
+   * The path and the query of a request-target (without its authority), which
+   * must be in origin-form, without a fragment, a backslash, an invalid
+   * percent-encoding, or dot-segments (which the URL parser would remove, so
+   * that the request would be routed to another path).
+   */
+  static #target(rest: string): { path: string; query: string } {
     if (
       !rest.startsWith("/") ||
       /[#\\]/u.test(rest) ||
@@ -270,6 +321,6 @@ export class BindenRequest extends IncomingMessage {
     if (path.split("/").some((part) => /^(?:\.|%2e){1,2}$/iu.test(part))) {
       throw new BindenError(400);
     }
-    return { authority, path, query };
+    return { path, query };
   }
 }

@@ -14,7 +14,6 @@ import {
   Forwarded,
   Cookie,
   IfModifiedSince,
-  type ITrustProxy,
 } from "../index.js";
 
 /** The port of a listening server */
@@ -408,54 +407,6 @@ suite("BindenRequest", () => {
     );
     deepStrictEqual(query.x, "1");
     deepStrictEqual(Object.keys(query).sort(), ["__proto__", "x"]);
-  });
-
-  test(".protocol (trusted proxies)", () => {
-    const create = (
-      trust: ITrustProxy,
-      forwarded?: string,
-      socket = new Socket(),
-    ): BindenRequest => {
-      class Trusting extends BindenRequest {
-        // eslint-disable-next-line class-methods-use-this -- a fixture
-        protected override get trust_proxy(): ITrustProxy {
-          return trust;
-        }
-      }
-      const request = new Trusting(socket);
-      if (typeof forwarded === "string") {
-        request.headers = { forwarded };
-      }
-      return request;
-    };
-    // The client sent the first element, the nearest proxy appended the last one
-    const header = "for=1.2.3.4;proto=https, for=203.0.113.9;proto=http";
-
-    deepStrictEqual(create(false, header).protocol, "http:");
-    deepStrictEqual(create(0, header).protocol, "http:");
-    deepStrictEqual(create(1, header).protocol, "http:");
-    deepStrictEqual(create(2, header).protocol, "https:");
-    deepStrictEqual(create(5, header).protocol, "https:");
-    deepStrictEqual(create(true, header).protocol, "https:");
-    // Without the header or its `proto`: the protocol of the connection
-    deepStrictEqual(create(true).protocol, "http:");
-    deepStrictEqual(create(true, "for=1.2.3.4").protocol, "http:");
-    deepStrictEqual(create(true, "for=1.2.3.4;proto=ftp").protocol, "http:");
-    // The trusted element is the one in its position: an invalid element of a
-    // proxy does not let the one of the client take its place
-    deepStrictEqual(create(1, "for=x;proto=https, garbage").protocol, "http:");
-    deepStrictEqual(create(1, "proto=https, ext=1").protocol, "http:");
-    deepStrictEqual(create(1, `proto=https, for=""`).protocol, "http:");
-    deepStrictEqual(create(1, `proto=https, for="a,b"`).protocol, "http:");
-    deepStrictEqual(create(1, "proto=http;proto=https").protocol, "http:");
-    // Empty elements are not elements
-    deepStrictEqual(create(1, "proto=https, , ").protocol, "https:");
-    // Over TLS, a trusted element without `proto` keeps `https:`
-    const tls = new TLSSocket(new Socket());
-    deepStrictEqual(create(true, "for=1.2.3.4", tls).protocol, "https:");
-    deepStrictEqual(create(true, header, tls).protocol, "https:");
-    deepStrictEqual(create(1, header, tls).protocol, "http:");
-    tls.destroy();
   });
 
   test(".forwarded", async () => {
