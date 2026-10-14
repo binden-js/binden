@@ -51,3 +51,17 @@ export function createCompressor(
   }
   return zlib.createZstdCompress(options.zstd);
 }
+
+/**
+ * The flush of a coding that ends its compressed data so far, without
+ * ending the stream: the client can decompress everything written before
+ */
+export function flushKind(coding: ICompressEncodings): number {
+  const { constants } = zlib;
+  if (coding === "br") {
+    return constants.BROTLI_OPERATION_FLUSH;
+  } else if (coding === "zstd") {
+    return constants.ZSTD_e_flush;
+  }
+  return constants.Z_SYNC_FLUSH;
+}

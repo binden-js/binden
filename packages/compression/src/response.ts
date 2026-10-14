@@ -10,6 +10,7 @@ import {
   type ICompressor,
   type ICompressorOptions,
   createCompressor,
+  flushKind,
 } from "./codings.js";
 import {
   type OutgoingHttpHeader,
@@ -182,7 +183,7 @@ export function skip(response: object): void {
  * The compression of one response. Its methods are replaced on the response
  * itself, so that every writer (the following middlewares, `sendFile()`, the
  * error handler) goes through it, and the decision is taken once, when the
- * headers are committed: by `writeHead()`, `flushHeaders()`,
+ * headers are committed: by `writeHead()`, `flushHeaders()` (and `flush()`),
  * or the first `write()` or `end()`.
  */
 export class CompressedResponse {
@@ -193,13 +194,23 @@ export class CompressedResponse {
   readonly #writeHead: IResponse["writeHead"];
   readonly #write: IResponse["write"];
   readonly #end: IResponse["end"];
+  readonly #flush: IResponse["flush"];
   readonly #send: IResponse["send"];
   #sink: ISink = "pending";
   #compressor: ICompressor | null = null;
+  /** The flush of the coding of the compressor (see `flushKind()`) */
+  #kind = 0;
   /** Whether the application has ended a compressed response */
   #ended = false;
+  /** Set while `flush()` writes its marker (see `#onWrite()`) */
+  #flushing = false;
   /** The size of the body given to `send()`, which a `304` does not have */
   #hint: number | null = null;
+  /** The compressed bytes emitted, and those that the response has flushed */
+  #produced = 0;
+  #written = 0;
+  /** The flushes that wait for the response to flush the compressed bytes */
+  #waiters: { readonly target: number; readonly callback: ICallback }[] = [];
 
   private constructor(context: Context, settings: ISettings) {
     const { response } = context;
@@ -209,6 +220,7 @@ export class CompressedResponse {
     this.#writeHead = response.writeHead.bind(response);
     this.#write = response.write.bind(response);
     this.#end = response.end.bind(response);
+    this.#flush = response.flush.bind(response);
     this.#send = response.send.bind(response);
   }
 
@@ -235,6 +247,17 @@ export class CompressedResponse {
       this.#onWrite(args)) as IResponse["write"];
     response.end = ((...args: unknown[]): IResponse =>
       this.#onEnd(args)) as IResponse["end"];
+    response.flush = (): Promise<void> => {
+      // `flush()` of binden writes an empty chunk, whose callback runs once
+      // the chunks before it are flushed: for a compressed response, it is
+      // the flush of the compressor (see `#onWrite()`)
+      this.#flushing = true;
+      try {
+        return this.#flush();
+      } finally {
+        this.#flushing = false;
+      }
+    };
     response.send = (...args: unknown[]): Promise<void> => {
       if (this.#sink === "pending") {
         this.#hint = sizeOf(args[0], args[1]);
@@ -298,7 +321,12 @@ export class CompressedResponse {
       ICallback | undefined;
     if (this.#sink === "compressor") {
       const compressor = this.#compressor as ICompressor;
-      if (this.#ended) {
+      if (this.#flushing) {
+        // The marker of `flush()`, which always has a callback (see `#hook()`)
+        this.#flushing = false;
+        this.#flushCompressor(compressor, callback as ICallback);
+        return true;
+      } else if (this.#ended) {
         // As Node.js, but the response is sent (not destroyed, nor crashing
         // the process with an `error` event)
         if (callback) {
@@ -506,6 +534,7 @@ export class CompressedResponse {
         response.setHeader("ETag", `W/${etag}`);
       }
       if (!bodiless && this.#context.request.method !== "HEAD") {
+        this.#kind = flushKind(outcome.coding);
         this.#compressor = this.#start(outcome.coding);
         this.#sink = "compressor";
         return;
@@ -541,7 +570,13 @@ export class CompressedResponse {
     const compressor = createCompressor(coding, this.#settings.compressors);
     compressor
       .on("data", (chunk: Buffer) => {
-        const accepted = this.#write(chunk);
+        this.#produced += chunk.length;
+        const accepted = this.#write(chunk, (error?: Error | null) => {
+          if (!error) {
+            this.#written += chunk.length;
+            this.#release();
+          }
+        });
         if (!accepted) {
           compressor.pause();
           response.once("drain", () => {
@@ -559,9 +594,37 @@ export class CompressedResponse {
         this.#end();
       });
     response.once("close", () => {
-      // Its pending writes fail
+      // Its pending writes fail (and `flush()` rejects by itself)
       compressor.destroy();
     });
     return compressor;
+  }
+
+  /**
+   * Flushes the compressor: the callback runs once the response has flushed
+   * the compressed bytes so far (the flushed ones may still wait in the
+   * compressor, paused by backpressure)
+   */
+  #flushCompressor(compressor: ICompressor, callback: ICallback): void {
+    compressor.flush(this.#kind, () => {
+      this.#waiters.push({
+        target: this.#produced + compressor.readableLength,
+        callback,
+      });
+      this.#release();
+    });
+  }
+
+  /**
+   * Runs the flushes whose compressed bytes the response has flushed
+   */
+  #release(): void {
+    const ready = this.#waiters.filter(({ target }) => target <= this.#written);
+    this.#waiters = this.#waiters.filter(
+      ({ target }) => target > this.#written,
+    );
+    for (const { callback } of ready) {
+      callback();
+    }
   }
 }
