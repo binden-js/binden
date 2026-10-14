@@ -92,6 +92,12 @@ export class Compression extends Middleware {
               : [...(Array.isArray(raw) ? raw : [`${raw}`]), format],
           );
           response.removeHeader("Content-Length");
+          // A strong validator of the uncompressed body does not validate the
+          // compressed one (RFC 9110, section 8.8.3.3): it becomes weak
+          const etag = response.getHeader("ETag");
+          if (typeof etag === "string" && !etag.startsWith("W/")) {
+            response.setHeader("ETag", `W/${etag}`);
+          }
         }
         if (active && !head) {
           // Backpressure in both directions: a compressed chunk is acknowledged

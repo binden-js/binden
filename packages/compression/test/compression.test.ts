@@ -485,6 +485,36 @@ describe("Compression", () => {
     },
   );
 
+  it("weakens the strong `ETag` of a compressed response", async () => {
+    const body = "Some text to compress. ".repeat(16);
+    app.use(new Compression({ format: "auto" }), (ct: Context) => {
+      const { pathname } = ct.url;
+      ct.setHeader(
+        "ETag",
+        pathname === "/weak" ? `W/"same-tag"` : `"same-tag"`,
+      );
+      return ct.send(body);
+    });
+    const etag = async (
+      path: string,
+      encoding: string,
+      method = "GET",
+    ): Promise<unknown> => {
+      const response = await request(new URL(path, url), {
+        method,
+        headers: { "Accept-Encoding": encoding },
+      });
+      await response.body.text();
+      return response.headers.etag;
+    };
+
+    // The representations differ: they do not share a strong validator
+    deepStrictEqual(await etag("/", "identity"), `"same-tag"`);
+    deepStrictEqual(await etag("/", "gzip"), `W/"same-tag"`);
+    deepStrictEqual(await etag("/", "gzip", "HEAD"), `W/"same-tag"`);
+    deepStrictEqual(await etag("/weak", "gzip"), `W/"same-tag"`);
+  });
+
   it(
     "does not compress partial responses (`Range`)",
     { timeout: 10_000 },
