@@ -7,7 +7,14 @@
 // their manifest), and `publish --dry-run` (the registry check, then `npm publish
 // --dry-run` of every archive). When no release is due, the current version is
 // packed.
+//
+//   node scripts/release-rehearsal.mjs [<dir>]
+//
+// <dir> (missing or empty) keeps the archives and their manifest, for the checks that
+// run on them (`scripts/pack-check.mjs --tarballs <dir>`, `scripts/consumer-check.mjs
+// --tarballs <dir>`).
 import { execFileSync, spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
 import {
   mkdtempSync,
   readFileSync,
@@ -15,15 +22,18 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 
 const root = join(import.meta.dirname, "..");
+const [destination] = process.argv.slice(2);
 const dir = mkdtempSync(join(tmpdir(), "binden-rehearsal-"));
 const mirror = join(dir, "mirror.git");
 const work = join(dir, "work");
-const archives = join(dir, "archives");
+const archives =
+  typeof destination === "undefined"
+    ? join(dir, "archives")
+    : resolve(destination);
 const plugins = new Set([
   "@semantic-release/commit-analyzer",
   "@semantic-release/release-notes-generator",
@@ -112,6 +122,7 @@ try {
     node(["scripts/release.mjs", "publish", archives, "--dry-run"]);
     log(`the next release is ${version}`);
   }
+  log(`archives: ${archives}`);
 } finally {
   rmSync(dir, { force: true, recursive: true });
 }

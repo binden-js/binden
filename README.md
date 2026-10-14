@@ -19,18 +19,30 @@ API documentation: <https://binden-js.github.io/binden/>
 Requires Node.js `>=24.14.1` and npm `>=11.11.0`, as the packages do.
 
 ```bash
-npm install            # installs all workspaces and builds them (`prepare`)
-npm run build          # type checks and compiles every workspace (including tests)
-npm test               # node:test (via tsx) in every workspace
-npm run coverage       # tests with c8 coverage (coverage/lcov.info)
-npm run eslint         # type-aware ESLint for the whole repository
-npm run docs:build     # TypeDoc for all packages (docs/)
-npm run consumer:check # the packed packages and the README examples in a fresh project
-npm run release:rehearsal # the next version, its notes and its archives, without releasing
-npm run ci:all         # everything CI runs
+npm install               # installs all workspaces and builds them (`prepare`)
+npm run build             # type checks and compiles every workspace (including tests)
+npm test                  # node:test (via tsx) in every workspace
+npm run coverage          # tests with c8 coverage (coverage/lcov.info)
+npm run eslint            # type-aware ESLint for the whole repository
+npm run test:tooling      # the tests of the release scripts and the tooling (scripts/*.test.mjs)
+npm run docs:build        # TypeDoc for all packages (docs/)
+npm run pack:check        # the files that every package publishes (scripts/pack-files.json)
+npm run consumer:check    # the packed packages and the README examples in a fresh project
+npm run release:rehearsal # the next version, its release notes and its archives, without releasing
+npm run ci:all            # everything CI runs
 ```
 
 Commands for a single package: `npm test -w packages/binden`.
+
+`npm run pack:check` and `npm run consumer:check` pack the workspaces of the working tree. CI checks
+the archives of the release rehearsal instead, the way the release job makes them (from the
+commit, with the next version and its `gitHead`), without packing them again:
+
+```bash
+npm run release:rehearsal -- <dir>                 # keeps the archives and their manifest in <dir>
+node scripts/pack-check.mjs --tarballs <dir>
+node scripts/consumer-check.mjs --tarballs <dir>
+```
 
 `npm run consumer:check` runs a consumer of the packed packages against a real server, but only
 type checks the TypeScript examples of the READMEs: the placeholders that they use (`app`,

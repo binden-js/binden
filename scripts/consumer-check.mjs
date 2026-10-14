@@ -10,6 +10,12 @@
 //   `worker_threads.TransferListItem`, which `@types/node` 26 removed;
 // - TypeScript 7 (the native compiler, which the tooling of this repository does
 //   not support yet) and `@types/node` 24.
+//
+//   node scripts/consumer-check.mjs                    packs the workspaces itself
+//   node scripts/consumer-check.mjs --tarballs <dir>   the archives that
+//                                                      `scripts/release.mjs pack <dir>`
+//                                                      prepared (their integrity is checked)
+import { join, resolve } from "node:path";
 import {
   mkdirSync,
   mkdtempSync,
@@ -19,8 +25,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
 import { npm } from "./npm.mjs";
+import { readRelease } from "./tarballs.mjs";
 import { tmpdir } from "node:os";
 
 const root = join(import.meta.dirname, "..");
@@ -160,15 +166,32 @@ function run(command, args, cwd = dir) {
   }
 }
 
-try {
+/** The prepared archives of `--tarballs <dir>`, or the workspaces packed into `dir` */
+function pack() {
+  const index = process.argv.indexOf("--tarballs");
+  if (index !== -1) {
+    const prepared = process.argv[index + 1] ?? "";
+    if (prepared === "" || prepared.startsWith("--")) {
+      throw new Error("Usage: scripts/consumer-check.mjs --tarballs <dir>");
+    }
+    const archives = readRelease(resolve(prepared));
+    process.stderr.write(
+      `[consumer] ${archives.length} prepared archives of ${prepared}\n`,
+    );
+    return archives.map(({ path }) => path);
+  }
   run(
     "npm",
     ["pack", "--workspaces", "--pack-destination", dir, "--loglevel=warn"],
     root,
   );
-  const tarballs = readdirSync(dir)
+  return readdirSync(dir)
     .filter((file) => file.endsWith(".tgz"))
     .map((file) => join(dir, file));
+}
+
+try {
+  const tarballs = pack();
 
   writeFileSync(
     join(dir, "package.json"),

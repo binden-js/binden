@@ -27,7 +27,7 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,17 +61,17 @@ jobs:
       - name: Tooling tests (release scripts, test runner)
         run: npm run test:tooling
 
-      - name: Packed files (scripts/pack-files.json)
-        run: npm run pack:check
-
-      - name: Consumer check (packed packages, TypeScript and ESM)
-        run: npm run consumer:check
-
       # The next version, its release notes and its archives, made as the release job makes
       # them (scripts/release.mjs `verify`, `version`, `pack` and `publish --dry-run`):
-      # nothing is tagged or published
+      # nothing is tagged or published. The next checks use these archives.
       - name: Release rehearsal
-        run: npm run release:rehearsal
+        run: npm run release:rehearsal -- "$RUNNER_TEMP/release"
+
+      - name: Packed files (scripts/pack-files.json)
+        run: node scripts/pack-check.mjs --tarballs "$RUNNER_TEMP/release"
+
+      - name: Consumer check (the archives of the rehearsal, TypeScript and ESM)
+        run: node scripts/consumer-check.mjs --tarballs "$RUNNER_TEMP/release"
 
       - name: Docs
         run: npm run docs:build
