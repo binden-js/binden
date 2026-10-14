@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   IncomingMessage,
   type OutgoingHttpHeader,
@@ -7,7 +8,7 @@ import {
 import { Readable } from "node:stream";
 import ContentType from "./headers/content-type.js";
 import Cookie, { type ICookie } from "./headers/cookie.js";
-import { type ISendFileOptions, sendFileTo } from "./send-file.js";
+import { type ISendFileOptions, matches, sendFileTo } from "./send-file.js";
 import { isStatus } from "./status.js";
 
 export const ct_json = "application/json";
@@ -19,11 +20,36 @@ export type IHeadersValue = number | string | readonly string[];
 
 export type IHeaders = Record<string, IHeadersValue>;
 
+/** The options of the responses of an application (`Binden` sets them) */
+export interface IResponseOptions {
+  /**
+   * A strong `ETag` (the SHA-256 of the body) for the `200` responses to `GET`
+   * and `HEAD` sent from a `Buffer` or a string, and `304 Not Modified` when
+   * `If-None-Match` matches it
+   */
+  readonly etag: boolean;
+}
+
 /** The attributes of a cookie to remove (see `BindenResponse.clearCookie()`) */
 export type IClearCookie = Pick<
   ICookie,
   "domain" | "partitioned" | "path" | "same_site" | "secure"
 >;
+
+/**
+ * Validates the options of the responses (`etag` is `false` by default): a
+ * `TypeError` for an invalid one
+ */
+export function validateResponseOptions({
+  etag = false,
+}: { readonly etag?: boolean | undefined } = {}): Readonly<IResponseOptions> {
+  if (typeof etag !== "boolean") {
+    throw new TypeError("`etag` is not a boolean");
+  }
+  return Object.freeze({ etag });
+}
+
+const defaults = validateResponseOptions();
 
 /** The characters of `attr-char` (RFC 8187, section 3.2.1) */
 const attrChar = /^[\w!#$&+.^`|~-]$/u;
@@ -89,6 +115,15 @@ export class BindenResponse<
    */
   public get started(): boolean {
     return this.#started || this.headersSent || this.writableEnded;
+  }
+
+  /**
+   * The options of the response (no dynamic `ETag` by default): `Binden`
+   * overrides them in a subclass of its own
+   */
+  // eslint-disable-next-line class-methods-use-this -- overridden by subclasses
+  protected get options(): Readonly<IResponseOptions> {
+    return defaults;
   }
 
   /** Set the status code: an integer from 100 to 599 */
@@ -344,6 +379,14 @@ export class BindenResponse<
         ? data
         : data.toString();
 
+    if (this.#notModified(body, encoding)) {
+      // The validators and the other headers of the `200` response, no body
+      this.statusCode = 304;
+      this.#frame(null);
+      this.end();
+      return done;
+    }
+
     if (
       !this.headersSent &&
       typeof this.getHeader("Content-Type") === "undefined" &&
@@ -378,6 +421,36 @@ export class BindenResponse<
       this.end();
       done.then(resolve, reject);
     });
+  }
+
+  /**
+   * With the dynamic `ETag` (see `options`), sets the strong `ETag` of a body
+   * of a `200` response to `GET` or `HEAD` (unless it has one already), and
+   * tells whether `If-None-Match` matches it (by the weak comparison)
+   */
+  #notModified(body: Buffer | string, encoding?: BufferEncoding): boolean {
+    const { method = "GET", headers } = this.req;
+    if (
+      this.headersSent ||
+      !this.options.etag ||
+      this.statusCode !== 200 ||
+      (method !== "GET" && method !== "HEAD")
+    ) {
+      return false;
+    }
+    let etag = this.getHeader("ETag");
+    if (typeof etag === "undefined") {
+      const bytes =
+        typeof body === "string" ? Buffer.from(body, encoding) : body;
+      etag = `"${createHash("sha256").update(bytes).digest("base64url")}"`;
+      this.setHeader("ETag", etag);
+    }
+    const ifNoneMatch = headers["if-none-match"];
+    return (
+      typeof ifNoneMatch === "string" &&
+      typeof etag === "string" &&
+      matches(ifNoneMatch, etag, false)
+    );
   }
 
   /**

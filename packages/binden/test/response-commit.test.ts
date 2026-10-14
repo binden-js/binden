@@ -1,4 +1,5 @@
 import { deepStrictEqual, ok, rejects, throws } from "node:assert";
+import { createHash } from "node:crypto";
 import {
   IncomingMessage,
   type OutgoingHttpHeader,
@@ -10,7 +11,12 @@ import { Socket } from "node:net";
 import { Readable } from "node:stream";
 import { afterEach, suite, test } from "node:test";
 
-import { BindenResponse, Cookie } from "../index.js";
+import {
+  BindenResponse,
+  Cookie,
+  type IResponseOptions,
+  validateResponseOptions,
+} from "../index.js";
 import { type ITestServer, type IListenOptions, listen } from "./http.js";
 
 /** A response without a connection: nothing is actually sent */
@@ -24,6 +30,19 @@ function settle(promise: Promise<unknown>): Promise<unknown> {
     () => null,
     (error: unknown) => error,
   );
+}
+
+/** A response with the dynamic `ETag` */
+class EtagResponse extends BindenResponse {
+  // eslint-disable-next-line class-methods-use-this -- the options of a subclass
+  protected override get options(): Readonly<IResponseOptions> {
+    return validateResponseOptions({ etag: true });
+  }
+}
+
+/** The strong `ETag` of a body */
+function etagOf(body: Buffer | string): string {
+  return `"${createHash("sha256").update(body).digest("base64url")}"`;
 }
 
 /** `undefined`, which the linter does not let the tests write */
@@ -337,6 +356,160 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
       ((await settle(endedFlush)) as { code?: unknown }).code,
       "ERR_STREAM_PREMATURE_CLOSE",
     );
+  });
+
+  test("validateResponseOptions()", () => {
+    deepStrictEqual(validateResponseOptions(), { etag: false });
+    deepStrictEqual(validateResponseOptions({ etag: none }), {
+      etag: false,
+    });
+    const options = validateResponseOptions({ etag: true });
+    deepStrictEqual(options, { etag: true });
+    ok(Object.isFrozen(options));
+    throws(
+      () => validateResponseOptions({ etag: 1 as unknown as boolean }),
+      new TypeError("`etag` is not a boolean"),
+    );
+  });
+
+  test("dynamic ETag", async () => {
+    const app = await start({ Response: EtagResponse });
+    const send = async (
+      reply: (response: BindenResponse) => unknown,
+      options: Parameters<ITestServer["request"]>[0] = {},
+    ): Promise<[number, string | null, string]> => {
+      const handled = app.handle((_request, response) => reply(response));
+      const { status, headers, body } = await app.request(options);
+      deepStrictEqual(await handled, null);
+      return [status, headers.etag ?? null, body.toString()];
+    };
+    const text = "Hello, ETag";
+    const tag = etagOf(text);
+
+    deepStrictEqual(await send((r): unknown => r.send(text)), [200, tag, text]);
+    deepStrictEqual(
+      await send((r): unknown => r.send(text), { method: "HEAD" }),
+      [200, tag, ""],
+    );
+    // The bytes that are sent
+    const base64 = Buffer.from(text).toString("base64");
+    deepStrictEqual(await send((r): unknown => r.send(base64, "base64")), [
+      200,
+      tag,
+      text,
+    ]);
+    deepStrictEqual(await send((r): unknown => r.send(Buffer.from(text))), [
+      200,
+      tag,
+      text,
+    ]);
+    deepStrictEqual(await send((r): unknown => r.json({ a: 1 })), [
+      200,
+      etagOf(`{"a":1}`),
+      `{"a":1}`,
+    ]);
+    deepStrictEqual(await send((r): unknown => r.send(12)), [
+      200,
+      etagOf("12"),
+      "12",
+    ]);
+
+    // Not for other statuses, methods, bodies, or sent headers
+    deepStrictEqual(await send((r): unknown => r.status(201).send(text)), [
+      201,
+      null,
+      text,
+    ]);
+    deepStrictEqual(
+      await send((r): unknown => r.send(text), { method: "POST" }),
+      [200, null, text],
+    );
+    deepStrictEqual(await send((r): unknown => r.send()), [200, null, ""]);
+    deepStrictEqual(await send((r): unknown => r.send(Readable.from([text]))), [
+      200,
+      null,
+      text,
+    ]);
+    deepStrictEqual(
+      await send((r): unknown => {
+        r.flushHeaders();
+        return r.send(text);
+      }),
+      [200, null, text],
+    );
+    // The `ETag` of the application stays
+    deepStrictEqual(
+      await send((r): unknown => r.setHeader("ETag", `W/"app"`).send(text)),
+      [200, `W/"app"`, text],
+    );
+  });
+
+  test("dynamic ETag (`If-None-Match`)", async () => {
+    const app = await start({ Response: EtagResponse });
+    const text = "Hello, ETag";
+    const tag = etagOf(text);
+    const check = async (
+      ifNoneMatch: string,
+      { method = "GET", etag = "" } = {},
+    ): Promise<[number, Record<string, unknown>, string]> => {
+      const handled = app.handle(async (_request, response) => {
+        response.set({
+          "Cache-Control": "max-age=60",
+          Vary: "Accept",
+          "Content-Length": 99,
+        });
+        if (etag) {
+          response.setHeader("ETag", etag);
+        }
+        await response.text(text);
+      });
+      const { status, headers, body } = await app.request({
+        method,
+        headers: { "If-None-Match": ifNoneMatch },
+      });
+      deepStrictEqual(await handled, null);
+      return [
+        status,
+        {
+          etag: headers.etag,
+          vary: headers.vary,
+          "cache-control": headers["cache-control"],
+          "content-length": headers["content-length"] ?? null,
+        },
+        body.toString(),
+      ];
+    };
+    const notModified = {
+      etag: tag,
+      vary: "Accept",
+      "cache-control": "max-age=60",
+      "content-length": null,
+    };
+
+    // The weak comparison
+    for (const value of [tag, `W/${tag}`, `"x", ${tag}`, "*"]) {
+      deepStrictEqual(await check(value), [304, notModified, ""], value);
+    }
+    deepStrictEqual(await check(tag, { method: "HEAD" }), [
+      304,
+      notModified,
+      "",
+    ]);
+    const [status, headers, body] = await check(`"other"`);
+    deepStrictEqual([status, headers.etag, body], [200, tag, text]);
+    deepStrictEqual((await check(`"other"`, { method: "POST" }))[0], 200);
+    // The `ETag` of the application
+    deepStrictEqual((await check(`"app"`, { etag: `W/"app"` }))[0], 304);
+  });
+
+  test("no dynamic ETag by default", async () => {
+    const app = await start();
+    const handled = app.handle((_request, response) => response.send("data"));
+    const { headers } = await app.request({
+      headers: { "If-None-Match": "*" },
+    });
+    deepStrictEqual(await handled, null);
+    deepStrictEqual(headers.etag ?? null, null);
   });
 
   test(".send() (rejects an unknown encoding before the response)", async () => {
