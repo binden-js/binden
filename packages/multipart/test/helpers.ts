@@ -78,6 +78,20 @@ export async function within<T>(promise: Promise<T>, ms = 5000): Promise<T> {
   }
 }
 
+/** Resolves once `check()` is true, which it must be within `ms` milliseconds */
+export async function eventually(
+  check: () => Promise<boolean> | boolean,
+  ms = 2000,
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > deadline) {
+      throw new Error(`Not true within ${ms} ms`);
+    }
+    await sleep(5);
+  }
+}
+
 /** A boundary for the bodies of the tests */
 export const boundary = "binden-boundary";
 

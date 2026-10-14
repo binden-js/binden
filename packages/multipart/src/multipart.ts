@@ -1,5 +1,12 @@
 import { BindenError, type Context, Middleware } from "binden";
 import {
+  DiskStore,
+  type IFileStream,
+  type IStoredFile,
+  type IStoredForm,
+  StoredFile,
+} from "./disk.js";
+import {
   type IFileFilter,
   type IFileInfo,
   type IMode,
@@ -21,17 +28,15 @@ import { MultipartFile } from "./file.js";
 import type { Readable } from "node:stream";
 import { filenameOf } from "./filename.js";
 import { race } from "./race.js";
+import { tmpdir } from "node:os";
 
 /** The logger of a context */
 type ILog = Context["log"];
 
-/** A file stream of busboy */
-type IFileStream = Readable & { truncated?: boolean };
-
 /** A part, in the order of the request (a file once it has been read) */
 interface ISlot {
   readonly name: string;
-  value: MultipartFile | string | null;
+  value: IStoredFile | MultipartFile | string | null;
 }
 
 /** The methods whose requests have no body to parse */
@@ -102,6 +107,7 @@ class Parser {
   readonly #streams = new Set<Readable>();
   readonly #detach: (() => void)[] = [];
   #busboy: Busboy | null = null;
+  #store: DiskStore | null = null;
   #over = false;
 
   public constructor(
@@ -291,6 +297,9 @@ class Parser {
     } else if (this.#mode.kind === "stream") {
       await this.#stream(this.#mode.on_file, info, stream);
       return;
+    } else if (this.#mode.kind === "disk") {
+      slot.value = await this.#disk(this.#mode.dir, info, stream);
+      return;
     }
     const chunks = await collect(stream);
     slot.value = new MultipartFile(chunks, info.filename, {
@@ -318,6 +327,23 @@ class Parser {
       stream.unpipe();
       stream.resume();
     }
+  }
+
+  /**
+   * Stores a file on the disk, in the private directory of the request
+   * (created with its first file, and removed with its cleanup)
+   */
+  async #disk(
+    dir: string | null,
+    info: IFileInfo,
+    stream: IFileStream,
+  ): Promise<IStoredFile> {
+    this.#store ??= new DiskStore(dir ?? tmpdir(), (cleanup) => {
+      this.#context.onCleanup(cleanup);
+    });
+    const file = this.#store.add(info, stream);
+    await file.written;
+    return file;
   }
 
   /** Whether `file_filter` accepts a file (awaited until the parse is over) */
@@ -414,14 +440,34 @@ class Parser {
       return;
     }
     this.#end();
+    this.#context.request.body =
+      this.#mode.kind === "disk" ? this.#stored() : this.#form();
+    this.#deferred.resolve(null);
+  }
+
+  /** The fields and the files in memory (skipped ones excluded) */
+  #form(): FormData {
     const form = new FormData();
     for (const { name, value } of this.#slots) {
-      if (value !== null) {
+      if (typeof value === "string" || value instanceof MultipartFile) {
         form.append(name, value);
       }
     }
-    this.#context.request.body = form;
-    this.#deferred.resolve(null);
+    return form;
+  }
+
+  /** The fields and the stored files (skipped ones excluded) */
+  #stored(): IStoredForm {
+    const fields = new Map<string, string[]>();
+    const files = new Map<string, IStoredFile[]>();
+    for (const { name, value } of this.#slots) {
+      if (typeof value === "string") {
+        fields.set(name, [...(fields.get(name) ?? []), value]);
+      } else if (value instanceof StoredFile) {
+        files.set(name, [...(files.get(name) ?? []), value]);
+      }
+    }
+    return { fields, files };
   }
 
   #end(): void {

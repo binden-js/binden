@@ -3,12 +3,14 @@ import { Multipart } from "./src/multipart.js";
 
 export * from "./src/multipart.js";
 export * from "./src/file.js";
+export type { IStoredFile, IStoredForm } from "./src/disk.js";
 export {
   type IMultipartInfo,
   type ILimitName,
   multipartInfo,
 } from "./src/info.js";
 export type {
+  IDiskStorage,
   IFileFilter,
   IFileInfo,
   IMultipartConfig,

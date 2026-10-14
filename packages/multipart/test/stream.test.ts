@@ -304,10 +304,16 @@ describe("Multipart (stream storage)", () => {
   it("refuses an invalid `storage`", () => {
     const invalid: [unknown, Error][] = [
       ["disk", new TypeError("`storage` is not an object")],
-      [{}, new TypeError("`storage.on_file` is not a function")],
+      [{ on_file: null }, new TypeError("`storage.on_file` is not a function")],
       [
         { on_file: (): null => null, dir: "/tmp" },
-        new TypeError("Unknown option: `storage.dir`"),
+        new TypeError("`storage.dir` and `storage.on_file` are exclusive"),
+      ],
+      [{ dir: "" }, new TypeError("`storage.dir` is not a non-empty string")],
+      [{ dir: 1 }, new TypeError("`storage.dir` is not a non-empty string")],
+      [
+        { directory: "/tmp" },
+        new TypeError("Unknown option: `storage.directory`"),
       ],
     ];
     for (const [storage, error] of invalid) {

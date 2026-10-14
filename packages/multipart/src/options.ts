@@ -1,6 +1,7 @@
 import type { BusboyConfig, Limits } from "busboy";
 import type { Context, IMiddlewareParams } from "binden";
 import type { Readable } from "node:stream";
+import { resolve } from "node:path";
 
 /**
  * The configuration of busboy: its `limits`, the charsets of the parts and
@@ -60,11 +61,24 @@ export interface IStreamStorage {
   on_file(file: IStreamFile, context: Context): unknown;
 }
 
-/** Where the files go: kept in memory (`"memory"`), or streamed to a handler */
-export type IStorage = "memory" | IStreamStorage;
+/**
+ * Stores each file on the disk (see `IStoredFile`): `request.body` is an
+ * `IStoredForm`
+ */
+export interface IDiskStorage {
+  /** The directory of the private directories of the requests (`os.tmpdir()`) */
+  dir?: string | undefined;
+}
+
+/**
+ * Where the files go: in memory (`"memory"`), on the disk (`{ dir }`), or to
+ * a handler (`{ on_file }`)
+ */
+export type IStorage = "memory" | IDiskStorage | IStreamStorage;
 
 /** The storage of a parse */
 export type IMode =
+  | { readonly kind: "disk"; readonly dir: string | null }
   | { readonly kind: "memory" }
   | { readonly kind: "stream"; readonly on_file: IStreamStorage["on_file"] };
 
@@ -96,7 +110,7 @@ export interface IMultipartOptions extends IMiddlewareParams {
   filtered?: "reject" | "skip" | undefined;
   /**
    * Where the files go: in memory, as a `MultipartFile` of the `FormData`
-   * (`"memory"`), or to a handler (`{ on_file }`)
+   * (`"memory"`), on the disk (`{ dir }`), or to a handler (`{ on_file }`)
    */
   storage?: IStorage | undefined;
 }
@@ -125,7 +139,7 @@ const optionNames: ReadonlySet<string> = new Set([
   "storage",
 ]);
 
-const storageNames: ReadonlySet<string> = new Set(["on_file"]);
+const storageNames: ReadonlySet<string> = new Set(["dir", "on_file"]);
 
 const configNames: ReadonlySet<string> = new Set([
   "headers",
@@ -269,16 +283,26 @@ function checkConfig(value: unknown): IMultipartConfig {
   };
 }
 
-/** The storage of the files */
+/** The storage of the files: its directory is resolved now */
 function checkStorage(value: unknown): IMode {
   if (value === "memory") {
     return { kind: "memory" };
   }
-  const { on_file } = checkObject(value, "storage", storageNames);
-  if (typeof on_file !== "function") {
-    throw new TypeError("`storage.on_file` is not a function");
+  const storage = checkObject(value, "storage", storageNames);
+  const { dir, on_file } = storage;
+  if ("on_file" in storage) {
+    if ("dir" in storage) {
+      throw new TypeError("`storage.dir` and `storage.on_file` are exclusive");
+    } else if (typeof on_file !== "function") {
+      throw new TypeError("`storage.on_file` is not a function");
+    }
+    return { kind: "stream", on_file: on_file as IStreamStorage["on_file"] };
+  } else if (typeof dir === "undefined") {
+    return { kind: "disk", dir: null };
+  } else if (typeof dir !== "string" || dir === "") {
+    throw new TypeError("`storage.dir` is not a non-empty string");
   }
-  return { kind: "stream", on_file: on_file as IStreamStorage["on_file"] };
+  return { kind: "disk", dir: resolve(dir) };
 }
 
 /**
