@@ -103,6 +103,7 @@ export class BindenResponse<
       if (this.#bodiless()) {
         // Nothing of the source would be sent: it is not read at all
         BindenResponse.#discard(data);
+        this.#frame(null);
         const done = this.#finished(() => false);
         this.end();
         return done;
@@ -115,15 +116,10 @@ export class BindenResponse<
     const done = this.#finished(() => false);
 
     if (typeof data === "undefined" || data === "" || this.destroyed) {
+      // Without a body, `HEAD` keeps the length it may have been given
+      this.#frame(this.req.method === "HEAD" ? null : 0);
       this.end();
       return done;
-    }
-
-    if (
-      !this.headersSent &&
-      typeof this.getHeader("Content-Type") === "undefined"
-    ) {
-      this.setHeader("Content-Type", ct_text);
     }
 
     const body =
@@ -131,15 +127,19 @@ export class BindenResponse<
         ? data
         : data.toString();
 
+    if (
+      !this.headersSent &&
+      typeof this.getHeader("Content-Type") === "undefined" &&
+      (this.req.method === "HEAD" ||
+        !BindenResponse.#noContent(this.statusCode))
+    ) {
+      this.setHeader("Content-Type", ct_text);
+    }
+
+    this.#frame(Buffer.byteLength(body, encoding));
+
     if (this.#bodiless()) {
       // The headers of the body (as for `GET`), but not the body itself
-      if (
-        this.req.method === "HEAD" &&
-        !this.headersSent &&
-        !this.hasHeader("Content-Length")
-      ) {
-        this.setHeader("Content-Length", Buffer.byteLength(body, encoding));
-      }
       this.end();
       return done;
     }
@@ -147,9 +147,6 @@ export class BindenResponse<
     // The body is written rather than passed to `end()`: a write that fails
     // (e.g. the client went away) rejects, although Node.js 24 emits `finish`
     // once the response is ended. Its length keeps it from being chunked.
-    if (!this.headersSent) {
-      this.setHeader("Content-Length", Buffer.byteLength(body, encoding));
-    }
     return new Promise<void>((resolve, reject) => {
       const written = (error?: Error | null): void => {
         if (error) {
@@ -194,14 +191,45 @@ export class BindenResponse<
   /** Send a file */
   /** A response without a body: to `HEAD`, or with a 1xx, 204, 205 or 304 status */
   #bodiless(): boolean {
-    const { statusCode } = this;
     return (
-      this.req.method === "HEAD" ||
-      (statusCode >= 100 && statusCode < 200) ||
-      statusCode === 204 ||
-      statusCode === 205 ||
-      statusCode === 304
+      this.req.method === "HEAD" || BindenResponse.#noContent(this.statusCode)
     );
+  }
+
+  /** A status whose responses never have a body */
+  static #noContent(status: number): boolean {
+    return (
+      (status >= 100 && status < 200) ||
+      status === 204 ||
+      status === 205 ||
+      status === 304
+    );
+  }
+
+  /**
+   * Frames the response by its final status (RFC 9110, sections 8.6 and 15),
+   * with the `length` of its body (`null` when it is not known): a stale
+   * `Content-Length` or `Transfer-Encoding` (e.g. of a body that an error
+   * replaced) would make the client wait for bytes that never come, or read
+   * the next response of the connection as this body.
+   */
+  #frame(length: number | null): void {
+    const { statusCode } = this;
+    if (this.headersSent) {
+      return;
+    } else if (statusCode === 205) {
+      // No content, framed as such (RFC 9110, section 15.3.6)
+      this.removeHeader("Transfer-Encoding");
+      this.setHeader("Content-Length", 0);
+    } else if (BindenResponse.#noContent(statusCode)) {
+      // Never a body, nor the length of one
+      this.removeHeader("Content-Length");
+      this.removeHeader("Transfer-Encoding");
+    } else if (length !== null) {
+      // Also for `HEAD`: the length of the body it would send
+      this.removeHeader("Transfer-Encoding");
+      this.setHeader("Content-Length", length);
+    }
   }
 
   /**

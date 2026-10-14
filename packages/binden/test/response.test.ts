@@ -65,6 +65,47 @@ function settle(promise: Promise<void>): Promise<unknown> {
   );
 }
 
+/** The status line, the headers and the body of a raw response */
+interface IRawResponse {
+  status: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
+/**
+ * Sends a raw request to `url` on a connection that the server closes after its
+ * response, and reads the response as it is on the wire
+ */
+async function exchange(method = "GET", headers = ""): Promise<IRawResponse> {
+  const { hostname, port } = new URL(url);
+  const socket = new Socket();
+  socket.setEncoding("latin1");
+  let data = "";
+  socket.on("data", (chunk: string) => {
+    data += chunk;
+  });
+  socket.connect(Number(port), hostname);
+  socket.write(
+    `${method} / HTTP/1.1\r\nHost: ${hostname}\r\nConnection: close\r\n${headers}\r\n`,
+  );
+  await once(socket, "close");
+  const [head = "", ...rest] = data.split("\r\n\r\n");
+  const [status = "", ...lines] = head.split("\r\n");
+  return {
+    status,
+    headers: Object.fromEntries(
+      lines.map((line) => {
+        const index = line.indexOf(":");
+        return [
+          line.slice(0, index).toLowerCase(),
+          line.slice(index + 1).trim(),
+        ];
+      }),
+    ),
+    body: rest.join("\r\n\r\n"),
+  };
+}
+
 suite("BindenResponse", () => {
   // A new directory for every test
   let root: string;
@@ -558,6 +599,76 @@ suite("BindenResponse", () => {
     }
   });
 
+  test(".send() (frames the response by its final status)", async () => {
+    const framing = ["content-length", "content-type", "transfer-encoding"];
+    const check = async (
+      method: string,
+      reply: (response: BindenResponse) => Promise<void>,
+      expected: Record<string, string>,
+      body = "",
+    ): Promise<void> => {
+      const replied = new Promise<void>((resolve, reject) => {
+        server.once("request", (_request, response) => {
+          reply(response).then(resolve, reject);
+        });
+      });
+      const response = await exchange(method);
+      await replied;
+      const { headers } = response;
+      const sent = framing
+        .filter((name) => name in headers)
+        .map((name) => [name, headers[name]]);
+      deepStrictEqual(
+        { ...Object.fromEntries(sent), body: response.body },
+        { ...expected, body },
+        `${method} ${response.status}`,
+      );
+    };
+    const text = { "content-type": ct_text };
+    const stale = { "Content-Length": 99, "Transfer-Encoding": "chunked" };
+
+    // Never a body, nor the length of one
+    await check("GET", (r) => r.set(stale).status(204).send(), {});
+    await check("GET", (r) => r.status(204).send("data"), {});
+    await check("GET", (r) => r.set(stale).status(304).send(), {});
+    // No content, framed as such
+    await check("GET", (r) => r.set(stale).status(205).send("hello world"), {
+      "content-length": "0",
+    });
+    // The length of the body, whatever was set before
+    await check(
+      "GET",
+      (r) => r.set(stale).send("abc"),
+      { ...text, "content-length": "3" },
+      "abc",
+    );
+    await check(
+      "GET",
+      (r) => r.set(stale).status(404).send(Buffer.from("x")),
+      { ...text, "content-length": "1" },
+      "x",
+    );
+    await check("GET", (r) => r.set(stale).send(), { "content-length": "0" });
+    // `HEAD`: the length of the body it would send, or the one it was given
+    await check("HEAD", (r) => r.send("abc"), {
+      ...text,
+      "content-length": "3",
+    });
+    await check("HEAD", (r) => r.setHeader("Content-Length", 1234).send(), {
+      "content-length": "1234",
+    });
+    // Sent headers are not changed: the body follows their framing
+    await check(
+      "GET",
+      async (r) => {
+        r.flushHeaders();
+        await r.send("abc");
+      },
+      { "transfer-encoding": "chunked" },
+      "3\r\nabc\r\n0\r\n\r\n",
+    );
+  });
+
   test(".send() (a `Readable` is not read without a body)", async () => {
     const check = async (method: string, status: number): Promise<void> => {
       let reads = 0;
@@ -840,7 +951,9 @@ suite("BindenResponse", () => {
   test(".sendFile() (416 response with invalid `Range`)", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (_request, response) => {
+        // A stale length would leave the client waiting for its bytes
         response
+          .setHeader("Content-Length", 99)
           .sendFile(filePath, file_stats)
           .catch(reject)
           .finally(() => response.end(resolve));
@@ -852,6 +965,7 @@ suite("BindenResponse", () => {
     deepStrictEqual(response.status, 416);
     const cr = response.headers.get("Content-Range");
     deepStrictEqual(cr, `bytes */${msg.byteLength}`);
+    deepStrictEqual(response.headers.get("Content-Length"), "0");
 
     await serverPromise;
     const data = await response.text();
