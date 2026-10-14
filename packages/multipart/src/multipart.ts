@@ -416,9 +416,7 @@ class Parser {
       request.destroy();
     } else {
       request.pause();
-      if (!response.headersSent) {
-        response.setHeader("Connection", "close");
-      }
+      response.setHeader("Connection", "close");
     }
     // Not while busboy emits the event that has refused the request: it would
     // go on with a stream that it no longer has

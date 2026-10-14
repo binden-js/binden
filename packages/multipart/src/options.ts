@@ -18,8 +18,9 @@ export interface IFileInfo {
   /** The name of the field */
   field: string;
   /**
-   * The name of the file, as the client has sent it (see `filenameOf()`):
-   * metadata, never a path
+   * The name of the file as the client has sent it, without its control
+   * characters, cut to 255 bytes, `"blob"` when it is empty: metadata, never
+   * a path to write to
    */
   filename: string;
   /** The media type of the part (`Content-Type`, `text/plain` by default) */
