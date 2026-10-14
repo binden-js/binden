@@ -8,7 +8,7 @@ the same version.
 | --------------------------------------------- | --------------------------------------- | ------------- |
 | [`binden`](packages/binden)                   | A simple HTTP server framework          | MIT           |
 | [`@binden/logger`](packages/logger)           | A simple logger (based on `pino`)       | MIT           |
-| [`@binden/body`](packages/body)               | Body parser middleware                  | AGPL-3.0-only |
+| [`@binden/body`](packages/body)               | Body parser middleware                  | MIT           |
 | [`@binden/compression`](packages/compression) | Compression middleware                  | AGPL-3.0-only |
 | [`@binden/multipart`](packages/multipart)     | `multipart/form-data` parser middleware | AGPL-3.0-only |
 

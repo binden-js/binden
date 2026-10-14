@@ -30,7 +30,7 @@
     "body"
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/binden-js/binden/issues"
   },
