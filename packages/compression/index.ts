@@ -6,8 +6,19 @@ import {
   Middleware,
 } from "binden";
 import { CompressedResponse, type ISettings, skip } from "./src/response.js";
-import { type ICompressEncodings, codings, hasZstd } from "./src/codings.js";
+import {
+  type ICompressEncodings,
+  type ICompressorOptions,
+  codings,
+  createCompressor,
+  hasZstd,
+} from "./src/codings.js";
 import { type ICompressionFilter, isCompressible } from "./src/filter.js";
+import zlib, {
+  type BrotliOptions,
+  type ZlibOptions,
+  type ZstdOptions,
+} from "node:zlib";
 
 export { type ICompressionFilter, isCompressible } from "./src/filter.js";
 export type { ICompressEncodings } from "./src/codings.js";
@@ -43,6 +54,14 @@ export interface ICompressionOptions extends IMiddlewareParams {
    * that replaces the response with `500`. `isCompressible()` by default.
    */
   filter?: ICompressionFilter | undefined;
+  /** The options of the `gzip` compressor */
+  gzip?: ZlibOptions | undefined;
+  /** The options of the `deflate` compressor */
+  deflate?: ZlibOptions | undefined;
+  /** The options of the `br` compressor (`BROTLI_PARAM_QUALITY` is `4` by default) */
+  brotli?: BrotliOptions | undefined;
+  /** The options of the `zstd` compressor */
+  zstd?: ZstdOptions | undefined;
 }
 
 const formats: readonly unknown[] = ["auto", ...codings];
@@ -52,6 +71,16 @@ const defaultEncodings: readonly ICompressEncodings[] = [
   "gzip",
   "deflate",
 ];
+
+/** Throws a `TypeError` unless the option is an object (or not set) */
+function checkObject(name: string, value: unknown): void {
+  if (
+    typeof value !== "undefined" &&
+    (typeof value !== "object" || value === null || Array.isArray(value))
+  ) {
+    throw new TypeError(`\`${name}\` is not an object`);
+  }
+}
 
 /** The codings of `encodings`: a non-empty list of distinct codings */
 function checkEncodings(encodings: unknown): readonly ICompressEncodings[] {
@@ -79,7 +108,8 @@ export class Compression extends Middleware {
 
   /**
    * Validates the options: a `TypeError` (or `RangeError`) for an invalid one,
-   * also for `zstd` when `node:zlib` does not have it
+   * also for the options of a compressor (one is created to check them), or
+   * for `zstd` when `node:zlib` does not have it
    */
   public constructor(options: ICompressionOptions = {}) {
     const {
@@ -88,6 +118,10 @@ export class Compression extends Middleware {
       threshold = 1024,
       filter = (_context: Context, type: ContentType | null): boolean =>
         isCompressible(type),
+      gzip = {},
+      deflate = {},
+      brotli = {},
+      zstd = {},
       ...rest
     } = options;
     super(rest);
@@ -104,6 +138,11 @@ export class Compression extends Middleware {
     } else if (typeof filter !== "function") {
       throw new TypeError("`filter` is not a function");
     }
+    checkObject("gzip", gzip);
+    checkObject("deflate", deflate);
+    checkObject("brotli", brotli);
+    checkObject("zstd", zstd);
+
     const offered =
       typeof encodings === "undefined"
         ? defaultEncodings
@@ -113,11 +152,29 @@ export class Compression extends Middleware {
       throw new TypeError("zstd is not supported by this version of Node.js");
     }
 
+    const compressors: ICompressorOptions = Object.freeze({
+      br: {
+        ...brotli,
+        params: {
+          [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
+          ...brotli.params,
+        },
+      },
+      deflate: { ...deflate },
+      gzip: { ...gzip },
+      zstd: { ...zstd },
+    });
+    // Invalid options of a compressor throw now, rather than with a request
+    for (const coding of used) {
+      createCompressor(coding, compressors).close();
+    }
+
     this.#settings = Object.freeze({
       format,
       encodings: offered,
       threshold,
       filter,
+      compressors,
     });
   }
 

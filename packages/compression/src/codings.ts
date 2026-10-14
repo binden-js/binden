@@ -1,5 +1,9 @@
+import zlib, {
+  type BrotliOptions,
+  type ZlibOptions,
+  type ZstdOptions,
+} from "node:zlib";
 import type { Transform } from "node:stream";
-import zlib from "node:zlib";
 
 /** A content coding that the compression produces */
 export type ICompressEncodings = "br" | "deflate" | "gzip" | "zstd";
@@ -11,6 +15,14 @@ export const codings: readonly ICompressEncodings[] = [
   "gzip",
   "zstd",
 ];
+
+/** The options of the compressor of every coding */
+export interface ICompressorOptions {
+  readonly br: BrotliOptions;
+  readonly deflate: ZlibOptions;
+  readonly gzip: ZlibOptions;
+  readonly zstd: ZstdOptions;
+}
 
 /** A compressor of `node:zlib` */
 export type ICompressor = Transform & zlib.Zlib;
@@ -25,14 +37,17 @@ export function hasZstd(): boolean {
   );
 }
 
-/** A compressor of a coding */
-export function createCompressor(coding: ICompressEncodings): ICompressor {
+/** A compressor of a coding, with its options */
+export function createCompressor(
+  coding: ICompressEncodings,
+  options: ICompressorOptions,
+): ICompressor {
   if (coding === "br") {
-    return zlib.createBrotliCompress();
+    return zlib.createBrotliCompress(options.br);
   } else if (coding === "deflate") {
-    return zlib.createDeflate();
+    return zlib.createDeflate(options.deflate);
   } else if (coding === "gzip") {
-    return zlib.createGzip();
+    return zlib.createGzip(options.gzip);
   }
-  return zlib.createZstdCompress();
+  return zlib.createZstdCompress(options.zstd);
 }

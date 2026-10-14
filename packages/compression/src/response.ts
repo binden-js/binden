@@ -8,6 +8,7 @@ import {
 import {
   type ICompressEncodings,
   type ICompressor,
+  type ICompressorOptions,
   createCompressor,
 } from "./codings.js";
 import {
@@ -24,6 +25,7 @@ export interface ISettings {
   readonly encodings: readonly ICompressEncodings[];
   readonly threshold: number;
   readonly filter: ICompressionFilter;
+  readonly compressors: ICompressorOptions;
 }
 
 /**
@@ -536,7 +538,7 @@ export class CompressedResponse {
    */
   #start(coding: ICompressEncodings): ICompressor {
     const response = this.#response;
-    const compressor = createCompressor(coding);
+    const compressor = createCompressor(coding, this.#settings.compressors);
     compressor
       .on("data", (chunk: Buffer) => {
         const accepted = this.#write(chunk);
