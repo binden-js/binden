@@ -93,6 +93,14 @@
     "README.md",
     "dist/index.d.ts",
     "dist/index.js",
+    "dist/src/codings.d.ts",
+    "dist/src/codings.js",
+    "dist/src/filter.d.ts",
+    "dist/src/filter.js",
+    "dist/src/negotiate.d.ts",
+    "dist/src/negotiate.js",
+    "dist/src/response.d.ts",
+    "dist/src/response.js",
     "package.json"
   ],
   "@binden/multipart": [
@@ -100,6 +108,20 @@
     "README.md",
     "dist/index.d.ts",
     "dist/index.js",
+    "dist/src/disk.d.ts",
+    "dist/src/disk.js",
+    "dist/src/file.d.ts",
+    "dist/src/file.js",
+    "dist/src/filename.d.ts",
+    "dist/src/filename.js",
+    "dist/src/info.d.ts",
+    "dist/src/info.js",
+    "dist/src/multipart.d.ts",
+    "dist/src/multipart.js",
+    "dist/src/options.d.ts",
+    "dist/src/options.js",
+    "dist/src/race.d.ts",
+    "dist/src/race.js",
     "package.json"
   ]
 }
