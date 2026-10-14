@@ -949,7 +949,10 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+    deepStrictEqual(
+      response.headers.get("Content-Type"),
+      `${ct_text}; charset=utf-8`,
+    );
     deepStrictEqual(data, text);
   });
 
@@ -964,7 +967,10 @@ suite("BindenResponse", () => {
     await serverPromise;
     const data = await response.text();
 
-    deepStrictEqual(response.headers.get("Content-Type"), ct_html);
+    deepStrictEqual(
+      response.headers.get("Content-Type"),
+      `${ct_html}; charset=utf-8`,
+    );
     deepStrictEqual(data, html);
   });
 

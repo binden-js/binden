@@ -179,14 +179,18 @@ export class BindenResponse<
     return this.setHeader("Content-Type", ct_json).send(msg);
   }
 
-  /** Send response as `text/plain` */
+  /** Send response as `text/plain; charset=utf-8` */
   public text(data: string): Promise<void> {
-    return this.setHeader("Content-Type", ct_text).send(data);
+    return this.setHeader("Content-Type", `${ct_text}; charset=utf-8`).send(
+      data,
+    );
   }
 
-  /** Send response as `text/html` */
+  /** Send response as `text/html; charset=utf-8` */
   public html(data: string): Promise<void> {
-    return this.setHeader("Content-Type", ct_html).send(data);
+    return this.setHeader("Content-Type", `${ct_html}; charset=utf-8`).send(
+      data,
+    );
   }
 
   /** Send response as `application/x-www-form-urlencoded` */
@@ -194,7 +198,6 @@ export class BindenResponse<
     return this.setHeader("Content-Type", ct_form).send(params.toString());
   }
 
-  /** Send a file */
   /** A response without a body: to `HEAD`, or with a 1xx, 204, 205 or 304 status */
   #bodiless(): boolean {
     return (
