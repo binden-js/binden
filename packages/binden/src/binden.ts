@@ -6,8 +6,9 @@ import { Context } from "./context.js";
 import { BindenError } from "./error.js";
 import defaultLogger from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
+import { property } from "./property.js";
 import { BindenRequest, type ITrustProxy } from "./request.js";
-import { BindenResponse, ct_text, ct_json } from "./response.js";
+import { BindenResponse, ct_json } from "./response.js";
 import { Router } from "./router.js";
 
 type IUseOptions = IStackItem | RegExp | string | null | undefined;
@@ -289,17 +290,37 @@ export class Binden {
 
       await this.#error_handler(context, error);
 
-      if (context.response.started) {
+      const { request, response } = context;
+      if (response.writableEnded) {
+        return;
+      } else if (response.started) {
+        // A reply that is not ended once the handler has settled (e.g. a
+        // `write()` without `end()`) would leave the client waiting
+        const unfinished =
+          "The provided `error_handler` has not ended its reply";
+        Binden.#log(
+          context,
+          "warn",
+          `${unfinished}. Destroying the socket`,
+          base,
+        );
+        request.destroy();
         return;
       }
       const ignored = "The provided `error_handler` has not replied";
       Binden.#log(context, "debug", ignored, base);
     }
-    Binden.#defaultErrorHandler(context, error);
+    await Binden.#defaultErrorHandler(context, error);
   }
 
-  /** Default reply to an error */
-  static #defaultErrorHandler(context: Context, error: unknown): void {
+  /**
+   * Default reply to an error, which may be any thrown value: its properties
+   * are read without trusting them (e.g. `throw null`, or a throwing getter)
+   */
+  static async #defaultErrorHandler(
+    context: Context,
+    error: unknown,
+  ): Promise<void> {
     const { response, request } = context;
     // Only the context and the error, whose serializers keep the input out of the logs
     const base = { context, error };
@@ -309,59 +330,57 @@ export class Binden {
     if (response.writableEnded) {
       // Sent (or being sent): destroying the socket would cut it
       log("debug", "`.end()` has been called. Leaving the response");
+      return;
     } else if (response.started) {
       // Part of the body may be sent (or compressed): ending the response would
       // make a truncated body look complete
       log("debug", "The response has been started. Destroying the socket");
-
       request.destroy();
-    } else {
-      // The framing and representation of the body that is not sent
-      for (const name of Binden.#representation) {
-        response.removeHeader(name);
-      }
+      return;
+    }
 
-      const errorStatus = Number((error as { status?: unknown }).status);
+    // The framing and representation of the body that is not sent
+    for (const name of Binden.#representation) {
+      response.removeHeader(name);
+    }
 
-      const status =
-        typeof STATUS_CODES[errorStatus] === "undefined"
-          ? DefaultErrorCode
-          : errorStatus;
+    const raw = property(error, "status");
+    const errorStatus =
+      typeof raw === "number" || typeof raw === "string" ? Number(raw) : NaN;
+    response.status(
+      typeof STATUS_CODES[errorStatus] === "undefined"
+        ? DefaultErrorCode
+        : errorStatus,
+    );
 
-      response.status(status);
-
-      const expose = Boolean((error as { expose?: unknown }).expose);
-
+    // Sent like any other response: with its cookies, framed by its status
+    const reply = (): Promise<void> => {
+      const expose = Boolean(property(error, "expose"));
+      const json = property(error, "json");
+      const message = property(error, "message");
       if (!expose) {
         log("debug", "Error should not be exposed");
-        response.end();
-        return;
-      }
-
-      const { json } = error as { json?: Record<string, unknown> };
-
-      if (json) {
+        return response.send();
+      } else if (typeof json === "object" && json !== null) {
         try {
-          const message = JSON.stringify(json);
-          response.setHeader("Content-Type", ct_json).end(message);
+          const body = JSON.stringify(json);
+          return response.setHeader("Content-Type", ct_json).send(body);
         } catch {
           log("warn", "`JSON.stringify` failed");
-          response.end();
+          return response.send();
         }
-        return;
-      }
-
-      const { message } = error as { message?: unknown };
-
-      if (typeof message !== "string" || !message) {
+      } else if (typeof message !== "string" || !message) {
         log("debug", "`message` is not a valid string");
-        response.end();
-        return;
-      } else if (typeof response.getHeader("Content-Type") === "undefined") {
-        response.setHeader("Content-Type", ct_text);
+        return response.send();
       }
+      return response.send(message);
+    };
 
-      response.end(message);
+    try {
+      await reply();
+    } catch {
+      // E.g. the client went away
+      log("debug", "The error reply has not been sent");
     }
   }
 

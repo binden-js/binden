@@ -19,6 +19,7 @@ import {
   Middleware,
   type IMiddlewareParams,
   Context,
+  Cookie,
   Router,
   ct_text,
   ct_json,
@@ -559,6 +560,97 @@ suite("Binden", () => {
         (error: Error) => error.name !== "AbortError",
       );
       ok(logged.output().includes("The error handler failed"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("replies 500 to any thrown value", async () => {
+    const thrown: Partial<Record<string, () => unknown>> = {
+      "/null": () => null,
+      // `undefined`
+      "/undefined": (): unknown => Reflect.get({}, "nothing"),
+      "/string": () => "error",
+      "/symbol": () => ({ status: Symbol("status") }),
+      "/getter": () => ({
+        get status(): never {
+          throw new Error("A throwing getter");
+        },
+      }),
+    };
+    app.use((context: Context) => {
+      throw thrown[context.url.pathname]?.();
+    });
+
+    for (const path of Object.keys(thrown)) {
+      const response = await fetch(`${url}${path}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      deepStrictEqual(response.status, 500, path);
+      deepStrictEqual(await response.text(), "", path);
+    }
+  });
+
+  test("sends the cookies of the response with an error reply", async () => {
+    app.use((context: Context) => {
+      context.response.cookies.add(new Cookie({ key: "session", value: "1" }));
+      throw new BindenError(401, { expose: true });
+    });
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+
+    deepStrictEqual(response.status, 401);
+    ok(response.headers.get("Set-Cookie")?.startsWith("session=1;") === true);
+    deepStrictEqual(await response.text(), "Unauthorized");
+  });
+
+  test("closes the connection when the `error_handler` does not end its reply", async () => {
+    const logged = await loggedApp({
+      error_handler: (context: Context): void => {
+        context.response.write("partial");
+      },
+    });
+    try {
+      logged.app.use(() => {
+        throw new BindenError(400);
+      });
+
+      // The truncated body is not taken as complete (and not left open): the
+      // client may not even get the headers
+      const outcome = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      })
+        .then(async (response) => response.text())
+        .then(
+          () => "complete",
+          (error: unknown) => (error as Error).name,
+        );
+      ok(outcome !== "complete" && outcome !== "AbortError", outcome);
+      ok(logged.output().includes("has not ended its reply"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("logs an error reply that cannot be sent", async () => {
+    const logged = await loggedApp();
+    try {
+      logged.app.use((context: Context) => {
+        context.request.destroy();
+        throw new BindenError(400);
+      });
+
+      await rejects(fetch(logged.url, { signal: AbortSignal.timeout(5000) }));
+      const deadline = Date.now() + 5000;
+      while (
+        !logged.output().includes("The error reply has not been sent") &&
+        Date.now() < deadline
+      ) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10);
+        });
+      }
+      ok(logged.output().includes("The error reply has not been sent"));
     } finally {
       await logged.close();
     }

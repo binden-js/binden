@@ -3,6 +3,7 @@ import { constants } from "node:os";
 import { Logger } from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
+import { property as get } from "./property.js";
 
 /** The request headers that the default logger keeps (others may carry credentials) */
 const requestHeaders = ["host", "user-agent", "content-type", "content-length"];
@@ -36,15 +37,6 @@ const errorCodes: ReadonlySet<string> = new Set([
   "ERR_STREAM_PREMATURE_CLOSE",
   "ERR_STREAM_WRITE_AFTER_END",
 ]);
-
-/** Reads a property, so that a throwing getter (or proxy) cannot break the logs */
-function get(value: object, key: string): unknown {
-  try {
-    return Reflect.get(value, key) as unknown;
-  } catch {
-    return null;
-  }
-}
 
 /** The name of the nearest known error class of a value (never one it defines itself) */
 function typeOf(value: object): string {
