@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
-import type { Stats } from "node:fs";
+import { createReadStream, type Stats } from "node:fs";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, suite, test } from "node:test";
 
@@ -216,6 +216,22 @@ suite("BindenResponse", () => {
 
     deepStrictEqual(response.headers.get("Content-Type"), null);
     ok(response.ok);
+  });
+
+  test(".send() (`writableEnded === true` releases a `Readable`)", async () => {
+    const source = createReadStream(filePath);
+    const settled = new Promise<unknown>((resolve) => {
+      server.once("request", (_request, response) => {
+        response.end(() => {
+          resolve(settle(response.send(source)));
+        });
+      });
+    });
+    await (await fetch(url)).text();
+
+    deepStrictEqual(await settled, null);
+    // Its file is closed
+    ok(source.destroyed);
   });
 
   test(".send() (with encoding)", async () => {

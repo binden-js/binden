@@ -76,6 +76,10 @@ export class BindenResponse<
     encoding?: BufferEncoding,
   ): Promise<void> {
     if (this.writableEnded) {
+      if (data instanceof Readable) {
+        // Nothing of it will be sent: release it (e.g. its file)
+        BindenResponse.#discard(data);
+      }
       return Promise.resolve();
     }
 
@@ -98,7 +102,7 @@ export class BindenResponse<
     if (data instanceof Readable) {
       if (this.#bodiless()) {
         // Nothing of the source would be sent: it is not read at all
-        data.destroy();
+        BindenResponse.#discard(data);
         const done = this.#finished(() => false);
         this.end();
         return done;
@@ -233,7 +237,8 @@ export class BindenResponse<
         .once("end", () => {
           this.end();
         })
-        .once("error", (error) => {
+        // Every error (also one emitted while the source is destroyed later)
+        .on("error", (error) => {
           // Nothing sent yet: the error can still be replied (see `.started`)
           if (!written) {
             this.#started = false;
@@ -245,6 +250,15 @@ export class BindenResponse<
         reject(error);
       });
     });
+  }
+
+  /** Destroys a source that will not be sent, whose errors are no longer of interest */
+  static #discard(source: Readable): void {
+    source
+      .on("error", () => {
+        // E.g. its file failed to close: nobody waits for it
+      })
+      .destroy();
   }
 
   /**
