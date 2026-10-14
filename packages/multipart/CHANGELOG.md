@@ -1,6 +1,6 @@
 # Changelog
 
-## <small>2.0.3 (2025-06-29)</small>
+## [2.0.3](https://github.com/binden-js/multipart/compare/v2.0.2...v2.0.3) (2025-06-29)
 
 - Merge branch 'main' into dependabot/npm_and_yarn/binden/tsconfig-3.0.0 ([9f25869](https://github.com/binden-js/multipart/commit/9f25869))
 - Merge pull request #104 from binden-js/dependabot/npm_and_yarn/husky-9.1.7 ([07272cb](https://github.com/binden-js/multipart/commit/07272cb)), closes [#104](https://github.com/binden-js/multipart/issues/104)
