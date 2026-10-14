@@ -261,6 +261,34 @@ describe("scripts/release.mjs", () => {
       }
       deepEqual(npmCalls("view", "install"), []);
     });
+
+    // The recover job validates its input with bash before anything of the repository runs
+    it(
+      "are validated the same way by the recover job",
+      { skip: process.platform === "win32" && "bash is not portable there" },
+      () => {
+        const workflow = readFileSync(
+          join(import.meta.dirname, "../.github/workflows/ci.yml"),
+          "utf8",
+        );
+        const { pattern } =
+          /^\s+semver='(?<pattern>[^']+)'$/mu.exec(workflow)?.groups ?? {};
+        ok(pattern, "semver='…' in the recover job");
+        for (const [versions, expected] of [
+          [validVersions, 0],
+          [[...invalidVersions, ...buildVersions], 1],
+        ]) {
+          for (const version of versions) {
+            const { status } = spawnSync(
+              "bash",
+              ["-c", "[[ $1 =~ $2 ]]", "bash", version, pattern],
+              { env: { ...process.env, LC_ALL: "C" }, timeout: 10_000 },
+            );
+            equal(status, expected, JSON.stringify(version));
+          }
+        }
+      },
+    );
   });
 
   describe("verify", () => {
