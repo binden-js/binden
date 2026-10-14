@@ -1,65 +1,467 @@
-/* eslint-disable init-declarations, sort-imports */
-import { deepEqual, ok, throws } from "node:assert/strict";
-import { Agent, request, Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, it } from "node:test";
-import { Binden, Context } from "binden";
+import { Agent, request as httpRequest } from "node:http";
+import { Binden, BindenError, type Context } from "binden";
+import {
+  RecordingLogger,
+  body,
+  encode,
+  listen,
+  part,
+  post,
+  send,
+  serve,
+  type,
+  upload,
+} from "./helpers.js";
+import { deepEqual, equal, ok, throws } from "node:assert/strict";
+import { describe, it } from "node:test";
 import multipart, { Multipart } from "../index.js";
 
-let url = "";
+/** The entries of a form: a file as its name, type and content */
+async function entries(form: unknown): Promise<unknown[]> {
+  ok(form instanceof FormData);
+  const result: unknown[] = [];
+  for (const [name, value] of form) {
+    result.push(
+      typeof value === "string"
+        ? [name, value]
+        : [name, value.name, value.type, await value.text()],
+    );
+  }
+  return result;
+}
+
+/** A middleware that keeps the entries of the parsed form */
+function keep(parsed: unknown[]): (context: Context) => Promise<void> {
+  return async (context: Context): Promise<void> => {
+    parsed.push(...(await entries(context.request.body)));
+    await context.send();
+  };
+}
+
+/** The limits of busboy, and a body that reaches each of them */
+const limits = [
+  ["fields", { fields: 1 }, [part('name="a"', "1"), part('name="b"', "2")]],
+  [
+    "files",
+    { files: 1 },
+    [part('name="a"; filename="a"', "1"), part('name="b"; filename="b"', "2")],
+  ],
+  ["parts", { parts: 1 }, [part('name="a"', "1"), part('name="b"', "2")]],
+  ["fieldSize", { fieldSize: 3 }, [part('name="a"', "abcdef")]],
+  ["fileSize", { fileSize: 3 }, [part('name="a"; filename="a"', "abcdef")]],
+] as const;
 
 describe("Multipart", () => {
-  let app: Binden;
-  let server: Server;
+  it("parses the fields and the files of a form, in their order", async (t) => {
+    const form = new FormData();
+    form.append("name1", "value11");
+    form.append(
+      "file1",
+      new File(['{"hello":"world"}'], "file11.json", {
+        type: "application/json",
+      }),
+    );
+    form.append("name1", "value12");
+    form.append(
+      "file1",
+      new File(["<html></html>"], "file12.html", { type: "text/html" }),
+    );
+    form.append("name2", "value2");
+    form.append(
+      "file2",
+      new File(["Hello World"], "file2.txt", { type: "text/plain" }),
+    );
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [multipart(), keep(parsed)]);
 
-  beforeEach(async () => {
-    app = new Binden();
-    await new Promise<void>((resolve) => {
-      server = app.createServer().listen(0, () => {
-        url = `http://localhost:${(server.address() as AddressInfo).port}/`;
-        resolve();
-      });
-    });
+    const { body: data, type: content_type } = await encode(form);
+    const reply = await post(url, data, { "Content-Type": content_type });
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [
+      ["name1", "value11"],
+      ["file1", "file11.json", "application/json", '{"hello":"world"}'],
+      ["name1", "value12"],
+      ["file1", "file12.html", "text/html", "<html></html>"],
+      ["name2", "value2"],
+      ["file2", "file2.txt", "text/plain", "Hello World"],
+    ]);
   });
 
-  it("`limit` (the size of the body, all parts included)", async () => {
-    const received: unknown[] = [];
-    app.use(new Multipart({ limit: 1024 }), async (ct: Context) => {
-      received.push((ct.request.body as FormData).get("field"));
-      await ct.send();
-    });
-    // Keeps its connections (unlike the global agent of the tests)
-    const agent = new Agent({ keepAlive: true });
-    const send = async (form: FormData): Promise<unknown> => {
-      const encoded = new Request(url, { method: "POST", body: form });
-      const body = Buffer.from(await encoded.arrayBuffer());
-      const type = encoded.headers.get("Content-Type") ?? "";
-      return new Promise((resolve, reject) => {
-        request(url, {
-          agent,
-          method: "POST",
-          headers: { "Content-Type": type },
-        })
-          .on("response", (response) => {
-            response.resume().once("end", () => {
-              resolve([response.statusCode, response.headers.connection]);
-            });
-          })
-          .on("error", reject)
-          .end(body);
-      });
-    };
-    const small = new FormData();
-    small.append("field", "value");
-    const large = new FormData();
-    large.append("field", "value");
-    large.append("file", new File([new Uint8Array(1024)], "file.bin"));
+  it("parses a `boundary` that comes after another parameter", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [multipart(), keep(parsed)]);
 
-    deepEqual(await send(small), [200, "keep-alive"]);
-    // Not read further: the connection is closed after the reply
-    deepEqual(await send(large), [413, "close"]);
-    deepEqual(received, ["value"]);
-    agent.destroy();
+    const reply = await post(url, body(part('name="field"', "value")), {
+      "Content-Type": `multipart/form-data; charset=utf-8; boundary="binden-boundary"`,
+    });
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [["field", "value"]]);
+  });
+
+  it('names a part without a name `""`', async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [multipart(), keep(parsed)]);
+
+    const reply = await post(
+      url,
+      body(part('name=""', "value"), part('filename="a.txt"', "file")),
+    );
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [
+      ["", "value"],
+      ["", "a.txt", "text/plain", "file"],
+    ]);
+  });
+
+  it("skips the methods without a body", async (t) => {
+    const bodies: unknown[] = [];
+    const { url } = await serve(t, [
+      multipart(),
+      async (context: Context): Promise<void> => {
+        bodies.push(typeof context.request.body);
+        await context.send();
+      },
+    ]);
+
+    for (const method of ["GET", "HEAD", "OPTIONS", "TRACE"]) {
+      const reply = await send(url, {
+        method,
+        headers: { "Content-Type": type },
+      });
+      equal(reply.status, 200);
+    }
+    deepEqual(bodies, Array(4).fill("undefined"));
+  });
+
+  it("skips another media type, without reading its body", async (t) => {
+    const read: unknown[] = [];
+    const { url } = await serve(t, [
+      multipart(),
+      async (context: Context): Promise<void> => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of context.request) {
+          chunks.push(chunk as Buffer);
+        }
+        const text = Buffer.concat(chunks).toString();
+        read.push([typeof context.request.body, text]);
+        await context.send();
+      },
+    ]);
+
+    const data = body(part('name="field"', "value"));
+    for (const content_type of [
+      null,
+      "text/plain",
+      "application/json; charset=utf-8",
+      `multipart/mixed; boundary=binden-boundary`,
+      `multipart/form-data-like; boundary=binden-boundary`,
+    ]) {
+      const headers =
+        content_type === null ? {} : { "Content-Type": content_type };
+      const reply = await send(url, { headers, body: data });
+      equal(reply.status, 200);
+    }
+    deepEqual(read, Array(5).fill(["undefined", data]));
+  });
+
+  it("skips a request that has already been parsed", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [
+      new Multipart(),
+      new Multipart(),
+      keep(parsed),
+    ]);
+
+    const reply = await post(url, body(part('name="field"', "value")));
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [["field", "value"]]);
+  });
+
+  it("replies `400` to a missing or invalid `boundary`", async (t) => {
+    let reached = false;
+    const { url } = await serve(t, [
+      multipart(),
+      (): void => {
+        reached = true;
+      },
+    ]);
+
+    const data = body(part('name="field"', "value"));
+    for (const [content_type, used] of [
+      ["multipart/form-data", ""],
+      ["Multipart/Form-Data; boundary=", ""],
+      ...["a".repeat(71), "binden-boundary ", "binden@boundary"].map(
+        (invalid) => [`multipart/form-data; boundary="${invalid}"`, invalid],
+      ),
+    ]) {
+      // A body of that boundary, which busboy would parse
+      const reply = await send(url, {
+        headers: { "Content-Type": content_type },
+        body: data.replaceAll("binden-boundary", used),
+      });
+      deepEqual([reply.status, reply.headers.connection], [400, "close"]);
+    }
+    equal(reached, false);
+
+    // A parameter that busboy does not parse
+    const malformed = await send(url, {
+      headers: { "Content-Type": `${type}; charset` },
+      body: data,
+    });
+    equal(malformed.status, 400);
+
+    // The longest boundary, with characters other than letters and digits
+    const longest = `${"a".repeat(57)}'()+_,-./:= ?`;
+    const parsed: unknown[] = [];
+    const other = await serve(t, [multipart(), keep(parsed)]);
+    const reply = await send(other.url, {
+      headers: { "Content-Type": `multipart/form-data; boundary="${longest}"` },
+      body: data.replaceAll("binden-boundary", longest),
+    });
+    equal(reply.status, 200);
+    deepEqual(parsed, [["field", "value"]]);
+  });
+
+  it("replies `400` to a malformed body", async (t) => {
+    let reached = false;
+    const { url } = await serve(t, [
+      multipart(),
+      (): void => {
+        reached = true;
+      },
+    ]);
+
+    for (const data of [
+      "Hello World",
+      "",
+      body(part('name="field"', "value", ["Content-Type: text/plain\u0001"])),
+      [`--binden-boundary`, `Content-Disposition: form-data; name="a"`].join(
+        "\r\n",
+      ),
+      part('name="file"; filename="file.txt"', "Hello World"),
+    ]) {
+      const reply = await post(url, data);
+      deepEqual([reply.status, reply.headers.connection], [400, "close"]);
+    }
+    equal(reached, false);
+  });
+
+  it("replies `415` to a field of an unsupported charset", async (t) => {
+    const { url } = await serve(t, [multipart()]);
+
+    const reply = await post(
+      url,
+      body(
+        part('name="field"', "value", [
+          "Content-Type: text/plain; charset=koi8-r",
+        ]),
+      ),
+    );
+
+    deepEqual([reply.status, reply.headers.connection], [415, "close"]);
+  });
+
+  for (const [name, config, parts] of limits) {
+    it(`replies \`413\` once the \`${name}\` limit is reached`, async (t) => {
+      let reached = false;
+      const { url } = await serve(t, [
+        multipart({ limits: config }),
+        (): void => {
+          reached = true;
+        },
+      ]);
+
+      const reply = await post(url, body(...parts));
+
+      deepEqual([reply.status, reply.headers.connection], [413, "close"]);
+      equal(reached, false);
+    });
+  }
+
+  it("truncates the fields to `fieldSize` (`throw_limits: false`)", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [
+      new Multipart({
+        config: { limits: { fieldSize: 3 } },
+        throw_limits: false,
+      }),
+      keep(parsed),
+    ]);
+
+    const reply = await post(url, body(part('name="a"', "abcdef")));
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [["a", "abc"]]);
+  });
+
+  it("drops the fields over `fields` (`throw_limits: false`)", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [
+      new Multipart({ config: { limits: { fields: 1 } }, throw_limits: false }),
+      keep(parsed),
+    ]);
+
+    const reply = await post(
+      url,
+      body(part('name="a"', "1"), part('name="b"', "2")),
+    );
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [["a", "1"]]);
+  });
+
+  it("drops the files over `files` (`throw_limits: false`)", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [
+      new Multipart({ config: { limits: { files: 1 } }, throw_limits: false }),
+      keep(parsed),
+    ]);
+
+    const reply = await post(
+      url,
+      body(
+        part('name="a"; filename="a.txt"', "1"),
+        part('name="b"; filename="b.txt"', "2"),
+      ),
+    );
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [["a", "a.txt", "text/plain", "1"]]);
+  });
+
+  it("truncates the files to `fileSize` (`throw_limits: false`)", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [
+      new Multipart({
+        config: { limits: { fileSize: 3 } },
+        throw_limits: false,
+      }),
+      keep(parsed),
+    ]);
+
+    const reply = await post(
+      url,
+      body(
+        part('name="a"; filename="a.txt"', "abcdef"),
+        part('name="b"; filename="b.txt"', "ab"),
+      ),
+    );
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [
+      ["a", "a.txt", "text/plain", "abc"],
+      ["b", "b.txt", "text/plain", "ab"],
+    ]);
+  });
+
+  it("drops the parts over `parts` (`throw_limits: false`)", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [
+      new Multipart({ config: { limits: { parts: 2 } }, throw_limits: false }),
+      keep(parsed),
+    ]);
+
+    const reply = await post(
+      url,
+      body(
+        part('name="file"; filename="file.txt"', "123"),
+        part('name="k1"', "v1"),
+        part('name="k2"', "v2"),
+      ),
+    );
+
+    equal(reply.status, 200);
+    deepEqual(parsed, [
+      ["file", "file.txt", "text/plain", "123"],
+      ["k1", "v1"],
+    ]);
+  });
+
+  it("`limit` (the size of the body, all parts included)", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [
+      new Multipart({ limit: 1024, throw_limits: false }),
+      keep(parsed),
+    ]);
+    // Keeps its connections, unless the server closes them
+    const agent = new Agent({ keepAlive: true });
+    t.after(() => {
+      agent.destroy();
+    });
+    const headers = { "Content-Type": type };
+    const small = body(part('name="field"', "value"));
+    const large = body(
+      part('name="field"', "value"),
+      part('name="file"; filename="file.bin"', "a".repeat(1024)),
+    );
+
+    const replies = [
+      await send(url, { headers, body: small, agent }),
+      await send(url, { headers, body: large, agent }),
+    ].map(({ status, headers: { connection } }) => [status, connection]);
+
+    deepEqual(replies, [
+      [200, "keep-alive"],
+      [413, "close"],
+    ]);
+    deepEqual(parsed, [["field", "value"]]);
+  });
+
+  it("`limit` counts the bytes of a body without a `Content-Length`", async (t) => {
+    let reached = false;
+    const { url } = await serve(t, [
+      new Multipart({ limit: 64 }),
+      (): void => {
+        reached = true;
+      },
+    ]);
+
+    // The parts that busboy reads after the limit are ignored
+    const reply = await send(url, {
+      headers: { "Content-Type": type, "Transfer-Encoding": "chunked" },
+      body: body(
+        part('name="a"', "a".repeat(64)),
+        part('name="b"', "b"),
+        part('name="c"; filename="c.txt"', "c"),
+      ),
+    });
+
+    deepEqual([reply.status, reply.headers.connection], [413, "close"]);
+    equal(reached, false);
+  });
+
+  it("`limit` refuses a larger `Content-Length` before reading the body", async (t) => {
+    let reached = false;
+    const { url } = await serve(t, [
+      new Multipart({ limit: 1024 }),
+      (): void => {
+        reached = true;
+      },
+    ]);
+
+    // Only the headers are sent: the reply does not wait for the body
+    const reply = await new Promise<number | undefined>((resolve, reject) => {
+      const client = httpRequest(url, {
+        method: "POST",
+        headers: { "Content-Type": type, "Content-Length": 2048 },
+        signal: AbortSignal.timeout(5000),
+      });
+      client
+        .once("response", (response) => {
+          response.resume();
+          resolve(response.statusCode);
+          client.destroy();
+        })
+        .once("error", reject)
+        .flushHeaders();
+    });
+
+    equal(reply, 413);
+    equal(reached, false);
   });
 
   it("`limit` (invalid)", () => {
@@ -71,441 +473,67 @@ describe("Multipart", () => {
     }
   });
 
-  it("Skips when method is `GET`", async () => {
-    const message = { success: true };
-    const assert = async (ct: Context): Promise<void> => {
-      ok(ct.request.method === "GET");
-      ok(typeof ct.request.body === "undefined");
-      await ct.json(message);
-    };
-
-    app.use(new Multipart(), assert);
-
-    const response = await fetch(url);
-    const data = (await response.json()) as unknown;
-    deepEqual(response.status, 200);
-    deepEqual(data, message);
-  });
-
-  it("Skips when method is `HEAD`", async () => {
-    const assert = async (ct: Context): Promise<void> => {
-      ok(ct.request.method === "HEAD");
-      ok(typeof ct.request.body === "undefined");
-      await ct.send();
-    };
-
-    app.use(new Multipart(), assert);
-
-    const response = await fetch(url, { method: "HEAD" });
-    const data = (await response.text()) as unknown;
-    deepEqual(response.status, 200);
-    deepEqual(data, "");
-  });
-
-  it("Skips when no `Content-Type` header is present", async () => {
-    const body = "Hello World";
-    const assert = async (ct: Context): Promise<void> => {
-      ok(typeof ct.request.headers["content-type"] === "undefined");
-      ok(typeof ct.request.body === "undefined");
-      await ct.send();
-    };
-
-    app.use(multipart(), assert);
-
-    await new Promise<void>((resolve, reject) => {
-      request(url, { method: "POST" })
-        .on("response", (response) => {
-          const chunks: Buffer[] = [];
-          response
-            .on("data", (chunk: Buffer) => {
-              chunks.push(chunk);
-            })
-            .on("error", reject)
-            .on("end", () => {
-              try {
-                deepEqual(Buffer.concat(chunks).toString(), "");
-                ok(response.statusCode === 200);
-                resolve();
-              } catch (error) {
-                reject(error as Error);
-              }
-            });
-        })
-        .on("error", reject)
-        .end(body);
+  it("logs with the logger of the context, as `Multipart`", async (t) => {
+    const logger = new RecordingLogger();
+    const { url } = await serve(t, [multipart({ limits: { fields: 0 } })], {
+      logger,
     });
-  });
 
-  it("Skips when `Content-Type` is not `multipart/form-data`", async () => {
-    const body = "Hello World";
-    const ct = "image/jpeg";
-    const assert = async (context: Context): Promise<void> => {
-      deepEqual(context.request.headers["content-type"], ct);
-      ok(typeof context.request.body === "undefined");
-      await context.send();
-    };
+    const reply = await post(url, body(part('name="a"', "1")));
 
-    app.use(multipart(), assert);
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": ct },
-      body,
-    });
-    const data = (await response.text()) as unknown;
-    deepEqual(response.status, 200);
-    deepEqual(data, "");
-  });
-
-  it("Skips when `multipart/form-data` is missing `boundary`", async () => {
-    const body = "Hello World";
-    const form_data = "multipart/form-data";
-    const assert = async (ct: Context): Promise<void> => {
-      deepEqual(ct.request.headers["content-type"], form_data);
-      ok(typeof ct.request.body === "undefined");
-      await ct.send();
-    };
-
-    app.use(multipart(), assert);
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": form_data },
-      body,
-    });
-    const data = (await response.text()) as unknown;
-    deepEqual(response.status, 200);
-    deepEqual(data, "");
-  });
-
-  it("Parses body as `FormData`", async () => {
-    const msg = { success: true };
-    const body = new FormData();
-    body.append("name1", "value11");
-    body.append("name1", "value12");
-    body.append("name2", "value2");
-    const file11 = new File(
-      [JSON.stringify({ hello: "world" })],
-      "file11.json",
-      { type: "application/json" },
+    equal(reply.status, 413);
+    const record = logger.records.find(
+      ({ message }) => message === "The multipart body has been refused",
     );
-    const file12 = new File(["<html></html>"], "file12.html", {
-      type: "plain/html",
-    });
-    const file2 = new File(["Hello World"], "file2.txt", {
-      type: "plain/txt",
-    });
-    body.append("file1", file11);
-    body.append("file1", file12);
-    body.append("file2", file2);
-
-    const assert = async (context: Context): Promise<void> => {
-      deepEqual(context.request.content_type?.type, "multipart/form-data");
-      ok(context.request.content_type.boundary !== null);
-      const { body: actual } = context.request;
-      ok(actual instanceof FormData);
-      deepEqual(actual, body);
-      for (const key in actual.keys()) {
-        deepEqual(actual.getAll(key), body.getAll(key));
-      }
-      const [actual_file11, actual_file12] = actual.getAll("file1") as File[];
-      deepEqual(actual_file11.name, file11.name);
-      deepEqual(actual_file11.size, file11.size);
-      deepEqual(actual_file11.type, file11.type);
-      deepEqual(actual_file12.name, file12.name);
-      deepEqual(actual_file12.type, file12.type);
-      deepEqual(actual_file12.size, file12.size);
-      const [files2] = actual.getAll("file2") as File[];
-      deepEqual(files2.name, file2.name);
-      deepEqual(files2.type, file2.type);
-      deepEqual(files2.size, file2.size);
-      await context.json(msg);
-    };
-
-    app.use(multipart(), assert);
-
-    const response = await fetch(url, { method: "POST", body });
-    const data = (await response.json()) as unknown;
-    deepEqual(response.status, 200);
-    deepEqual(data, msg);
+    deepEqual(
+      [record?.level, record?.bindings.middleware, record?.extra],
+      ["debug", "Multipart", { status: 413 }],
+    );
   });
+});
 
-  it("Parses a `boundary` that comes after another parameter", async () => {
-    const boundary = "binden-boundary";
-    const body = [
-      `--${boundary}`,
-      `Content-Disposition: form-data; name="field"`,
-      "",
-      "value",
-      `--${boundary}--`,
-      "",
-    ].join("\r\n");
-    let field: unknown = null;
-    app.use(multipart(), async (context: Context): Promise<void> => {
-      const { body: parsed } = context.request;
-      field = parsed instanceof FormData ? parsed.get("field") : null;
-      await context.send();
-    });
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": `multipart/form-data; charset=utf-8; boundary=${boundary}`,
+describe("Multipart (refusal)", () => {
+  it("replies to a client that is still sending its body", async (t) => {
+    let failure: unknown = null;
+    const parser = new Multipart({ config: { limits: { fileSize: 4 } } });
+    const { url } = await serve(t, [
+      async (context: Context): Promise<void> => {
+        await parser.run(context).catch((error: unknown) => {
+          failure = error;
+          throw error;
+        });
       },
-      body,
-    });
+    ]);
 
-    deepEqual(response.status, 200);
-    deepEqual(field, "value");
-  });
-
-  it("Replies with 415 error when request body is not a valid FormData", async () => {
-    const ct = "multipart/form-data; boundary=----formdata-undici-064882379910";
-
-    app.use(multipart());
-
-    const response = await fetch(url, {
-      method: "POST",
-      body: "Hello World",
-      headers: { "Content-Type": ct },
-    });
-    const data = await response.text();
-    deepEqual(response.status, 415);
-    deepEqual(data, "");
-  });
-
-  it("Replies with 415 error when FormData reaches the `fields` limit (by default)", async () => {
-    const body = new FormData();
-    body.append("k1", "v1");
-    body.append("k2", "v2");
-
-    app.use(multipart({ limits: { fields: 1 } }));
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 415);
-  });
-
-  it("Passes an incomplete FormData when it reaches the `fields` limit (`throw_limits = true`)", async () => {
-    const body = new FormData();
-    body.append("k1", "v1");
-    body.append("k2", "v2");
-
-    const assert = (context: Context): Promise<void> => {
-      ok(context.request.body instanceof FormData);
-      deepEqual(context.request.body.getAll("k1"), ["v1"]);
-      ok(context.request.body.get("k2") === null);
-      return context.send();
-    };
-
-    app.use(
-      new Multipart({ config: { limits: { fields: 1 } }, throw_limits: false }),
-      assert,
+    // The body is never complete: the reply comes before it
+    const reply = await upload(
+      url,
+      part('name="file"; filename="file.bin"', "a".repeat(64)),
     );
 
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 200);
+    deepEqual(reply, [413, "close"]);
+    ok(failure instanceof BindenError);
+    equal(failure.status, 413);
   });
 
-  it("Replies with 415 error when a field reaches the `fieldSize` limit (by default)", async () => {
-    const body = new FormData();
-    body.append("k1", "abcdef");
-
-    app.use(multipart({ limits: { fieldSize: 3 } }));
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 415);
-  });
-
-  it("Passes a truncated field when it reaches the `fieldSize` limit (`throw_limits = false`)", async () => {
-    const body = new FormData();
-    body.append("k1", "abcdef");
-
-    const assert = (context: Context): Promise<void> => {
-      ok(context.request.body instanceof FormData);
-      deepEqual(context.request.body.getAll("k1"), ["abc"]);
-      return context.send();
-    };
-
-    app.use(
-      new Multipart({
-        config: { limits: { fieldSize: 3 } },
-        throw_limits: false,
-      }),
-      assert,
-    );
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 200);
-  });
-
-  it("Replies with 415 error when FormData reaches the `files` limit (by default)", async () => {
-    const body = new FormData();
-    body.append("file1", new File([Buffer.allocUnsafe(50)], "file1.txt"));
-    body.append("file2", new File([Buffer.allocUnsafe(150)], "file2.txt"));
-
-    app.use(multipart({ limits: { files: 1 } }));
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 415);
-  });
-
-  it("Passes an incomplete FormData when it reaches the `files` limit (`throw_limits = true`)", async () => {
-    const body = new FormData();
-    const file1 = new File([Buffer.allocUnsafe(50)], "file1.txt", {
-      type: "application/octet-stream",
-    });
-    const file2 = new File([Buffer.allocUnsafe(150)], "file2.txt", {
-      type: "application/octet-stream",
-    });
-    body.append("file1", file1);
-    body.append("file2", file2);
-
-    const assert = (context: Context): Promise<void> => {
-      ok(context.request.body instanceof FormData);
-
-      const actual_file1 = context.request.body.get("file1");
-      const actual_file2 = context.request.body.get("file2");
-
-      ok(actual_file1 instanceof File);
-      ok(actual_file2 === null);
-
-      deepEqual(actual_file1.name, file1.name);
-      deepEqual(actual_file1.size, file1.size);
-      deepEqual(actual_file1.type, file1.type);
-
-      return context.send();
-    };
-
-    app.use(
-      new Multipart({ config: { limits: { files: 1 } }, throw_limits: false }),
-      assert,
-    );
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 200);
-  });
-
-  it("Replies with 415 error when FormData reaches the `fileSize` limit (by default)", async () => {
-    const body = new FormData();
-    body.append("file1", new File([Buffer.allocUnsafe(50)], "file1.txt"));
-    body.append("file2", new File([Buffer.allocUnsafe(150)], "file2.txt"));
-
-    app.use(multipart({ limits: { fileSize: 100 } }));
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 415);
-  });
-
-  it("Passes an incomplete FormData when it reaches the `fileSize` limit (`throw_limits = true`)", async () => {
-    const body = new FormData();
-    const file1 = new File([Buffer.allocUnsafe(50)], "file1.txt", {
-      type: "application/octet-stream",
-    });
-    const file2 = new File([Buffer.allocUnsafe(150)], "file2.txt", {
-      type: "application/octet-stream",
-    });
-    body.append("file1", file1);
-    body.append("file2", file2);
-
-    const assert = (context: Context): Promise<void> => {
-      ok(context.request.body instanceof FormData);
-
-      const actual_file1 = context.request.body.get("file1");
-      const actual_file2 = context.request.body.get("file2");
-
-      ok(actual_file1 instanceof File);
-      ok(actual_file2 instanceof File);
-
-      deepEqual(actual_file1.name, file1.name);
-      deepEqual(actual_file1.size, file1.size);
-      deepEqual(actual_file1.type, file1.type);
-
-      deepEqual(actual_file2.name, file2.name);
-      deepEqual(actual_file2.size, 100);
-      deepEqual(actual_file2.type, file2.type);
-
-      return context.send();
-    };
-
-    app.use(
-      new Multipart({
-        config: { limits: { fileSize: 100 } },
-        throw_limits: false,
-      }),
-      assert,
-    );
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 200);
-  });
-
-  it("Replies with 415 error when FormData reaches the `parts` limit (by default)", async () => {
-    const body = new FormData();
-    const file = new File(["123"], "file.txt", {
-      type: "plain/txt",
-    });
-    body.append("file", file);
-    body.append("k1", "v1");
-    body.append("k2", "v2");
-
-    app.use(multipart({ limits: { parts: 2 } }));
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 415);
-  });
-
-  it("Passes an incomplete FormData when it reaches the `parts` limit (`throw_limits = true`)", async () => {
-    const body = new FormData();
-    const file = new File(["123"], "file.txt", {
-      type: "plain/txt",
-    });
-    body.append("file", file);
-    body.append("k1", "v1");
-    body.append("k2", "v2");
-
-    const assert = (context: Context): Promise<void> => {
-      ok(context.request.body instanceof FormData);
-
-      const actual_file = context.request.body.get("file");
-      ok(actual_file instanceof File);
-      deepEqual(actual_file.name, file.name);
-      deepEqual(actual_file.size, file.size);
-      deepEqual(actual_file.type, file.type);
-      deepEqual(context.request.body.get("k1"), "v1");
-      deepEqual(context.request.body.get("k2"), null);
-
-      return context.send();
-    };
-
-    app.use(
-      new Multipart({ config: { limits: { parts: 2 } }, throw_limits: false }),
-      assert,
-    );
-
-    const response = await fetch(url, { method: "POST", body });
-    await response.text();
-    deepEqual(response.status, 200);
-  });
-
-  afterEach(async () => {
-    server.closeIdleConnections();
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
+  it("destroys the request once its response has started", async () => {
+    const outcomes: unknown[] = [];
+    const parser = new Multipart({ limit: 16 });
+    const app = new Binden().use(async (context: Context) => {
+      context.response.flushHeaders();
+      await parser.run(context).catch((error: unknown) => {
+        outcomes.push((error as BindenError).status, context.request.destroyed);
       });
     });
+    const test = await listen(app);
+
+    await post(test.url, body(part('name="a"', "a".repeat(64)))).catch(
+      (error: unknown) => {
+        outcomes.push((error as NodeJS.ErrnoException).code);
+      },
+    );
+    await test.close();
+
+    deepEqual(outcomes, [413, true, "ECONNRESET"]);
   });
 });
