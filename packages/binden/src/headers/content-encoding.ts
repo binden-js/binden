@@ -1,4 +1,5 @@
-export type IEncodings = "br" | "compress" | "deflate" | "gzip" | "x-gzip";
+export type IEncodings =
+  "br" | "compress" | "deflate" | "gzip" | "x-gzip" | "zstd";
 
 export interface IContentEncoding {
   encoding: IEncodings;
@@ -55,6 +56,7 @@ export class ContentEncoding implements IContentEncoding {
     "compress",
     "deflate",
     "br",
+    "zstd",
   ]);
 }
 

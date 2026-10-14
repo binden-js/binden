@@ -33,6 +33,12 @@ suite("ContentEncoding", () => {
       "br",
       "x-gzip",
     ]);
+    // RFC 8878
+    deepStrictEqual(parse("gzip, Zstd"), ["zstd", "gzip"]);
+    deepStrictEqual(
+      new ContentEncoding({ encoding: "zstd" }).toString(),
+      "zstd",
+    );
     // An unknown or malformed coding: the content cannot be decoded
     for (const input of ["gzip, ignored", "gzip;q=1", "gzip br", "identity"]) {
       deepStrictEqual(parse(input), null, input);

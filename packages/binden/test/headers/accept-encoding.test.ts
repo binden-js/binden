@@ -62,6 +62,14 @@ suite("AcceptEncoding", () => {
     deepStrictEqual(parsed[6].toString(), "identity;q=0.1");
   });
 
+  test("AcceptEncoding.fromString() (zstd, RFC 8878)", () => {
+    deepStrictEqual(
+      AcceptEncoding.fromString("ZSTD;q=0.9, br").map((e) => e.toString()),
+      ["br", "zstd;q=0.9"],
+    );
+    deepStrictEqual(new AcceptEncoding({ encoding: "zstd" }).encoding, "zstd");
+  });
+
   test("AcceptEncoding.fromString() (case and whitespace insensitive)", () => {
     const parsed = AcceptEncoding.fromString(
       "GZIP;Q=0.5, Br ; q = 0.4, deflate; q=1, X-Gzip",
