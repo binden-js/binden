@@ -28,6 +28,7 @@ import {
 import { BindenError, type ISendFileOptions } from "../index.js";
 import { contentTypeOf } from "../src/mime.js";
 import { relativeSegments, within } from "../src/send-file.js";
+import { kSeal } from "../src/seal.js";
 import { type IReply, type ITestServer, listen } from "./http.js";
 
 interface IServed extends IReply {
@@ -565,6 +566,53 @@ suite("sendFile", () => {
       validator,
       "",
     ]);
+  });
+
+  test("`304 Not Modified` has the length of the whole file", async () => {
+    const file = join(root, "index.html");
+    const length = `${Buffer.byteLength(html)}`;
+    const send = async (
+      method: string,
+      headers: Record<string, string>,
+    ): Promise<[number, unknown, unknown, number]> => {
+      const { status: code, ...reply } = await serve(
+        file,
+        {},
+        { method, headers },
+      );
+      return [
+        code,
+        reply.headers["content-length"],
+        reply.headers["content-type"],
+        reply.body.length,
+      ];
+    };
+    const type = "text/html; charset=utf-8";
+    for (const method of ["GET", "HEAD"]) {
+      deepStrictEqual(
+        await send(method, { "If-None-Match": "*", Range: "bytes=0-1" }),
+        [304, length, type, 0],
+        method,
+      );
+    }
+    // Not of the file
+    const [code, failed, , size] = await send("GET", { "If-Match": `"x"` });
+    deepStrictEqual([code, failed, size], [412, "0", 0]);
+  });
+
+  test("a `304` that is late writes nothing", async () => {
+    const handled = server.handle(async (_request, response) => {
+      const sent = response.sendFile(join(root, "index.html"));
+      // Sealed while the file is opened
+      response[kSeal]();
+      await sent;
+      ok(!response.headersSent);
+      response.statusCode = 503;
+      response.end();
+    });
+    const reply = await server.request({ headers: { "If-None-Match": "*" } });
+    deepStrictEqual(await handled, null);
+    deepStrictEqual(reply.status, 503);
   });
 
   test("options (`last_modified`)", async () => {

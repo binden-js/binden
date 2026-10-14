@@ -427,14 +427,7 @@ export class BindenResponse<
         ? data
         : data.toString();
 
-    if (this.#notModified(body, encoding)) {
-      // The validators and the other headers of the `200` response, no body
-      this.statusCode = 304;
-      this.#frame(null);
-      this.end();
-      return done;
-    }
-
+    // Also on a `304` that stands for the `200` (see below)
     if (
       !this.headersSent &&
       typeof this.getHeader("Content-Type") === "undefined" &&
@@ -444,7 +437,14 @@ export class BindenResponse<
       this.setHeader("Content-Type", ct_text);
     }
 
-    this.#frame(Buffer.byteLength(body, encoding));
+    const length = Buffer.byteLength(body, encoding);
+
+    if (this.#notModified(body, encoding)) {
+      this.#endNotModified(length);
+      return done;
+    }
+
+    this.#frame(length);
 
     if (this.#bodiless()) {
       // The headers of the body (as for `GET`), but not the body itself
@@ -499,6 +499,32 @@ export class BindenResponse<
       typeof etag === "string" &&
       matches(ifNoneMatch, etag, false)
     );
+  }
+
+  /**
+   * Ends the response (whose headers are not sent yet) as `304 Not Modified`
+   * for a `200` whose body has `length` bytes: the validators and the other
+   * headers of the `200`, with its `Content-Length` (RFC 9110, section 8.6),
+   * but no body
+   */
+  #endNotModified(length: number): void {
+    this.statusCode = 304;
+    this.removeHeader("Transfer-Encoding");
+    this.setHeader("Content-Length", length);
+    this.end();
+  }
+
+  /**
+   * Sends `304 Not Modified` for a `200` whose body has `length` bytes (see
+   * `sendFile()`, whose headers are not sent yet), unless it is late
+   */
+  #sendNotModified(length: number): Promise<void> {
+    if (this.#sealed()) {
+      return Promise.resolve();
+    }
+    const done = this.#finished(() => false);
+    this.#endNotModified(length);
+    return done;
   }
 
   /**
@@ -869,7 +895,9 @@ export class BindenResponse<
     // Started at once (see `.started`), unless it fails before sending anything
     this.#started = true;
     try {
-      await sendFileTo(this, path, options);
+      await sendFileTo(this, path, options, (length) =>
+        this.#sendNotModified(length),
+      );
     } catch (error: unknown) {
       this.#started = false;
       throw error;

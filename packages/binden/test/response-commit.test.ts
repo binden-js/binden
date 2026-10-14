@@ -15,6 +15,7 @@ import {
   BindenResponse,
   Cookie,
   type IResponseOptions,
+  ct_text,
   validateResponseOptions,
 } from "../index.js";
 import { kSeal } from "../src/seal.js";
@@ -458,6 +459,7 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
           "Cache-Control": "max-age=60",
           Vary: "Accept",
           "Content-Length": 99,
+          "Transfer-Encoding": "chunked",
         });
         if (etag) {
           response.setHeader("ETag", etag);
@@ -476,15 +478,18 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
           vary: headers.vary,
           "cache-control": headers["cache-control"],
           "content-length": headers["content-length"] ?? null,
+          "transfer-encoding": headers["transfer-encoding"] ?? null,
         },
         body.toString(),
       ];
     };
+    // With the length of the `200` (not the stale one set before)
     const notModified = {
       etag: tag,
       vary: "Accept",
       "cache-control": "max-age=60",
-      "content-length": null,
+      "content-length": `${Buffer.byteLength(text)}`,
+      "transfer-encoding": null,
     };
 
     // The weak comparison
@@ -501,6 +506,29 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     deepStrictEqual((await check(`"other"`, { method: "POST" }))[0], 200);
     // The `ETag` of the application
     deepStrictEqual((await check(`"app"`, { etag: `W/"app"` }))[0], 304);
+
+    // The default `Content-Type` of `send()`, and the length of the body in
+    // its encoding, as on the `200`
+    const latin1 = "café";
+    for (const method of ["GET", "HEAD"]) {
+      const handled = app.handle((_request, response) =>
+        response.send(latin1, "latin1"),
+      );
+      const reply = await app.request({
+        method,
+        headers: { "If-None-Match": etagOf(Buffer.from(latin1, "latin1")) },
+      });
+      deepStrictEqual(await handled, null);
+      deepStrictEqual(
+        [
+          reply.status,
+          reply.headers["content-type"],
+          reply.headers["content-length"],
+        ],
+        [304, ct_text, "4"],
+        method,
+      );
+    }
   });
 
   test("no dynamic ETag by default", async () => {

@@ -921,7 +921,7 @@ await response
   .send("a,b\n1,2\n");
 ```
 
-- `.send()` - send data, framed by the final status: a body gets its exact `Content-Length` (also a stale one is replaced), 1xx, 204 and 304 responses have none, and 205 has `Content-Length: 0`. A response without a body (to `HEAD`, or with a 1xx, 204, 205 or 304 status) sends none: a `Readable` is destroyed without being read, and a response to `HEAD` gets the `Content-Length` of the body it would send to `GET`. It resolves once the response is flushed to the connection, and rejects when it cannot be sent (e.g. the client went away), or when a `Readable` fails, closes before its end, or does not have its `Content-Length`. Nothing sent yet, such an error can still be replied; otherwise the response is cut, so that the client knows that it is truncated. An unknown `encoding` of a string rejects with a `TypeError` before anything is sent.
+- `.send()` - send data, framed by the final status: a body gets its exact `Content-Length` (also a stale one is replaced), 1xx, 204 and 304 responses have none (but the `304` of the dynamic `ETag` and of `.sendFile()`, which has the length of the `200` that it stands for), and 205 has `Content-Length: 0`. A response without a body (to `HEAD`, or with a 1xx, 204, 205 or 304 status) sends none: a `Readable` is destroyed without being read, and a response to `HEAD` gets the `Content-Length` of the body it would send to `GET`. It resolves once the response is flushed to the connection, and rejects when it cannot be sent (e.g. the client went away), or when a `Readable` fails, closes before its end, or does not have its `Content-Length`. Nothing sent yet, such an error can still be replied; otherwise the response is cut, so that the client knows that it is truncated. An unknown `encoding` of a string rejects with a `TypeError` before anything is sent.
 
 ```typescript
 await response.send(
@@ -999,7 +999,7 @@ response.write("data: 1\n\n");
 await response.flush();
 ```
 
-- Dynamic `ETag` - with the `etag` option of the response (`new Binden({ etag: true })`, `false` by default), a `200` response to `GET` or `HEAD` whose body is a `Buffer` or a string (`.send()`, `.json()`, `.text()`, `.html()`, `.form()`) gets a strong `ETag` (the SHA-256 of the bytes that are sent, in base64url), unless it has an `ETag` already, and becomes `304 Not Modified` (without a body, with the same `ETag`, `Vary` and `Cache-Control`) when `If-None-Match` matches it by the weak comparison. With `http.createServer()`, set the option in a subclass
+- Dynamic `ETag` - with the `etag` option of the response (`new Binden({ etag: true })`, `false` by default), a `200` response to `GET` or `HEAD` whose body is a `Buffer` or a string (`.send()`, `.json()`, `.text()`, `.html()`, `.form()`) gets a strong `ETag` (the SHA-256 of the bytes that are sent, in base64url), unless it has an `ETag` already, and becomes `304 Not Modified` (without a body, with the same `ETag`, `Vary`, `Cache-Control` and `Content-Type`, and the `Content-Length` of the `200`, as RFC 9110 allows) when `If-None-Match` matches it by the weak comparison. With `http.createServer()`, set the option in a subclass
 
 ```typescript
 import { createServer } from "http";
@@ -1020,7 +1020,7 @@ const server = createServer({ ServerResponse: ETagResponse });
 - `.sendFile()` - Send a file with its `Last-Modified` (never in the future), a weak `ETag` from its size and modification time (`W/"<size>-<mtime>"`, unless the response has an `ETag`), its `Content-Type` (by the extension of its name, from a table of common web types, otherwise `application/octet-stream`, unless the response has one), `Accept-Ranges: bytes` and `X-Content-Type-Options: nosniff`. Its metadata and its content are read from the one file it opens (a FIFO is not waited for), and no more than its size is sent. Follows [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) for the following headers, with the `ETag` of the response, in this order
   - [If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match) (or else [If-Unmodified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Unmodified-Since)) - `412 Precondition Failed` when it does not match (by the strong comparison; `*` matches the file)
 
-  - [If-None-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match) (or else [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since), for `GET` and `HEAD`) - when it matches (by the weak comparison), `304 Not Modified` for `GET` and `HEAD`, `412 Precondition Failed` for other methods
+  - [If-None-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match) (or else [If-Modified-Since](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since), for `GET` and `HEAD`) - when it matches (by the weak comparison), `304 Not Modified` for `GET` and `HEAD` (with the headers of the file and its `Content-Length`), `412 Precondition Failed` for other methods
 
   - [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) - for `GET` only: `206 Partial Content` for one range (overlapping or adjacent ranges are merged; several distinct ranges get the whole file, as `multipart/byteranges` is not supported), `416 Range Not Satisfiable` when no range can be satisfied
 

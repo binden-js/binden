@@ -455,14 +455,16 @@ function setHeaders(
 /**
  * Sends a file (see `BindenResponse.sendFile()`). Its metadata and its content
  * are read from one file handle, so that they belong to the same file (also
- * when the path is replaced), and no more than its size is sent.
+ * when the path is replaced), and no more than its size is sent. A `304` is
+ * sent by `notModified()`, with the length of the whole file.
  */
 export async function sendFileTo(
   response: BindenResponse,
   path: URL | string,
-  options: ISendFileOptions = {},
+  options: ISendFileOptions | undefined,
+  notModified: (length: number) => Promise<void>,
 ): Promise<void> {
-  const parsed = parseOptions(options);
+  const parsed = parseOptions(options ?? {});
   const location = await locate(path, parsed);
   const handle = await openFile(location);
   // Closed by the stream of its content, or else here
@@ -500,7 +502,11 @@ export async function sendFileTo(
       method === "GET" || method === "HEAD",
       ims,
     );
-    if (failed !== null) {
+    if (failed === 304) {
+      // With the length of the whole file, as the `200` that it stands for
+      await notModified(size);
+      return;
+    } else if (failed !== null) {
       await response.status(failed).send();
       return;
     } else if (method === "HEAD") {

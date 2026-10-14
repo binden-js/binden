@@ -110,15 +110,11 @@ suite("Conditional requests of compressed responses", () => {
             method,
             headers: { ...accept, "If-None-Match": etag },
           });
+          // The length of an uncompressed `200` stays (RFC 9110, section 8.6)
           const expected =
             get.status === 406
               ? representation(get)
-              : {
-                  ...representation(get),
-                  status: 304,
-                  encoding: none,
-                  length: none,
-                };
+              : { ...representation(get), status: 304, encoding: none };
           deepStrictEqual(
             representation(conditional),
             expected,
@@ -188,7 +184,6 @@ suite("Conditional requests of compressed responses", () => {
             ...representation(get),
             status: 304,
             encoding: none,
-            length: none,
           });
         }
       }
@@ -224,6 +219,60 @@ suite("Conditional requests of compressed responses", () => {
       deepStrictEqual(weak.headers["content-encoding"], "gzip");
       deepStrictEqual(weak.body, content);
     }
+  });
+
+  test("`sendFile()`: a small file keeps its strong validator on `304`", async () => {
+    const small = join(tmpdir(), `binden-compression-${randomUUID()}.txt`);
+    await writeFile(small, text(100));
+    try {
+      served = await serve({}, new Compression(), (context: Context) =>
+        context.response.sendFile(small, { validator: `"v1"` }),
+      );
+      const { url } = served;
+      for (const method of ["GET", "HEAD"]) {
+        const get = await fetchRaw(url, { method, headers: accepts.gzip });
+        deepStrictEqual(representation(get), {
+          status: 200,
+          etag: `"v1"`,
+          vary: none,
+          encoding: none,
+          length: "100",
+          ranges: "bytes",
+        });
+        const conditional = await fetchRaw(url, {
+          method,
+          headers: { ...accepts.gzip, "If-None-Match": `"v1"` },
+        });
+        deepStrictEqual(representation(conditional), {
+          ...representation(get),
+          status: 304,
+        });
+      }
+    } finally {
+      await rm(small);
+    }
+  });
+
+  test("a `304` of the application gets the decision of a `200` of unknown length", async () => {
+    served = await serve({}, new Compression(), (context: Context) => {
+      const { response } = context;
+      response.set({ "Content-Type": "text/plain", ETag: `"app"` });
+      return context.request.headers["if-none-match"] === `W/"app"`
+        ? response.status(304).send()
+        : context.send(large);
+    });
+    const { url } = served;
+    const get = await fetchRaw(url, { headers: accepts.gzip });
+    deepStrictEqual(get.headers["content-encoding"], "gzip");
+    deepStrictEqual(get.body, large);
+    const conditional = await fetchRaw(url, {
+      headers: { ...accepts.gzip, "If-None-Match": String(get.headers.etag) },
+    });
+    deepStrictEqual(representation(conditional), {
+      ...representation(get),
+      status: 304,
+      encoding: none,
+    });
   });
 
   test(
