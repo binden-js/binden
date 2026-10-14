@@ -48,43 +48,37 @@ export class ContentRange extends Range implements IContentRange {
       : `${this.unit} */${this.size}`;
   }
 
+  /**
+   * A range (`bytes 0-9/100`, or with an unknown size `*`) or an unsatisfied
+   * range (an asterisk and the size) of RFC 9110 (section 14.4), with decimal
+   * positions only: anything else is not a content range
+   */
   public static fromString(input?: string): [] | [ContentRange] {
-    if (typeof input === "undefined") {
-      return [];
-    }
-
-    const trimmed = input.trim();
-
-    if (!trimmed.startsWith("bytes ")) {
-      return [];
-    }
-
-    const [rawRange, rawSize] = trimmed
-      .substring(6)
-      .split("/")
-      .map((e) => e.trim())
-      .filter((e) => e);
-
-    if (rawRange === "*") {
-      try {
-        return [new ContentRange({ size: Number(rawSize) })];
-      } catch {
-        return [];
-      }
-    }
-
-    const [start, end] = rawRange
-      .split("-")
-      .map((e) => e.trim())
-      .filter((e) => e)
-      .map((e) => Number(e));
+    const {
+      first,
+      last,
+      size = "",
+      length,
+    } = /^[ \t]*bytes (?:(?<first>\d+)-(?<last>\d+)\/(?<size>\d+|\*)|\*\/(?<length>\d+))[ \t]*$/iu.exec(
+      input ?? "",
+    )?.groups ?? {};
 
     try {
-      const size = rawSize === "*" ? rawSize : Number(rawSize);
-      return [new ContentRange({ start, end, size })];
+      if (typeof length === "string") {
+        return [new ContentRange({ size: Number(length) })];
+      } else if (typeof first === "string" && typeof last === "string") {
+        return [
+          new ContentRange({
+            start: Number(first),
+            end: Number(last),
+            size: size === "*" ? size : Number(size),
+          }),
+        ];
+      }
     } catch {
-      return [];
+      // E.g. `bytes 1-0/5`, or a position that is not a safe integer
     }
+    return [];
   }
 }
 

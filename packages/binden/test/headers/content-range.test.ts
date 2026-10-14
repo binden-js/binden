@@ -91,10 +91,33 @@ suite("ContentRange", () => {
     deepStrictEqual(ContentRange.fromString("bytes */*"), []);
     deepStrictEqual(ContentRange.fromString("bytes 1-0/500"), []);
     deepStrictEqual(ContentRange.fromString("bytes 1-1000/500"), []);
+    // Decimal positions only, and nothing else (RFC 9110, section 14.4)
+    for (const input of [
+      "bytes //",
+      "bytes /",
+      "bytes  /",
+      "bytes 0x0-0x9/0x10",
+      "bytes 0-9/1e2",
+      "bytes 0-9/100/extra",
+      "bytes 1-2-3/10",
+      "bytes 0-9/100\r\n",
+      "bytes 0 - 9/100",
+      "bytes  200  -  1000   /    67589   / 1 __ignored__ 1",
+      "bytes 99999999999999999-99999999999999999/*",
+      "items 0-9/100",
+    ]) {
+      deepStrictEqual(ContentRange.fromString(input), [], input);
+    }
+  });
+
+  test(".fromString() (spaces and the case of the unit)", () => {
+    const [actual] = ContentRange.fromString(" BYTES 0-9/100\t");
+    ok(actual);
+    deepStrictEqual(actual.toString(), "bytes 0-9/100");
   });
 
   test(".fromString()", () => {
-    const input = "bytes  200  -  1000   /    67589   / 1 __ignored__ 1";
+    const input = "bytes 200-1000/67589";
     const cr = new ContentRange({ start: 200, end: 1000, size: 67589 });
     const parsed = ContentRange.fromString(input);
     const [actual] = parsed;
