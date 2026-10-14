@@ -4,10 +4,11 @@ import { createBrotliCompress, createDeflate, createGzip } from "node:zlib";
 
 export const DefaultCompression = "br";
 
-export type IComressFormats = "auto" | "br" | "deflate" | "gzip";
+/** The `format` of a compression: `auto` negotiates it, the others are fixed */
+export type ICompressFormats = "auto" | "br" | "deflate" | "gzip";
 
 export interface ICompressionOptions extends IMiddlewareParams {
-  format?: IComressFormats;
+  format?: ICompressFormats;
 }
 
 type IWrite = (
@@ -23,14 +24,14 @@ type IEnd = (
 ) => void;
 
 export class Compression extends Middleware {
-  readonly #format: IComressFormats;
+  readonly #format: ICompressFormats;
 
   public constructor({ format = "auto", ...rest }: ICompressionOptions = {}) {
     super(rest);
     this.#format = format;
   }
 
-  public get format(): IComressFormats {
+  public get format(): ICompressFormats {
     return this.#format;
   }
 
@@ -199,8 +200,8 @@ export class Compression extends Middleware {
 
   static #getFormat(
     context: Context,
-    format: IComressFormats,
-  ): Exclude<IComressFormats, "auto"> | "identity" {
+    format: ICompressFormats,
+  ): Exclude<ICompressFormats, "auto"> | "identity" {
     if (format !== "auto") {
       return format;
     }
@@ -223,7 +224,7 @@ export class Compression extends Middleware {
       qualities.get(coding) ?? wildcard;
 
     // The best acceptable coding (on a tie, in the order of `#formats`)
-    let best: Exclude<IComressFormats, "auto"> | null = null;
+    let best: Exclude<ICompressFormats, "auto"> | null = null;
     for (const coding of Compression.#formats) {
       if (
         quality(coding) > 0 &&

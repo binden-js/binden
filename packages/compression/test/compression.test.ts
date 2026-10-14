@@ -22,7 +22,7 @@ import { request } from "undici";
 import {
   Compression,
   DefaultCompression,
-  type IComressFormats,
+  type ICompressFormats,
 } from "../index.js";
 
 function brotliDecompress(data: InputType): Promise<Buffer> {
@@ -434,7 +434,7 @@ describe("Compression", () => {
 
   it("Multiple compressions", async () => {
     const expected = "Hello World";
-    const formats: readonly IComressFormats[] = ["gzip", "br", "deflate"];
+    const formats: readonly ICompressFormats[] = ["gzip", "br", "deflate"];
     app.use(
       ...formats.map((format) => new Compression({ format })),
       new TestMiddleware(expected),
