@@ -1,11 +1,4 @@
-import {
-  Binden,
-  BindenResponse,
-  type IBindenOptions,
-  type IMiddleware,
-  type IResponseOptions,
-  validateResponseOptions,
-} from "binden";
+import { Binden, type IBindenOptions, type IMiddleware } from "binden";
 import {
   type IncomingHttpHeaders,
   type IncomingMessage,
@@ -81,14 +74,6 @@ export function decode(
   return decoder(body);
 }
 
-/** A response with the dynamic `ETag` of binden */
-export class EtagResponse extends BindenResponse {
-  // eslint-disable-next-line class-methods-use-this -- the options of a subclass
-  protected override get options(): Readonly<IResponseOptions> {
-    return validateResponseOptions({ etag: true });
-  }
-}
-
 /** A logger whose records are kept */
 export interface ICaptured {
   readonly logger: Logger;
@@ -140,7 +125,7 @@ export interface IServed {
 export interface IServeOptions {
   /** The options of the application */
   readonly app?: IBindenOptions | undefined;
-  /** Responses with the dynamic `ETag` */
+  /** Responses with the dynamic `ETag` (the `etag` option of the application) */
   readonly etag?: boolean | undefined;
   /** `rejectNonStandardBodyWrites` of the server */
   readonly strict?: boolean | undefined;
@@ -151,12 +136,9 @@ export async function serve(
   { app: options = {}, etag = false, strict = false }: IServeOptions,
   ...middlewares: IMiddleware[]
 ): Promise<IServed> {
-  const app = new Binden(options).use(...middlewares);
+  const app = new Binden({ ...options, etag }).use(...middlewares);
   const server = createServer({
     ...app.serverOptions(),
-    ...(etag
-      ? { ServerResponse: EtagResponse as unknown as typeof BindenResponse }
-      : {}),
     rejectNonStandardBodyWrites: strict,
   });
   server.on("request", app.callback(server));
