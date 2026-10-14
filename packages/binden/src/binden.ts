@@ -381,7 +381,19 @@ export class Binden {
         typeof middleware === "function"
           ? await middleware(context)
           : await middleware.run(context);
-      return next instanceof Context ? next : context;
+      if (!(next instanceof Context)) {
+        return context;
+      } else if (
+        next.request !== context.request ||
+        next.response !== context.response
+      ) {
+        // E.g. a context kept from a previous request: its response is not
+        // the one to reply with
+        throw new TypeError(
+          "A middleware returned the context of another request",
+        );
+      }
+      return next;
     } catch (error: unknown) {
       if (middleware instanceof Middleware && middleware.ignore_errors) {
         const extra = { error, name };

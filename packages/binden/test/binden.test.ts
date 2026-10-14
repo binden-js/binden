@@ -682,6 +682,35 @@ suite("Binden", () => {
     );
   });
 
+  test("a context of another request is not taken over", async () => {
+    let first: Context | null = null;
+    app.use((context: Context) => {
+      if (first === null) {
+        first = context;
+        return context.send("first");
+      }
+      // A replacement must be a context of the same request
+      return first;
+    });
+    const signal = AbortSignal.timeout(5000);
+
+    deepStrictEqual(await (await fetch(url, { signal })).text(), "first");
+    const second = await fetch(url, { signal });
+    deepStrictEqual(second.status, 500);
+    await second.text();
+  });
+
+  test("a context of the same request may replace the context", async () => {
+    app.use(
+      (context: Context) =>
+        new Context({ request: context.request, response: context.response }),
+      (context: Context) => context.send("replaced"),
+    );
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    deepStrictEqual(await response.text(), "replaced");
+  });
+
   test("a response ended without `done` is not cut by a 404", async () => {
     const size = 32 * 1024 * 1024;
     app.use((context: Context) => {
