@@ -1,74 +1,79 @@
 import { deepStrictEqual, ok } from "node:assert/strict";
-import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { suite, test } from "node:test";
-import { Logger } from "@binden/logger";
-import { Binden, ct_json, serializers } from "binden";
-import { request } from "undici";
+import { Binden, ct_json, ct_text } from "binden";
 
 import { BodyParser } from "../index.js";
+import { type IBody, Recorder, echo, listen, send } from "./helpers.js";
 
-// Invalid JSON: the error of `JSON.parse()` quotes the body
-const body = '{"password": SECRET}';
-
-/** Posts the body and returns the response status and the log lines */
+/** Sends a request through a parser, with a logger that keeps everything */
 async function post(
-  logger: (destination: { write(line: string): void }) => Logger,
-): Promise<[number, string]> {
-  const lines: string[] = [];
-  const destination = {
-    write: (line: string): void => {
-      lines.push(line);
-    },
-  };
-  const app = new Binden({ logger: logger(destination) }).use(new BodyParser());
-  const server: Server = app.createServer();
-  await new Promise<void>((resolve) => {
-    server.listen(0, resolve);
-  });
-  const url = `http://localhost:${(server.address() as AddressInfo).port}`;
-
+  parser: BodyParser,
+  body: IBody,
+  headers: Record<string, string>,
+): Promise<[number, Recorder]> {
+  const logger = new Recorder();
+  const server = await listen(new Binden({ logger }).use(parser, echo));
   try {
-    const response = await request(url, {
-      method: "POST",
-      headers: { "Content-Type": ct_json },
-      body,
-    });
-    await response.body.dump();
-    return [response.statusCode, lines.join("")];
+    const { status } = await send(server.url, body, headers);
+    return [status, logger];
   } finally {
-    await new Promise((resolve) => {
-      server.close(resolve);
-    });
+    await server.close();
   }
 }
 
-suite("BodyParser (logging)", () => {
-  test("keeps the body out of the default logs", async () => {
-    const [status, output] = await post(
-      (destination) => new Logger({ serializers, destination, level: "debug" }),
-    );
+// Invalid JSON: the error of `JSON.parse()` quotes the body
+const secret = '{"password": SECRET}';
 
-    deepStrictEqual(status, 415);
-    ok(output.includes("Request body does not match provided Content-Type"));
-    ok(output.includes('"body":"[Redacted]"'), output);
-    ok(!output.includes("SECRET"), output);
+suite("BodyParser (logging)", () => {
+  test("keeps the body out of the logs", async () => {
+    for (const parser of [
+      new BodyParser(),
+      new BodyParser({ parse: (input): unknown => JSON.parse(input) }),
+    ]) {
+      const [status, logger] = await post(parser, secret, {
+        "Content-Type": ct_json,
+      });
+      ok(status === 400 || status === 500, String(status));
+      const output = JSON.stringify(logger.lines);
+      ok(logger.lines.length > 0);
+      ok(!output.includes("SECRET"), output);
+    }
   });
 
-  test("logs the body with a custom serializer", async () => {
-    const [status, output] = await post(
-      (destination) =>
-        new Logger({
-          serializers: {
-            ...serializers,
-            body: (input: unknown): unknown => input,
-          },
-          destination,
-          level: "debug",
-        }),
-    );
+  test("a refusal is logged at `debug`", async () => {
+    const [status, logger] = await post(new BodyParser(), secret, {
+      "Content-Type": ct_json,
+    });
+    deepStrictEqual(status, 400);
+    ok(logger.messages("debug").includes("The JSON body cannot be parsed"));
+    deepStrictEqual(logger.messages("error"), []);
+  });
 
-    deepStrictEqual(status, 415);
-    ok(output.includes(`"body":${JSON.stringify(body)}`), output);
+  test("a failure of `type` is logged at `error`", async () => {
+    const parser = new BodyParser({ type: (): "raw" => "xml" as "raw" });
+    const [status, logger] = await post(parser, "a", {
+      "Content-Type": ct_text,
+    });
+    deepStrictEqual(status, 500);
+    ok(
+      logger
+        .messages("error")
+        .includes("The `type` function has returned an invalid kind"),
+    );
+  });
+
+  test("a body that has already been read is logged at `error`", async () => {
+    const logger = new Recorder();
+    const app = new Binden({ logger }).use(async (context) => {
+      await context.request.toArray();
+    }, new BodyParser());
+    const server = await listen(app);
+    try {
+      const reply = await send(server.url, "[]", { "Content-Type": ct_json });
+      deepStrictEqual(reply.status, 500);
+    } finally {
+      await server.close();
+    }
+    ok(logger.messages("error").includes("The body has already been read"));
   });
 });
