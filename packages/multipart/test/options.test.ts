@@ -164,7 +164,10 @@ describe("Multipart (options)", () => {
       [Buffer.from("поле").toString("latin1"), "значение"],
       [
         Buffer.from("файл").toString("latin1"),
-        Buffer.from("файл.txt").toString("latin1"),
+        // Without the control characters (e.g. `\x84`) of latin1
+        Buffer.from("файл.txt")
+          .toString("latin1")
+          .replaceAll(/\p{Cc}/gu, ""),
       ],
     ]);
   });

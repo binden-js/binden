@@ -14,6 +14,7 @@ import busboy, {
 } from "busboy";
 import { MultipartFile } from "./file.js";
 import type { Readable } from "node:stream";
+import { filenameOf } from "./filename.js";
 
 /** The logger of a context */
 type ILog = Context["log"];
@@ -228,7 +229,7 @@ class Parser {
     this.#tasks.push(
       collect(stream).then(
         (chunks) => {
-          slot.value = new MultipartFile(chunks, String(filename), {
+          slot.value = new MultipartFile(chunks, filenameOf(filename), {
             type: mimeType,
             truncated: stream.truncated === true,
           });
