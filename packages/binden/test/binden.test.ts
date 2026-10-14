@@ -710,6 +710,25 @@ suite("Binden", () => {
     deepStrictEqual(await handler("/head", "HEAD"), [200, "HEAD"]);
   });
 
+  test("RegExp paths keep their flags", async () => {
+    // eslint-disable-next-line require-unicode-regexp -- without `u` on purpose
+    app.use(/^\/foo$/i, (context: Context) => context.send("foo"));
+    // `g` would make `test()` stateful: every other request would not match
+    app.use(/^\/bar$/gu, (context: Context) => context.send("bar"));
+    // Not valid with `u`
+    // eslint-disable-next-line require-unicode-regexp, no-useless-escape -- on purpose
+    app.use(/^\/b\-z$/, (context: Context) => context.send("b-z"));
+    const text = async (path: string): Promise<string> =>
+      (await fetch(`${url}${path}`)).text();
+
+    deepStrictEqual(await text("/FOO"), "foo");
+    deepStrictEqual(await text("/bar"), "bar");
+    deepStrictEqual(await text("/bar"), "bar");
+    deepStrictEqual(await text("/b-z"), "b-z");
+    // eslint-disable-next-line require-unicode-regexp -- the flags of the path
+    deepStrictEqual(app.stack[0]?.[1], /^\/foo$/i);
+  });
+
   test("function middlewares", async () => {
     const message = { message: "Hello World!" };
     const m = (context: Context): Promise<void> => context.json(message);

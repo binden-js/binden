@@ -71,7 +71,7 @@ export class Binden {
   public get stack(): IStack[] {
     return this.#stack.map(([r, p]) => [
       [...r],
-      p instanceof RegExp ? new RegExp(p, "u") : p,
+      p instanceof RegExp ? new RegExp(p.source, p.flags) : p,
     ]);
   }
 
@@ -122,7 +122,7 @@ export class Binden {
 
     const path =
       _path instanceof RegExp
-        ? new RegExp(_path, "u")
+        ? Binden.#pattern(_path)
         : typeof _path === "string" && _path
           ? _path
           : null;
@@ -157,7 +157,7 @@ export class Binden {
 
     const path =
       _path instanceof RegExp
-        ? new RegExp(_path, "u")
+        ? Binden.#pattern(_path)
         : typeof _path === "string" && _path
           ? _path
           : null;
@@ -447,6 +447,14 @@ export class Binden {
     } catch {
       // Nothing else to report it to
     }
+  }
+
+  /**
+   * A RegExp path with its flags (e.g. `i`), except those that make `test()`
+   * stateful (`g` and `y`)
+   */
+  static #pattern(path: RegExp): RegExp {
+    return new RegExp(path.source, path.flags.replaceAll(/[gy]/gu, ""));
   }
 
   static #validateItem(item: unknown): item is IStackItem {
