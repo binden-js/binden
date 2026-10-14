@@ -2,8 +2,17 @@ import { split, unquote } from "./list.js";
 
 /** A media type of `Content-Type` and its parameters */
 export interface IContentType {
+  /** The media type: `type/subtype`, of tokens */
   type: string;
+  /**
+   * The `charset` parameter, or `null` (by default): not of
+   * `multipart/form-data`
+   */
   charset?: string | null;
+  /**
+   * The `boundary` parameter: required by `multipart/form-data`, ignored for
+   * any other type
+   */
   boundary?: string | null;
   /** Other parameters (their names are case-insensitive) */
   parameters?: Readonly<Record<string, string>>;
@@ -80,14 +89,17 @@ export class ContentType implements IContentType {
     this.#parameters = all;
   }
 
+  /** The media type (in lowercase when parsed) */
   public get type(): string {
     return this.#type;
   }
 
+  /** The `charset` parameter (in lowercase when parsed), or `null` */
   public get charset(): string | null {
     return this.#charset;
   }
 
+  /** The `boundary` of `multipart/form-data`, or `null` for any other type */
   public get boundary(): string | null {
     return this.#boundary;
   }
@@ -97,6 +109,10 @@ export class ContentType implements IContentType {
     return Object.fromEntries(this.#parameters);
   }
 
+  /**
+   * The field value: the media type and its parameters, joined by `; `, with
+   * the values that are not tokens quoted
+   */
   public toString(): string {
     return [
       this.type,

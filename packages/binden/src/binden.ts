@@ -37,6 +37,10 @@ import { kSeal } from "./seal.js";
 import { isClosing, register, track } from "./shutdown.js";
 import { type ILayer, layersOf, markRoot, Stack } from "./stack.js";
 
+/**
+ * The status of the reply to an error without a valid status of its own (and
+ * to a failed or late error handler): `500 Internal Server Error`
+ */
 export const DefaultErrorCode = 500;
 
 /** Replaces the default reply to an error (see `IBindenOptions.error_handler`) */
@@ -121,8 +125,14 @@ export interface IBindenBaseOptions<
 export type IBindenOptions<State extends object = Record<string, unknown>> =
   IBindenBaseOptions<State> &
     (Record<never, never> extends State
-      ? { state?: (() => State) | undefined }
-      : { state: () => State });
+      ? {
+          /** Creates the state of every request (an empty object by default) */
+          state?: (() => State) | undefined;
+        }
+      : {
+          /** Creates the state of every request: it has required fields */
+          state: () => State;
+        });
 
 /** Thrown through the stack once the request has been aborted: the stack stops */
 const ABORTED = new Error("The request has been aborted");
@@ -171,6 +181,11 @@ export class Binden<
   readonly #Response: typeof BindenResponse;
   readonly #request_id: IRequestOptions["request_id"];
 
+  /**
+   * An application with its options (see `IBindenOptions`), checked: an
+   * invalid one throws a `TypeError` (or a `RangeError` for a value out of
+   * its range, e.g. a negative `timeout`)
+   */
   public constructor(
     ...[options = {} as IBindenOptions<State>]: Record<
       never,
@@ -294,7 +309,9 @@ export class Binden<
    * `callback()` handles the requests of (e.g. `http2` is not supported)
    */
   public serverOptions(): {
+    /** The request class of the application (with its request options) */
     IncomingMessage: typeof BindenRequest;
+    /** The response class of the application (with its response options) */
     ServerResponse: typeof BindenResponse;
   } {
     return { IncomingMessage: this.#Request, ServerResponse: this.#Response };

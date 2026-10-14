@@ -22,6 +22,10 @@ export class Router<
   readonly #middlewares: Map<string, IMiddleware<State, Params>[]>;
   #guarded: boolean;
 
+  /**
+   * A router without middlewares: a `guarded` that is not a boolean throws a
+   * `TypeError`
+   */
   public constructor({ guarded = false }: IRouterOptions = {}) {
     if (typeof guarded !== "boolean") {
       throw new TypeError("`guarded` is not a boolean");
@@ -30,10 +34,15 @@ export class Router<
     this.#middlewares = new Map<string, IMiddleware<State, Params>[]>();
   }
 
+  /**
+   * Whether a request of a method without middlewares is refused (see
+   * `IRouterOptions`)
+   */
   public get guarded(): boolean {
     return this.#guarded;
   }
 
+  /** Sets whether a request of a method without middlewares is refused */
   public set guarded(guarded: unknown) {
     this.#guarded = Boolean(guarded);
   }
@@ -116,34 +125,48 @@ export class Router<
     return removed;
   }
 
+  /** Adds middlewares for `DELETE` (see `on()`) */
   public delete(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("DELETE", ...middlewares);
   }
 
+  /**
+   * Adds middlewares for `GET` (and `HEAD`, without middlewares of its own, see
+   * `auto_head`)
+   */
   public get(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("GET", ...middlewares);
   }
 
+  /** Adds middlewares for `HEAD` (see `on()`) */
   public head(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("HEAD", ...middlewares);
   }
 
+  /**
+   * Adds middlewares for `OPTIONS` (instead of the automatic `204` of a guarded
+   * router)
+   */
   public options(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("OPTIONS", ...middlewares);
   }
 
+  /** Adds middlewares for `PATCH` (see `on()`) */
   public patch(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("PATCH", ...middlewares);
   }
 
+  /** Adds middlewares for `POST` (see `on()`) */
   public post(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("POST", ...middlewares);
   }
 
+  /** Adds middlewares for `PUT` (see `on()`) */
   public put(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("PUT", ...middlewares);
   }
 
+  /** Adds middlewares for `TRACE` (see `on()`) */
   public trace(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("TRACE", ...middlewares);
   }

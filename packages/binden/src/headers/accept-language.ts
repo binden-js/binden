@@ -4,6 +4,7 @@ import { isQvalue, preferred, weighted } from "./list.js";
 export interface IAcceptLanguage {
   /** A language range: `*`, or a language tag (e.g. `en`, `en-US`) */
   language: string;
+  /** The weight: a qvalue from 0 to 1 (none by default, which weighs 1) */
   q_value?: number | null | undefined;
 }
 
@@ -30,14 +31,17 @@ export class AcceptLanguage implements IAcceptLanguage {
     this.#q_value = q_value;
   }
 
+  /** The language range: a language tag, or `*` */
   public get language(): string {
     return this.#language;
   }
 
+  /** The weight, or `null` without one (it weighs 1) */
   public get q_value(): number | null {
     return this.#q_value;
   }
 
+  /** The element as in the header: `language;q=weight` */
   public toString(): string {
     const { language, q_value } = this;
     return q_value === null ? language : `${language};q=${q_value}`;

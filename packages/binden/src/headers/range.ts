@@ -1,6 +1,14 @@
 /** A range of `Range`: its first and last positions, either one optional */
 export interface IRange {
+  /**
+   * The first position, or `null` (by default) for a suffix range (the last
+   * `end` bytes)
+   */
   readonly start?: number | null;
+  /**
+   * The last position (included), the length of a suffix range, or `null` (by
+   * default) for the rest of the content
+   */
   readonly end?: number | null;
 }
 
@@ -37,18 +45,27 @@ export class Range implements IRange {
     this.#end = end;
   }
 
+  /** The range unit: `bytes` */
   public get unit(): IUnit {
     return this.#unit;
   }
 
+  /** The first position, or `null` for a suffix range */
   public get start(): number | null {
     return this.#start;
   }
 
+  /**
+   * The last position (included), the length of a suffix range, or `null` for
+   * the rest of the content
+   */
   public get end(): number | null {
     return this.#end;
   }
 
+  /**
+   * The range as in the header: `bytes=start-end`, either of them maybe empty
+   */
   public toString(): string {
     return `${this.unit}=${this.start ?? ""}-${this.end ?? ""}`;
   }

@@ -28,12 +28,19 @@ export interface IChildOptions {
 
 /** A logger that binden can use: the `Logger` of this package, or any object with these methods */
 export interface ILogger {
+  /** Logs a message (with extra fields) at the `fatal` level */
   fatal(message: string, extra?: Record<string, unknown>): unknown;
+  /** Logs a message (with extra fields) at the `error` level */
   error(message: string, extra?: Record<string, unknown>): unknown;
+  /** Logs a message (with extra fields) at the `warn` level */
   warn(message: string, extra?: Record<string, unknown>): unknown;
+  /** Logs a message (with extra fields) at the `info` level */
   info(message: string, extra?: Record<string, unknown>): unknown;
+  /** Logs a message (with extra fields) at the `debug` level */
   debug(message: string, extra?: Record<string, unknown>): unknown;
+  /** Logs a message (with extra fields) at the `trace` level */
   trace(message: string, extra?: Record<string, unknown>): unknown;
+  /** A logger that adds the bindings to every record */
   child(bindings: Record<string, unknown>): ILogger;
 }
 
@@ -117,8 +124,14 @@ function pathOf(target: string): string {
 
 /** The default serializers of the `error`, `request` and `response` keys */
 export interface ISerializers {
+  /**
+   * The type of an error, a known `code` and its `status` (with
+   * `error_details`, also its message, stack and any `code`)
+   */
   error(error: unknown): Record<string, unknown>;
+  /** The method and the path (without the query) of a request */
   request(request: unknown): Record<string, unknown>;
+  /** The status of a response */
   response(response: unknown): Record<string, unknown>;
 }
 
@@ -200,6 +213,12 @@ export class Logger implements ILogger {
     };
   }
 
+  /**
+   * A logger with the options of `pino` (and its safe serializers, merged by
+   * key with `serializers`), or one of an existing `pino` logger (`logger`):
+   * `logger` with `destination`, or an `error_details` that is not a boolean,
+   * throws a `TypeError`
+   */
   public constructor({
     logger,
     destination,
@@ -238,6 +257,7 @@ export class Logger implements ILogger {
     return this.#pino().level as LevelWithSilent;
   }
 
+  /** Sets the level of the logger */
   public set level(level: LevelWithSilent) {
     this.#pino().level = level;
   }
@@ -270,34 +290,46 @@ export class Logger implements ILogger {
     );
   }
 
+  /** Logs a message (with extra fields) at the `fatal` level */
   public fatal(message: string, extra: Record<string, unknown> = {}): void {
     this.#pino().fatal(extra, message);
   }
 
+  /** Logs a message (with extra fields) at the `error` level */
   public error(message: string, extra: Record<string, unknown> = {}): void {
     this.#pino().error(extra, message);
   }
 
+  /** Logs a message (with extra fields) at the `warn` level */
   public warn(message: string, extra: Record<string, unknown> = {}): void {
     this.#pino().warn(extra, message);
   }
 
+  /** Logs a message (with extra fields) at the `info` level */
   public info(message: string, extra: Record<string, unknown> = {}): void {
     this.#pino().info(extra, message);
   }
 
+  /** Logs a message (with extra fields) at the `debug` level */
   public debug(message: string, extra: Record<string, unknown> = {}): void {
     this.#pino().debug(extra, message);
   }
 
+  /** Logs a message (with extra fields) at the `trace` level */
   public trace(message: string, extra: Record<string, unknown> = {}): void {
     this.#pino().trace(extra, message);
   }
 
+  /** The environment variable of the default level: `BINDEN_LOG_LEVEL` */
   public static get ENV_VARIABLE_NAME(): string {
     return "BINDEN_LOG_LEVEL";
   }
 
+  /**
+   * The level that an environment variable names (in any case,
+   * `BINDEN_LOG_LEVEL` by default): `silent` without it, or for an unknown
+   * level
+   */
   public static getLevel(env_name = this.ENV_VARIABLE_NAME): LevelWithSilent {
     const {
       env: { [env_name]: LEVEL },

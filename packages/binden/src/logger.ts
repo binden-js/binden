@@ -74,6 +74,7 @@ function typeOf(value: unknown): string {
 
 /** The options of a snapshot */
 export interface ISnapshotOptions {
+  /** Where in the framework the error has occurred */
   readonly location: ILocation;
   /** The id of the request, if any */
   readonly request_id?: string | undefined;
@@ -225,7 +226,7 @@ export function safe(logger: ILogger): ILogger {
  */
 export const serializers = {
   ...defaultSerializers,
-  // The type of an error, a known `code` and its `status`
+  /** The type of an error, a known `code` and its `status` */
   error: (error: unknown): Record<string, unknown> => {
     const { type, code, status } = snapshot(error, {
       location: "middleware",
@@ -237,7 +238,9 @@ export const serializers = {
       ...(typeof status === "number" ? { status } : {}),
     };
   },
+  /** A body that the application logs: never its content */
   body: (): string => "[Redacted]",
+  /** The id of a context, with its request and its response (allowlisted) */
   context: (input: unknown): Record<string, unknown> => {
     if (!(input instanceof Context)) {
       return { type: typeOf(input) };

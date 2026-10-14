@@ -26,13 +26,17 @@ export type ITrustProxy =
   | boolean
   | number
   | {
+      /** The trusted proxies: `true`, `false`, a number of hops or a function */
       trust: ITrustFn | boolean | number;
+      /** The headers that they set (`forwarded` by default) */
       headers?: IProxyHeaders | undefined;
     };
 
 /** A checked `trust_proxy` option, with its headers */
 export interface IProxyTrust {
+  /** The trusted proxies: `true`, `false`, a number of hops or a function */
   readonly trust: ITrustFn | boolean | number;
+  /** The headers that they set */
   readonly headers: IProxyHeaders;
 }
 

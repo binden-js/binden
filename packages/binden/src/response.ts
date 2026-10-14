@@ -19,13 +19,19 @@ import { kSeal } from "./seal.js";
 import { type ISendFileOptions, matches, sendFileTo } from "./send-file.js";
 import { isStatus } from "./status.js";
 
+/** The media type of `response.json()` */
 export const ct_json = "application/json";
+/** The media type of `response.text()` (sent with `charset=utf-8`) */
 export const ct_text = "text/plain";
+/** The media type of `response.html()` (sent with `charset=utf-8`) */
 export const ct_html = "text/html";
+/** The media type of `response.form()` */
 export const ct_form = "application/x-www-form-urlencoded";
 
+/** The value of a header: a number, a string, or the strings of its lines */
 export type IHeadersValue = number | string | readonly string[];
 
+/** Headers by name */
 export type IHeaders = Record<string, IHeadersValue>;
 
 /** The options of the responses of an application (`Binden` sets them) */
@@ -94,6 +100,11 @@ const fieldName = /^[!#$%&'*+\-.^_`|~\dA-Za-z]+$/u;
 /** A late send is a no-op */
 const always = (): boolean => true;
 
+/**
+ * A response (`ServerResponse`) with helpers to reply (`send()`, `json()`,
+ * `sendFile()`, `redirect()`, …) and its cookies: the `ServerResponse`
+ * class of the servers
+ */
 export class BindenResponse<
   Request extends IncomingMessage = IncomingMessage,
 > extends ServerResponse<Request> {
@@ -101,6 +112,7 @@ export class BindenResponse<
   #started = false;
   readonly #seals: (() => boolean)[] = [];
 
+  /** A response to the request (created by the server) */
   public constructor(...args: [request: Request, options?: unknown]) {
     // node:http passes its options as well
     super(...(args as [Request]));
@@ -240,6 +252,7 @@ export class BindenResponse<
     statusMessage?: string,
     headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
   ): this;
+  /** Sends the headers without a reason phrase (as the first signature) */
   public override writeHead(
     statusCode: number,
     headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
@@ -363,6 +376,7 @@ export class BindenResponse<
   public send(
     data?: Buffer | Readable | bigint | number | string,
   ): Promise<void>;
+  /** Send a string in an encoding (e.g. `latin1`) */
   public send(data: string, encoding: BufferEncoding): Promise<void>;
   public send(
     data?: Buffer | Readable | bigint | number | string,

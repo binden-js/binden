@@ -22,10 +22,15 @@ import { negotiate } from "./negotiate.js";
 
 /** The settings of a compression, validated */
 export interface ISettings {
+  /** The fixed content coding, or `auto` to negotiate it */
   readonly format: ICompressEncodings | "auto";
+  /** The codings that `auto` offers, the preferred first */
   readonly encodings: readonly ICompressEncodings[];
+  /** The `Content-Length` below which a response is not compressed */
   readonly threshold: number;
+  /** Whether a response is compressed, by its `Content-Type` */
   readonly filter: ICompressionFilter;
+  /** The options of the compressor of every coding */
   readonly compressors: ICompressorOptions;
 }
 

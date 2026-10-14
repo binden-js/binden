@@ -20,8 +20,14 @@ export type IUntypedItem = Middleware | Router;
 export type IStackPath =
   | RegExp
   | string
-  | { readonly mount: string }
-  | { readonly route: string }
+  | {
+      /** The prefix of a `mount()` layer, as registered */
+      readonly mount: string;
+    }
+  | {
+      /** The pattern of a `route()` layer, as registered */
+      readonly route: string;
+    }
   | null;
 
 /** A layer of the stack: its items, and the path they are used for */
@@ -117,11 +123,12 @@ export class Stack<State extends object = Record<string, unknown>> {
     });
   }
 
-  /**
-   * Adds middlewares and routers for every path, for an exact path (a string)
-   * or for the paths that a RegExp matches
-   */
+  /** Adds middlewares and routers for every path */
   public use(...items: (IStackItem<State> | IUntypedItem)[]): this;
+  /**
+   * Adds middlewares and routers for an exact path (a string) or for the
+   * paths that a RegExp matches
+   */
   public use(
     path: RegExp | string,
     ...items: (IStackItem<State> | IUntypedItem)[]
@@ -202,8 +209,15 @@ export class Stack<State extends object = Record<string, unknown>> {
     return this;
   }
 
-  /** Removes middlewares and routers added by `use()`: the removed ones */
+  /**
+   * Removes middlewares and routers added by `use()` for every path: the
+   * removed ones
+   */
   public off(...items: (IStackItem<State> | IUntypedItem)[]): IStackItem[];
+  /**
+   * Removes middlewares and routers added by `use()` for an exact path or a
+   * RegExp: the removed ones
+   */
   public off(
     path: RegExp | string,
     ...items: (IStackItem<State> | IUntypedItem)[]

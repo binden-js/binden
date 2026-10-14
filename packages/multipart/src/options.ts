@@ -118,11 +118,17 @@ export interface IMultipartOptions extends IMiddlewareParams {
 
 /** The options of a parse, checked, with their defaults */
 export interface IParserOptions {
+  /** The configuration of busboy */
   readonly config: IMultipartConfig;
+  /** Whether a limit of busboy refuses the request (`413`) */
   readonly throw_limits: boolean;
+  /** The largest body in bytes (`Infinity` for none) */
   readonly limit: number;
+  /** Whether a file is accepted (`null`: all of them) */
   readonly file_filter: IFileFilter | null;
+  /** What happens to a file that `file_filter` refuses */
   readonly filtered: "reject" | "skip";
+  /** Where the files go */
   readonly mode: IMode;
 }
 

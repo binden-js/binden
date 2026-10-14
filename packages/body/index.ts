@@ -270,6 +270,11 @@ export class BodyParser<T = unknown> extends Middleware {
   readonly #verify_encoded: boolean;
   readonly #zstd: boolean;
 
+  /**
+   * A body parser with its options (see `IBodyParserOptions`), checked: an
+   * invalid one throws a `TypeError` (or a `RangeError` for a limit that is not
+   * a non-negative integer or `Infinity`)
+   */
   public constructor({
     parse,
     limit = Infinity,
@@ -320,6 +325,11 @@ export class BodyParser<T = unknown> extends Middleware {
     this.#verify = verify ?? null;
   }
 
+  /**
+   * Parses the body of the request into `request.body`, unless the method has
+   * no body, its `Content-Type` is not selected, or it has already been parsed:
+   * a `BindenError` for a body that cannot be parsed (see the README)
+   */
   public async run(context: Context): Promise<void> {
     const { request } = context;
     const log = context.log.child({ middleware: BodyParser.name });
@@ -707,4 +717,8 @@ export class BodyParser<T = unknown> extends Middleware {
   ];
 }
 
+/**
+ * A `BodyParser` with the default options: without limits (set `limit` and
+ * `encoded_limit` in production)
+ */
 export default new BodyParser();

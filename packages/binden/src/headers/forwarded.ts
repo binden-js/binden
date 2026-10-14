@@ -2,10 +2,25 @@ import { fieldValue, quote, split, unquote } from "./list.js";
 
 /** The parameters of a `Forwarded` element */
 export interface IForwarded {
+  /**
+   * The client of the proxy (`for`): an address (maybe with a port), `unknown`
+   * or an obfuscated identifier
+   */
   for: string;
+  /**
+   * The interface of the proxy that has received the request (`by`), or `null`
+   */
   by?: string | null;
+  /** The `Host` that the proxy has received (`host`), or `null` */
   host?: string | null;
+  /**
+   * The protocol that the proxy has received (`proto`, e.g. `https`), or `null`
+   */
   proto?: string | null;
+  /**
+   * The `secret` extension parameter (e.g. a token shared with the proxy), or
+   * `null`
+   */
   secret?: string | null;
 }
 
@@ -37,22 +52,27 @@ export class Forwarded implements IForwarded {
     this.#proto = proto ?? null;
   }
 
+  /** The client of the proxy (`for`), `unknown` when the element has none */
   public get for(): string {
     return this.#for;
   }
 
+  /** The interface of the proxy (`by`), or `null` */
   public get by(): string | null {
     return this.#by ?? null;
   }
 
+  /** The `Host` that the proxy has received (`host`), or `null` */
   public get host(): string | null {
     return this.#host ?? null;
   }
 
+  /** The `secret` extension parameter, or `null` */
   public get secret(): string | null {
     return this.#secret ?? null;
   }
 
+  /** The protocol that the proxy has received (`proto`), or `null` */
   public get proto(): string | null {
     return this.#proto ?? null;
   }

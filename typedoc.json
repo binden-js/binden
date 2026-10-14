@@ -12,7 +12,8 @@
         "\"http\".Server": "https://nodejs.org/api/http.html#class-httpserver",
         "\"http\".ClientRequest": "https://nodejs.org/api/http.html#class-httpclientrequest"
       }
-    }
+    },
+    "validation": { "notDocumented": true }
   },
   "projectDocuments": ["MIGRATION-4.md", "PRODUCTION.md"],
   "hideGenerator": true,

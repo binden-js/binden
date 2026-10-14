@@ -82,6 +82,11 @@ export class BindenError extends Error {
   readonly #json: Record<string, unknown> | null;
   readonly #status: number;
 
+  /**
+   * An error of an HTTP status (400 to 599, a `RangeError` otherwise) whose
+   * reply the options describe: invalid options (e.g. a forbidden header) throw
+   * a `TypeError`
+   */
   public constructor(
     status: number,
     {
@@ -128,14 +133,19 @@ export class BindenError extends Error {
     return this.#headers;
   }
 
+  /**
+   * Whether the default error handler sends `json` or the message as the body
+   */
   public get expose(): boolean {
     return this.#expose;
   }
 
+  /** The status code of the reply: 400 to 599 */
   public get status(): number {
     return this.#status;
   }
 
+  /** The JSON body sent when `expose` is `true` (a shallow copy), or `null` */
   public get json(): Record<string, unknown> | null {
     return this.#json ? { ...this.#json } : null;
   }

@@ -4,6 +4,7 @@ export type IEncodings =
 
 /** A coding of `Content-Encoding` */
 export interface IContentEncoding {
+  /** A known content coding, in lowercase */
   encoding: IEncodings;
 }
 
@@ -19,10 +20,12 @@ export class ContentEncoding implements IContentEncoding {
     this.#encoding = encoding;
   }
 
+  /** The content coding */
   public get encoding(): IEncodings {
     return this.#encoding;
   }
 
+  /** The coding as in the header */
   public toString(): string {
     return this.#encoding;
   }

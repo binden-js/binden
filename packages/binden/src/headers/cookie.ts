@@ -1,13 +1,39 @@
 /** A cookie: its name, value and attributes (RFC 6265) */
 export interface ICookie {
+  /** The name of the cookie: a token */
   readonly key: string;
+  /**
+   * The value: cookie-octets (no spaces, `"`, `,`, `;` or `\`), maybe in double
+   * quotes
+   */
   readonly value: string;
+  /**
+   * When the cookie expires (`Expires`) unless `max_age` is set, or `null` (by
+   * default) for a session cookie
+   */
   readonly expires?: Date | null;
+  /**
+   * The lifetime in seconds (`Max-Age`, an integer), which takes precedence
+   * over `expires`, or `null` (by default)
+   */
   readonly max_age?: number | null;
+  /**
+   * The domain whose hosts get the cookie (`Domain`), or `null` (by default)
+   * for the host of the origin only
+   */
   readonly domain?: string | null;
+  /**
+   * The path prefix of the requests that get the cookie (`Path`, `/` by
+   * default), or `null`
+   */
   readonly path?: string | null;
+  /**
+   * Whether the cookie is sent over HTTPS only (`Secure`, `false` by default)
+   */
   readonly secure?: boolean;
+  /** Whether scripts cannot read the cookie (`HttpOnly`, `true` by default) */
   readonly http_only?: boolean;
+  /** Which cross-site requests get the cookie (`SameSite`, `Lax` by default) */
   readonly same_site?: "Lax" | "None" | "Strict";
   /** Partitioned by the top-level site (CHIPS): implies `Secure` */
   readonly partitioned?: boolean;
@@ -42,6 +68,11 @@ export class Cookie implements ICookie {
   readonly #same_site: "Lax" | "None" | "Strict";
   readonly #partitioned: boolean;
 
+  /**
+   * A cookie with its attributes (by default `Path=/`, `HttpOnly` and
+   * `SameSite=Lax`): a name, a value or an attribute that could add attributes
+   * to `Set-Cookie` throws a `TypeError`
+   */
   public constructor({
     key,
     value,
@@ -83,30 +114,40 @@ export class Cookie implements ICookie {
     this.#expires = expires instanceof Date ? new Date(expires) : null;
   }
 
+  /** The name of the cookie */
   public get key(): string {
     return this.#key;
   }
 
+  /** The value of the cookie */
   public get value(): string {
     return this.#value;
   }
 
+  /** When the cookie expires (a copy), or `null` */
   public get expires(): Date | null {
     return this.#expires ? new Date(this.#expires) : null;
   }
 
+  /** The lifetime in seconds, or `null` */
   public get max_age(): number | null {
     return this.#max_age;
   }
 
+  /** The `Domain` attribute, or `null` (always for a `__Host-` cookie) */
   public get domain(): string | null {
     return this.key.startsWith("__Host-") ? null : this.#domain;
   }
 
+  /** The `Path` attribute, or `null` (always `/` for a `__Host-` cookie) */
   public get path(): string | null {
     return this.key.startsWith("__Host-") ? "/" : this.#path;
   }
 
+  /**
+   * Whether the cookie has `Secure`: also implied by the `__Secure-` and
+   * `__Host-` prefixes, `SameSite=None` and `Partitioned`
+   */
   public get secure(): boolean {
     return (
       this.key.startsWith("__Secure-") ||
@@ -117,18 +158,25 @@ export class Cookie implements ICookie {
     );
   }
 
+  /** Whether the cookie has `HttpOnly` */
   public get http_only(): boolean {
     return this.#http_only;
   }
 
+  /** The `SameSite` attribute */
   public get same_site(): "Lax" | "None" | "Strict" {
     return this.#same_site;
   }
 
+  /** Whether the cookie has `Partitioned` */
   public get partitioned(): boolean {
     return this.#partitioned;
   }
 
+  /**
+   * The value of a `Set-Cookie` field: `name=value` and the attributes
+   * (`Max-Age` instead of `Expires` when both are set)
+   */
   public toString(): string {
     let output = `${this.key}=${this.value}`;
     output +=
@@ -146,6 +194,11 @@ export class Cookie implements ICookie {
     return output;
   }
 
+  /**
+   * The valid cookies of a `Cookie` header (`name=value` pairs, separated by
+   * `;`), with the double quotes of their values removed: the first cookie of a
+   * name wins, and invalid ones are skipped
+   */
   public static fromString(input?: string): Cookie[] {
     if (typeof input !== "string") {
       return [];

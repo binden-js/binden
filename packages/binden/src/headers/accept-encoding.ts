@@ -6,7 +6,9 @@ export type IAcceptEncodings =
 
 /** An element of `Accept-Encoding` */
 export interface IAcceptEncoding {
+  /** A known content coding in lowercase, or `*` (any other coding) */
   encoding: IAcceptEncodings;
+  /** The weight: a qvalue from 0 to 1 (none by default, which weighs 1) */
   q_value?: number | null;
 }
 
@@ -15,6 +17,10 @@ export class AcceptEncoding implements IAcceptEncoding {
   readonly #encoding: IAcceptEncodings;
   readonly #q_value: number | null;
 
+  /**
+   * A known content coding (or `*`) and its weight (a qvalue): invalid ones
+   * throw a `TypeError`
+   */
   public constructor({ encoding, q_value = null }: IAcceptEncoding) {
     if (!AcceptEncoding.#encodings.includes(encoding)) {
       throw new TypeError(`Unknown content coding: ${String(encoding)}`);
@@ -25,19 +31,27 @@ export class AcceptEncoding implements IAcceptEncoding {
     this.#q_value = q_value;
   }
 
+  /** The content coding, or `*` */
   public get encoding(): IAcceptEncodings {
     return this.#encoding;
   }
 
+  /** The weight, or `null` without one (it weighs 1) */
   public get q_value(): number | null {
     return this.#q_value;
   }
 
+  /** The element as in the header: `coding;q=weight` */
   public toString(): string {
     const { q_value, encoding } = this;
     return typeof q_value === "number" ? `${encoding};q=${q_value}` : encoding;
   }
 
+  /**
+   * The elements of the header with a known coding (in lowercase) and a valid
+   * weight, from the greatest weight (a missing one is 1), in their order on a
+   * tie
+   */
   public static fromString(string?: string[] | string): AcceptEncoding[] {
     return AcceptEncoding.#parse(string)
       .filter((e): e is [IAcceptEncodings, number | null] =>

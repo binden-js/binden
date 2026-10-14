@@ -15,7 +15,12 @@ export type IAuthenticationType =
 
 /** The scheme and the credentials of `Authorization` */
 export interface IAuthorization {
+  /** The authentication scheme, in its usual casing (e.g. `Bearer`) */
   type: IAuthenticationType;
+  /**
+   * What follows the scheme (a token68 or auth-params, as received), or `null`
+   * (by default) for none
+   */
   credentials?: string | null;
 }
 
@@ -44,20 +49,28 @@ export class Authorization implements IAuthorization {
     this.#credentials = credentials;
   }
 
+  /** The authentication scheme, in its usual casing */
   public get type(): IAuthenticationType {
     return this.#type;
   }
 
+  /** The credentials as received (e.g. the base64 of `Basic`), or `null` */
   public get credentials(): string | null {
     return this.#credentials;
   }
 
+  /** The field value: the scheme, then a space and the credentials */
   public toString(): string {
     return typeof this.#credentials === "string"
       ? `${this.#type} ${this.#credentials}`
       : this.#type;
   }
 
+  /**
+   * The header (its scheme in any case), or `null` when it is missing,
+   * malformed, of an unsupported scheme or with invalid credentials (e.g.
+   * control characters)
+   */
   public static fromString(input?: string): Authorization | null {
     // auth-scheme [ 1*SP ( token68 / #auth-param ) ] (RFC 9110, section 11.4)
     const { scheme = "", rest = "" } =

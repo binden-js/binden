@@ -2,6 +2,7 @@ import { parseHttpDate } from "./http-date.js";
 
 /** The date of `If-Modified-Since` */
 export interface IIfModifiedSince {
+  /** The date (the header has a precision of one second) */
   readonly date: Date;
 }
 
@@ -24,10 +25,12 @@ export class IfModifiedSince implements IIfModifiedSince {
     this.#date = value;
   }
 
+  /** The date (a copy) */
   public get date(): Date {
     return new Date(this.#date);
   }
 
+  /** The date as an HTTP-date (`Sun, 06 Nov 1994 08:49:37 GMT`) */
   public toString(): string {
     return this.#date.toUTCString();
   }

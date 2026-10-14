@@ -18,9 +18,13 @@ export const codings: readonly ICompressEncodings[] = [
 
 /** The options of the compressor of every coding */
 export interface ICompressorOptions {
+  /** The options of the `br` compressor */
   readonly br: BrotliOptions;
+  /** The options of the `deflate` compressor */
   readonly deflate: ZlibOptions;
+  /** The options of the `gzip` compressor */
   readonly gzip: ZlibOptions;
+  /** The options of the `zstd` compressor */
   readonly zstd: ZstdOptions;
 }
 

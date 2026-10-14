@@ -16,7 +16,9 @@ export interface IMultipartInfo {
 
 /** What a parse records while it reads the body */
 export interface IParseInfo {
+  /** The names of the fields truncated to `fieldSize`, in their order */
   readonly truncated_fields: string[];
+  /** The limits on the count of the parts that have been reached */
   readonly limits_hit: ILimitName[];
 }
 

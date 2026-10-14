@@ -30,9 +30,15 @@ export abstract class Middleware<
   State extends object = Record<string, unknown>,
   Params extends IParams = IParams,
 > {
+  /** Whether the middleware is skipped */
   public disabled: boolean;
+  /** Whether the errors of the middleware are ignored (the stack goes on) */
   public ignore_errors: boolean;
 
+  /**
+   * A middleware with its options: an option that is not a boolean throws a
+   * `TypeError`
+   */
   public constructor({
     disabled = false,
     ignore_errors = false,
@@ -46,6 +52,10 @@ export abstract class Middleware<
     this.ignore_errors = ignore_errors;
   }
 
+  /**
+   * Handles the context: it may reply (and set `done`), or return (or resolve
+   * to) the context of the next middlewares
+   */
   public abstract run(
     context: Context<State, Params>,
   ): IMiddlewareReturnType<State, Params>;

@@ -13,6 +13,7 @@ export interface IAccept {
   type: string;
   /** The parameters of the media range (their names are case-insensitive) */
   parameters?: Readonly<Record<string, string>> | undefined;
+  /** The weight: a qvalue from 0 to 1 (none by default, which weighs 1) */
   q_value?: number | null | undefined;
 }
 
@@ -62,6 +63,7 @@ export class Accept implements IAccept {
     this.#q_value = q_value;
   }
 
+  /** The media range (in lowercase when parsed) */
   public get type(): string {
     return this.#type;
   }
@@ -71,10 +73,15 @@ export class Accept implements IAccept {
     return Object.fromEntries(this.#parameters);
   }
 
+  /** The weight, or `null` without one (it weighs 1) */
   public get q_value(): number | null {
     return this.#q_value;
   }
 
+  /**
+   * The element as in the header: `type/subtype;name=value;q=weight`, with the
+   * values that are not tokens quoted
+   */
   public toString(): string {
     const parameters = [...this.#parameters].map(
       ([name, value]) => `;${name}=${quote(value)}`,

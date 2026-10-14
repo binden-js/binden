@@ -38,6 +38,7 @@ type ISegment = { readonly literal: string } | { readonly param: string };
 export interface IPattern {
   /** The pattern as registered (a mount prefix without its trailing `/`) */
   readonly source: string;
+  /** The segments, without the `*name` tail */
   readonly segments: readonly ISegment[];
   /** The segments without a trailing empty one (see the `strict` option) */
   readonly loose: readonly ISegment[];
@@ -47,6 +48,7 @@ export interface IPattern {
 
 /** The match of a mount prefix */
 export interface IPrefixMatch {
+  /** The parameters of the prefix, decoded once */
   readonly params: IParams;
   /** The matched part of the path, as received (`""` for the prefix `/`) */
   readonly prefix: string;
@@ -214,6 +216,7 @@ function split(path: string): string[] {
  * option)
  */
 export interface IMatchOptions extends IRoutingOptions {
+  /** Whether a parameter may have an encoded `/` or `\` (`false`) */
   readonly encoded_slashes?: boolean | undefined;
 }
 

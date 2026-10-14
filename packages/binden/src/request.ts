@@ -56,7 +56,10 @@ export interface IRequestOptions {
    */
   readonly request_id: IRequestIdSettings | null;
   /** The greatest number of keys that `request.query` parses (1000) */
-  readonly query: { readonly max_keys: number };
+  readonly query: {
+    /** The greatest number of keys (a positive integer, or `Infinity`) */
+    readonly max_keys: number;
+  };
 }
 
 /**
@@ -68,8 +71,11 @@ export type IAllowedHosts = readonly string[] | ((host: string) => boolean);
 
 /** The settings of the request ids, checked and with their defaults */
 export interface IRequestIdSettings {
+  /** The name of the field of the id, in lowercase */
   readonly header: string;
+  /** Whether a valid incoming id is used instead of a new one */
   readonly trust_incoming: boolean;
+  /** Whether the response sends the id back */
   readonly echo: boolean;
 }
 
@@ -107,7 +113,12 @@ export interface IRequestOptionsInput {
   /** The request ids (new ids, not sent back, by default) */
   request_id?: IRequestIdOptions | undefined;
   /** The greatest number of keys that `request.query` parses (`1000`) */
-  query?: { max_keys?: number | undefined } | undefined;
+  query?:
+    | {
+        /** The greatest number of keys: a positive integer, or `Infinity` */
+        max_keys?: number | undefined;
+      }
+    | undefined;
 }
 
 /** Throws unless the value is an object (or `undefined`, for the default) */
@@ -316,6 +327,7 @@ export class BindenRequest extends IncomingMessage {
     return this.#body;
   }
 
+  /** Sets the parsed body: once only, later values are ignored */
   public set body(body: unknown) {
     if (typeof this.#body === "undefined") {
       this.#body = body;

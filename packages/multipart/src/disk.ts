@@ -37,11 +37,17 @@ export interface IStoredForm {
 
 /** The operations of the file system of the disk storage (replaced by the tests) */
 export interface IFileSystem {
+  /** Creates the private directory of a request (see `fs.mkdtemp()`) */
   mkdtemp(prefix: string): Promise<string>;
+  /** Opens a file (see `fs.open()`) */
   open(path: string, flags: number, mode: number): Promise<FileHandle>;
+  /** Creates a hard link (see `fs.link()`) */
   link(existing: string, target: string): Promise<void>;
+  /** Copies a file (see `fs.copyFile()`) */
   copyFile(source: string, target: string, mode: number): Promise<void>;
+  /** Removes a file (see `fs.unlink()`) */
   unlink(path: string): Promise<void>;
+  /** Removes an empty directory (see `fs.rmdir()`) */
   rmdir(path: string): Promise<void>;
 }
 
@@ -78,9 +84,13 @@ async function unlinkIfExists(
  * never removes a file that is being (or has been) persisted.
  */
 export class StoredFile implements IStoredFile {
+  /** The name of the field of the file */
   public readonly field: string;
+  /** The name that the client has given to the file (metadata only) */
   public readonly filename: string;
+  /** The media type that the client has declared */
   public readonly mime_type: string;
+  /** The transfer encoding that the client has declared */
   public readonly encoding: string;
   /** Settles once the file is written (and its descriptor closed) */
   public readonly written: Promise<void>;
@@ -97,6 +107,7 @@ export class StoredFile implements IStoredFile {
   #stopped = false;
   #lock: Promise<void> = Promise.resolve();
 
+  /** Starts writing the stream of a file part to a new file of the directory */
   public constructor(
     { field, filename, mime_type, encoding }: IFileInfo,
     system: IFileSystem,
@@ -111,18 +122,25 @@ export class StoredFile implements IStoredFile {
     this.written = this.#write(directory, stream);
   }
 
+  /** Where the file is (see `IStoredFile.path`) */
   public get path(): string {
     return this.#path;
   }
 
+  /** The size of the file in bytes */
   public get size(): number {
     return this.#size;
   }
 
+  /** Whether the file has been truncated to `fileSize` */
   public get truncated(): boolean {
     return this.#truncated;
   }
 
+  /**
+   * Moves the file to `target` (see `IStoredFile.persist()`): a `TypeError` for
+   * a target that is not a non-empty string
+   */
   public async persist(target: string): Promise<void> {
     if (typeof target !== "string" || target === "") {
       throw new TypeError("`target` is not a non-empty string");

@@ -4,6 +4,7 @@ import { isQvalue, preferred, token, weighted } from "./list.js";
 export interface IAcceptCharset {
   /** A charset (a token), or `*` */
   charset: string;
+  /** The weight: a qvalue from 0 to 1 (none by default, which weighs 1) */
   q_value?: number | null | undefined;
 }
 
@@ -26,14 +27,17 @@ export class AcceptCharset implements IAcceptCharset {
     this.#q_value = q_value;
   }
 
+  /** The charset (a token), or `*` */
   public get charset(): string {
     return this.#charset;
   }
 
+  /** The weight, or `null` without one (it weighs 1) */
   public get q_value(): number | null {
     return this.#q_value;
   }
 
+  /** The element as in the header: `charset;q=weight` */
   public toString(): string {
     const { charset, q_value } = this;
     return q_value === null ? charset : `${charset};q=${q_value}`;

@@ -65,9 +65,11 @@ export function isQvalue(q_value: number | null): boolean {
 
 /** An element of a list with weights: its value, parameters and weight */
 export interface IWeighted {
+  /** The value of the element (e.g. a media range), trimmed and not checked */
   readonly value: string;
   /** The parameters before the weight, with their names in lowercase */
   readonly parameters: readonly (readonly [string, string])[];
+  /** The weight (the `q` parameter), or `null` without one */
   readonly q_value: number | null;
 }
 

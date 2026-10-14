@@ -8,12 +8,18 @@ export type IAbortReason = "client_closed" | "deadline" | "shutdown";
 export class BindenAbortError extends Error {
   readonly #reason: IAbortReason;
 
+  /** The abort of a request, for the reason */
   public constructor(reason: IAbortReason) {
     super(`The request has been aborted (${reason})`);
     this.name = "BindenAbortError";
     this.#reason = reason;
   }
 
+  /**
+   * Why the request has been aborted: the client has gone away
+   * (`client_closed`), the deadline has passed (`deadline`) or the server is
+   * shutting down (`shutdown`)
+   */
   public get reason(): IAbortReason {
     return this.#reason;
   }
@@ -22,9 +28,11 @@ export class BindenAbortError extends Error {
 /** Reports a failure that nothing else can handle (e.g. a cleanup that throws) */
 export type IExchangeReport = (message: string, error: unknown) => void;
 
+/** The options of an exchange, used when it is created */
 export interface IExchangeOptions {
   /** The state of the request, created once for the exchange */
   readonly state?: object | undefined;
+  /** Reports a failure of a cleanup (ignored by default) */
   readonly report?: IExchangeReport | undefined;
 }
 
@@ -126,14 +134,20 @@ export class Exchange {
     return exchanges.get(request) ?? null;
   }
 
+  /**
+   * Aborted once, with a `BindenAbortError`, when the work for the request
+   * should stop
+   */
   public get signal(): AbortSignal {
     return this.#controller.signal;
   }
 
+  /** The state of the request */
   public get state(): object {
     return this.#state;
   }
 
+  /** Whether a middleware has handled the request */
   public get done(): boolean {
     return this.#done;
   }
@@ -148,6 +162,7 @@ export class Exchange {
     return this.#params;
   }
 
+  /** Sets the parameters of the current match (a frozen copy) */
   public set params(params: Readonly<Record<string, string>>) {
     this.#params = Object.freeze({ ...params });
   }
@@ -157,6 +172,7 @@ export class Exchange {
     return this.#mount_path;
   }
 
+  /** Sets the matched mount prefixes, with their values */
   public set mount_path(path: string) {
     this.#mount_path = path;
   }
@@ -166,6 +182,7 @@ export class Exchange {
     return this.#mount_template;
   }
 
+  /** Sets the matched mount prefixes, as registered */
   public set mount_template(template: string) {
     this.#mount_template = template;
   }
@@ -207,10 +224,15 @@ export class Exchange {
     return this.#route;
   }
 
+  /** Sets the route that the access log names */
   public set route(route: string) {
     this.#route = route;
   }
 
+  /**
+   * Where the exchange is: `running`, then `finalizing` (its cleanups run) once
+   * the response is closed, then `finished`
+   */
   public get phase(): IPhase {
     return this.#phase;
   }

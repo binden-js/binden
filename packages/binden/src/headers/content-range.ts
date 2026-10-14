@@ -2,6 +2,7 @@ import { Range, type IRange } from "./range.js";
 
 /** The range of `Content-Range` (none when unsatisfied) and the size of the content */
 export interface IContentRange extends IRange {
+  /** The size of the whole content in bytes, or `*` when it is unknown */
   readonly size: number | "*";
 }
 
@@ -9,6 +10,11 @@ export interface IContentRange extends IRange {
 export class ContentRange extends Range implements IContentRange {
   readonly #size: number | "*";
 
+  /**
+   * The range of `start` to `end` (non-negative integers, `end` within `size`),
+   * or neither of them (an unsatisfied range), and the size of the content:
+   * anything else throws a `TypeError`
+   */
   public constructor({ start = null, end = null, size }: IContentRange) {
     if (typeof start === "number" && !Number.isSafeInteger(start)) {
       throw new TypeError("`start` is not an integer");
@@ -40,10 +46,15 @@ export class ContentRange extends Range implements IContentRange {
     this.#size = size;
   }
 
+  /** The size of the whole content in bytes, or `*` */
   public get size(): number | "*" {
     return this.#size;
   }
 
+  /**
+   * The field value: `bytes start-end/size`, or `bytes *\/size` for an
+   * unsatisfied range
+   */
   public toString(): string {
     return typeof this.start === "number" && typeof this.end === "number"
       ? `${this.unit} ${this.start}-${this.end}/${this.size}`
