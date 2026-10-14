@@ -1,3 +1,5 @@
+import { fieldValue } from "./list.js";
+
 export type IAuthenticationType =
   | "AWS4-HMAC-SHA256"
   | "Basic"
@@ -19,7 +21,22 @@ export class Authorization implements IAuthorization {
   readonly #type: IAuthenticationType;
   readonly #credentials: string | null;
 
+  /**
+   * A supported scheme (in its usual casing) and its credentials: `null`, or
+   * what a field value can carry, without leading or trailing whitespace.
+   * Anything else throws a `TypeError`.
+   */
   public constructor({ type, credentials = null }: IAuthorization) {
+    if (!Authorization.isValidType(type)) {
+      throw new TypeError(`Unsupported authentication scheme: ${String(type)}`);
+    } else if (
+      credentials !== null &&
+      (credentials === "" ||
+        credentials !== credentials.trim() ||
+        !fieldValue.test(credentials))
+    ) {
+      throw new TypeError("Invalid credentials");
+    }
     this.#type = type;
     this.#credentials = credentials;
   }
@@ -52,10 +69,15 @@ export class Authorization implements IAuthorization {
     }
 
     const credentials = rest.trim();
-    return new Authorization({
-      type,
-      credentials: credentials === "" ? null : credentials,
-    });
+    try {
+      return new Authorization({
+        type,
+        credentials: credentials === "" ? null : credentials,
+      });
+    } catch {
+      // E.g. control characters
+      return null;
+    }
   }
 
   /** The supported schemes by their lowercase names */

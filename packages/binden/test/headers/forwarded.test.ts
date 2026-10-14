@@ -1,7 +1,7 @@
-import { deepStrictEqual } from "node:assert";
+import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
 
-import { Forwarded } from "../../index.js";
+import { Forwarded, type IForwarded } from "../../index.js";
 
 suite("Forwarded", () => {
   test("constructor", () => {
@@ -20,6 +20,45 @@ suite("Forwarded", () => {
     deepStrictEqual(
       forwarded.toString(),
       `for="${_.for}";by=${by};host=${host};secret=${secret};proto=${proto}`,
+    );
+  });
+
+  test("constructor (invalid input)", () => {
+    const invalid: [Record<string, unknown>, string][] = [
+      [{ for: 1 }, "for"],
+      [{}, "for"],
+      [{ for: null }, "for"],
+      [{ for: "a\u0000" }, "for"],
+      [{ for: "a", by: "\n" }, "by"],
+      [{ for: "a", host: "\u20AC" }, "host"],
+      [{ for: "a", secret: 1 }, "secret"],
+      [{ for: "a", proto: "\u007F" }, "proto"],
+    ];
+    for (const [input, name] of invalid) {
+      throws(
+        () => new Forwarded(input as unknown as IForwarded),
+        new TypeError(`Invalid \`${name}\` parameter`),
+        JSON.stringify(input),
+      );
+    }
+  });
+
+  test(".toString() (quoted strings)", () => {
+    // Values that are not tokens are quoted (and their quotes escaped), so
+    // that the element is parsed back as it is
+    const forwarded = new Forwarded({
+      for: "",
+      by: `a"b\\c`,
+      host: "example.com:8080",
+      secret: "s e,c;r=t",
+      proto: "\thttps\xE9",
+    });
+    const output = `for="";by="a\\"b\\\\c";host="example.com:8080";secret="s e,c;r=t";proto="\thttps\xE9"`;
+    deepStrictEqual(forwarded.toString(), output);
+    const [parsed] = Forwarded.parse(output);
+    deepStrictEqual(
+      [parsed?.for, parsed?.by, parsed?.host, parsed?.secret, parsed?.proto],
+      ["", `a"b\\c`, "example.com:8080", "s e,c;r=t", "\thttps\xE9"],
     );
   });
 
@@ -70,12 +109,18 @@ suite("Forwarded", () => {
     deepStrictEqual(parse(), []);
     deepStrictEqual(
       parse(`for=a;proto=https, garbage, for="b,c", ext=1, , for=d;for=e`),
-      ["for=a;proto=https", null, "for=b,c", "for=unknown", null],
+      ["for=a;proto=https", null, `for="b,c"`, "for=unknown", null],
     );
     // The values that some proxies send unquoted
     deepStrictEqual(parse("for=2001:db8::1;proto=https, for=[::1]:80"), [
-      "for=2001:db8::1;proto=https",
+      `for="2001:db8::1";proto=https`,
       `for="[::1]:80"`,
+    ]);
+    // Control characters (in a quoted string, or a value without spaces)
+    deepStrictEqual(parse(`for="a\u0001", for=b\u0002, for=c`), [
+      null,
+      null,
+      "for=c",
     ]);
     // A repeated parameter, also in another case, is ambiguous
     deepStrictEqual(parse("proto=http;PROTO=https"), [null]);

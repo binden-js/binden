@@ -1,4 +1,4 @@
-import { split, unquote } from "./list.js";
+import { fieldValue, quote, split, unquote } from "./list.js";
 
 export interface IForwarded {
   for: string;
@@ -15,7 +15,19 @@ export class Forwarded implements IForwarded {
   readonly #secret?: string | null;
   readonly #proto?: string | null;
 
+  /**
+   * The parameters of an element: strings that a field value can carry (no
+   * control characters but tabs), sent as quoted strings when they are not
+   * tokens. Anything else throws a `TypeError`.
+   */
   public constructor({ by, host, secret, proto, ..._ }: IForwarded) {
+    const parameters = { for: _.for, by, host, secret, proto };
+    for (const [name, value] of Object.entries(parameters)) {
+      const optional = name !== "for" && (value ?? null) === null;
+      if (!optional && !(typeof value === "string" && fieldValue.test(value))) {
+        throw new TypeError(`Invalid \`${name}\` parameter`);
+      }
+    }
     this.#for = _.for;
     this.#by = by ?? null;
     this.#host = host ?? null;
@@ -43,18 +55,13 @@ export class Forwarded implements IForwarded {
     return this.#proto ?? null;
   }
 
+  /** The element, with its values that are not tokens as quoted strings */
   public toString(): string {
-    let output = `for=${Forwarded.#formatDirective(this.for)}`;
     const { by, host, secret, proto } = this;
-    output +=
-      typeof by === "string" ? `;by=${Forwarded.#formatDirective(by)}` : "";
-    output +=
-      typeof host === "string"
-        ? `;host=${Forwarded.#formatDirective(host)}`
-        : "";
-    output += typeof secret === "string" ? `;secret=${secret}` : "";
-    output += typeof proto === "string" ? `;proto=${proto}` : "";
-    return output;
+    return Object.entries({ for: this.for, by, host, secret, proto })
+      .filter((entry): entry is [string, string] => entry[1] !== null)
+      .map(([name, value]) => `${name}=${quote(value)}`)
+      .join(";");
   }
 
   /** The valid elements of the header (see `.parse()`) */
@@ -81,10 +88,6 @@ export class Forwarded implements IForwarded {
       .map((element) => Forwarded.#parseElement(element));
   }
 
-  static #formatDirective(input: string): string {
-    return input.startsWith("[") && input.includes("]") ? `"${input}"` : input;
-  }
-
   static #parseElement(input: string): Forwarded | null {
     const parameters = new Map<string, string>();
     const pairs = split(input, ";").filter((pair) => pair.trim() !== "");
@@ -99,13 +102,18 @@ export class Forwarded implements IForwarded {
       }
       parameters.set(key, unquote(value));
     }
-    return new Forwarded({
-      for: parameters.get("for") ?? "unknown",
-      by: parameters.get("by") ?? null,
-      host: parameters.get("host") ?? null,
-      proto: parameters.get("proto") ?? null,
-      secret: parameters.get("secret") ?? null,
-    });
+    try {
+      return new Forwarded({
+        for: parameters.get("for") ?? "unknown",
+        by: parameters.get("by") ?? null,
+        host: parameters.get("host") ?? null,
+        proto: parameters.get("proto") ?? null,
+        secret: parameters.get("secret") ?? null,
+      });
+    } catch {
+      // E.g. control characters in a quoted string
+      return null;
+    }
   }
 }
 

@@ -1,7 +1,7 @@
-import { deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, throws } from "node:assert";
 import { suite, test } from "node:test";
 
-import { Authorization } from "../../index.js";
+import { Authorization, type IAuthenticationType } from "../../index.js";
 
 suite("Authorization", () => {
   test("constructor", () => {
@@ -19,6 +19,36 @@ suite("Authorization", () => {
     deepStrictEqual(authorization.type, type);
     deepStrictEqual(authorization.credentials, null);
     deepStrictEqual(authorization.toString(), type);
+  });
+
+  test("constructor (invalid input)", () => {
+    // Like the parser: a supported scheme in its usual casing
+    for (const type of ["bearer", "Unknown", "Bearer abc", ""]) {
+      throws(
+        () => new Authorization({ type: type as IAuthenticationType }),
+        new TypeError(`Unsupported authentication scheme: ${type}`),
+      );
+    }
+    // Credentials that a field value can carry, without surrounding whitespace
+    for (const credentials of [
+      "",
+      " abc",
+      "abc ",
+      "a\r\nb",
+      "a\u0000b",
+      "\u20AC",
+    ]) {
+      throws(
+        () => new Authorization({ type: "Bearer", credentials }),
+        new TypeError("Invalid credentials"),
+        JSON.stringify(credentials),
+      );
+    }
+    deepStrictEqual(
+      new Authorization({ type: "Digest", credentials: `a="b c",\td=\xE9` })
+        .credentials,
+      `a="b c",\td=\xE9`,
+    );
   });
 
   test("Authorization.fromString()", () => {
@@ -53,6 +83,8 @@ suite("Authorization", () => {
     // Not a scheme
     deepStrictEqual(parse("Bearer\tabc"), null);
     deepStrictEqual(parse("Bear er abc"), null);
+    // Credentials that the constructor refuses
+    deepStrictEqual(parse("Bearer a\u0001b"), null);
   });
 
   test("Authorization.isValidType()", () => {

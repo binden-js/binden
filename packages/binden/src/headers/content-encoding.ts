@@ -7,7 +7,11 @@ export interface IContentEncoding {
 export class ContentEncoding implements IContentEncoding {
   readonly #encoding: IEncodings;
 
+  /** A known content coding (in lowercase), or a `TypeError` */
   public constructor({ encoding }: IContentEncoding) {
+    if (!ContentEncoding.#encodings.has(encoding)) {
+      throw new TypeError(`Unknown content coding: ${String(encoding)}`);
+    }
     this.#encoding = encoding;
   }
 

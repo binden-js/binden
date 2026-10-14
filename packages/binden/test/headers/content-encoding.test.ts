@@ -1,7 +1,7 @@
-import { deepStrictEqual } from "node:assert";
+import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
 
-import { ContentEncoding } from "../../index.js";
+import { ContentEncoding, type IEncodings } from "../../index.js";
 
 suite("ContentEncoding", () => {
   test("constructor", () => {
@@ -9,6 +9,16 @@ suite("ContentEncoding", () => {
     const ac = new ContentEncoding({ encoding });
     deepStrictEqual(ac.encoding, encoding);
     deepStrictEqual(ac.toString(), encoding);
+  });
+
+  test("constructor (invalid input)", () => {
+    // Like the parser: a known coding (in lowercase)
+    for (const encoding of ["identity", "GZIP", "gzip, br", "*", ""]) {
+      throws(
+        () => new ContentEncoding({ encoding: encoding as IEncodings }),
+        new TypeError(`Unknown content coding: ${encoding}`),
+      );
+    }
   });
 
   test("ContentEncoding.fromString()", () => {

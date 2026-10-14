@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, throws } from "node:assert";
 import { suite, test } from "node:test";
 
 import { IfModifiedSince } from "../../index.js";
@@ -12,11 +12,25 @@ suite("If-Modified-Since", () => {
   });
 
   test("constructor (invalid Date)", () => {
-    const input = "invalid";
-    const date = new Date(input);
-    const ac = new IfModifiedSince({ date });
-    deepStrictEqual(ac.date.getTime(), NaN);
-    deepStrictEqual(ac.toString(), "Invalid Date");
+    throws(
+      () => new IfModifiedSince({ date: new Date("invalid") }),
+      new TypeError("Invalid date"),
+    );
+    // Not an HTTP-date: a year out of 0..9999
+    for (const year of [-1, 10000]) {
+      const date = new Date(Date.UTC(2000, 0, 1));
+      date.setUTCFullYear(year);
+      throws(
+        () => new IfModifiedSince({ date }),
+        new TypeError("The date is not an HTTP-date"),
+        `${year}`,
+      );
+    }
+    for (const year of [0, 9999]) {
+      const date = new Date(Date.UTC(2000, 0, 1));
+      date.setUTCFullYear(year);
+      deepStrictEqual(new IfModifiedSince({ date }).date, date);
+    }
   });
 
   test("IfModifiedSince.fromString()", () => {

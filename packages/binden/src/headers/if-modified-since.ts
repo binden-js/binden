@@ -7,8 +7,19 @@ export interface IIfModifiedSince {
 export class IfModifiedSince implements IIfModifiedSince {
   readonly #date: Date;
 
+  /**
+   * A date that is an HTTP-date (from the year 0 to 9999): an invalid one
+   * throws a `TypeError`
+   */
   public constructor({ date }: IIfModifiedSince) {
-    this.#date = new Date(date);
+    const value = new Date(date);
+    const year = value.getUTCFullYear();
+    if (Number.isNaN(year)) {
+      throw new TypeError("Invalid date");
+    } else if (year < 0 || year > 9999) {
+      throw new TypeError("The date is not an HTTP-date");
+    }
+    this.#date = value;
   }
 
   public get date(): Date {
