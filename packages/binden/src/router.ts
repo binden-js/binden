@@ -42,7 +42,7 @@ export class Router {
   }
 
   public on(method: string, ..._middlewares: IMiddleware[]): this {
-    if (!METHODS.includes(method)) {
+    if (!Router.#supports(method)) {
       throw new TypeError(`Method ${method} is not supported`);
     } else if (!_middlewares.length) {
       return this;
@@ -68,7 +68,7 @@ export class Router {
   }
 
   public off(method: string, ..._middlewares: IMiddleware[]): IMiddleware[] {
-    if (!METHODS.includes(method)) {
+    if (!Router.#supports(method)) {
       throw new TypeError(`Method ${method} is not supported`);
     }
 
@@ -125,5 +125,13 @@ export class Router {
 
   public trace(...middlewares: IMiddleware[]): this {
     return this.on("TRACE", ...middlewares);
+  }
+
+  /**
+   * The methods of Node.js, except `CONNECT`: Node.js emits its requests as
+   * `connect` events of the server, which never reach the middlewares
+   */
+  static #supports(method: string): boolean {
+    return METHODS.includes(method) && method !== "CONNECT";
   }
 }

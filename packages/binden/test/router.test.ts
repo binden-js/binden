@@ -66,6 +66,15 @@ suite("Router", () => {
       () => new Router().on(unsupportedMethod),
       new TypeError(`Method ${unsupportedMethod} is not supported`),
     );
+    // Never reaches the middlewares (a `connect` event of the server)
+    throws(
+      () => new Router().on("CONNECT", one),
+      new TypeError("Method CONNECT is not supported"),
+    );
+    throws(
+      () => new Router().off("CONNECT", one),
+      new TypeError("Method CONNECT is not supported"),
+    );
   });
 
   test(".on() (with unsupported middleware)", () => {
