@@ -91,6 +91,7 @@ test("types", () => {
     parameter_limit: none,
     verify: none,
     verify_encoded: none,
+    zstd: none,
     disabled: none,
     ignore_errors: none,
   };

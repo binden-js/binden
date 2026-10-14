@@ -52,6 +52,7 @@ The default export is a `BodyParser` with the default options (no limits).
 | `strict`          | `true`            | Whether the default `parse` accepts only an object or an array                                                              |
 | `verify`          | none              | Checks the decoded body before it is parsed (see [Verification](#verification))                                             |
 | `verify_encoded`  | `false`           | Whether `verify` gets the body as received too                                                                              |
+| `zstd`            | `false`           | Whether the `zstd` content coding is decoded (see [Content codings](#content-codings))                                      |
 | `disabled`        | `false`           | Whether the middleware is skipped                                                                                           |
 | `ignore_errors`   | `false`           | Whether its errors are ignored                                                                                              |
 
@@ -129,6 +130,11 @@ A body is parsed once: another `BodyParser` that selects it later skips it.
 `compress`) and an unknown charset (of a body that is not `raw`) get `415 Unsupported Media Type`,
 before the body is read; corrupt data gets `400 Bad Request`. The codings of a body that is not
 selected are not checked.
+
+`zstd: true` decodes `zstd` too. Its API is experimental in Node.js, and a `zstd` decoder
+allocates the window that a frame declares, whatever `limit` is: the parser refuses a window larger
+than 8 MiB (`400 Bad Request`, as RFC 9659 allows), so a `zstd` body may still take up to 8 MiB of
+memory per decoder.
 
 ## Custom `parse`
 

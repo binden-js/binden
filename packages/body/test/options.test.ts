@@ -46,7 +46,7 @@ suite("BodyParser (options)", () => {
   });
 
   test("the flags are booleans", () => {
-    for (const name of ["raw", "strict", "verify_encoded"]) {
+    for (const name of ["raw", "strict", "verify_encoded", "zstd"]) {
       for (const value of [1, "true", null]) {
         throws(
           () => new BodyParser(options({ [name]: value })),

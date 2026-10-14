@@ -2,6 +2,8 @@ import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import {
   brotliCompressSync,
+  constants,
+  createZstdCompress,
   deflateSync,
   gzipSync,
   zstdCompressSync,
@@ -32,6 +34,15 @@ function text(coding: string): Record<string, string> {
 
 const hello = "Hello World";
 const parsed = { type: "text", value: hello };
+
+/** A `zstd` frame that declares a window of 128 MiB */
+async function largeWindow(): Promise<Buffer> {
+  const encoder = createZstdCompress({
+    params: { [constants.ZSTD_c_windowLog]: 27 },
+  });
+  encoder.end(hello);
+  return Buffer.concat(await encoder.toArray());
+}
 
 suite("BodyParser (content codings)", () => {
   test("gzip, x-gzip, deflate and br", async () => {
@@ -85,6 +96,24 @@ suite("BodyParser (content codings)", () => {
         coding,
       );
     }
+  });
+
+  test("`zstd`", async () => {
+    const parser = new BodyParser({ zstd: true });
+    const body = zstdCompressSync(hello);
+    deepStrictEqual((await post(parser, body, text("zstd"))).body, parsed);
+    const both = gzipSync(zstdCompressSync(hello));
+    deepStrictEqual(
+      (await post(parser, both, text("zstd, gzip"))).body,
+      parsed,
+    );
+    // A window larger than 8 MiB (RFC 9659)
+    const large = await largeWindow();
+    deepStrictEqual(await post(parser, large, text("zstd")), {
+      status: 400,
+      connection: "close",
+      body: null,
+    });
   });
 
   test("corrupt data is a 400", async () => {

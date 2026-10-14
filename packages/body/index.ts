@@ -6,7 +6,13 @@ import {
   finished,
   pipeline,
 } from "node:stream";
-import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
+import {
+  constants,
+  createBrotliDecompress,
+  createGunzip,
+  createInflate,
+  createZstdDecompress,
+} from "node:zlib";
 import {
   BindenAbortError,
   BindenError,
@@ -87,6 +93,8 @@ export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
   verify?: IVerify | undefined;
   /** Whether `verify` gets the body as received too (`false`) */
   verify_encoded?: boolean | undefined;
+  /** Whether the `zstd` content coding is decoded (`false`): the API of Node.js is experimental */
+  zstd?: boolean | undefined;
 }
 
 /** A decoder of a content coding, created once every coding is known to be supported */
@@ -99,6 +107,9 @@ type IOutcome<R> =
 
 /** The logger of the parser (`context.log`, whose calls never fail) */
 type ILog = Context["log"];
+
+/** The largest window of a `zstd` frame (8 MiB, RFC 9659) */
+const ZSTD_WINDOW_LOG_MAX = 23;
 
 /** The most content codings that a body may have */
 const MAX_CODINGS = 2;
@@ -257,6 +268,7 @@ export class BodyParser<T = unknown> extends Middleware {
   readonly #parameter_limit: number;
   readonly #verify: IVerify | null;
   readonly #verify_encoded: boolean;
+  readonly #zstd: boolean;
 
   public constructor({
     parse,
@@ -268,6 +280,7 @@ export class BodyParser<T = unknown> extends Middleware {
     parameter_limit = 1000,
     verify,
     verify_encoded = false,
+    zstd = false,
     ...rest
   }: IBodyParserOptions<T> = {}) {
     super(rest);
@@ -282,6 +295,7 @@ export class BodyParser<T = unknown> extends Middleware {
     validateBoolean("raw", raw);
     this.#strict = validateBoolean("strict", strict);
     this.#verify_encoded = validateBoolean("verify_encoded", verify_encoded);
+    this.#zstd = validateBoolean("zstd", zstd);
 
     if (typeof type === "function") {
       if (raw) {
@@ -444,7 +458,7 @@ export class BodyParser<T = unknown> extends Middleware {
 
     const decoders: IDecoder[] = [];
     for (const { encoding } of codings) {
-      const decoder = BodyParser.#decoder(encoding);
+      const decoder = this.#decoder(encoding);
       if (decoder === null) {
         throw refuse(new BindenError(415), "Unsupported content coding", {
           encoding,
@@ -476,13 +490,18 @@ export class BodyParser<T = unknown> extends Middleware {
   }
 
   /** The decoder of a content coding, `null` when it is not supported */
-  static #decoder(encoding: string): IDecoder | null {
+  #decoder(encoding: string): IDecoder | null {
     if (encoding === "gzip" || encoding === "x-gzip") {
       return createGunzip;
     } else if (encoding === "deflate") {
       return createInflate;
     } else if (encoding === "br") {
       return createBrotliDecompress;
+    } else if (encoding === "zstd" && this.#zstd) {
+      return (): Duplex =>
+        createZstdDecompress({
+          params: { [constants.ZSTD_d_windowLogMax]: ZSTD_WINDOW_LOG_MAX },
+        });
     }
     return null;
   }
