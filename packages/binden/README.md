@@ -15,7 +15,9 @@ npm install binden
 `new Binden(options)` takes the following options:
 
 - `auto_head` (default `true`) - a router without `HEAD` middlewares handles `HEAD` with its `GET` middlewares (see [Router](#router))
-- `error_handler` - replaces the default reply to an error thrown by a middleware (the thrown value may be anything, also `null`). It may be `async`: it is awaited, and it must have ended its reply when it settles. Nothing started then gets the default reply, while a reply that is not ended (e.g. a `write()` without `end()`) is cut by closing the connection. When it fails, the connection is closed. There is no deadline: a handler that never settles keeps its request.
+- `error_handler` - replaces the default reply to an error thrown by a middleware (the thrown value may be anything, also `null`). It may be `async`: it is awaited, and it must have ended its reply when it settles. Nothing started then gets the default reply, while a reply that is not ended (e.g. a `write()` without `end()`) is cut by closing the connection. A handler that throws, rejects or does not settle within `error_handler_timeout` gets an empty `500 Internal Server Error` instead (without the framing and representation headers it may have set), or the connection is closed when its reply has started; its later reply is ignored, and its later failure is logged (`debug`).
+- `error_handler_timeout` (default `5000`) - the milliseconds the `error_handler` has to settle (an integer from 1 to 2³¹−1)
+- `timeout` (default `0`, none) - the deadline of every request in milliseconds (an integer from 0 to 2³¹−1, see [Lifecycle](#lifecycle))
 - `logger` - see [Logging](#logging)
 - `trust_proxy`, `allowed_hosts`, `request_id`, `encoded_slashes`, `query` - the options of the requests, see [Request options](#request-options)
 
@@ -92,6 +94,37 @@ const debugApp = new Binden({ logger: verbose });
 ```
 
 Likewise, `error` can be replaced with a serializer that keeps the details of the errors (e.g. `stdSerializers.err` of [pino](https://getpino.io/#/docs/api?id=pino-stdserializers)).
+
+### Lifecycle
+
+Every request has an abort signal, `context.signal`, aborted at most once (its `reason` is a `BindenAbortError`, whose `reason` says why):
+
+- `client_closed` - the connection has closed before the response has finished;
+- `deadline` - the deadline of the request has passed;
+- `shutdown` - the server is shutting down, and its drain time has passed.
+
+The deadline of a request is the `timeout` option of `Binden` (none by default). A middleware restarts it from now with `context.setTimeout(ms)`, or removes it with `context.setTimeout(0)` (e.g. for a stream of server-sent events). Once the deadline has passed:
+
+- the stack stops: no other middleware runs, and the result of the running one is ignored (a later failure is logged at `debug`, and its later replies through the context, such as `context.send()`, do nothing);
+- a request whose reply has not started gets a `BindenError(503, { code: "deadline" })`, which goes to the error handler;
+- a reply that has started (or a response that has not finished once the stack has completed) is cut by closing the connection.
+
+`context.onCleanup(fn)` runs `fn` once the response is closed (finished, or its connection closed), after the functions registered later; a failure is logged.
+
+```typescript
+import { Binden, type Context } from "binden";
+
+const app = new Binden({ timeout: 30_000 }).use(async (context: Context) => {
+  // Stops waiting once the client has gone away or the deadline has passed
+  const upstream = await fetch("https://example.com/", {
+    signal: context.signal,
+  });
+  context.onCleanup(() => {
+    context.log.debug("The request is complete");
+  });
+  await context.text(await upstream.text());
+});
+```
 
 ### Context
 

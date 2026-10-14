@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /** Why the work of a request has been abandoned */
@@ -34,6 +35,9 @@ const MAX_DELAY = 2 ** 31 - 1;
 
 const exchanges = new WeakMap<IncomingMessage, Exchange>();
 
+/** The reply (see `Exchange.reply()`) that the current asynchronous work belongs to */
+const replies = new AsyncLocalStorage<object>();
+
 /**
  * The state of one request and its response, shared by every context created
  * for them (e.g. a middleware that returns a new context of the same request):
@@ -46,7 +50,10 @@ export class Exchange {
   readonly #cleanups: (() => unknown)[];
   readonly #finished: Promise<void>;
   readonly #report: IExchangeReport;
+  readonly #aborted: Promise<void>;
   #phase: IPhase;
+  #sealed: boolean;
+  #reply: object | null;
   #done: boolean;
   #timer: NodeJS.Timeout | null;
   #params: Readonly<Record<string, string>>;
@@ -62,7 +69,18 @@ export class Exchange {
     this.#state = state;
     this.#cleanups = [];
     this.#report = report ?? Exchange.#ignore;
+    this.#aborted = new Promise<void>((resolve) => {
+      this.#controller.signal.addEventListener(
+        "abort",
+        () => {
+          resolve();
+        },
+        { once: true },
+      );
+    });
     this.#phase = "running";
+    this.#sealed = false;
+    this.#reply = null;
     this.#done = false;
     this.#timer = null;
     this.#params = Object.freeze({});
@@ -99,6 +117,11 @@ export class Exchange {
       throw new TypeError("The response is not the one of the request");
     }
     return found;
+  }
+
+  /** The exchange of a request, if it has one */
+  public static find(request: IncomingMessage): Exchange | null {
+    return exchanges.get(request) ?? null;
   }
 
   public get signal(): AbortSignal {
@@ -147,6 +170,39 @@ export class Exchange {
 
   public get phase(): IPhase {
     return this.#phase;
+  }
+
+  /** Settles once the signal is aborted (never rejects) */
+  public get aborted(): Promise<void> {
+    return this.#aborted;
+  }
+
+  /**
+   * Whether the current asynchronous work may reply: anything before the
+   * exchange is sealed, then only the work run by the latest `reply()`
+   */
+  public get may_reply(): boolean {
+    return (
+      !this.#sealed ||
+      (this.#reply !== null && replies.getStore() === this.#reply)
+    );
+  }
+
+  /**
+   * From now on only the framework replies (e.g. once the deadline has
+   * passed): the work of the middlewares, and of any earlier `reply()`, may
+   * no longer reply
+   */
+  public seal(): void {
+    this.#sealed = true;
+    this.#reply = null;
+  }
+
+  /** Runs the reply of the framework: the work it starts may reply (see `may_reply`) */
+  public reply<T>(fn: () => T): T {
+    const reply = {};
+    this.#reply = reply;
+    return replies.run(reply, fn);
   }
 
   /** Settles once the response is closed and every cleanup has run */

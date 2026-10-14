@@ -144,45 +144,52 @@ export class Context<
   public async send(
     data?: Buffer | Readable | bigint | number | string,
   ): Promise<void> {
-    await this.response.send(data);
-    this.done = true;
+    await this.#reply(() => this.response.send(data));
   }
 
   public async json(
     data: Record<string, unknown> | unknown[],
     stringify?: (input: Record<string, unknown> | unknown[]) => string,
   ): Promise<void> {
-    if (typeof stringify === "undefined") {
-      await this.response.json(data);
-    } else {
-      await this.response.json(data, stringify);
-    }
-    this.done = true;
+    await this.#reply(async () => {
+      await (typeof stringify === "undefined"
+        ? this.response.json(data)
+        : this.response.json(data, stringify));
+    });
   }
 
   public async text(data: string): Promise<void> {
-    await this.response.text(data);
-    this.done = true;
+    await this.#reply(() => this.response.text(data));
   }
 
   public async html(data: string): Promise<void> {
-    await this.response.html(data);
-    this.done = true;
+    await this.#reply(() => this.response.html(data));
   }
 
   public async form(data: URLSearchParams): Promise<void> {
-    await this.response.form(data);
-    this.done = true;
+    await this.#reply(() => this.response.form(data));
   }
 
   /** Send a file */
   public async sendFile(url: URL | string): Promise<void> {
-    await this.response.sendFile(url);
-    this.done = true;
+    await this.#reply(() => this.response.sendFile(url));
   }
 
   // eslint-disable-next-line class-methods-use-this
   public throw(status: number, opts?: IBindenErrorOptions): never {
     throw new BindenError(status, opts);
+  }
+
+  /**
+   * Sends a reply and sets `done`, unless the framework has taken over the
+   * reply (e.g. the deadline has passed): a late reply is then ignored
+   */
+  async #reply(send: () => Promise<void>): Promise<void> {
+    if (!this.#exchange.may_reply) {
+      this.log.debug("A late reply has been ignored");
+      return;
+    }
+    await send();
+    this.done = true;
   }
 }

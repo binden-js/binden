@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { ILogger } from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
+import { BindenAbortError, Exchange } from "./exchange.js";
 import defaultLogger from "./logger.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
 import { property } from "./property.js";
@@ -25,6 +26,21 @@ export interface IBindenOptions {
   auto_head?: boolean;
   /** Replaces the default reply to an error, unless it does not reply itself */
   error_handler?: (context: Context, error: unknown) => Promise<void> | void;
+  /**
+   * The time in milliseconds that the `error_handler` has to settle (`5000`):
+   * a handler that takes longer, throws or rejects gets an empty
+   * `500 Internal Server Error` instead (or the connection is closed, once
+   * the reply has started)
+   */
+  error_handler_timeout?: number | undefined;
+  /**
+   * The deadline of every request in milliseconds (`0`, the default, for
+   * none): once it has passed, `context.signal` is aborted, the stack stops
+   * and a `503 Service Unavailable` error (`code: "deadline"`) is replied (or
+   * the connection is closed, once the reply has started). A middleware may
+   * change it with `context.setTimeout()`.
+   */
+  timeout?: number | undefined;
   /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */
   logger?: ILogger;
   /**
@@ -35,18 +51,31 @@ export interface IBindenOptions {
   trust_proxy?: ITrustProxy;
 }
 
+/** The greatest delay of a Node.js timer */
+const MAX_DELAY = 2 ** 31 - 1;
+
+/** Thrown through the stack once the request has been aborted: the stack stops */
+const ABORTED = new Error("The request has been aborted");
+
+/** The outcome of an `error_handler` that has not settled in time */
+const EXPIRED = Symbol("expired");
+
 export class Binden {
   readonly #stack: IStack[];
   readonly #auto_head: boolean;
   readonly #error_handler:
     ((context: Context, error: unknown) => Promise<void> | void) | null;
+  readonly #error_handler_timeout: number;
+  readonly #timeout: number;
   readonly #logger: ILogger;
   readonly #Request: typeof BindenRequest;
 
   public constructor({
     error_handler,
+    error_handler_timeout = 5000,
     auto_head = true,
     logger = defaultLogger,
+    timeout = 0,
     trust_proxy = false,
   }: IBindenOptions = {}) {
     if (
@@ -55,8 +84,12 @@ export class Binden {
     ) {
       throw new RangeError("`trust_proxy` is not a non-negative integer");
     }
+    Binden.#delay("timeout", timeout, 0);
+    Binden.#delay("error_handler_timeout", error_handler_timeout, 1);
     this.#stack = [];
     this.#error_handler = error_handler ?? null;
+    this.#error_handler_timeout = error_handler_timeout;
+    this.#timeout = timeout;
     this.#auto_head = auto_head;
     this.#logger = logger;
     // The requests of this application trust its proxies
@@ -207,19 +240,67 @@ export class Binden {
     response: BindenResponse<BindenRequest>,
   ): void {
     const context = new Context({ request, response, logger: this.#logger });
-    this.#handle(context)
-      .catch(async (error: unknown) => this.#errorHandler(context, error))
-      .catch((error: unknown) => {
-        // The error handler failed (e.g. a custom `error_handler` threw): the
-        // response cannot be completed, but the process must not crash
-        const extra = { context, error };
-        Binden.#log(context, "error", "The error handler failed", extra);
-        request.destroy();
-      });
+    const exchange = Exchange.for(request, response);
+    if (this.#timeout > 0) {
+      exchange.setTimeout(this.#timeout);
+    }
+    this.#run(context, exchange).catch((error: unknown) => {
+      // Unexpected (every failure is handled): the process must not crash
+      Binden.#log(context, "error", "The request has failed", { error });
+      response.destroy();
+    });
   }
 
-  async #handle(context: Context): Promise<void> {
-    let next = context;
+  /**
+   * Runs the stack, then the error handler on a failure or a deadline. A
+   * deadline that passes later (e.g. while a stream is sent) closes the
+   * connection of a response that has not finished.
+   */
+  async #run(first: Context, exchange: Exchange): Promise<void> {
+    const run = { context: first };
+    let failure: { error: unknown } | null = null;
+    let stopped = false;
+    try {
+      await this.#handle(run, exchange);
+    } catch (error: unknown) {
+      if (error === ABORTED) {
+        stopped = true;
+      } else {
+        failure = { error };
+      }
+    }
+
+    const { context } = run;
+    const { signal } = exchange;
+    if (stopped || (failure && signal.aborted)) {
+      // A failure once aborted is a consequence (e.g. of the client going away)
+      await this.#aborted(context, exchange);
+      return;
+    } else if (failure) {
+      await this.#errorHandler(context, exchange, failure.error);
+    }
+
+    if (!signal.aborted) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          const { reason } = signal as { reason: BindenAbortError };
+          if (
+            reason.reason === "deadline" &&
+            !context.response.writableFinished
+          ) {
+            const message = "The deadline has passed. Destroying the socket";
+            Binden.#log(context, "debug", message, {});
+            context.response.destroy();
+          }
+        },
+        { once: true },
+      );
+    }
+  }
+
+  async #handle(run: { context: Context }, exchange: Exchange): Promise<void> {
+    let next = run.context;
     // The methods of the guarded routers that have refused the request
     const allow = new Set<string>();
 
@@ -258,7 +339,8 @@ export class Binden {
             const methodMiddlewares = refused ? [] : middlewares(m);
 
             for (const mw of methodMiddlewares) {
-              next = await Binden.#runMiddleware(mw, next);
+              next = await Binden.#runMiddleware(mw, next, exchange);
+              run.context = next;
 
               if (next.done) {
                 await Binden.#complete(next);
@@ -266,7 +348,8 @@ export class Binden {
               }
             }
           } else {
-            next = await Binden.#runMiddleware(item, next);
+            next = await Binden.#runMiddleware(item, next, exchange);
+            run.context = next;
 
             if (next.done) {
               await Binden.#complete(next);
@@ -288,6 +371,31 @@ export class Binden {
     throw new BindenError(404);
   }
 
+  /**
+   * The request has been aborted while the stack ran (the stack has stopped):
+   * after the deadline, a `503` error is replied through the error handler
+   * when nothing has started, and the connection is closed otherwise; a client
+   * that has gone away (or a shutdown) gets nothing
+   */
+  async #aborted(context: Context, exchange: Exchange): Promise<void> {
+    const { response } = context;
+    const { reason } = exchange.signal as { reason: BindenAbortError };
+    if (reason.reason === "deadline" && !response.started) {
+      // The middlewares that still run may no longer reply
+      exchange.seal();
+      const error = new BindenError(503, { code: "deadline" });
+      await exchange.reply(async () => {
+        await this.#errorHandler(context, exchange, error);
+      });
+      return;
+    }
+    if (!response.writableFinished) {
+      const message = "The request has been aborted. Destroying the socket";
+      Binden.#log(context, "debug", message, { reason: reason.reason });
+      response.destroy();
+    }
+  }
+
   /** A middleware has set `done`: a response that nothing has started is sent empty */
   static async #complete(context: Context): Promise<void> {
     if (!context.response.started) {
@@ -297,17 +405,41 @@ export class Binden {
     }
   }
 
-  /** Error handler: the provided `error_handler` (awaited), then the default reply if needed */
-  async #errorHandler(context: Context, error: unknown): Promise<void> {
+  /**
+   * Error handler: the provided `error_handler` (awaited within
+   * `error_handler_timeout`), then the default reply if needed
+   */
+  async #errorHandler(
+    context: Context,
+    exchange: Exchange,
+    error: unknown,
+  ): Promise<void> {
     if (this.#error_handler) {
       const base = { context, error };
       const message = "Passing error to the provided `error_handler`";
       Binden.#log(context, "trace", message, base);
 
-      await this.#error_handler(context, error);
+      const outcome = await this.#bounded(this.#error_handler, context, error);
 
-      const { request, response } = context;
-      if (response.writableEnded) {
+      const { response } = context;
+      if (outcome !== null) {
+        // The handler has failed, or has not settled in time: it may no
+        // longer reply, and the request gets an opaque error
+        exchange.seal();
+        const failed =
+          outcome === EXPIRED
+            ? "The provided `error_handler` has not settled in time"
+            : "The provided `error_handler` has failed";
+        const extra =
+          outcome === EXPIRED ? { context } : { context, error: outcome.error };
+        Binden.#log(context, "error", failed, extra);
+        if (response.started) {
+          response.destroy();
+        } else {
+          await exchange.reply(async () => Binden.#opaque(context));
+        }
+        return;
+      } else if (response.writableEnded) {
         return;
       } else if (response.started) {
         // A reply that is not ended once the handler has settled (e.g. a
@@ -320,13 +452,65 @@ export class Binden {
           `${unfinished}. Destroying the socket`,
           base,
         );
-        request.destroy();
+        response.destroy();
         return;
       }
       const ignored = "The provided `error_handler` has not replied";
       Binden.#log(context, "debug", ignored, base);
     }
     await Binden.#defaultErrorHandler(context, error);
+  }
+
+  /**
+   * Awaits the `error_handler` for `error_handler_timeout` at most: `null`
+   * once it has settled, `EXPIRED` once the time has passed (its result is
+   * then ignored, and a later failure logged) and its error once it has failed
+   */
+  async #bounded(
+    handler: (context: Context, error: unknown) => Promise<void> | void,
+    context: Context,
+    error: unknown,
+  ): Promise<typeof EXPIRED | { error: unknown } | null> {
+    let expired = false;
+    const settled = (async (): Promise<void> => {
+      await handler(context, error);
+    })().then(
+      () => null,
+      (failure: unknown) => {
+        if (expired) {
+          const late = "The provided `error_handler` has failed late";
+          Binden.#log(context, "debug", late, { context, error: failure });
+        }
+        return { error: failure };
+      },
+    );
+    const { promise: timeout, resolve } =
+      Promise.withResolvers<typeof EXPIRED>();
+    const timer = setTimeout(resolve, this.#error_handler_timeout, EXPIRED);
+    timer.unref();
+    const outcome = await Promise.race([settled, timeout]);
+    clearTimeout(timer);
+    expired = outcome === EXPIRED;
+    return outcome;
+  }
+
+  /**
+   * An empty `500 Internal Server Error`, without the headers of the body that
+   * a failed handler may have set
+   */
+  static async #opaque(context: Context): Promise<void> {
+    const { response } = context;
+    for (const name of [...Binden.#representation, "Content-Type"]) {
+      response.removeHeader(name);
+    }
+    response.status(DefaultErrorCode);
+    try {
+      await response.send();
+    } catch {
+      Binden.#log(context, "debug", "The error reply has not been sent", {
+        context,
+      });
+    }
   }
 
   /**
@@ -399,6 +583,7 @@ export class Binden {
   static async #runMiddleware(
     middleware: IMiddleware,
     context: Context,
+    exchange: Exchange,
   ): Promise<Context> {
     const { name } = middleware.constructor;
 
@@ -408,10 +593,14 @@ export class Binden {
     }
 
     try {
-      const next =
+      const result =
         typeof middleware === "function"
-          ? await middleware(context)
-          : await middleware.run(context);
+          ? middleware(context)
+          : middleware.run(context);
+      const next =
+        typeof property(result, "then") === "function"
+          ? await Binden.#race(result, context, exchange)
+          : result;
       if (!(next instanceof Context)) {
         return context;
       } else if (
@@ -426,7 +615,9 @@ export class Binden {
       }
       return next;
     } catch (error: unknown) {
-      if (middleware instanceof Middleware && middleware.ignore_errors) {
+      if (error === ABORTED) {
+        throw error;
+      } else if (middleware instanceof Middleware && middleware.ignore_errors) {
         const extra = { error, name };
         Binden.#log(context, "debug", "Middleware ignores errors", extra);
         return context;
@@ -434,6 +625,38 @@ export class Binden {
 
       throw error;
     }
+  }
+
+  /**
+   * The result of a middleware, unless the request is aborted first: its late
+   * result is then ignored (and a late failure logged)
+   */
+  static async #race(
+    result: unknown,
+    context: Context,
+    exchange: Exchange,
+  ): Promise<unknown> {
+    const settled = Promise.resolve(result).then(
+      (value: unknown) => ({ ok: true, value }) as const,
+      (error: unknown) => {
+        if (exchange.signal.aborted) {
+          const message =
+            "A middleware has failed after the request was aborted";
+          Binden.#log(context, "debug", message, { context, error });
+        }
+        return { ok: false, error } as const;
+      },
+    );
+    const outcome = await Promise.race([
+      settled,
+      exchange.aborted.then(() => null),
+    ]);
+    if (outcome === null) {
+      throw ABORTED;
+    } else if (!outcome.ok) {
+      throw outcome.error;
+    }
+    return outcome.value;
   }
 
   /** The headers of a body, which do not apply to an error that replaces it */
@@ -467,6 +690,17 @@ export class Binden {
    */
   static #pattern(path: RegExp): RegExp {
     return new RegExp(path.source, path.flags.replaceAll(/[gy]/gu, ""));
+  }
+
+  /** A delay of a timer: an integer from `min` to the greatest delay of Node.js */
+  static #delay(name: string, value: unknown, min: number): void {
+    if (typeof value !== "number" || !Number.isInteger(value)) {
+      throw new TypeError(`\`${name}\` is not an integer`);
+    } else if (value < min || value > MAX_DELAY) {
+      throw new RangeError(
+        `\`${name}\` is not between ${min} and ${MAX_DELAY}`,
+      );
+    }
   }
 
   static #validateItem(item: unknown): item is IStackItem {

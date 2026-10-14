@@ -34,6 +34,14 @@ suite("Process safety", () => {
     });
   });
 
+  test("hung middlewares and error handlers, and their late failures, do not crash the process", () => {
+    deepStrictEqual(run("hangs.ts"), {
+      status: 0,
+      stdout: "503 503 500 500 500\n",
+      stderr: "",
+    });
+  });
+
   test("a logger whose `child()` throws does not crash the process", () => {
     deepStrictEqual(run("throwing-logger.ts"), {
       status: 0,

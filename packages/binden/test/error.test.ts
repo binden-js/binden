@@ -62,6 +62,18 @@ suite("BindenError", () => {
     }
   });
 
+  test("constructor (`code`)", () => {
+    deepStrictEqual(
+      new BindenError(503, { code: "deadline" }).code,
+      "deadline",
+    );
+    deepStrictEqual(new BindenError(503).code, null);
+    throws(
+      () => new BindenError(503, { code: 1 as unknown as string }),
+      new TypeError("`code` is not a string"),
+    );
+  });
+
   test("constructor (an unregistered status code)", () => {
     const error = new BindenError(499);
     deepStrictEqual(error.status, 499);

@@ -518,53 +518,6 @@ suite("Binden", () => {
     }
   });
 
-  test("closes the connection when an async error handler fails", async () => {
-    const logged = await loggedApp({
-      error_handler: async (): Promise<void> => {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 20);
-        });
-        throw new Error("A failing error handler");
-      },
-    });
-    try {
-      logged.app.use(() => {
-        throw new BindenError(400);
-      });
-
-      // The connection is closed (not left open until the deadline)
-      await rejects(
-        fetch(logged.url, { signal: AbortSignal.timeout(5000) }),
-        (error: Error) => error.name !== "AbortError",
-      );
-      ok(logged.output().includes("The error handler failed"), logged.output());
-    } finally {
-      await logged.close();
-    }
-  });
-
-  test("closes the connection when the error handler fails", async () => {
-    const logged = await loggedApp({
-      error_handler: (): never => {
-        throw new Error("A failing error handler");
-      },
-    });
-    try {
-      logged.app.use(() => {
-        throw new BindenError(400);
-      });
-
-      // The connection is closed (not left open until the deadline)
-      await rejects(
-        fetch(logged.url, { signal: AbortSignal.timeout(5000) }),
-        (error: Error) => error.name !== "AbortError",
-      );
-      ok(logged.output().includes("The error handler failed"), logged.output());
-    } finally {
-      await logged.close();
-    }
-  });
-
   test("replies 500 to any thrown value", async () => {
     const thrown: Partial<Record<string, () => unknown>> = {
       "/null": () => null,

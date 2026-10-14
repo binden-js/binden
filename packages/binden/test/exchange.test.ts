@@ -349,6 +349,71 @@ suite("Exchange", () => {
     ok(ran);
   });
 
+  test("find() finds the exchange of a request only", async () => {
+    const [request, response] = await exchange();
+    deepStrictEqual(Exchange.find(request), null);
+    const created = Exchange.for(request, response);
+    ok(Exchange.find(request) === created);
+    response.end();
+  });
+
+  test("`aborted` settles once the signal is aborted", async () => {
+    const [request, response] = await exchange();
+    const exchangeOf = Exchange.for(request, response);
+    let settled = false;
+    const aborted = exchangeOf.aborted.then(() => {
+      settled = true;
+    });
+    await sleep(5);
+    ok(!settled);
+    exchangeOf.abort("deadline");
+    await aborted;
+    ok(settled);
+    response.end();
+  });
+
+  test("once sealed, only the work of the latest reply() may reply", async () => {
+    const [request, response] = await exchange();
+    const exchangeOf = Exchange.for(request, response);
+
+    // Not sealed: anything may reply
+    ok(exchangeOf.may_reply);
+    ok(exchangeOf.reply(() => exchangeOf.may_reply));
+
+    exchangeOf.seal();
+    ok(!exchangeOf.may_reply);
+
+    let resume: () => void = nothing;
+    const earlier = exchangeOf.reply(async () => {
+      ok(exchangeOf.may_reply);
+      await new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      return exchangeOf.may_reply;
+    });
+    // The latest reply (and its asynchronous work) may reply
+    deepStrictEqual(
+      await exchangeOf.reply(async () => {
+        await sleep(1);
+        return exchangeOf.may_reply;
+      }),
+      true,
+    );
+    // An earlier one no longer may
+    resume();
+    deepStrictEqual(await earlier, false);
+
+    // Sealed again: no reply may reply
+    const latest = exchangeOf.reply(async () => {
+      exchangeOf.seal();
+      await sleep(1);
+      return exchangeOf.may_reply;
+    });
+    deepStrictEqual(await latest, false);
+    ok(!exchangeOf.may_reply);
+    response.end();
+  });
+
   test("abort() aborts once", async () => {
     const [request, response] = await exchange();
     const exchangeOf = Exchange.for(request, response);

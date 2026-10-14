@@ -1,0 +1,159 @@
+import { once } from "node:events";
+import {
+  type IncomingHttpHeaders,
+  type OutgoingHttpHeaders,
+  request as httpRequest,
+  type Server,
+} from "node:http";
+import type { AddressInfo } from "node:net";
+import { Logger } from "@binden/logger";
+
+import { type Binden, serializers } from "../index.js";
+
+/** Resolves after `ms` milliseconds */
+export function sleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/** A promise that never settles (e.g. a middleware that hangs) */
+export function never<T = void>(): Promise<T> {
+  return new Promise<T>(() => {
+    // Never settles
+  });
+}
+
+/** A logger whose records are kept */
+export interface ICaptured {
+  readonly logger: Logger;
+  /** The records written so far */
+  readonly records: Record<string, unknown>[];
+  /** The records written so far, as written */
+  output(): string;
+  /** Resolves once a record with this message has been written */
+  waitFor(message: string, ms?: number): Promise<Record<string, unknown>>;
+}
+
+/** A `Logger` (at `level`) whose records are kept */
+export function capture(level = "debug"): ICaptured {
+  const lines: string[] = [];
+  const logger = new Logger({
+    destination: {
+      write(line: string): void {
+        lines.push(line);
+      },
+    },
+    level,
+    serializers,
+  });
+  const records = (): Record<string, unknown>[] =>
+    lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  return {
+    logger,
+    get records(): Record<string, unknown>[] {
+      return records();
+    },
+    output: (): string => lines.join(""),
+    waitFor: async (
+      message: string,
+      ms = 5000,
+    ): Promise<Record<string, unknown>> => {
+      const deadline = Date.now() + ms;
+      let found = records().find(({ msg }) => msg === message);
+      while (!found) {
+        if (Date.now() > deadline) {
+          throw new Error(`No record "${message}": ${lines.join("")}`);
+        }
+        await sleep(5);
+        found = records().find(({ msg }) => msg === message);
+      }
+      return found;
+    },
+  };
+}
+
+/** A listening server of an application */
+export interface IListening {
+  readonly server: Server;
+  readonly port: number;
+  readonly url: string;
+  close(): Promise<void>;
+}
+
+/** Creates the server of the application and listens on a free port */
+export async function listen(app: Binden): Promise<IListening> {
+  const server: Server = app.createServer();
+  server.listen(0);
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  return {
+    server,
+    port,
+    url: `http://localhost:${port}`,
+    close: async (): Promise<void> => {
+      server.closeAllConnections();
+      server.close();
+      await once(server, "close");
+    },
+  };
+}
+
+/** A response, as received */
+export interface IReceived {
+  readonly status: number;
+  readonly headers: IncomingHttpHeaders;
+  readonly body: string;
+}
+
+/** Sends a request (on a new connection) and reads the response within `ms` */
+export function send(
+  port: number,
+  {
+    path = "/",
+    method = "GET",
+    headers = {},
+    body = null,
+    ms = 5000,
+  }: {
+    path?: string;
+    method?: string;
+    headers?: OutgoingHttpHeaders;
+    body?: string | null;
+    ms?: number;
+  } = {},
+): Promise<IReceived> {
+  return new Promise<IReceived>((resolve, reject) => {
+    const sent = httpRequest(
+      {
+        agent: false,
+        headers,
+        method,
+        path,
+        port,
+        signal: AbortSignal.timeout(ms),
+      },
+      (response) => {
+        let received = "";
+        response
+          .setEncoding("utf8")
+          .on("data", (chunk: string) => {
+            received += chunk;
+          })
+          .once("end", () => {
+            resolve({
+              status: response.statusCode ?? 0,
+              headers: response.headers,
+              body: received,
+            });
+          })
+          .once("error", reject);
+      },
+    );
+    sent.once("error", reject);
+    if (body !== null) {
+      sent.write(body);
+    }
+    sent.end();
+  });
+}
