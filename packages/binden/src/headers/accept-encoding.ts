@@ -1,13 +1,16 @@
 import { preferred, qvalue, token } from "./list.js";
 
+/** The content codings of `Accept-Encoding` that are known (and `*`) */
 export type IAcceptEncodings =
   "*" | "br" | "compress" | "deflate" | "gzip" | "identity" | "x-gzip" | "zstd";
 
+/** An element of `Accept-Encoding` */
 export interface IAcceptEncoding {
   encoding: IAcceptEncodings;
   q_value?: number | null;
 }
 
+/** An element of the `Accept-Encoding` header (RFC 9110, section 12.5.3) */
 export class AcceptEncoding implements IAcceptEncoding {
   readonly #encoding: IAcceptEncodings;
   readonly #q_value: number | null;

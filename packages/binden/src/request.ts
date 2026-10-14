@@ -25,8 +25,10 @@ import {
   strictBoolean,
 } from "./proxy.js";
 
+/** The trusted proxies (see `IRequestOptions.trust_proxy`) */
 export type { IProxyHeaders, ITrustFn, ITrustProxy } from "./proxy.js";
 
+/** The protocol of a request, as in `URL.protocol` */
 export type IProtocol = "http:" | "https:";
 
 /**
@@ -190,9 +192,9 @@ const incomingId = /^[\w.:-]{1,128}$/u;
 
 /**
  * The request options with their defaults, checked: a `TypeError` for a value
- * of another type, a `RangeError` for a number out of its range (e.g.
- * `trust_proxy: -1`, or `query.max_keys` that is not a positive integer or
- * `Infinity`). Other properties of the input are ignored.
+ * of another type, a `RangeError` for a value out of its range (e.g.
+ * `trust_proxy: -1`, an empty `allowed_hosts`, or `query.max_keys` that is not
+ * a positive integer or `Infinity`). Other properties of the input are ignored.
  */
 export function validateRequestOptions(
   input?: IRequestOptionsInput,
@@ -227,6 +229,10 @@ export function validateRequestOptions(
 /** The default options of the requests */
 const defaults = validateRequestOptions();
 
+/**
+ * An incoming request (`IncomingMessage`) with its parsed headers, URL, client
+ * and content negotiation: the `IncomingMessage` class of the servers
+ */
 export class BindenRequest extends IncomingMessage {
   #accept_encoding?: readonly AcceptEncoding[];
   #authorization?: Authorization | null;
@@ -273,6 +279,7 @@ export class BindenRequest extends IncomingMessage {
     return AcceptLanguage.negotiate(languages, this.headers["accept-language"]);
   }
 
+  /** The known codings of `Accept-Encoding`, from the greatest weight */
   public get accept_encoding(): AcceptEncoding[] {
     if (!this.#accept_encoding) {
       const ae = this.headers["accept-encoding"];
@@ -281,6 +288,7 @@ export class BindenRequest extends IncomingMessage {
     return [...this.#accept_encoding];
   }
 
+  /** The `Authorization` header, or `null` (unsupported or missing) */
   public get authorization(): Authorization | null {
     if (typeof this.#authorization === "undefined") {
       const { authorization } = this.headers;
@@ -289,6 +297,7 @@ export class BindenRequest extends IncomingMessage {
     return this.#authorization;
   }
 
+  /** The parsed body (set once, e.g. by a body parser) */
   public get body(): unknown {
     return this.#body;
   }
@@ -309,6 +318,7 @@ export class BindenRequest extends IncomingMessage {
     return this.#content_encoding === null ? null : [...this.#content_encoding];
   }
 
+  /** The `Content-Type` header, or `null` (invalid or missing) */
   public get content_type(): ContentType | null {
     if (typeof this.#content_type === "undefined") {
       this.#content_type = ContentType.fromString(this.headers["content-type"]);
@@ -316,6 +326,7 @@ export class BindenRequest extends IncomingMessage {
     return this.#content_type;
   }
 
+  /** The valid cookies of the `Cookie` header */
   public get cookies(): Cookie[] {
     if (!this.#cookies) {
       this.#cookies = Cookie.fromString(this.headers.cookie);
@@ -323,6 +334,10 @@ export class BindenRequest extends IncomingMessage {
     return [...this.#cookies];
   }
 
+  /**
+   * The valid elements of `Forwarded`, from any client (see `ip` and
+   * `protocol` for those of the trusted proxies)
+   */
   public get forwarded(): Forwarded[] {
     if (!this.#forwarded) {
       this.#forwarded = Forwarded.fromString(this.headers.forwarded);
@@ -330,6 +345,7 @@ export class BindenRequest extends IncomingMessage {
     return [...this.#forwarded];
   }
 
+  /** A header by its name, in any case */
   public header(name: string): string[] | string | undefined {
     return this.headers[name.toLowerCase()];
   }
@@ -344,6 +360,7 @@ export class BindenRequest extends IncomingMessage {
     return this.#id;
   }
 
+  /** The `If-Modified-Since` header, or `null` (not an HTTP-date, or missing) */
   public get if_modified_since(): IfModifiedSince | null {
     if (typeof this.#if_modified_since === "undefined") {
       const input = this.headers["if-modified-since"];
@@ -437,6 +454,7 @@ export class BindenRequest extends IncomingMessage {
     );
   }
 
+  /** The ranges of the `Range` header */
   public get range(): Range[] {
     if (typeof this.#range === "undefined") {
       this.#range = Range.fromString(this.headers.range);

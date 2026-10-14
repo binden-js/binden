@@ -1,5 +1,6 @@
 import { split, unquote } from "./list.js";
 
+/** A media type of `Content-Type` and its parameters */
 export interface IContentType {
   type: string;
   charset?: string | null;
@@ -20,6 +21,7 @@ const parameterName = new RegExp(`^${token}$`, "u");
 // eslint-disable-next-line no-control-regex -- control characters on purpose
 const parameterValue = /^[^\u0000-\u0008\u000A-\u001F\u007F]*$/u;
 
+/** The `Content-Type` header (RFC 9110, section 8.3) */
 export class ContentType implements IContentType {
   readonly #type: string;
   readonly #charset: string | null;

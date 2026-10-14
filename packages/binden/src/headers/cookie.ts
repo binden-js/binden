@@ -1,3 +1,4 @@
+/** A cookie: its name, value and attributes (RFC 6265) */
 export interface ICookie {
   readonly key: string;
   readonly value: string;
@@ -26,6 +27,7 @@ const domainValue =
 
 const sameSite: ReadonlySet<string> = new Set(["Lax", "None", "Strict"]);
 
+/** A cookie of `Cookie`, or of `Set-Cookie` with its attributes */
 export class Cookie implements ICookie {
   readonly #key: string;
   readonly #value: string;

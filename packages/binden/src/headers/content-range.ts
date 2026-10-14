@@ -1,9 +1,11 @@
 import { Range, type IRange } from "./range.js";
 
+/** The range of `Content-Range` (none when unsatisfied) and the size of the content */
 export interface IContentRange extends IRange {
   readonly size: number | "*";
 }
 
+/** The `Content-Range` header (RFC 9110, section 14.4) */
 export class ContentRange extends Range implements IContentRange {
   readonly #size: number | "*";
 

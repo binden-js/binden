@@ -1,10 +1,13 @@
+/** A range of `Range`: its first and last positions, either one optional */
 export interface IRange {
   readonly start?: number | null;
   readonly end?: number | null;
 }
 
+/** The range units */
 export type IUnit = "bytes";
 
+/** A range of the `Range` header (RFC 9110, section 14.2) */
 export class Range implements IRange {
   readonly #start: number | null;
   readonly #end: number | null;

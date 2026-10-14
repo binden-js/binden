@@ -17,7 +17,7 @@ npm install binden
 - `auto_head` (default `true`) - a router without `HEAD` middlewares handles `HEAD` with its `GET` middlewares (see [Router](#router))
 - `error_handler` - replaces the default reply to an error thrown by a middleware (the thrown value may be anything, also `null`). It may be `async`: it is awaited, and it must have ended its reply when it settles. Nothing started then gets the default reply, while a reply that is not ended (e.g. a `write()` without `end()`) is cut by closing the connection. When it fails, the connection is closed. There is no deadline: a handler that never settles keeps its request.
 - `logger` - see [Logging](#logging)
-- `trust_proxy` (default `false`) - the proxies in front of the server whose [`Forwarded`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) elements `request.protocol` trusts: none (`false`), all of them (`true`), or the given number of the nearest ones (each proxy appends its element, so the leftmost ones come from the client)
+- `trust_proxy`, `allowed_hosts`, `request_id`, `encoded_slashes`, `query` - the options of the requests, see [Request options](#request-options)
 
 - `.use()` - Add a `Middleware/Router` to the stack
 
@@ -420,13 +420,25 @@ const server = createServer({ IncomingMessage: BindenRequest });
 const rawHeader = request.header("X-Header");
 ```
 
-- `.id` - get the request id
+- `.id` - the id of the request: a new UUID, or the id that the request carries when it is trusted (see [Request ids](#request-ids))
 
 ```typescript
 const { id } = request;
 ```
 
-- `.protocol` - the protocol of the connection or, behind trusted proxies (the `trust_proxy` option of `Binden`), the `proto` of the [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) element of the outermost of them: the element in its position (counted from the nearest proxy), and the protocol of the connection when that element is invalid or has no `proto`. With `http.createServer()`, override the protected `trust_proxy` getter in a subclass of `BindenRequest`:
+- `.ip`, `.ips` - the address of the client: the peer (without the `::ffff:` prefix of an IPv4-mapped address) or, behind [trusted proxies](#proxies), the address that they have received; and the addresses of the client and of the trusted proxies, from left to right. `.ip` is `null` when the client is unknown (e.g. `for=unknown`)
+
+```typescript
+const { ip, ips } = request;
+```
+
+- `.host` - the effective host of the request (`hostname[:port]`, in lowercase, without the default port of the protocol): the authority of a request-target in absolute-form, otherwise the host from [trusted proxies](#proxies), otherwise `Host`; `null` without any. A host that is invalid, or not one of the [allowed hosts](#allowed-hosts), throws a `BindenError` with the status 400
+
+```typescript
+const { host } = request;
+```
+
+- `.protocol` - the protocol of the connection or, behind [trusted proxies](#proxies), the one that they have received
 
 ```typescript
 const { protocol } = request;
@@ -444,13 +456,13 @@ if (!secure) {
 }
 ```
 
-- `.URL` - the URL of the request: the protocol of the connection (`.protocol`), the authority of an absolute-form request-target (otherwise of `Host`), and the path and query of the request-target, set as such (`//a/b` is a path). A request-target with a fragment, a backslash, an invalid percent-encoding or a dot-segment (`/a/../b`, also percent-encoded, which would route the request to another path), and a `Host` that is not a host and a port, throw a `BindenError` with the status 400 (which `Binden` replies)
+- `.URL` - the URL of the request: the protocol (`.protocol`), the effective host (`.host`), and the path and query of the request-target, set as such (`//a/b` is a path). It throws a `BindenError` with the status 400 (which `Binden` replies) for a request-target with a fragment, a backslash, an invalid percent-encoding or a dot-segment (`/a/../b`, also percent-encoded, which would route the request to another path), for a path with an encoded slash or backslash (`%2F`, `%5C`, see [Encoded slashes](#encoded-slashes)), for a host that is missing, invalid or not allowed, and for a request with several `Host` field lines
 
 ```typescript
 const { pathname } = request.URL;
 ```
 
-- `.query` - A copy of `URL.search` parsed by the `querystring.parse()` method
+- `.query` - a copy of `URL.search` parsed by the `querystring.parse()` method, with at most `query.max_keys` keys (1000 by default, the others are ignored)
 
 ```typescript
 import { parse } from "node:querystring";
@@ -458,6 +470,148 @@ import { parse } from "node:querystring";
 const { query } = request;
 // same as
 const parsed = { ...parse(request.URL.search.substring(1)) };
+```
+
+- `.accepts()`, `.acceptsCharsets()`, `.acceptsEncodings()`, `.acceptsLanguages()` - the preferred one of the offered media types, charsets, content codings or language tags (as given), by the `Accept`, `Accept-Charset`, `Accept-Encoding` and `Accept-Language` headers ([RFC 9110, section 12.5](https://www.rfc-editor.org/rfc/rfc9110#section-12.5)): the first one without the header, `false` when none is acceptable. An offer takes the weight of the most specific element that matches it (`text/html;q=0` excludes HTML, even with `*/*`), and on a tie the more specific element wins, then the earlier element, then the earlier offer
+
+```typescript
+import { BindenError } from "binden";
+
+const type = request.accepts("application/json", "text/html");
+if (type === false) {
+  throw new BindenError(406);
+}
+const language = request.acceptsLanguages("en", "fr") || "en";
+```
+
+#### Request options
+
+The requests of a `Binden` application take these options of `new Binden()`, checked by `validateRequestOptions()` (a `TypeError` for a wrong type, a `RangeError` for a value out of its range, e.g. `trust_proxy: -1`):
+
+- `trust_proxy` (default `false`) - the trusted proxies, see [Proxies](#proxies)
+- `allowed_hosts` - the hosts that the requests may have (any by default), see [Allowed hosts](#allowed-hosts)
+- `request_id` - the request ids, see [Request ids](#request-ids)
+- `encoded_slashes` (default `false`) - see [Encoded slashes](#encoded-slashes)
+- `query.max_keys` (default `1000`) - the greatest number of keys that `request.query` parses (`Infinity` for no limit)
+
+With `http.createServer()`, return them from the protected `options` getter of a subclass of `BindenRequest`:
+
+```typescript
+import { createServer } from "node:http";
+import {
+  BindenRequest,
+  type IRequestOptions,
+  validateRequestOptions,
+} from "binden";
+
+const options = validateRequestOptions({
+  trust_proxy: 1,
+  allowed_hosts: ["example.com"],
+});
+
+class Request extends BindenRequest {
+  protected override get options(): IRequestOptions {
+    return options;
+  }
+}
+
+const server = createServer({ IncomingMessage: Request });
+```
+
+#### Proxies
+
+A client can send any `Forwarded` or `X-Forwarded-*` header: by default, the requests trust no proxy, `.ip` and `.protocol` are those of the connection, and `.host` is `Host`. With `trust_proxy`, they are found by walking the hops from the server: the peer (hop 0), then the addresses of the header from right to left (every proxy appends the address of its own client). The walk goes on while the hops are trusted, and the client is the first address that is not (the leftmost one when all of them are). `trust_proxy` is
+
+- `false` (none), `true` (all of them), or the number of the nearest trusted hops: `1` for one proxy in front of the server;
+- a function `(address, hop) => boolean` that tells whether the address of a hop is a trusted proxy. It is called synchronously and must return a boolean: anything else (e.g. a promise) is an error of the configuration, replied with a 500, never an implicit trust;
+- `{ trust, headers }`, where `trust` is one of the above, and `headers` the headers that the proxies send: `"forwarded"` (the default, [RFC 7239](https://www.rfc-editor.org/rfc/rfc7239)) or `"x-forwarded"` (`X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`). The families are not mixed.
+
+The walk stops with an unknown client (`.ip` is `null`) on `unknown` or an obfuscated identifier (`_hidden`), and on an invalid element; an invalid element also makes `.protocol` that of the connection and `.host` `Host`, so that the element of a client never takes the place of the one of a proxy. With `Forwarded`, the protocol and the host are the `proto` and `host` of the element of the farthest trusted proxy. With `X-Forwarded-*`, they are the `X-Forwarded-Proto` and `X-Forwarded-Host` that the trusted peer has set: one field line of one value each, or those of the connection and `Host` when one of them is duplicated, a list or invalid.
+
+Behind nginx, which sets the headers like this:
+
+```
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+```
+
+trust the peer (one hop) and its headers. The same goes behind an AWS Application Load Balancer, which appends to `X-Forwarded-For` and sets `X-Forwarded-Proto` (not `X-Forwarded-Host`: the host is `Host`):
+
+```typescript
+import { Binden } from "binden";
+
+const app = new Binden({ trust_proxy: { trust: 1, headers: "x-forwarded" } });
+```
+
+Behind proxies that send `Forwarded` (e.g. `Forwarded: for=192.0.2.60;proto=https;host=example.com`), count them:
+
+```typescript
+import { Binden } from "binden";
+
+// A CDN, then a load balancer
+const app = new Binden({ trust_proxy: 2 });
+```
+
+Or trust the addresses of the proxies, wherever they are in the chain:
+
+```typescript
+import { BlockList, isIPv6 } from "node:net";
+import { Binden } from "binden";
+
+const proxies = new BlockList();
+proxies.addSubnet("10.0.0.0", 8);
+proxies.addSubnet("fd00::", 8, "ipv6");
+
+const app = new Binden({
+  trust_proxy: {
+    trust: (address) =>
+      proxies.check(address, isIPv6(address) ? "ipv6" : "ipv4"),
+    headers: "x-forwarded",
+  },
+});
+```
+
+Trust only the proxies that overwrite or append to these headers: a trusted proxy that passes on the headers of its client lets the client choose its address, protocol and host.
+
+#### Allowed hosts
+
+`request.URL` (and the links that an application builds with it) has the host of the request, which a client chooses. `allowed_hosts` lists the hosts that the effective host (`.host`) may be: `hostname` (on any port) or `hostname:port` (the default port of the protocol counts as given), in any case, or a function of the effective host (`hostname[:port]`) that returns a boolean (synchronously, like `trust_proxy`). Another host, or none, throws a `BindenError` with the status 400 when `.URL` or `.host` is read; the headers are left as they are. An empty list (that would refuse every request) throws a `RangeError`, and a host that is not a host name, an IPv4 address or an IPv6 address in brackets (with a port from 1 to 65535) a `TypeError`.
+
+```typescript
+import { Binden } from "binden";
+
+const app = new Binden({
+  allowed_hosts: ["example.com", "www.example.com", "localhost:3000"],
+});
+const api = new Binden({
+  allowed_hosts: (host) => /^[\w-]+\.example\.com$/u.test(host),
+});
+```
+
+#### Request ids
+
+`request.id` is a new UUID for every request. With `request_id`, a request may carry its id, so that the logs of the proxies and services in front of the server can be joined with those of the application:
+
+- `header` (default `"x-request-id"`) - the field of the id
+- `trust_incoming` (default `false`) - whether the id of the request is used: only when the proxies in front of the server set (or check) it, since a client can send any id. The id is used when it is one field line of 1 to 128 letters, digits, `.`, `_`, `:` and `-`; otherwise the request gets a new UUID
+- `echo` (default `true`) - whether the response sends the id back (in the field `header`)
+
+```typescript
+import { Binden } from "binden";
+
+// nginx sets it: `proxy_set_header X-Request-Id $request_id;`
+const app = new Binden({ request_id: { trust_incoming: true } });
+```
+
+#### Encoded slashes
+
+A `%2F` (or `%5C`) in a path is a slash (or a backslash) once decoded: a router would see one segment where a proxy or a file server sees several, or the opposite. A request whose path has one (in any case) gets a 400, unless `encoded_slashes` is `true`. The query is not checked, and `%252F` is fine: once decoded, it is the text `%2F`.
+
+```typescript
+import { Binden } from "binden";
+
+const app = new Binden({ encoded_slashes: true });
 ```
 
 ### BindenResponse
@@ -581,14 +735,61 @@ await response.sendFile(path);
 
 ### Headers
 
-- [Accept-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Encoding)
+- [Accept](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept) - `Accept.fromString()` returns the valid elements (media ranges in lowercase, with their parameters and weight) from the greatest weight, and `Accept.negotiate()` selects one of the offered media types like `request.accepts()`
+
+```typescript
+import { Accept } from "binden";
+
+const ranges = Accept.fromString(request.headers.accept);
+const type = Accept.negotiate(
+  ["application/json", "text/html"],
+  request.headers.accept,
+);
+// or using BindenRequest
+const preferred = request.accepts("application/json", "text/html");
+```
+
+- [Accept-Charset](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Charset)
+
+```typescript
+import { AcceptCharset } from "binden";
+
+const charsets = AcceptCharset.fromString(request.headers["accept-charset"]);
+const charset = AcceptCharset.negotiate(
+  ["utf-8", "iso-8859-1"],
+  request.headers["accept-charset"],
+);
+// or using BindenRequest
+const preferred = request.acceptsCharsets("utf-8", "iso-8859-1");
+```
+
+- [Accept-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Encoding) - the known codings (`gzip`, `x-gzip`, `compress`, `deflate`, `br`, `zstd`, `identity` and `*`). In `AcceptEncoding.negotiate()` (and `request.acceptsEncodings()`), `x-gzip` is `gzip`, unknown codings of the header count too, and `identity` is acceptable unless excluded (`identity;q=0`, or `*;q=0` without `identity`)
 
 ```typescript
 import { AcceptEncoding } from "binden";
 
 const encodings = AcceptEncoding.fromString(request.headers["accept-encoding"]);
+const encoding = AcceptEncoding.negotiate(
+  ["br", "gzip", "identity"],
+  request.headers["accept-encoding"],
+);
 // or using BindenRequest
 const { accept_encoding } = request;
+const preferred = request.acceptsEncodings("br", "gzip", "identity");
+```
+
+- [Accept-Language](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Language) - in `AcceptLanguage.negotiate()` (and `request.acceptsLanguages()`), a language range matches the tags that it is, or is a prefix of (`en` matches `en-US`, not the opposite)
+
+```typescript
+import { AcceptLanguage } from "binden";
+
+const languages = AcceptLanguage.fromString(request.headers["accept-language"]);
+const language = AcceptLanguage.negotiate(
+  ["en-US", "fr"],
+  request.headers["accept-language"],
+);
+// or using BindenRequest
+const preferred = request.acceptsLanguages("en-US", "fr");
 ```
 
 - [Authorization](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization)
@@ -601,7 +802,7 @@ const credentials = Authorization.fromString(request.headers.authorization);
 const { authorization } = request;
 ```
 
-- [Content-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding) - the codings in the order to remove them, or `null` when one of them is unknown or malformed (the content cannot be decoded then)
+- [Content-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding) - the codings (`gzip`, `x-gzip`, `compress`, `deflate`, `br` and `zstd`) in the order to remove them, or `null` when one of them is unknown or malformed (the content cannot be decoded then)
 
 ```typescript
 import { ContentEncoding } from "binden";
@@ -613,7 +814,7 @@ const encodings = ContentEncoding.fromString(
 const { content_encoding } = request;
 ```
 
-The constructors of the headers throw a `TypeError` for what their parsers reject (e.g. a reversed `Range`, a weight that is not a qvalue, or a `Content-Type` parameter with control characters).
+The constructors of the headers throw a `TypeError` for what their parsers reject (e.g. a reversed `Range`, a weight that is not a qvalue, a `Content-Type` parameter with control characters, an unsupported `Authorization` scheme, an unknown content coding, or an Invalid Date).
 
 - [Content-Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range) - `bytes <first>-<last>/<size>` (the size may be `*`) or an unsatisfied range, with decimal positions only
 
@@ -657,7 +858,7 @@ const cookie2 = new Cookie({
 response.cookies.add(cookie1).add(cookie2);
 ```
 
-- [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) - `Forwarded.parse()` returns the elements in their positions (`null` for an invalid one: a parameter that is not `name=value`, or that is given twice), and `Forwarded.fromString()` the valid ones
+- [Forwarded](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Forwarded) - `Forwarded.parse()` returns the elements in their positions (`null` for an invalid one: a parameter that is not `name=value`, that is given twice, or with control characters), and `Forwarded.fromString()` the valid ones. `.toString()` sends the values that are not tokens as quoted strings (`for="[2001:db8::1]:4711"`). These are the elements that a client sends too: `request.ip`, `.protocol` and `.host` read those of the [trusted proxies](#proxies)
 
 ```typescript
 import { Forwarded } from "binden";

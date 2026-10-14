@@ -1,5 +1,6 @@
 import { fieldValue } from "./list.js";
 
+/** The supported authentication schemes, in their usual casing */
 export type IAuthenticationType =
   | "AWS4-HMAC-SHA256"
   | "Basic"
@@ -12,11 +13,13 @@ export type IAuthenticationType =
   | "SCRAM-SHA-256"
   | "vapid";
 
+/** The scheme and the credentials of `Authorization` */
 export interface IAuthorization {
   type: IAuthenticationType;
   credentials?: string | null;
 }
 
+/** The `Authorization` header (RFC 9110, section 11.6.2) */
 export class Authorization implements IAuthorization {
   readonly #type: IAuthenticationType;
   readonly #credentials: string | null;

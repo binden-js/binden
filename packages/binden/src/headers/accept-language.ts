@@ -1,5 +1,6 @@
 import { isQvalue, preferred, weighted } from "./list.js";
 
+/** An element of `Accept-Language` */
 export interface IAcceptLanguage {
   /** A language range: `*`, or a language tag (e.g. `en`, `en-US`) */
   language: string;

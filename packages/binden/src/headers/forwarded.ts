@@ -1,5 +1,6 @@
 import { fieldValue, quote, split, unquote } from "./list.js";
 
+/** The parameters of a `Forwarded` element */
 export interface IForwarded {
   for: string;
   by?: string | null;
@@ -8,6 +9,7 @@ export interface IForwarded {
   secret?: string | null;
 }
 
+/** An element of the `Forwarded` header (RFC 7239) */
 export class Forwarded implements IForwarded {
   readonly #for: string;
   readonly #by?: string | null;

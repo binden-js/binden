@@ -1,9 +1,11 @@
 import { parseHttpDate } from "./http-date.js";
 
+/** The date of `If-Modified-Since` */
 export interface IIfModifiedSince {
   readonly date: Date;
 }
 
+/** The `If-Modified-Since` header (RFC 9110, section 13.1.3) */
 export class IfModifiedSince implements IIfModifiedSince {
   readonly #date: Date;
 

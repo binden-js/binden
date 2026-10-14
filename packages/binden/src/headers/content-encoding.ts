@@ -1,10 +1,13 @@
+/** The known content codings */
 export type IEncodings =
   "br" | "compress" | "deflate" | "gzip" | "x-gzip" | "zstd";
 
+/** A coding of `Content-Encoding` */
 export interface IContentEncoding {
   encoding: IEncodings;
 }
 
+/** A coding of the `Content-Encoding` header (RFC 9110, section 8.4) */
 export class ContentEncoding implements IContentEncoding {
   readonly #encoding: IEncodings;
 

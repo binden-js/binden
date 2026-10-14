@@ -7,6 +7,7 @@ import {
   weighted,
 } from "./list.js";
 
+/** An element of `Accept`: a media range, its parameters and weight */
 export interface IAccept {
   /** A media range: `*\/*`, `type/*` or `type/subtype` */
   type: string;

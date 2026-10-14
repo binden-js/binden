@@ -1,5 +1,6 @@
 import { isQvalue, preferred, token, weighted } from "./list.js";
 
+/** An element of `Accept-Charset` */
 export interface IAcceptCharset {
   /** A charset (a token), or `*` */
   charset: string;
