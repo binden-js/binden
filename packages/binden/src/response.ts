@@ -428,6 +428,37 @@ export class BindenResponse<
     return this.setHeader("Content-Type", ct_form).send(params.toString());
   }
 
+  /**
+   * Send the headers, then resolve once what has been written so far is
+   * flushed to the connection; rejects when the response is closed before
+   * (e.g. the client went away). `@binden/compression` replaces it to flush
+   * the compressor as well.
+   */
+  public flush(): Promise<void> {
+    if (this.writableFinished) {
+      return Promise.resolve();
+    } else if (this.writableEnded || this.destroyed) {
+      return this.#finished(() => false);
+    }
+    return new Promise<void>((resolve, reject) => {
+      const fail = (error?: Error): void => {
+        this.off("close", fail).off("error", fail);
+        reject(error ?? BindenResponse.#premature());
+      };
+      this.once("close", fail).once("error", fail);
+      this.flushHeaders();
+      // Its callback runs once the writes before it are flushed
+      this.write("", (error?: Error | null) => {
+        this.off("close", fail).off("error", fail);
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
   /** A response without a body: to `HEAD`, or with a 1xx, 204, 205 or 304 status */
   #bodiless(): boolean {
     return (

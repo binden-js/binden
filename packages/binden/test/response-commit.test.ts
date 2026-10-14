@@ -1,10 +1,30 @@
 import { deepStrictEqual, ok, throws } from "node:assert";
-import { type OutgoingHttpHeader, type OutgoingHttpHeaders } from "node:http";
+import {
+  IncomingMessage,
+  type OutgoingHttpHeader,
+  type OutgoingHttpHeaders,
+  get,
+  request,
+} from "node:http";
+import { Socket } from "node:net";
 import { Readable } from "node:stream";
 import { afterEach, suite, test } from "node:test";
 
 import { BindenResponse, Cookie } from "../index.js";
 import { type ITestServer, type IListenOptions, listen } from "./http.js";
+
+/** A response without a connection: nothing is actually sent */
+function detached(): BindenResponse {
+  return new BindenResponse(new IncomingMessage(new Socket()));
+}
+
+/** The settled value of a promise: `null` once resolved, or its error */
+function settle(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => null,
+    (error: unknown) => error,
+  );
+}
 
 /** `undefined`, which the linter does not let the tests write */
 const none = ({} as { value?: undefined }).value;
@@ -194,5 +214,128 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     const { headers } = await app.request();
     deepStrictEqual(await handled, null);
     deepStrictEqual(headers["set-cookie"], ["b=2", cookie1.toString()]);
+  });
+
+  test(".flush() sends the headers and what is written", async () => {
+    const app = await start();
+    let release = (): void => {
+      // Replaced below
+    };
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handled = app.handle(async (_request, response) => {
+      response.cookies.add(cookie1);
+      await response.flush();
+      ok(response.headersSent);
+      response.write("first");
+      await response.flush();
+      // The client has them before the end
+      await released;
+      response.end("last");
+    });
+    const received = await new Promise<string[]>((resolve, reject) => {
+      const parts: string[] = [];
+      get(app.url, { signal: AbortSignal.timeout(5000) }, (response) => {
+        parts.push(String(response.headers["set-cookie"]));
+        response
+          .setEncoding("utf8")
+          .on("data", (chunk: string) => {
+            parts.push(chunk);
+            if (chunk === "first") {
+              release();
+            }
+          })
+          .once("end", () => {
+            resolve(parts);
+          });
+      }).once("error", reject);
+    });
+    deepStrictEqual(await handled, null);
+    deepStrictEqual(received, [cookie1.toString(), "first", "last"]);
+
+    // Without a body (`HEAD`), then ended and finished
+    let headers = (): void => {
+      // Replaced below
+    };
+    const sent = new Promise<void>((resolve) => {
+      headers = resolve;
+    });
+    const head = app.handle(async (_request, response) => {
+      await response.flush();
+      // The client has them before the end
+      await sent;
+      response.end();
+      const finishing = response.flush();
+      await finishing;
+      ok(response.writableFinished);
+      await response.flush();
+    });
+    await new Promise<void>((resolve, reject) => {
+      request(
+        app.url,
+        { method: "HEAD", signal: AbortSignal.timeout(5000) },
+        (response) => {
+          headers();
+          response.resume().once("end", resolve);
+        },
+      )
+        .once("error", reject)
+        .end();
+    });
+    deepStrictEqual(await head, null);
+  });
+
+  test(".flush() rejects when the response is closed or fails", async () => {
+    const closed = detached();
+    const flushing = closed.flush();
+    // Committed, but not written without a connection
+    ok(closed.headersSent);
+    closed.emit("close");
+    deepStrictEqual(
+      ((await settle(flushing)) as { code?: unknown }).code,
+      "ERR_STREAM_PREMATURE_CLOSE",
+    );
+    deepStrictEqual(closed.listenerCount("close"), 0);
+
+    const failing = new Error("failed");
+    const errored = detached();
+    const erroring = errored.flush();
+    errored.emit("error", failing);
+    deepStrictEqual(await settle(erroring), failing);
+    deepStrictEqual(errored.listenerCount("error"), 0);
+
+    const unknown = detached();
+    const unknownFlush = unknown.flush();
+    unknown.emit("error");
+    deepStrictEqual(
+      ((await settle(unknownFlush)) as { code?: unknown }).code,
+      "ERR_STREAM_PREMATURE_CLOSE",
+    );
+
+    // A write that fails
+    const write = detached();
+    write.write = ((_chunk: unknown, callback: (error?: Error) => void) => {
+      callback(failing);
+      return false;
+    }) as typeof write.write;
+    deepStrictEqual(await settle(write.flush()), failing);
+    deepStrictEqual(write.listenerCount("close"), 0);
+
+    // Destroyed, or ended and then closed before it has finished
+    const destroyed = detached();
+    destroyed.destroy();
+    deepStrictEqual(
+      ((await settle(destroyed.flush())) as { code?: unknown }).code,
+      "ERR_STREAM_PREMATURE_CLOSE",
+    );
+    const ended = detached();
+    ended.end();
+    const endedFlush = ended.flush();
+    ended.emit("close");
+    deepStrictEqual(
+      ((await settle(endedFlush)) as { code?: unknown }).code,
+      "ERR_STREAM_PREMATURE_CLOSE",
+    );
   });
 });
