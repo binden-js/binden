@@ -163,6 +163,7 @@ export class Binden<
   readonly #state: (() => object) | null;
   readonly #Request: typeof BindenRequest;
   readonly #Response: typeof BindenResponse;
+  readonly #request_id: IRequestOptions["request_id"];
 
   public constructor(
     ...[options = {} as IBindenOptions<State>]: Record<
@@ -230,6 +231,7 @@ export class Binden<
     this.#details = log_error_details;
     this.#routing = { case_sensitive, strict };
     this.#state = state ?? null;
+    this.#request_id = requests.request_id;
     // The requests and the responses of this application, with its options
     this.#Request = class extends BindenRequest {
       // eslint-disable-next-line class-methods-use-this -- the options of the app
@@ -340,6 +342,10 @@ export class Binden<
     });
     const exchange = Exchange.for(request, response);
     track(server, exchange, response);
+    if (this.#request_id?.echo === true) {
+      // Every reply sends it back, also the error replies of the framework
+      response.setHeader(this.#request_id.header, request.id);
+    }
     if (this.#access) {
       Binden.#accessLog(context, exchange, this.#access);
     }

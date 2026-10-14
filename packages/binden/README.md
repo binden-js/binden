@@ -821,7 +821,7 @@ const api = new Binden({
 
 - `header` (default `"x-request-id"`) - the field of the id
 - `trust_incoming` (default `false`) - whether the id of the request is used: only when the proxies in front of the server set (or check) it, since a client can send any id. The id is used when it is one field line of 1 to 128 letters, digits, `.`, `_`, `:` and `-`; otherwise the request gets a new UUID
-- `echo` (default `true`) - whether the response sends the id back (in the field `header`)
+- `echo` (default `true`) - whether every response of a `Binden` application sends the id back (in the field `header`), also the error replies of the framework (the deadline, a closing server, a failed error handler). It is set when the request arrives: a middleware may remove it.
 
 ```typescript
 import { Binden } from "binden";

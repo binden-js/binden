@@ -3,13 +3,20 @@ import { once } from "node:events";
 import { connect } from "node:net";
 import { suite, test } from "node:test";
 
-import { Binden, type Context, type IBindenOptions } from "../index.js";
+import {
+  Binden,
+  type Context,
+  type IBindenOptions,
+  shutdown,
+} from "../index.js";
 import {
   capture,
   type ICaptured,
   type IListening,
   listen,
+  never,
   send,
+  sleep,
 } from "./helpers.js";
 
 /** Runs `fn` with a listening application (with a captured debug logger) */
@@ -211,6 +218,108 @@ suite("Request and response options", () => {
       },
       async ({ port }) => {
         deepStrictEqual((await send(port)).status, 500);
+      },
+    );
+  });
+});
+
+suite("Request ids", () => {
+  test("are sent back by every reply with `request_id.echo`", async () => {
+    const release = Promise.withResolvers<null>();
+    await withApp(
+      { request_id: {}, timeout: 30 },
+      (app) => {
+        app.use("/ok", (context: Context) => context.send(context.id));
+        app.use("/hangs", async () => {
+          await never();
+        });
+        app.use("/slow", async (context: Context) => {
+          context.setTimeout(0);
+          // The headers keep the connection alive
+          context.response.writeHead(200, { "Content-Length": 1 });
+          context.response.flushHeaders();
+          await release.promise;
+          context.response.end("a");
+          context.done = true;
+        });
+      },
+      async ({ port, server }) => {
+        const ok200 = await send(port, { path: "/ok" });
+        deepStrictEqual(ok200.headers["x-request-id"], ok200.body);
+        // An error reply and the deadline
+        const ids: unknown[] = [
+          (await send(port, { path: "/missing" })).headers["x-request-id"],
+          (await send(port, { path: "/hangs" })).headers["x-request-id"],
+        ];
+        // A request that arrives on an open connection once closing
+        const client = connect(port);
+        await once(client, "connect");
+        let received = "";
+        client.setEncoding("utf8").on("data", (chunk: string) => {
+          received += chunk;
+        });
+        client.write("GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        while (!received.includes("Content-Length: 1")) {
+          await sleep(5);
+        }
+        const closing = shutdown(server, { timeout: 1000 });
+        client.write("GET /ok HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        await sleep(20);
+        release.resolve(null);
+        await closing;
+        await once(client, "close");
+        const [, second = ""] = received.split(/(?=HTTP\/1\.1 )/u);
+        ok(second.startsWith("HTTP/1.1 503"), received);
+        ids.push(/\r\nx-request-id: (?<id>[^\r]+)/iu.exec(second)?.groups?.id);
+        for (const id of ids) {
+          ok(typeof id === "string" && /^[\da-f-]{36}$/u.test(id), String(id));
+        }
+      },
+    );
+  });
+
+  test("an incoming id, a header name, and no echo", async () => {
+    await withApp(
+      { request_id: { header: "X-Trace", trust_incoming: true } },
+      (app) => {
+        app.use((context: Context) => context.send());
+      },
+      async ({ port }) => {
+        const { headers } = await send(port, {
+          headers: { "X-Trace": "abc.1" },
+        });
+        deepStrictEqual(headers["x-trace"], "abc.1");
+        ok(!("x-request-id" in headers));
+      },
+    );
+    await withApp(
+      { request_id: { echo: false } },
+      (app) => {
+        app.use((context: Context) => context.send());
+      },
+      async ({ port }) => {
+        ok(!("x-request-id" in (await send(port)).headers));
+      },
+    );
+  });
+
+  test("the opaque reply of a failed error handler sends it back", async () => {
+    await withApp(
+      {
+        request_id: {},
+        error_handler: (): never => {
+          throw new Error("A failing error handler");
+        },
+      },
+      (app) => {
+        app.use(() => {
+          throw new Error("A failure");
+        });
+      },
+      async ({ port }) => {
+        const response = await send(port);
+        deepStrictEqual(response.status, 500);
+        ok(typeof response.headers["x-request-id"] === "string");
       },
     );
   });
