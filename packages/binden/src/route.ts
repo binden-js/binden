@@ -141,11 +141,14 @@ function decode(segment: string): string | null {
   }
 }
 
-/** The value of a parameter: `400 Bad Request` when it cannot be decoded */
-function value(segment: string): string {
+/**
+ * The value of a parameter: `400 Bad Request` when it cannot be decoded, or
+ * when it has an encoded `/` (or `\`), which would change the segments of the
+ * path, unless `encoded_slashes` allows them
+ */
+function value(segment: string, encoded_slashes: boolean): string {
   const decoded = decode(segment);
-  // An encoded `/` (or `\`) would change the segments of the path
-  if (decoded === null || /[/\\]/u.test(decoded)) {
+  if (decoded === null || (!encoded_slashes && /[/\\]/u.test(decoded))) {
     throw new BindenError(400);
   }
   return decoded;
@@ -178,6 +181,7 @@ function leading(
   segments: readonly ISegment[],
   path: readonly string[],
   case_sensitive: boolean,
+  encoded_slashes: boolean,
 ): IParams | null {
   for (const [index, segment] of segments.entries()) {
     const part = path[index];
@@ -192,7 +196,7 @@ function leading(
   const params: [string, string][] = [];
   for (const [index, segment] of segments.entries()) {
     if ("param" in segment) {
-      params.push([segment.param, value(path[index])]);
+      params.push([segment.param, value(path[index], encoded_slashes)]);
     }
   }
   // Defined, not assigned: a parameter may be named `__proto__`
@@ -204,11 +208,24 @@ function split(path: string): string[] {
   return path.slice(1).split("/");
 }
 
+/**
+ * The options of the matching: those of the routing, and whether a
+ * parameter may have an encoded slash (see the `encoded_slashes` request
+ * option)
+ */
+export interface IMatchOptions extends IRoutingOptions {
+  readonly encoded_slashes?: boolean | undefined;
+}
+
 /** Matches a whole path: the parameters of a route, or `null` */
 export function matchRoute(
   pattern: IPattern,
   path: string,
-  { case_sensitive = true, strict = true }: IRoutingOptions,
+  {
+    case_sensitive = true,
+    strict = true,
+    encoded_slashes = false,
+  }: IMatchOptions,
 ): IParams | null {
   let parts = split(path);
   // One trailing `/` of the path, or of the pattern, may be missing
@@ -223,10 +240,13 @@ export function matchRoute(
   ) {
     return null;
   }
-  const params = leading(segments, parts, case_sensitive);
+  const params = leading(segments, parts, case_sensitive, encoded_slashes);
   if (params && pattern.wildcard !== null) {
     // The rest of the path, each segment decoded once
-    const rest = parts.slice(segments.length).map(value).join("/");
+    const rest = parts
+      .slice(segments.length)
+      .map((part) => value(part, encoded_slashes))
+      .join("/");
     return { ...params, ...Object.fromEntries([[pattern.wildcard, rest]]) };
   }
   return params;
@@ -239,14 +259,19 @@ export function matchRoute(
 export function matchPrefix(
   pattern: IPattern,
   path: string,
-  { case_sensitive = true }: IRoutingOptions,
+  { case_sensitive = true, encoded_slashes = false }: IMatchOptions,
 ): IPrefixMatch | null {
   const parts = split(path);
   const { length } = pattern.segments;
   if (parts.length < length) {
     return null;
   }
-  const params = leading(pattern.segments, parts, case_sensitive);
+  const params = leading(
+    pattern.segments,
+    parts,
+    case_sensitive,
+    encoded_slashes,
+  );
   if (!params) {
     return null;
   }

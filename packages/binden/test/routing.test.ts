@@ -3,13 +3,14 @@ import { suite, test } from "node:test";
 
 import {
   Binden,
+  BindenError,
   Context,
   type IBindenOptions,
   Middleware,
   Router,
   Stack,
 } from "../index.js";
-import { compile } from "../src/route.js";
+import { compile, matchPrefix, matchRoute } from "../src/route.js";
 import { layersOf } from "../src/stack.js";
 import { type IApp, type IListening, listen, send } from "./helpers.js";
 
@@ -222,6 +223,55 @@ suite("Routing", () => {
         // A literal that cannot be decoded does not match
         deepStrictEqual((await get(port, "/%FF/a"))[0], 404);
       });
+    });
+
+    test("an encoded slash in a parameter with `encoded_slashes`", async () => {
+      const app = new Binden({ encoded_slashes: true })
+        .route("/files/:name", echo("file"))
+        .route("/raw/*rest", echo("raw"))
+        .mount("/users/:id", echo("user"));
+      await withApp(app, async ({ port }) => {
+        const params = async (path: string): Promise<unknown> =>
+          ((await get(port, path))[1] as { params: unknown }).params;
+        deepStrictEqual(await params("/files/a%2Fb"), { name: "a/b" });
+        deepStrictEqual(await params("/files/a%5cb"), { name: "a\\b" });
+        deepStrictEqual(await params("/raw/x/a%2Fb"), { rest: "x/a/b" });
+        deepStrictEqual(await params("/users/a%2Fb/x"), { id: "a/b" });
+      });
+      // Without it: the whole path is refused
+      const strict = new Binden().route("/files/:name", echo("file"));
+      await withApp(strict, async ({ port }) => {
+        deepStrictEqual((await get(port, "/files/a%2Fb"))[0], 400);
+      });
+    });
+
+    test("matchRoute() and matchPrefix() refuse an encoded slash without `encoded_slashes`", () => {
+      const route = compile("/:name/*rest", "route");
+      const prefix = compile("/:name", "mount");
+      for (const path of ["/a%2Fb/c", "/a/b%5Cc"]) {
+        throws(
+          () => matchRoute(route, path, {}),
+          (error: unknown) =>
+            error instanceof BindenError && error.status === 400,
+        );
+      }
+      throws(
+        () => matchPrefix(prefix, "/a%2Fb/c", {}),
+        (error: unknown) =>
+          error instanceof BindenError && error.status === 400,
+      );
+      deepStrictEqual(
+        matchRoute(route, "/a%2Fb/c%5Cd", { encoded_slashes: true }),
+        { name: "a/b", rest: "c\\d" },
+      );
+      deepStrictEqual(
+        matchPrefix(prefix, "/a%2Fb/c", { encoded_slashes: true }),
+        {
+          params: { name: "a/b" },
+          prefix: "/a%2Fb",
+          rest: "/c",
+        },
+      );
     });
 
     test("`routing.case_sensitive: false` and `routing.strict: false`", async () => {

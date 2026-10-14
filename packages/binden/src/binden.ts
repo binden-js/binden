@@ -26,7 +26,12 @@ import {
   type IResponseOptions,
   validateResponseOptions,
 } from "./response.js";
-import { matchPrefix, matchRoute, type IRoutingOptions } from "./route.js";
+import {
+  type IMatchOptions,
+  matchPrefix,
+  matchRoute,
+  type IRoutingOptions,
+} from "./route.js";
 import { Router } from "./router.js";
 import { isClosing, register, track } from "./shutdown.js";
 import { type ILayer, layersOf, markRoot, Stack } from "./stack.js";
@@ -159,7 +164,7 @@ export class Binden<
   readonly #logger: ILogger;
   readonly #details: boolean;
   readonly #access: IAccessLog | null;
-  readonly #routing: Required<IRoutingOptions>;
+  readonly #routing: Required<IMatchOptions>;
   readonly #state: (() => object) | null;
   readonly #Request: typeof BindenRequest;
   readonly #Response: typeof BindenResponse;
@@ -229,7 +234,11 @@ export class Binden<
     this.#auto_head = auto_head;
     this.#logger = safe(logger ?? defaultLogger());
     this.#details = log_error_details;
-    this.#routing = { case_sensitive, strict };
+    this.#routing = {
+      case_sensitive,
+      strict,
+      encoded_slashes: requests.encoded_slashes,
+    };
     this.#state = state ?? null;
     this.#request_id = requests.request_id;
     // The requests and the responses of this application, with its options

@@ -99,7 +99,7 @@ app.use("/path2", middleware3);
 - `.route()` - add middlewares and routers for the paths that a pattern matches, with its parameters in `context.params` (typed from the pattern):
   - `:name` matches one non-empty segment, and `*name` (the last segment only) the rest of the path (zero or more segments);
   - a name is `[A-Za-z_][A-Za-z0-9_]*`, and `\:` and `\*` are a literal `:` and `*`;
-  - the path is split into its segments first, then every parameter (and every segment of `*name`) is decoded once: a parameter that is not valid percent-encoded UTF-8, or that has an encoded `/` or `\` (`%2F`, `%5C`), is `400 Bad Request`. Literal segments are compared once decoded (write them decoded);
+  - the path is split into its segments first, then every parameter (and every segment of `*name`) is decoded once: a parameter that is not valid percent-encoded UTF-8 is `400 Bad Request`, and so is one with an encoded `/` or `\` (`%2F`, `%5C`) unless the `encoded_slashes` option is `true` (see [Encoded slashes](#encoded-slashes)). Literal segments are compared once decoded (write them decoded);
   - a pattern without a leading `/`, with an empty or duplicate name, a `*name` that is not last, or a `:` or `*` inside a segment (unless escaped) throws a `TypeError`.
 
 ```typescript
@@ -832,7 +832,7 @@ const app = new Binden({ request_id: { trust_incoming: true } });
 
 #### Encoded slashes
 
-A `%2F` (or `%5C`) in a path is a slash (or a backslash) once decoded: a router would see one segment where a proxy or a file server sees several, or the opposite. A request whose path has one (in any case) gets a 400, unless `encoded_slashes` is `true`. The query is not checked, and `%252F` is fine: once decoded, it is the text `%2F`.
+A `%2F` (or `%5C`) in a path is a slash (or a backslash) once decoded: a router would see one segment where a proxy or a file server sees several, or the opposite. A request whose path has one (in any case) gets a 400, unless `encoded_slashes` is `true`: then a parameter of [`route()` or `mount()`](#stack-and-routing) has the decoded `/` (or `\`) in its value (e.g. `name` is `a/b` for `/files/:name` and `/files/a%2Fb`), while the segments of the path stay those that the client has sent. The query is not checked, and `%252F` is fine: once decoded, it is the text `%2F`.
 
 ```typescript
 import { Binden } from "binden";
