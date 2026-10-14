@@ -26,6 +26,14 @@ suite("Process safety", () => {
     });
   });
 
+  test("the error serializer ends on a chain of prototypes that does not", () => {
+    deepStrictEqual(run("cyclic-prototype.ts"), {
+      status: 0,
+      stdout: `[{"type":"object"},{"type":"object"}]\n`,
+      stderr: "",
+    });
+  });
+
   test("a logger whose `child()` throws does not crash the process", () => {
     deepStrictEqual(run("throwing-logger.ts"), {
       status: 0,

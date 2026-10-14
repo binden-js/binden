@@ -81,6 +81,22 @@ suite("serializers", () => {
     deepStrictEqual(serializers.request("not a request"), "not a request");
   });
 
+  test("request: the path of the request-target only", () => {
+    const url = (target: string): unknown => {
+      const request = new BindenRequest(new Socket());
+      request.url = target;
+      return (serializers.request(request) as { url: unknown }).url;
+    };
+
+    deepStrictEqual(url("/x?token=hidden#fragment"), "/x");
+    deepStrictEqual(url("/x#fragment"), "/x");
+    // A path, not an authority
+    deepStrictEqual(url("//evil.test/x?token=hidden"), "//evil.test/x");
+    // Not the userinfo, nor the authority of an absolute-form target
+    deepStrictEqual(url("http://alice:secretPW@trusted.test/x?t=1"), "/x");
+    deepStrictEqual(url("*"), "");
+  });
+
   test("response: an allowlist of details", () => {
     const { response } = createContext();
 

@@ -42,8 +42,11 @@ const errorCodes: ReadonlySet<string> = new Set([
 /** The name of the nearest known error class of a value (never one it defines itself) */
 function typeOf(value: object): string {
   try {
+    // Bounded: a proxy may return itself, or another proxy every time
+    const seen = new Set<object>();
     let prototype = Object.getPrototypeOf(value) as object | null;
-    while (prototype !== null) {
+    while (prototype !== null && !seen.has(prototype) && seen.size < 64) {
+      seen.add(prototype);
       const type = errorTypes.get(prototype);
       if (typeof type === "string") {
         return type;
@@ -54,6 +57,17 @@ function typeOf(value: object): string {
     // A proxy that refuses to tell its prototype
   }
   return typeof value;
+}
+
+/**
+ * The path of a request-target: never its query or fragment, nor the scheme,
+ * the authority or the userinfo of an absolute-form target
+ */
+function pathOf(target: string): string {
+  if (target.startsWith("/")) {
+    return target.replace(/[?#].*$/su, "");
+  }
+  return URL.canParse(target) ? new URL(target).pathname : "";
 }
 
 /** The given headers, when they are set */
@@ -104,7 +118,7 @@ export const serializers = {
     }
     return {
       method: request.method,
-      url: (request.url ?? "").split("?", 1)[0],
+      url: pathOf(request.url ?? ""),
       headers: pick(requestHeaders, (name) => request.headers[name]),
     };
   },
