@@ -14,18 +14,21 @@
       }
     }
   },
+  "projectDocuments": ["MIGRATION-4.md", "PRODUCTION.md"],
   "hideGenerator": true,
   "gitRevision": "main",
   "highlightLanguages": [
     "bash",
     "console",
     "css",
+    "diff",
     "html",
     "http",
     "javascript",
     "json",
     "jsonc",
     "json5",
+    "nginx",
     "tsx",
     "typescript",
     "yaml"
