@@ -17,6 +17,7 @@ export * from "./src/binden.js";
 export * from "./src/middleware.js";
 export * from "./src/request.js";
 export * from "./src/response.js";
+export type { IRedirectOptions, IRedirectStatus } from "./src/redirect.js";
 export type { ISendFileOptions } from "./src/send-file.js";
 export * from "./src/router.js";
 export { serializers } from "./src/logger.js";

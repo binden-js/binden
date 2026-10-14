@@ -8,6 +8,13 @@ import {
 import { Readable } from "node:stream";
 import ContentType from "./headers/content-type.js";
 import Cookie, { type ICookie } from "./headers/cookie.js";
+import {
+  type IRedirectOptions,
+  type IRedirectStatus,
+  isRedirectStatus,
+  redirectLocation,
+} from "./redirect.js";
+import { BindenRequest } from "./request.js";
 import { type ISendFileOptions, matches, sendFileTo } from "./send-file.js";
 import { isStatus } from "./status.js";
 
@@ -497,6 +504,54 @@ export class BindenResponse<
   /** Send response as `application/x-www-form-urlencoded` */
   public form(params: URLSearchParams): Promise<void> {
     return this.setHeader("Content-Type", ct_form).send(params.toString());
+  }
+
+  /**
+   * Redirect (`302 Found` by default) to a path or a URL of the same origin as
+   * the request, or with `allow_external` to another origin, with an empty
+   * body. `Location` is the WHATWG URL serialization of the location (a
+   * relative one stays relative). A location with userinfo, a control
+   * character, whitespace, a backslash or a scheme other than `http` and
+   * `https` rejects with a `TypeError`, as does an external one without
+   * `allow_external`.
+   */
+  public async redirect(
+    location: URL | string,
+    status: IRedirectStatus = 302,
+    { allow_external = false }: IRedirectOptions = {},
+  ): Promise<void> {
+    if (!isRedirectStatus(status)) {
+      throw new TypeError(`Status code ${String(status)} is not a redirect`);
+    } else if (typeof allow_external !== "boolean") {
+      throw new TypeError("`allow_external` is not a boolean");
+    }
+    const { base, origin } = this.#base();
+    const value = redirectLocation(location, base, origin, allow_external);
+    await this.status(status)
+      .set({ Location: value, "Content-Length": 0 })
+      .send();
+  }
+
+  /**
+   * The URL that a location is resolved against, with the origin of the
+   * request: the URL of a `BindenRequest`, otherwise the path of the request
+   * on an origin that is not known (no absolute URL is of the same origin)
+   */
+  #base(): { base: URL; origin: string | null } {
+    if (this.req instanceof BindenRequest) {
+      const base = this.req.URL;
+      return { base, origin: base.origin };
+    }
+    const base = new URL("http://binden.invalid");
+    const target = String(this.req.url);
+    if (target.startsWith("/")) {
+      // Set as a path: `//host/x` is a path, not an authority
+      const index = target.indexOf("?");
+      const end = index === -1 ? target.length : index;
+      base.pathname = target.slice(0, end);
+      base.search = target.slice(end);
+    }
+    return { base, origin: null };
   }
 
   /**
