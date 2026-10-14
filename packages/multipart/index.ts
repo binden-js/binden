@@ -8,7 +8,12 @@ export {
   type ILimitName,
   multipartInfo,
 } from "./src/info.js";
-export type { IMultipartConfig, IMultipartOptions } from "./src/options.js";
+export type {
+  IFileFilter,
+  IFileInfo,
+  IMultipartConfig,
+  IMultipartOptions,
+} from "./src/options.js";
 
 /** A `Multipart` of the options (see `IMultipartOptions`) */
 export default (options?: IMultipartOptions): Multipart =>

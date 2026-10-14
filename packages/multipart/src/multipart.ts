@@ -1,11 +1,13 @@
 import { BindenError, type Context, Middleware } from "binden";
-import { type ILimitName, type IParseInfo, startParse } from "./info.js";
 import {
+  type IFileFilter,
+  type IFileInfo,
   type IMultipartConfig,
   type IMultipartOptions,
   type IParserOptions,
   validateOptions,
 } from "./options.js";
+import { type ILimitName, type IParseInfo, startParse } from "./info.js";
 import busboy, {
   type Busboy,
   type BusboyConfig,
@@ -15,6 +17,7 @@ import busboy, {
 import { MultipartFile } from "./file.js";
 import type { Readable } from "node:stream";
 import { filenameOf } from "./filename.js";
+import { race } from "./race.js";
 
 /** The logger of a context */
 type ILog = Context["log"];
@@ -58,6 +61,13 @@ function create(config: BusboyConfig): Busboy | Error {
   }
 }
 
+/** The error of a failed callback: a `BindenError` as is, any other a `500` */
+function failure(error: unknown, message: string): BindenError {
+  return error instanceof BindenError
+    ? error
+    : new BindenError(500, { message, cause: error });
+}
+
 /** The content of a file */
 async function collect(stream: Readable): Promise<Buffer<ArrayBuffer>[]> {
   const chunks: Buffer<ArrayBuffer>[] = [];
@@ -78,6 +88,10 @@ class Parser {
   readonly #config: IMultipartConfig;
   readonly #throw_limits: boolean;
   readonly #limit: number;
+  readonly #file_filter: IFileFilter | null;
+  readonly #filtered: "reject" | "skip";
+  /** Aborted once the parse is over: what it awaits is abandoned */
+  readonly #stop = new AbortController();
   readonly #deferred = Promise.withResolvers<null>();
   readonly #slots: ISlot[] = [];
   readonly #tasks: Promise<void>[] = [];
@@ -90,7 +104,7 @@ class Parser {
     context: Context,
     log: ILog,
     info: IParseInfo,
-    { config, throw_limits, limit }: IParserOptions,
+    { config, throw_limits, limit, file_filter, filtered }: IParserOptions,
   ) {
     this.#context = context;
     this.#log = log;
@@ -98,6 +112,8 @@ class Parser {
     this.#config = config;
     this.#throw_limits = throw_limits;
     this.#limit = limit;
+    this.#file_filter = file_filter;
+    this.#filtered = filtered;
   }
 
   /** Settles once the body is parsed (`request.body`), or refused */
@@ -209,7 +225,7 @@ class Parser {
   #onFile(
     name: string | undefined,
     stream: IFileStream,
-    { filename, mimeType }: FileInfo,
+    { filename, encoding, mimeType }: FileInfo,
   ): void {
     // Observed: busboy reports the errors of its streams itself
     stream.on("error", ignore);
@@ -224,20 +240,58 @@ class Parser {
     stream.once("limit", () => {
       this.#limitReached("fileSize");
     });
-    const slot: ISlot = { name: name ?? "", value: null };
+    const info: IFileInfo = {
+      field: name ?? "",
+      filename: filenameOf(filename),
+      mime_type: mimeType,
+      encoding,
+    };
+    const slot: ISlot = { name: info.field, value: null };
     this.#slots.push(slot);
     this.#tasks.push(
-      collect(stream).then(
-        (chunks) => {
-          slot.value = new MultipartFile(chunks, filenameOf(filename), {
-            type: mimeType,
-            truncated: stream.truncated === true,
-          });
-        },
-        // The parser reports why the stream has failed
-        ignore,
-      ),
+      this.#file(info, stream, slot).catch((error: unknown) => {
+        // E.g. `file_filter` has failed (the parser has already refused the
+        // request when its stream has failed)
+        this.#refuse(failure(error, "A file has not been handled"));
+      }),
     );
+  }
+
+  /** Reads a file that `file_filter` accepts (the content of the others is discarded) */
+  async #file(
+    info: IFileInfo,
+    stream: IFileStream,
+    slot: ISlot,
+  ): Promise<void> {
+    if (!(await this.#accepts(info))) {
+      if (this.#filtered === "reject") {
+        const message = "A file has been refused by `file_filter`";
+        throw new BindenError(415, { message });
+      }
+      stream.resume();
+      return;
+    }
+    const chunks = await collect(stream);
+    slot.value = new MultipartFile(chunks, info.filename, {
+      type: info.mime_type,
+      truncated: stream.truncated === true,
+    });
+  }
+
+  /** Whether `file_filter` accepts a file (awaited until the parse is over) */
+  async #accepts(info: IFileInfo): Promise<boolean> {
+    const filter = this.#file_filter;
+    if (filter === null) {
+      return true;
+    }
+    const accepted: unknown = await race(
+      () => filter({ ...info }, this.#context),
+      this.#stop.signal,
+    );
+    if (typeof accepted !== "boolean") {
+      throw new TypeError("`file_filter` has not returned a boolean");
+    }
+    return accepted;
   }
 
   /** A limit on the count of the parts: the parts over it are dropped */
@@ -284,6 +338,7 @@ class Parser {
       return;
     }
     this.#end();
+    this.#stop.abort(error);
     const { request, response } = this.#context;
     if (this.#busboy) {
       request.unpipe(this.#busboy);

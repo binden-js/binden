@@ -1,5 +1,5 @@
 import type { BusboyConfig, Limits } from "busboy";
-import type { IMiddlewareParams } from "binden";
+import type { Context, IMiddlewareParams } from "binden";
 
 /**
  * The configuration of busboy: its `limits`, the charsets of the parts and
@@ -7,6 +7,33 @@ import type { IMiddlewareParams } from "binden";
  * `headers` key is ignored)
  */
 export type IMultipartConfig = Omit<BusboyConfig, "headers">;
+
+/**
+ * What a file part declares of itself, none of which is checked against its
+ * content (e.g. its type is the one the client has chosen)
+ */
+export interface IFileInfo {
+  /** The name of the field */
+  field: string;
+  /**
+   * The name of the file, as the client has sent it (see `filenameOf()`):
+   * metadata, never a path
+   */
+  filename: string;
+  /** The media type of the part (`Content-Type`, `text/plain` by default) */
+  mime_type: string;
+  /** The `Content-Transfer-Encoding` of the part (`7bit` by default) */
+  encoding: string;
+}
+
+/**
+ * Whether a file is accepted, from what it declares: a `Promise` is awaited
+ * (until the request is aborted), and must resolve to a boolean
+ */
+export type IFileFilter = (
+  info: IFileInfo,
+  context: Context,
+) => boolean | Promise<boolean>;
 
 /** The options of `Multipart` */
 export interface IMultipartOptions extends IMiddlewareParams {
@@ -23,6 +50,17 @@ export interface IMultipartOptions extends IMiddlewareParams {
    * gets a `413 Content Too Large`, whatever `throw_limits`
    */
   limit?: number | undefined;
+  /**
+   * Whether a file is accepted, from what it declares (its metadata, never
+   * its content), before it is read: all of them by default
+   */
+  file_filter?: IFileFilter | undefined;
+  /**
+   * What happens to a file that `file_filter` refuses: the request is
+   * refused with `415 Unsupported Media Type` (`"reject"`), or the file is
+   * read and discarded (`"skip"`)
+   */
+  filtered?: "reject" | "skip" | undefined;
 }
 
 /** The options of a parse, checked, with their defaults */
@@ -30,6 +68,8 @@ export interface IParserOptions {
   readonly config: IMultipartConfig;
   readonly throw_limits: boolean;
   readonly limit: number;
+  readonly file_filter: IFileFilter | null;
+  readonly filtered: "reject" | "skip";
 }
 
 /** The options of `Multipart` that its parent class takes */
@@ -41,6 +81,8 @@ const optionNames: ReadonlySet<string> = new Set([
   "config",
   "throw_limits",
   "limit",
+  "file_filter",
+  "filtered",
 ]);
 
 const configNames: ReadonlySet<string> = new Set([
@@ -200,9 +242,15 @@ export function validateOptions(input: unknown): {
     config = {},
     throw_limits = true,
     limit = Number.POSITIVE_INFINITY,
+    file_filter = null,
+    filtered = "reject",
   } = checkObject(input, "options", optionNames);
   if (typeof throw_limits !== "boolean") {
     throw new TypeError("`throw_limits` is not a boolean");
+  } else if (file_filter !== null && typeof file_filter !== "function") {
+    throw new TypeError("`file_filter` is not a function");
+  } else if (filtered !== "reject" && filtered !== "skip") {
+    throw new TypeError('`filtered` is not "reject" or "skip"');
   }
   return {
     middleware: {
@@ -213,6 +261,8 @@ export function validateOptions(input: unknown): {
       config: checkConfig(config),
       throw_limits,
       limit: checkSize(limit, "limit"),
+      file_filter: file_filter as IFileFilter | null,
+      filtered,
     },
   };
 }
