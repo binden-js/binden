@@ -18,7 +18,18 @@ const serializers = {
   response: stdSerializers.res,
 };
 
-export class Logger {
+/** A logger that binden can use: the `Logger` of this package, or any object with these methods */
+export interface ILogger {
+  fatal(message: string, extra?: Record<string, unknown>): unknown;
+  error(message: string, extra?: Record<string, unknown>): unknown;
+  warn(message: string, extra?: Record<string, unknown>): unknown;
+  info(message: string, extra?: Record<string, unknown>): unknown;
+  debug(message: string, extra?: Record<string, unknown>): unknown;
+  trace(message: string, extra?: Record<string, unknown>): unknown;
+  child(bindings: Record<string, unknown>): ILogger;
+}
+
+export class Logger implements ILogger {
   readonly #logger: PinoLogger;
 
   public constructor({ logger, destination, ...options }: LoggerOptions = {}) {

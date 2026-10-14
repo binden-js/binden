@@ -1,5 +1,6 @@
-import { Logger } from "@binden/logger";
+import type { ILogger } from "@binden/logger";
 import { BindenError, type IBindenErrorOptions } from "./error.js";
+import { Exchange } from "./exchange.js";
 import defaultLogger from "./logger.js";
 
 import type { Readable } from "node:stream";
@@ -13,25 +14,39 @@ export interface IBaseContext {
 
 export interface IContextOptions extends IBaseContext {
   /** The logger whose child (with the `trace_id` of the context) is `context.log` */
-  readonly logger?: Logger;
+  readonly logger?: ILogger | undefined;
+  /**
+   * The state of the request: used by the first context of the request only
+   * (the others share it)
+   */
+  readonly state?: object | undefined;
 }
 
-export class Context implements IBaseContext {
+export type IParams = Record<string, string>;
+
+export class Context<
+  State extends object = Record<string, unknown>,
+  Params extends IParams = IParams,
+> implements IBaseContext {
   readonly #request: BindenRequest;
   readonly #response: BindenResponse<BindenRequest>;
-  readonly #parent: Logger;
-  #logger?: Logger;
-  #done: boolean;
+  readonly #parent: ILogger;
+  readonly #exchange: Exchange;
+  #logger?: ILogger;
 
   public constructor({
     request,
     response,
     logger = defaultLogger,
+    state,
   }: IContextOptions) {
     this.#request = request;
     this.#response = response;
-    this.#done = false;
     this.#parent = logger;
+    this.#exchange = Exchange.for(request, response, {
+      state,
+      report: (message, error) => this.log.error(message, { error }),
+    });
   }
 
   /**
@@ -40,7 +55,7 @@ export class Context implements IBaseContext {
    * whose `child()` throws) is used itself: logging never prevents the context
    * from being created.
    */
-  public get log(): Logger {
+  public get log(): ILogger {
     if (!this.#logger) {
       try {
         this.#logger = this.#parent.child({ trace_id: this.id });
@@ -73,14 +88,53 @@ export class Context implements IBaseContext {
     return this.request.id;
   }
 
+  /** Set once the request is handled: shared by every context of the request */
   public get done(): boolean {
-    return this.#done;
+    return this.#exchange.done;
   }
 
   public set done(done: unknown) {
-    if (!this.#done && Boolean(done)) {
-      this.#done = true;
-    }
+    this.#exchange.done = Boolean(done);
+  }
+
+  /**
+   * Aborted once the work for the request should stop: the client has gone
+   * away (`client_closed`), the deadline has passed (`deadline`) or the server
+   * is shutting down (`shutdown`); its reason is a `BindenAbortError`
+   */
+  public get signal(): AbortSignal {
+    return this.#exchange.signal;
+  }
+
+  /** The state of the request, shared by every context of the request */
+  public get state(): State {
+    return this.#exchange.state as State;
+  }
+
+  /** The parameters of the matched route */
+  public get params(): Readonly<Params> {
+    return this.#exchange.params as Readonly<Params>;
+  }
+
+  /** The matched mount prefixes, with their values (`""` at the root) */
+  public get mount_path(): string {
+    return this.#exchange.mount_path;
+  }
+
+  /**
+   * (Re)starts the deadline of the request from now (`0` removes it): once it
+   * has passed, `signal` is aborted with the `deadline` reason
+   */
+  public setTimeout(ms: number): void {
+    this.#exchange.setTimeout(ms);
+  }
+
+  /**
+   * Runs `cleanup` once the response is closed (finished, or its connection
+   * closed), after the cleanups registered later; a failure is logged
+   */
+  public onCleanup(cleanup: () => unknown): void {
+    this.#exchange.onCleanup(cleanup);
   }
 
   public get url(): URL {

@@ -9,6 +9,7 @@ export * from "./src/headers/if-modified-since.js";
 export * from "./src/headers/range.js";
 export * from "./src/context.js";
 export * from "./src/error.js";
+export { BindenAbortError, type IAbortReason } from "./src/exchange.js";
 export * from "./src/binden.js";
 export * from "./src/middleware.js";
 export * from "./src/request.js";

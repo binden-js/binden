@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import { isDeepStrictEqual } from "node:util";
-import type { Logger } from "@binden/logger";
+import type { ILogger } from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
 import defaultLogger from "./logger.js";
@@ -26,7 +26,7 @@ export interface IBindenOptions {
   /** Replaces the default reply to an error, unless it does not reply itself */
   error_handler?: (context: Context, error: unknown) => Promise<void> | void;
   /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */
-  logger?: Logger;
+  logger?: ILogger;
   /**
    * The proxies whose `Forwarded` elements `request.protocol` trusts: none
    * (`false`, the default), all of them (`true`) or the given number of the
@@ -40,7 +40,7 @@ export class Binden {
   readonly #auto_head: boolean;
   readonly #error_handler:
     ((context: Context, error: unknown) => Promise<void> | void) | null;
-  readonly #logger: Logger;
+  readonly #logger: ILogger;
   readonly #Request: typeof BindenRequest;
 
   public constructor({
