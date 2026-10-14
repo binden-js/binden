@@ -220,6 +220,8 @@ export class Binden {
 
   async #handle(context: Context): Promise<void> {
     let next = context;
+    // The methods of the guarded routers that have refused the request
+    const allow = new Set<string>();
 
     for (const [items, path] of this.#stack) {
       const regExp = path instanceof RegExp && path.test(next.url.pathname);
@@ -233,21 +235,27 @@ export class Binden {
             // `HEAD` is handled by the `GET` middlewares, unless it has its own
             const head = methods.has("HEAD");
 
-            if (guarded && methods.size) {
-              if (methods.has("GET") && this.#auto_head) {
-                methods.add("HEAD");
-              }
+            if (
+              guarded &&
+              methods.size &&
+              methods.has("GET") &&
+              this.#auto_head
+            ) {
+              methods.add("HEAD");
+            }
 
-              if (!methods.has(method)) {
-                next.response.set({ Allow: `${[...methods].join(", ")}` });
-
-                throw new BindenError(405);
+            // A guarded router that does not allow the method: another one may
+            // (405 when none does)
+            const refused = guarded && methods.size > 0 && !methods.has(method);
+            if (refused) {
+              for (const allowed of methods) {
+                allow.add(allowed);
               }
             }
 
             const m =
               method === "HEAD" && this.#auto_head && !head ? "GET" : method;
-            const methodMiddlewares = middlewares(m);
+            const methodMiddlewares = refused ? [] : middlewares(m);
 
             for (const mw of methodMiddlewares) {
               next = await Binden.#runMiddleware(mw, next);
@@ -271,9 +279,13 @@ export class Binden {
 
     // Nothing has handled the request, unless a middleware has started (or ended)
     // the response without setting `done`: it is left to finish
-    if (!next.response.started) {
-      throw new BindenError(404);
+    if (next.response.started) {
+      return;
+    } else if (allow.size) {
+      next.response.set({ Allow: [...allow].join(", ") });
+      throw new BindenError(405);
     }
+    throw new BindenError(404);
   }
 
   /** A middleware has set `done`: a response that nothing has started is sent empty */

@@ -905,6 +905,38 @@ suite("Binden", () => {
     deepStrictEqual(response.headers.get("Allow"), "PATCH, GET, HEAD");
   });
 
+  test("guarded routers (another router allows the method)", async () => {
+    const get = new Router({ guarded: true }).get((context: Context) =>
+      context.send("get"),
+    );
+    const post = new Router({ guarded: true }).post((context: Context) =>
+      context.send("post"),
+    );
+    app.use("/one", get, post);
+    app.use("/two", get).use("/two", new SendMiddleware());
+    app.use("/three", new Router({ guarded: true }).put(new SendMiddleware()));
+    app.use("/three", get);
+    const send = async (
+      path: string,
+      method: string,
+    ): Promise<[number, string, string | null]> => {
+      const response = await fetch(`${url}${path}`, { method });
+      const allow = response.headers.get("Allow");
+      return [response.status, await response.text(), allow];
+    };
+
+    deepStrictEqual(await send("/one", "GET"), [200, "get", null]);
+    deepStrictEqual(await send("/one", "POST"), [200, "post", null]);
+    // A middleware after the router may handle any method
+    deepStrictEqual((await send("/two", "POST"))[0], 200);
+    // None allows the method: 405 with the methods of every guarded router
+    deepStrictEqual(await send("/three", "DELETE"), [
+      405,
+      "",
+      "PUT, GET, HEAD",
+    ]);
+  });
+
   test("405 error (`guarded` router `auto_head === false`)", async () => {
     const newApp = new Binden({ auto_head: false });
     const path = new URL(url);
