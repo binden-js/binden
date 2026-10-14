@@ -66,11 +66,35 @@ Dependencies are kept at their latest versions, except:
   notes with `conventional-changelog-writer` 8, and the version 10 of the preset requires the
   version 9 of the writer (the release fails).
 
-The published packages have no known vulnerabilities (`npm audit --omit=dev`). The advisories of the
-development dependencies come from the release tooling: `braces` (through `micromatch`, used by
-semantic-release) has no fixed version, and the other ones are bundled with npm 11.21.0, the latest
-version that `@semantic-release/npm` supports (bundled dependencies cannot be updated separately).
-They do not affect the published packages.
+### Audit
+
+CI checks the registry signatures (and provenance attestations) of every installed package
+(`npm audit signatures`), and fails on any advisory of high severity or above in the dependencies
+of the published packages (`npm audit --omit=dev --audit-level=high`): there is none.
+
+The full `npm audit` (2026-10-14) reports 13 vulnerable packages (2 moderate, 11 high). All of them
+are development dependencies of the release tooling, none is in the published packages, and each
+one is accepted:
+
+- `braces` 3.0.3 (high:
+  [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)) has no fixed version.
+  Through `micromatch` 4.0.8, semantic-release and its commit analyzer only expand the patterns of
+  `.releaserc.json` (the release branch and the release rules), never a pattern from outside of the
+  repository, and the advisory needs a deeply nested pattern.
+- The other ones are bundled with `npm` 11.21.0, which is never run: `brace-expansion` 5.0.9 (high:
+  GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p), `http-cache-semantics` 4.2.0
+  (high: GHSA-ch52-4w7c-c8xp), `undici` 6.28.0 (high: GHSA-3wwx-pv8p-q78v, GHSA-r53p-7pc4-xj5r,
+  GHSA-rfgv-xxqx-mfg5), `ip-address` 10.5.0 (moderate: GHSA-rpw4-54j3-4h4q, GHSA-2vr4-cq9g-pvrc,
+  GHSA-j6r3-76f7-8jcv, GHSA-h3mg-xc3c-68pw) and `postcss-selector-parser` 7.1.4 (moderate:
+  GHSA-rj75-hqrm-r3gf). `npm` is a dependency of `@semantic-release/npm`, which semantic-release
+  always installs; 11.21.0 is the latest npm 11, the version that `@semantic-release/npm` supports,
+  and the bundled dependencies of npm cannot be updated separately. This repository does not use
+  the `@semantic-release/npm` plugin: the release publishes with the npm of its runtime (11.13.0,
+  with Node.js 24.16.0).
+- The 7 other packages (`micromatch`, `semantic-release`, `@semantic-release/exec`,
+  `@semantic-release/commit-analyzer`, `@semantic-release/release-notes-generator`,
+  `@semantic-release/github` and `@semantic-release/npm`) are reported only because they depend on
+  `braces` or on `npm`.
 
 ## Known issues
 

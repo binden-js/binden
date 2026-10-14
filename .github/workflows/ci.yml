@@ -43,6 +43,15 @@ jobs:
       - name: Install dependencies and build the workspaces
         run: npm ci
 
+      # The registry signatures (and provenance attestations) of the installed packages
+      - name: Signatures of the dependencies
+        run: npm audit signatures
+
+      # The dependencies of the published packages. The advisories of the development
+      # dependencies are reviewed in the README ("Dependencies").
+      - name: Audit of the production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lockstep versions
         run: npm run release:check
 
@@ -191,6 +200,9 @@ jobs:
       - name: Install dependencies and build the workspaces
         run: npm ci
 
+      - name: Signatures of the dependencies
+        run: npm audit signatures
+
       # Tags the release, publishes every workspace with the same version (see
       # scripts/release.mjs: `version`, `pack` into RELEASE_DIR, then `publish` of these
       # archives once the registry is checked for all of them) and creates the GitHub Release,
@@ -274,6 +286,9 @@ jobs:
 
       - name: Install dependencies and build the workspaces
         run: npm ci
+
+      - name: Signatures of the dependencies
+        run: npm audit signatures
 
       # Packs the archives again (the same ones, bit for bit, as the release job), checks the
       # registry for all of them, then publishes the missing ones with provenance

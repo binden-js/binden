@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "npm run build --workspaces",
-    "ci:all": "npm ci && npm run release:check && npm run prettier && npm run commitlint && npm run eslint && npm run test:tooling && npm run coverage && npm run pack:check && npm run consumer:check && npm run release:rehearsal && npm run docs:build",
+    "ci:all": "npm ci && npm audit signatures && npm audit --omit=dev --audit-level=high && npm run release:check && npm run prettier && npm run commitlint && npm run eslint && npm run test:tooling && npm run coverage && npm run pack:check && npm run consumer:check && npm run release:rehearsal && npm run docs:build",
     "commitlint": "commitlint --verbose --from=origin/main",
     "consumer:check": "node scripts/consumer-check.mjs",
     "coverage": "c8 npm test --",
