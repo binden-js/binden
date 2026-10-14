@@ -58,10 +58,10 @@ export class BindenResponse<
     return this;
   }
 
-  /** Set headers */
+  /** Set headers: the own properties of the object (not inherited ones) */
   public set(headers: IHeaders): this {
-    for (const name in headers) {
-      this.setHeader(name, headers[name]);
+    for (const [name, value] of Object.entries(headers)) {
+      this.setHeader(name, value);
     }
     return this;
   }

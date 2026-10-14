@@ -216,6 +216,22 @@ suite("BindenResponse", () => {
     deepStrictEqual(response.headers.get(z), headers[z].join(", "));
   });
 
+  test(".set() (own properties only)", async () => {
+    // E.g. a polluted `Object.prototype`
+    const headers = Object.assign(
+      Object.create({ "X-Inherited": "1" }) as Record<string, string>,
+      { "X-Own": "2" },
+    );
+    server.once("request", (_request, response) => {
+      response.set(headers).end();
+    });
+    const response = await fetch(url);
+    await response.text();
+
+    deepStrictEqual(response.headers.get("X-Own"), "2");
+    deepStrictEqual(response.headers.get("X-Inherited"), null);
+  });
+
   test(".send()", async () => {
     const cookie1 = new Cookie({ key: "__Secure-K1", value: "V1" });
     const cookie2 = new Cookie({ key: "__Host-K2", value: "V2" });
