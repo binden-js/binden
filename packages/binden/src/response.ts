@@ -114,7 +114,7 @@ export class BindenResponse<
     // before (e.g. the client went away)
     const done = this.#finished(() => false);
 
-    if (typeof data === "undefined" || data === "") {
+    if (typeof data === "undefined" || data === "" || this.destroyed) {
       this.end();
       return done;
     }
@@ -141,13 +141,29 @@ export class BindenResponse<
         this.setHeader("Content-Length", Buffer.byteLength(body, encoding));
       }
       this.end();
-    } else if (typeof body === "string" && encoding) {
-      this.end(body, encoding);
-    } else {
-      this.end(body);
+      return done;
     }
 
-    return done;
+    // The body is written rather than passed to `end()`: a write that fails
+    // (e.g. the client went away) rejects, although Node.js 24 emits `finish`
+    // once the response is ended. Its length keeps it from being chunked.
+    if (!this.headersSent) {
+      this.setHeader("Content-Length", Buffer.byteLength(body, encoding));
+    }
+    return new Promise<void>((resolve, reject) => {
+      const written = (error?: Error | null): void => {
+        if (error) {
+          reject(error);
+        }
+      };
+      if (typeof body === "string") {
+        this.write(body, encoding ?? "utf8", written);
+      } else {
+        this.write(body, written);
+      }
+      this.end();
+      done.then(resolve, reject);
+    });
   }
 
   /** Send response as `application/json` */

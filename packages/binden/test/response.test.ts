@@ -425,6 +425,28 @@ suite("BindenResponse", () => {
   );
 
   test(
+    ".send() (rejects a `Buffer` when the client goes away before the flush)",
+    {
+      // Windows takes a whole write while its send buffer has room
+      skip: process.platform === "win32",
+      timeout: 10_000,
+    },
+    async () => {
+      const size = 64 * 1024 * 1024;
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          resolve(settle(response.send(Buffer.alloc(size))));
+        });
+      });
+      await abortAfterFirstChunk();
+
+      // Node.js 24 emits `finish` although the write has failed
+      const code = await settled;
+      ok(gone.has(code as string), String(code));
+    },
+  );
+
+  test(
     ".send() (pauses a `Readable` while the client does not read)",
     { timeout: 10_000 },
     async () => {
