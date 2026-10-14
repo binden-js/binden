@@ -107,6 +107,54 @@ suite("AcceptEncoding", () => {
     }
   });
 
+  test("AcceptEncoding.negotiate()", () => {
+    const negotiate = (input: string, ...offers: string[]): string | false =>
+      AcceptEncoding.negotiate(offers, input);
+
+    deepStrictEqual(negotiate("gzip, br;q=0.9", "br", "gzip"), "gzip");
+    deepStrictEqual(negotiate("GZIP;Q=0.5, Br;q=0.4", "br", "Gzip"), "Gzip");
+    // `x-gzip` is `gzip`
+    deepStrictEqual(negotiate("x-gzip", "br", "gzip"), "gzip");
+    deepStrictEqual(negotiate("gzip", "br", "x-gzip"), "x-gzip");
+    // Unknown codings count too, and an invalid weight drops its element
+    deepStrictEqual(negotiate("foo;q=0, *", "foo", "gzip"), "gzip");
+    deepStrictEqual(negotiate("foo;q=0.5, gzip;q=0.4", "gzip", "foo"), "foo");
+    deepStrictEqual(negotiate("gzip;q=2, br", "gzip", "br"), "br");
+    deepStrictEqual(negotiate("*;q=0.5, br;q=0.5", "gzip", "br"), "br");
+    deepStrictEqual(negotiate("br", "gzip"), false);
+    deepStrictEqual(negotiate("br"), false);
+    // RFC 9110, section 12.5.3: `identity` is acceptable unless excluded
+    deepStrictEqual(negotiate("br;q=0", "br", "identity"), "identity");
+    deepStrictEqual(negotiate("", "gzip", "identity"), "identity");
+    deepStrictEqual(negotiate("", "gzip"), false);
+    deepStrictEqual(negotiate("identity;q=0", "identity"), false);
+    deepStrictEqual(negotiate("*;q=0", "identity"), false);
+    deepStrictEqual(
+      negotiate("*;q=0, IDENTITY", "gzip", "identity"),
+      "identity",
+    );
+    deepStrictEqual(negotiate("*;q=0.5", "identity", "gzip"), "identity");
+    // ... but the least preferred when the header does not name it
+    deepStrictEqual(negotiate("gzip;q=0.001", "identity", "gzip"), "gzip");
+    deepStrictEqual(negotiate("gzip;q=0", "identity", "gzip"), "identity");
+    // Without the header: the first offer
+    deepStrictEqual(AcceptEncoding.negotiate(["br", "gzip"]), "br");
+    deepStrictEqual(AcceptEncoding.negotiate([]), false);
+    deepStrictEqual(
+      AcceptEncoding.negotiate(["br", "zstd"], ["br;q=0.5", "zstd"]),
+      "zstd",
+    );
+  });
+
+  test("AcceptEncoding.negotiate() (invalid offers)", () => {
+    for (const offer of ["*", "g zip", ""]) {
+      throws(
+        () => AcceptEncoding.negotiate(["gzip", offer], "*"),
+        new TypeError(`Invalid content coding: ${offer}`),
+      );
+    }
+  });
+
   test("constructor (invalid input)", () => {
     for (const q_value of [
       2,

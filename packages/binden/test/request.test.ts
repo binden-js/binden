@@ -64,6 +64,35 @@ suite("BindenRequest", () => {
     await serverPromise;
   });
 
+  test(".accepts() and the like (content negotiation)", () => {
+    const request = new BindenRequest(new Socket());
+    // Without the headers: the first offer
+    deepStrictEqual(
+      request.accepts("text/html", "application/json"),
+      "text/html",
+    );
+    deepStrictEqual(request.acceptsCharsets("utf-8", "latin1"), "utf-8");
+    deepStrictEqual(request.acceptsEncodings("gzip", "identity"), "gzip");
+    deepStrictEqual(request.acceptsLanguages("en", "fr"), "en");
+    deepStrictEqual(request.accepts(), false);
+
+    request.headers = {
+      accept: "application/json, text/*;q=0.5",
+      "accept-charset": "latin1;q=0.5, utf-8",
+      "accept-encoding": "br, gzip;q=0.5",
+      "accept-language": "fr, en;q=0.5",
+    };
+    deepStrictEqual(
+      request.accepts("text/html", "application/json"),
+      "application/json",
+    );
+    deepStrictEqual(request.accepts("image/png"), false);
+    deepStrictEqual(request.acceptsCharsets("latin1", "utf-8"), "utf-8");
+    deepStrictEqual(request.acceptsEncodings("gzip", "br"), "br");
+    deepStrictEqual(request.acceptsLanguages("en", "fr"), "fr");
+    throws(() => request.accepts("html"), TypeError);
+  });
+
   test(".authorization", async () => {
     const serverPromise = new Promise<void>((resolve, reject) => {
       server.once("request", (request, response) => {

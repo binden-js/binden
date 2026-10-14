@@ -4,7 +4,10 @@ import { parse, type ParsedUrlQuery } from "node:querystring";
 import { TLSSocket } from "node:tls";
 
 import { BindenError } from "./error.js";
+import Accept from "./headers/accept.js";
+import AcceptCharset from "./headers/accept-charset.js";
 import AcceptEncoding from "./headers/accept-encoding.js";
+import AcceptLanguage from "./headers/accept-language.js";
 import Authorization from "./headers/authorization.js";
 import ContentEncoding from "./headers/content-encoding.js";
 import ContentType from "./headers/content-type.js";
@@ -33,6 +36,38 @@ export class BindenRequest extends IncomingMessage {
   #if_modified_since?: IfModifiedSince | null;
   #range?: readonly Range[];
   #query?: ParsedUrlQuery;
+
+  /**
+   * The preferred one of the offered media types (e.g. `application/json`), by
+   * the `Accept` header (see `Accept.negotiate()`), or `false`
+   */
+  public accepts(...types: string[]): string | false {
+    return Accept.negotiate(types, this.headers.accept);
+  }
+
+  /**
+   * The preferred one of the offered charsets, by the `Accept-Charset` header
+   * (see `AcceptCharset.negotiate()`), or `false`
+   */
+  public acceptsCharsets(...charsets: string[]): string | false {
+    return AcceptCharset.negotiate(charsets, this.headers["accept-charset"]);
+  }
+
+  /**
+   * The preferred one of the offered content codings, by the
+   * `Accept-Encoding` header (see `AcceptEncoding.negotiate()`), or `false`
+   */
+  public acceptsEncodings(...encodings: string[]): string | false {
+    return AcceptEncoding.negotiate(encodings, this.headers["accept-encoding"]);
+  }
+
+  /**
+   * The preferred one of the offered language tags, by the `Accept-Language`
+   * header (see `AcceptLanguage.negotiate()`), or `false`
+   */
+  public acceptsLanguages(...languages: string[]): string | false {
+    return AcceptLanguage.negotiate(languages, this.headers["accept-language"]);
+  }
 
   public get accept_encoding(): AcceptEncoding[] {
     if (!this.#accept_encoding) {
