@@ -74,6 +74,17 @@ export class BodyParser<T = unknown> extends Middleware {
       throw new BindenError(415);
     }
 
+    // The text is decoded with its charset (UTF-8 by default)
+    const charset = content_type?.charset ?? "utf-8";
+    const decoder = ((): TextDecoder => {
+      try {
+        return new TextDecoder(charset);
+      } catch (error: unknown) {
+        log.debug("Unsupported charset", { charset });
+        throw new BindenError(415, { cause: error as Error });
+      }
+    })();
+
     const streams: [string, Duplex][] = [];
 
     for (const { encoding } of content_encoding) {
@@ -139,7 +150,7 @@ export class BodyParser<T = unknown> extends Middleware {
         if (error) {
           reject(error);
         } else {
-          resolve(Buffer.concat(chunks).toString());
+          resolve(decoder.decode(Buffer.concat(chunks)));
         }
       });
     });

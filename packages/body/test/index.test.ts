@@ -131,6 +131,29 @@ suite("BodyParser", () => {
     deepEqual(text, "");
   });
 
+  test("charset", async () => {
+    const received: unknown[] = [];
+    app.use(new BodyParser(), (ct: Context) => {
+      received.push(ct.request.body);
+      return ct.send();
+    });
+    const send = async (charset: string, body: Buffer): Promise<number> => {
+      const headers = { "Content-Type": `${ct_text}; charset=${charset}` };
+      const response = await request(url, { method: "POST", body, headers });
+      await response.body.text();
+      return response.statusCode;
+    };
+
+    // `café`
+    deepEqual(
+      await send("iso-8859-1", Buffer.from([0x63, 0x61, 0x66, 0xe9])),
+      200,
+    );
+    deepEqual(await send("utf-8", Buffer.from("café")), 200);
+    deepEqual(await send("unknown-charset", Buffer.from("café")), 415);
+    deepEqual(received, ["café", "café"]);
+  });
+
   test("Unsupported methods", async () => {
     const assert = (ct: Context): Promise<void> => {
       ok(typeof ct.request.body === "undefined");
