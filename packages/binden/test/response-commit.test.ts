@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok, throws } from "node:assert";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert";
 import {
   IncomingMessage,
   type OutgoingHttpHeader,
@@ -337,5 +337,15 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
       ((await settle(endedFlush)) as { code?: unknown }).code,
       "ERR_STREAM_PREMATURE_CLOSE",
     );
+  });
+
+  test(".send() (rejects an unknown encoding before the response)", async () => {
+    const response = detached();
+    await rejects(
+      () => response.send("data", "nope" as BufferEncoding),
+      new TypeError("Unknown encoding: nope"),
+    );
+    ok(!response.started);
+    ok(!response.hasHeader("Content-Length"));
   });
 });

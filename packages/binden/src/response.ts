@@ -305,6 +305,13 @@ export class BindenResponse<
         BindenResponse.#discard(data);
       }
       return Promise.resolve();
+    } else if (
+      typeof encoding !== "undefined" &&
+      !Buffer.isEncoding(encoding)
+    ) {
+      return Promise.reject(
+        new TypeError(`Unknown encoding: ${String(encoding)}`),
+      );
     }
 
     this.#started = true;
