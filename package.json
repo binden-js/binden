@@ -23,7 +23,7 @@
     "docs:build": "typedoc",
     "eslint": "eslint .",
     "eslint:fix": "eslint . --fix",
-    "pack:check": "npm pack --dry-run --workspaces",
+    "pack:check": "node scripts/pack-check.mjs",
     "prepare": "husky && npm run build",
     "prettier": "prettier -c .",
     "prettier:write": "prettier -c -w .",

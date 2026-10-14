@@ -61,7 +61,7 @@ jobs:
       - name: Tooling tests (release script, test runner)
         run: npm run test:tooling
 
-      - name: Pack (test)
+      - name: Packed files (scripts/pack-files.json)
         run: npm run pack:check
 
       - name: Consumer check (packed packages, TypeScript and ESM)
