@@ -13,6 +13,7 @@ export interface IMultipartFileOptions extends NonNullable<
 export class MultipartFile extends File {
   readonly #truncated: boolean;
 
+  /** A file of the content, the name and the options of a `File`, and `truncated` */
   public constructor(
     bits: ConstructorParameters<typeof File>[0],
     name: string,

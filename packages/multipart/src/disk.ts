@@ -29,7 +29,9 @@ export interface IStoredFile extends IFileInfo {
 
 /** The body that the disk storage sets: the fields and the stored files, by name, in their order */
 export interface IStoredForm {
+  /** The values of the fields, by name */
   readonly fields: Map<string, string[]>;
+  /** The stored files, by the name of their field */
   readonly files: Map<string, IStoredFile[]>;
 }
 
