@@ -19,7 +19,8 @@ export interface IContextOptions extends IBaseContext {
 export class Context implements IBaseContext {
   readonly #request: BindenRequest;
   readonly #response: BindenResponse<BindenRequest>;
-  readonly #logger: Logger;
+  readonly #parent: Logger;
+  #logger?: Logger;
   #done: boolean;
 
   public constructor({
@@ -30,11 +31,23 @@ export class Context implements IBaseContext {
     this.#request = request;
     this.#response = response;
     this.#done = false;
-    const { id: trace_id } = request;
-    this.#logger = logger.child({ trace_id });
+    this.#parent = logger;
   }
 
+  /**
+   * A child of the logger with the `trace_id` of the context, created when it
+   * is first used. A logger that fails to create one (e.g. a custom logger
+   * whose `child()` throws) is used itself: logging never prevents the context
+   * from being created.
+   */
   public get log(): Logger {
+    if (!this.#logger) {
+      try {
+        this.#logger = this.#parent.child({ trace_id: this.id });
+      } catch {
+        this.#logger = this.#parent;
+      }
+    }
     return this.#logger;
   }
 

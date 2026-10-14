@@ -25,4 +25,12 @@ suite("Process safety", () => {
       stderr: "",
     });
   });
+
+  test("a logger whose `child()` throws does not crash the process", () => {
+    deepStrictEqual(run("throwing-logger.ts"), {
+      status: 0,
+      stdout: "200 ok true\n",
+      stderr: "",
+    });
+  });
 });
