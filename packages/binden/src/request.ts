@@ -21,6 +21,7 @@ import {
   checkTrustProxy,
   isAuthority,
   resolveProxy,
+  strictBoolean,
 } from "./proxy.js";
 
 export type { IProxyHeaders, ITrustFn, ITrustProxy } from "./proxy.js";
@@ -39,14 +40,28 @@ export interface IRequestOptions {
    * backslash (`%2F`, `%5C`): a `400 Bad Request` otherwise (by default)
    */
   readonly encoded_slashes: boolean;
+  /**
+   * The hosts that the effective host of a request (see `request.host`) may
+   * be (any host by default): a `400 Bad Request` otherwise. A list of hosts
+   * (`hostname` for any port, or `hostname:port`), or a function of the host.
+   */
+  readonly allowed_hosts: IAllowedHosts | null;
   /** The greatest number of keys that `request.query` parses (1000) */
   readonly query: { readonly max_keys: number };
 }
+
+/**
+ * The allowed hosts: a list of hosts (`hostname` for any port, or
+ * `hostname:port`), or a function of the effective host (`hostname[:port]`,
+ * see `request.host`), called synchronously, that must return a boolean
+ */
+export type IAllowedHosts = readonly string[] | ((host: string) => boolean);
 
 /** The request options as given (to `Binden`), every one of them optional */
 export interface IRequestOptionsInput {
   trust_proxy?: ITrustProxy | undefined;
   encoded_slashes?: boolean | undefined;
+  allowed_hosts?: IAllowedHosts | undefined;
   query?: { max_keys?: number | undefined } | undefined;
 }
 
@@ -58,6 +73,67 @@ function optionalObject(value: unknown, name: string): Record<string, unknown> {
     throw new TypeError(`\`${name}\` is not an object`);
   }
   return value as Record<string, unknown>;
+}
+
+/** `hostname [ ":" port ]`, the hostname being an IP literal or not */
+const allowedHost = /^(?<hostname>\[[^\]]*\]|[^:]*)(?::(?<port>\d{1,5}))?$/u;
+
+/** A name of labels of letters, digits, `_` and `-` (not at their ends) */
+const hostname =
+  /^[\dA-Za-z_](?:[\w-]{0,61}[\dA-Za-z_])?(?:\.[\dA-Za-z_](?:[\w-]{0,61}[\dA-Za-z_])?)*$/u;
+
+/**
+ * An allowed host, in lowercase (an IPv6 address compressed): a host name, an
+ * IPv4 address or an IPv6 address in brackets, with an optional port
+ */
+function checkAllowedHost(entry: unknown): string {
+  const { hostname: name = "", port = "" } =
+    typeof entry === "string" ? (allowedHost.exec(entry)?.groups ?? {}) : {};
+  const value = Number(port);
+  // An IPv6 address in brackets is checked by the URL parser
+  const v6 = name.startsWith("[");
+  const named = !v6 && hostname.test(name) && name.length <= 253;
+  // The name of a URL (e.g. not `1.2.3`, which a URL reads as `1.2.0.3`)
+  const normal =
+    (v6 || named) && URL.canParse(`http://${name}`)
+      ? new URL(`http://${name}`).hostname
+      : "";
+  if (
+    normal === "" ||
+    (named && normal !== name.toLowerCase()) ||
+    (port !== "" && (value < 1 || value > 65535))
+  ) {
+    throw new TypeError(
+      `\`allowed_hosts\` has an invalid host: ${String(entry)}`,
+    );
+  }
+  return port === "" ? normal : `${normal}:${value}`;
+}
+
+/** The checked `allowed_hosts` option (`null` for any host) */
+function checkAllowedHosts(value: unknown): IAllowedHosts | null {
+  if (typeof value === "undefined") {
+    return null;
+  } else if (typeof value === "function") {
+    return value as (host: string) => boolean;
+  } else if (!Array.isArray(value)) {
+    throw new TypeError("`allowed_hosts` is not an array or a function");
+  } else if (value.length === 0) {
+    throw new RangeError("`allowed_hosts` is empty: no request is allowed");
+  }
+  return Object.freeze(value.map((entry: unknown) => checkAllowedHost(entry)));
+}
+
+/** Whether the URL is of the allowed host (a checked one; any port without one) */
+function isAllowed(entry: string, url: URL): boolean {
+  // The port follows the brackets of an IPv6 address
+  const index = entry.lastIndexOf(":");
+  const [name, port] =
+    index > entry.lastIndexOf("]")
+      ? [entry.slice(0, index), entry.slice(index + 1)]
+      : [entry, ""];
+  const effective = url.port || (url.protocol === "https:" ? "443" : "80");
+  return name === url.hostname && (port === "" || port === effective);
 }
 
 /**
@@ -72,6 +148,7 @@ export function validateRequestOptions(
   const {
     trust_proxy = false,
     encoded_slashes = false,
+    allowed_hosts,
     query,
   } = optionalObject(input, "options");
   const { max_keys = 1000 } = optionalObject(query, "query");
@@ -88,6 +165,7 @@ export function validateRequestOptions(
   return Object.freeze({
     trust_proxy: checkTrustProxy(trust_proxy),
     encoded_slashes,
+    allowed_hosts: checkAllowedHosts(allowed_hosts),
     query: Object.freeze({ max_keys }),
   });
 }
@@ -352,20 +430,37 @@ export class BindenRequest extends IncomingMessage {
   /**
    * The protocol and the effective authority of the request (see `host`), or
    * `null` without an authority. A `BindenError` (400) for an invalid one (not
-   * `uri-host [ ":" port ]`, e.g. with userinfo), and for a request with
-   * several `Host` field lines (RFC 9112, section 3.2), of which Node.js keeps
-   * the first one while a proxy may have used another one.
+   * `uri-host [ ":" port ]`, e.g. with userinfo), for one that `allowed_hosts`
+   * does not allow (also a missing one), and for a request with several
+   * `Host` field lines (RFC 9112, section 3.2), of which Node.js keeps the
+   * first one while a proxy may have used another one.
    */
   #origin(target: string | null): string | null {
     const authority = target ?? this.#resolve().host ?? this.headers.host;
+    const { allowed_hosts } = this.options;
     if ((this.headersDistinct.host ?? []).length > 1) {
       throw new BindenError(400);
     } else if (typeof authority === "undefined") {
+      if (allowed_hosts !== null) {
+        throw new BindenError(400);
+      }
       return null;
     } else if (!isAuthority(authority)) {
       throw new BindenError(400);
     }
-    return `${this.protocol}//${authority}`;
+    const origin = `${this.protocol}//${authority}`;
+    if (allowed_hosts === null) {
+      return origin;
+    }
+    const url = new URL(origin);
+    const allowed =
+      typeof allowed_hosts === "function"
+        ? strictBoolean(allowed_hosts(url.host), "allowed_hosts")
+        : allowed_hosts.some((entry) => isAllowed(entry, url));
+    if (!allowed) {
+      throw new BindenError(400);
+    }
+    return origin;
   }
 
   /**
