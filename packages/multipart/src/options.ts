@@ -1,5 +1,6 @@
 import type { BusboyConfig, Limits } from "busboy";
 import type { Context, IMiddlewareParams } from "binden";
+import type { Readable } from "node:stream";
 
 /**
  * The configuration of busboy: its `limits`, the charsets of the parts and
@@ -35,6 +36,38 @@ export type IFileFilter = (
   context: Context,
 ) => boolean | Promise<boolean>;
 
+/** A file of the stream storage: what it declares, and its content */
+export interface IStreamFile extends IFileInfo {
+  /**
+   * The content: what `on_file` has not read once it has settled is read
+   * and discarded
+   */
+  readonly stream: Readable;
+  /** Whether the content has been truncated to `fileSize` (known once it has been read) */
+  truncated(): boolean;
+}
+
+/**
+ * Streams each file to `on_file` (e.g. to a storage service) instead of
+ * keeping it: `request.body` is a `FormData` of the fields only
+ */
+export interface IStreamStorage {
+  /**
+   * Handles a file: it should read the whole stream before it settles. It is
+   * awaited (until the request is aborted) before the body is parsed; it
+   * fails the request with a `BindenError` it throws, or a `500`.
+   */
+  on_file(file: IStreamFile, context: Context): unknown;
+}
+
+/** Where the files go: kept in memory (`"memory"`), or streamed to a handler */
+export type IStorage = "memory" | IStreamStorage;
+
+/** The storage of a parse */
+export type IMode =
+  | { readonly kind: "memory" }
+  | { readonly kind: "stream"; readonly on_file: IStreamStorage["on_file"] };
+
 /** The options of `Multipart` */
 export interface IMultipartOptions extends IMiddlewareParams {
   /** The configuration of busboy, e.g. its `limits` (none by default but `fieldSize`, 1 MiB) */
@@ -61,6 +94,11 @@ export interface IMultipartOptions extends IMiddlewareParams {
    * read and discarded (`"skip"`)
    */
   filtered?: "reject" | "skip" | undefined;
+  /**
+   * Where the files go: in memory, as a `MultipartFile` of the `FormData`
+   * (`"memory"`), or to a handler (`{ on_file }`)
+   */
+  storage?: IStorage | undefined;
 }
 
 /** The options of a parse, checked, with their defaults */
@@ -70,6 +108,7 @@ export interface IParserOptions {
   readonly limit: number;
   readonly file_filter: IFileFilter | null;
   readonly filtered: "reject" | "skip";
+  readonly mode: IMode;
 }
 
 /** The options of `Multipart` that its parent class takes */
@@ -83,7 +122,10 @@ const optionNames: ReadonlySet<string> = new Set([
   "limit",
   "file_filter",
   "filtered",
+  "storage",
 ]);
+
+const storageNames: ReadonlySet<string> = new Set(["on_file"]);
 
 const configNames: ReadonlySet<string> = new Set([
   "headers",
@@ -227,6 +269,18 @@ function checkConfig(value: unknown): IMultipartConfig {
   };
 }
 
+/** The storage of the files */
+function checkStorage(value: unknown): IMode {
+  if (value === "memory") {
+    return { kind: "memory" };
+  }
+  const { on_file } = checkObject(value, "storage", storageNames);
+  if (typeof on_file !== "function") {
+    throw new TypeError("`storage.on_file` is not a function");
+  }
+  return { kind: "stream", on_file: on_file as IStreamStorage["on_file"] };
+}
+
 /**
  * The options of `Multipart`, checked (a `TypeError` for an unknown option
  * or a value of another type, a `RangeError` for a value out of its range),
@@ -244,6 +298,7 @@ export function validateOptions(input: unknown): {
     limit = Number.POSITIVE_INFINITY,
     file_filter = null,
     filtered = "reject",
+    storage = "memory",
   } = checkObject(input, "options", optionNames);
   if (typeof throw_limits !== "boolean") {
     throw new TypeError("`throw_limits` is not a boolean");
@@ -263,6 +318,7 @@ export function validateOptions(input: unknown): {
       limit: checkSize(limit, "limit"),
       file_filter: file_filter as IFileFilter | null,
       filtered,
+      mode: checkStorage(storage),
     },
   };
 }

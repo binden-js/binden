@@ -2,9 +2,12 @@ import { BindenError, type Context, Middleware } from "binden";
 import {
   type IFileFilter,
   type IFileInfo,
+  type IMode,
   type IMultipartConfig,
   type IMultipartOptions,
   type IParserOptions,
+  type IStreamFile,
+  type IStreamStorage,
   validateOptions,
 } from "./options.js";
 import { type ILimitName, type IParseInfo, startParse } from "./info.js";
@@ -90,6 +93,7 @@ class Parser {
   readonly #limit: number;
   readonly #file_filter: IFileFilter | null;
   readonly #filtered: "reject" | "skip";
+  readonly #mode: IMode;
   /** Aborted once the parse is over: what it awaits is abandoned */
   readonly #stop = new AbortController();
   readonly #deferred = Promise.withResolvers<null>();
@@ -104,7 +108,14 @@ class Parser {
     context: Context,
     log: ILog,
     info: IParseInfo,
-    { config, throw_limits, limit, file_filter, filtered }: IParserOptions,
+    {
+      config,
+      throw_limits,
+      limit,
+      file_filter,
+      filtered,
+      mode,
+    }: IParserOptions,
   ) {
     this.#context = context;
     this.#log = log;
@@ -114,6 +125,7 @@ class Parser {
     this.#limit = limit;
     this.#file_filter = file_filter;
     this.#filtered = filtered;
+    this.#mode = mode;
   }
 
   /** Settles once the body is parsed (`request.body`), or refused */
@@ -162,7 +174,7 @@ class Parser {
         },
       )
       .on("file", (name: string | undefined, stream, info) => {
-        this.#onFile(name, stream, info);
+        this.#onFile(parser, name, stream, info);
       })
       .once("fieldsLimit", () => {
         this.#countReached("fields");
@@ -223,6 +235,7 @@ class Parser {
   }
 
   #onFile(
+    parser: Busboy,
     name: string | undefined,
     stream: IFileStream,
     { filename, encoding, mimeType }: FileInfo,
@@ -236,6 +249,11 @@ class Parser {
     this.#streams.add(stream);
     stream.once("close", () => {
       this.#streams.delete(stream);
+      if (!stream.readableEnded && !parser.destroyed) {
+        // E.g. `on_file` has destroyed it: busboy does not go on without it
+        const message = "The stream of a file has been closed before its end";
+        this.#refuse(failure(stream.errored, message));
+      }
     });
     stream.once("limit", () => {
       this.#limitReached("fileSize");
@@ -270,12 +288,36 @@ class Parser {
       }
       stream.resume();
       return;
+    } else if (this.#mode.kind === "stream") {
+      await this.#stream(this.#mode.on_file, info, stream);
+      return;
     }
     const chunks = await collect(stream);
     slot.value = new MultipartFile(chunks, info.filename, {
       type: info.mime_type,
       truncated: stream.truncated === true,
     });
+  }
+
+  /**
+   * Streams a file to `on_file` (awaited until the parse is over): what it
+   * has not read once it has settled is read and discarded
+   */
+  async #stream(
+    on_file: IStreamStorage["on_file"],
+    info: IFileInfo,
+    stream: IFileStream,
+  ): Promise<void> {
+    const file: IStreamFile = {
+      ...info,
+      stream,
+      truncated: () => stream.truncated === true,
+    };
+    await race(() => on_file(file, this.#context), this.#stop.signal);
+    if (!stream.readableEnded) {
+      stream.unpipe();
+      stream.resume();
+    }
   }
 
   /** Whether `file_filter` accepts a file (awaited until the parse is over) */

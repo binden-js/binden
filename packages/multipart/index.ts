@@ -13,6 +13,9 @@ export type {
   IFileInfo,
   IMultipartConfig,
   IMultipartOptions,
+  IStorage,
+  IStreamFile,
+  IStreamStorage,
 } from "./src/options.js";
 
 /** A `Multipart` of the options (see `IMultipartOptions`) */

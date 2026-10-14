@@ -29,6 +29,8 @@ const failsLate = async (): Promise<boolean> => {
 const app = new Binden({ timeout: 30 })
   .use("/hangs", multipart({ file_filter: never }))
   .use("/fails-late", multipart({ file_filter: failsLate }))
+  .use("/on-file-hangs", multipart({ storage: { on_file: never } }))
+  .use("/on-file-fails-late", multipart({ storage: { on_file: failsLate } }))
   .use((context: Context) => context.send());
 
 const server = app.createServer().listen(0);
@@ -44,7 +46,12 @@ const head = [
 ].join("\r\n");
 
 const statuses: number[] = [];
-for (const path of ["/hangs", "/fails-late"]) {
+for (const path of [
+  "/hangs",
+  "/fails-late",
+  "/on-file-hangs",
+  "/on-file-fails-late",
+]) {
   const response = await new Promise<IncomingMessage>((resolve, reject) => {
     request({
       agent: false,
