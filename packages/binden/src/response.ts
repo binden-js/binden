@@ -1,22 +1,13 @@
-import { constants } from "node:fs";
-import { open } from "node:fs/promises";
 import {
-  type IncomingHttpHeaders,
   IncomingMessage,
   type OutgoingHttpHeader,
   type OutgoingHttpHeaders,
   ServerResponse,
 } from "node:http";
 import { Readable } from "node:stream";
-import { pathToFileURL } from "node:url";
-import ContentRange from "./headers/content-range.js";
 import ContentType from "./headers/content-type.js";
 import Cookie, { type ICookie } from "./headers/cookie.js";
-import IfModifiedSince from "./headers/if-modified-since.js";
-import { parseHttpDate } from "./headers/http-date.js";
-import { split } from "./headers/list.js";
-import Range from "./headers/range.js";
-import { BindenRequest } from "./request.js";
+import { type ISendFileOptions, sendFileTo } from "./send-file.js";
 import { isStatus } from "./status.js";
 
 export const ct_json = "application/json";
@@ -673,221 +664,22 @@ export class BindenResponse<
   }
 
   /**
-   * Sends a file. Its metadata and its content are read from one file handle,
-   * so that they belong to the same file (also when the path is replaced), and
-   * no more than its size is sent.
+   * Send a file: a filesystem path (or a `file:` URL), trusted without `root`;
+   * with `root`, a relative path that must stay inside it (see
+   * `ISendFileOptions`). Its metadata and its content are read from one file
+   * handle, and no more than its size is sent.
    */
-  public async sendFile(path: URL | string): Promise<void> {
+  public async sendFile(
+    path: URL | string,
+    options?: ISendFileOptions,
+  ): Promise<void> {
     // Started at once (see `.started`), unless it fails before sending anything
     this.#started = true;
     try {
-      await this.#sendFile(path);
+      await sendFileTo(this, path, options);
     } catch (error: unknown) {
       this.#started = false;
       throw error;
     }
-  }
-
-  async #sendFile(path: URL | string): Promise<void> {
-    const url = path instanceof URL ? new URL(path.href) : pathToFileURL(path);
-
-    if (url.protocol !== "file:") {
-      throw new TypeError(`Protocol ${url.protocol} is not supported`);
-    }
-
-    // Without waiting for a writer of a FIFO (`O_NONBLOCK` is not defined on
-    // Windows, which has no FIFOs)
-    const handle = await open(url, constants.O_RDONLY | constants.O_NONBLOCK);
-    // Closed by the stream of its content, or else here
-    let stream: Readable | null = null;
-    try {
-      const stats = await handle.stat();
-
-      if (!stats.isFile()) {
-        throw new Error("Provided path does not correspond to a regular file");
-      }
-
-      const { mtime, size } = stats;
-      // In seconds, as an HTTP-date, and not in the future (RFC 9110, section 8.8.2.1)
-      const lm = new Date(
-        Math.floor(Math.min(mtime.getTime(), Date.now()) / 1000) * 1000,
-      );
-
-      this.set({ "Last-Modified": lm.toUTCString(), "Accept-Ranges": "bytes" });
-
-      const { method = "GET", headers } = this.req;
-      const ims =
-        this.req instanceof BindenRequest
-          ? this.req.if_modified_since
-          : IfModifiedSince.fromString(headers["if-modified-since"]);
-
-      const failed = BindenResponse.#preconditions(
-        headers,
-        this.getHeader("ETag"),
-        lm,
-        method === "GET" || method === "HEAD",
-        ims,
-      );
-      if (failed !== null) {
-        await this.status(failed).send();
-        return;
-      } else if (method === "HEAD") {
-        // The headers of the whole file, without reading it
-        await this.setHeader("Content-Length", size).send();
-        return;
-      }
-
-      // Ranges apply to GET only (RFC 9110, section 14.2)
-      const ranges =
-        method !== "GET" || !this.#ifRange(lm)
-          ? []
-          : this.req instanceof BindenRequest
-            ? this.req.range
-            : Range.fromString(headers.range);
-      const range = BindenResponse.#range(ranges, size);
-
-      if (range === "unsatisfiable") {
-        const cr = new ContentRange({ size }).toString();
-        await this.setHeader("Content-Range", cr).status(416).send();
-        return;
-      }
-
-      if (range === null && size === 0) {
-        await this.setHeader("Content-Length", 0).send();
-        return;
-      }
-
-      // No more than the size that is sent as its length
-      const { start, end } = range ?? { start: 0, end: size - 1 };
-      stream = handle.createReadStream({ start, end });
-      if (range === null) {
-        await this.setHeader("Content-Length", size).send(stream);
-        return;
-      }
-      const cr = new ContentRange({ size, start, end }).toString();
-      await this.set({ "Content-Length": end - start + 1, "Content-Range": cr })
-        .status(206)
-        .send(stream);
-    } finally {
-      if (stream === null) {
-        await handle.close();
-      }
-    }
-  }
-
-  /**
-   * The status of a request whose precondition fails, in the order of RFC 9110
-   * (section 13.2.2), or `null` when they pass: `If-Match` (or else
-   * `If-Unmodified-Since`), then `If-None-Match` (or else `If-Modified-Since`,
-   * for `GET` and `HEAD`), with the `ETag` set on the response
-   */
-  static #preconditions(
-    headers: IncomingHttpHeaders,
-    etag: unknown,
-    lm: Date,
-    read: boolean,
-    ims: IfModifiedSince | null,
-  ): 304 | 412 | null {
-    const tag = typeof etag === "string" ? etag : null;
-    const ifMatch = headers["if-match"];
-    const ius = parseHttpDate(headers["if-unmodified-since"]?.trim() ?? "");
-    const ifNoneMatch = headers["if-none-match"];
-    if (typeof ifMatch === "string") {
-      if (!BindenResponse.#matches(ifMatch, tag, true)) {
-        return 412;
-      }
-    } else if (ius !== null && lm > ius) {
-      return 412;
-    }
-    if (typeof ifNoneMatch === "string") {
-      if (BindenResponse.#matches(ifNoneMatch, tag, false)) {
-        return read ? 304 : 412;
-      }
-    } else if (read && ims !== null && lm <= ims.date) {
-      return 304;
-    }
-    return null;
-  }
-
-  /**
-   * Whether a list of entity-tags (or `*`, as the file exists) matches the
-   * `ETag` of the response, by the strong or the weak comparison (RFC 9110,
-   * section 8.8.3.2)
-   */
-  static #matches(list: string, etag: string | null, strong: boolean): boolean {
-    if (list.trim() === "*") {
-      return true;
-    } else if (etag === null || (strong && etag.startsWith("W/"))) {
-      return false;
-    }
-    const opaque = etag.replace(/^W\//u, "");
-    return split(list, ",").some((value) => {
-      const tag = value.trim();
-      return strong ? tag === etag : tag.replace(/^W\//u, "") === opaque;
-    });
-  }
-
-  /** Whether `If-Range`, when sent, matches the file (RFC 9110, section 13.1.5) */
-  #ifRange(lm: Date): boolean {
-    const raw = this.req.headers["if-range"];
-    // Sent more than once, it is invalid: it does not match
-    const value = typeof raw === "string" ? raw.trim() : "";
-    if (typeof raw === "undefined") {
-      return true;
-    } else if (value.startsWith(`"`) || value.startsWith("W/")) {
-      // An entity-tag matches a strong `ETag` of the response only
-      const etag = this.getHeader("ETag");
-      return etag === value && !value.startsWith("W/");
-    }
-    // An HTTP-date matches the `Last-Modified` exactly, when it is a strong
-    // validator: at least a second before now (RFC 9110, section 8.8.2.2)
-    const now = Math.floor(Date.now() / 1000) * 1000;
-    return (
-      parseHttpDate(value)?.getTime() === lm.getTime() &&
-      now - lm.getTime() >= 1000
-    );
-  }
-
-  /**
-   * The byte range of a file to send: `null` for the whole file (without a
-   * range, or with several distinct ones: `multipart/byteranges` is not
-   * supported), or `"unsatisfiable"` (RFC 9110, section 14.1.1)
-   */
-  static #range(
-    ranges: readonly Range[],
-    size: number,
-  ): { start: number; end: number } | "unsatisfiable" | null {
-    if (ranges.length === 0) {
-      return null;
-    }
-
-    const satisfiable = ranges
-      .flatMap(({ start, end }): [number, number][] => {
-        if (start === null) {
-          // A suffix: the last `end` bytes
-          return end !== null && end > 0 && size > 0
-            ? [[Math.max(0, size - end), size - 1]]
-            : [];
-        }
-        return start < size ? [[start, Math.min(end ?? size, size - 1)]] : [];
-      })
-      .sort(([a], [b]) => a - b);
-    const [first, ...rest] = satisfiable;
-
-    if (typeof first === "undefined") {
-      return "unsatisfiable";
-    }
-
-    // Overlapping or adjacent ranges are one range
-    const [start] = first;
-    let [, end] = first;
-    for (const [nextStart, nextEnd] of rest) {
-      if (nextStart > end + 1) {
-        return null;
-      }
-      end = Math.max(end, nextEnd);
-    }
-
-    return start === 0 && end === size - 1 ? null : { start, end };
   }
 }
