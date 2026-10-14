@@ -66,6 +66,9 @@ Dependencies are kept at their latest versions, except:
   notes with `conventional-changelog-writer` 8, and the version 10 of the preset requires the
   version 9 of the writer (the release fails).
 
+Dependabot does not propose these versions (TypeScript 7 and later, `@types/node` 25 and later, and
+the preset 10 and later: see `ignore` in [`.github/dependabot.yml`](.github/dependabot.yml)).
+
 ### Audit
 
 CI checks the registry signatures (and provenance attestations) of every installed package
