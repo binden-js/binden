@@ -4,13 +4,13 @@ A simple HTTP server framework and its official packages. All packages live in t
 [npm workspaces](https://docs.npmjs.com/cli/using-npm/workspaces) and are released together with
 the same version.
 
-| Package                                       | Description                             | License       |
-| --------------------------------------------- | --------------------------------------- | ------------- |
-| [`binden`](packages/binden)                   | A simple HTTP server framework          | MIT           |
-| [`@binden/logger`](packages/logger)           | A simple logger (based on `pino`)       | MIT           |
-| [`@binden/body`](packages/body)               | Body parser middleware                  | MIT           |
-| [`@binden/compression`](packages/compression) | Compression middleware                  | MIT           |
-| [`@binden/multipart`](packages/multipart)     | `multipart/form-data` parser middleware | AGPL-3.0-only |
+| Package                                       | Description                             | License |
+| --------------------------------------------- | --------------------------------------- | ------- |
+| [`binden`](packages/binden)                   | A simple HTTP server framework          | MIT     |
+| [`@binden/logger`](packages/logger)           | A simple logger (based on `pino`)       | MIT     |
+| [`@binden/body`](packages/body)               | Body parser middleware                  | MIT     |
+| [`@binden/compression`](packages/compression) | Compression middleware                  | MIT     |
+| [`@binden/multipart`](packages/multipart)     | `multipart/form-data` parser middleware | MIT     |
 
 API documentation: <https://binden-js.github.io/binden/>
 
