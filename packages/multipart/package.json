@@ -37,10 +37,10 @@
   },
   "homepage": "https://github.com/binden-js/binden/tree/main/packages/multipart#readme",
   "dependencies": {
+    "@types/busboy": "^1.5.5",
     "busboy": "^1.6.0"
   },
   "peerDependencies": {
-    "@types/busboy": "^1.5.5",
     "binden": "^0.0.0-development"
   },
   "devDependencies": {
