@@ -1,4 +1,5 @@
 import { BindenError, type Context, Middleware } from "binden";
+import { type ILimitName, type IParseInfo, startParse } from "./info.js";
 import {
   type IMultipartConfig,
   type IMultipartOptions,
@@ -11,6 +12,7 @@ import busboy, {
   type FieldInfo,
   type FileInfo,
 } from "busboy";
+import { MultipartFile } from "./file.js";
 import type { Readable } from "node:stream";
 
 /** The logger of a context */
@@ -22,7 +24,7 @@ type IFileStream = Readable & { truncated?: boolean };
 /** A part, in the order of the request (a file once it has been read) */
 interface ISlot {
   readonly name: string;
-  value: File | string | null;
+  value: MultipartFile | string | null;
 }
 
 /** The methods whose requests have no body to parse */
@@ -35,9 +37,6 @@ const methods: ReadonlySet<string> = new Set([
 
 /** A boundary (RFC 2046, section 5.1.1): 1 to 70 characters, without a trailing space */
 const boundaries = /^[\w'()+,\-./:=? ]{0,69}[\w'()+,\-./:=?]$/u;
-
-/** The requests that have been parsed, or are being parsed */
-const parsed = new WeakSet<object>();
 
 /** Observes an error that is reported otherwise */
 function ignore(): void {
@@ -74,6 +73,7 @@ async function collect(stream: Readable): Promise<Buffer<ArrayBuffer>[]> {
 class Parser {
   readonly #context: Context;
   readonly #log: ILog;
+  readonly #info: IParseInfo;
   readonly #config: IMultipartConfig;
   readonly #throw_limits: boolean;
   readonly #limit: number;
@@ -88,10 +88,12 @@ class Parser {
   public constructor(
     context: Context,
     log: ILog,
+    info: IParseInfo,
     { config, throw_limits, limit }: IParserOptions,
   ) {
     this.#context = context;
     this.#log = log;
+    this.#info = info;
     this.#config = config;
     this.#throw_limits = throw_limits;
     this.#limit = limit;
@@ -146,13 +148,13 @@ class Parser {
         this.#onFile(name, stream, info);
       })
       .once("fieldsLimit", () => {
-        this.#limitReached("fields");
+        this.#countReached("fields");
       })
       .once("filesLimit", () => {
-        this.#limitReached("files");
+        this.#countReached("files");
       })
       .once("partsLimit", () => {
-        this.#limitReached("parts");
+        this.#countReached("parts");
       })
       .once("close", () => {
         Promise.all(this.#tasks).then(() => {
@@ -184,6 +186,8 @@ class Parser {
     value: string | undefined,
     { valueTruncated }: FieldInfo,
   ): void {
+    // A part without a name (or with an empty one) is named `""`
+    const field = name ?? "";
     if (this.#over) {
       return;
     } else if (typeof value === "undefined") {
@@ -191,12 +195,14 @@ class Parser {
       const message = "The charset of a field is not supported";
       this.#refuse(new BindenError(415, { message }));
       return;
-    } else if (valueTruncated && this.#throw_limits) {
-      this.#limitReached("fieldSize");
-      return;
+    } else if (valueTruncated) {
+      this.#info.truncated_fields.push(field);
+      if (this.#throw_limits) {
+        this.#limitReached("fieldSize");
+        return;
+      }
     }
-    // A part without a name (or with an empty one) is named `""`
-    this.#slots.push({ name: name ?? "", value });
+    this.#slots.push({ name: field, value });
   }
 
   #onFile(
@@ -222,12 +228,21 @@ class Parser {
     this.#tasks.push(
       collect(stream).then(
         (chunks) => {
-          slot.value = new File(chunks, String(filename), { type: mimeType });
+          slot.value = new MultipartFile(chunks, String(filename), {
+            type: mimeType,
+            truncated: stream.truncated === true,
+          });
         },
         // The parser reports why the stream has failed
         ignore,
       ),
     );
+  }
+
+  /** A limit on the count of the parts: the parts over it are dropped */
+  #countReached(limit: ILimitName): void {
+    this.#info.limits_hit.push(limit);
+    this.#limitReached(limit);
   }
 
   /** A limit of busboy (refused with `throw_limits`, otherwise truncated) */
@@ -349,12 +364,12 @@ export class Multipart extends Middleware {
     } else if (type !== "multipart/form-data") {
       log.debug("The body is not `multipart/form-data`", { type });
       return;
-    } else if (parsed.has(request)) {
+    }
+    const info = startParse(request);
+    if (info === null) {
       log.debug("The body has already been parsed");
       return;
     }
-    parsed.add(request);
-
-    await new Parser(context, log, this.#options).run();
+    await new Parser(context, log, info, this.#options).run();
   }
 }
