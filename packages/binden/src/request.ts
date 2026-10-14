@@ -352,11 +352,15 @@ export class BindenRequest extends IncomingMessage {
   /**
    * The protocol and the effective authority of the request (see `host`), or
    * `null` without an authority. A `BindenError` (400) for an invalid one (not
-   * `uri-host [ ":" port ]`, e.g. with userinfo).
+   * `uri-host [ ":" port ]`, e.g. with userinfo), and for a request with
+   * several `Host` field lines (RFC 9112, section 3.2), of which Node.js keeps
+   * the first one while a proxy may have used another one.
    */
   #origin(target: string | null): string | null {
     const authority = target ?? this.#resolve().host ?? this.headers.host;
-    if (typeof authority === "undefined") {
+    if ((this.headersDistinct.host ?? []).length > 1) {
+      throw new BindenError(400);
+    } else if (typeof authority === "undefined") {
       return null;
     } else if (!isAuthority(authority)) {
       throw new BindenError(400);

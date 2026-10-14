@@ -613,10 +613,49 @@ suite("Trusted proxies", () => {
       () => create(false, [host], { url: "ftp://a.test/" }).host,
       badRequest,
     );
+    // Several `Host` field lines (RFC 9112, section 3.2): Node.js keeps the
+    // first one, a proxy may have used another one
+    for (const url of ["/", "http://a.test/"]) {
+      const duplicated = create(false, [host, ["Host", "evil.test"]], { url });
+      throws(() => duplicated.host, badRequest);
+      throws(() => duplicated.URL, badRequest);
+    }
     // Without a request-target (not parsed from a request)
     const bare = create(false, [host]);
     Reflect.deleteProperty(bare, "url");
     deepStrictEqual(bare.host, "origin.test");
+  });
+
+  test("several `Host` field lines", { timeout: 5000 }, async () => {
+    const server = createServer({ IncomingMessage: BindenRequest });
+    const { promise, resolve } = Promise.withResolvers<unknown>();
+    server.once("request", (request, response) => {
+      try {
+        resolve(request.host);
+      } catch (error: unknown) {
+        resolve(error);
+      } finally {
+        response.end();
+      }
+    });
+    await new Promise<void>((done) => {
+      server.listen(0, done);
+    });
+    const { port } = server.address() as AddressInfo;
+    const socket = connect(port, "127.0.0.1", () => {
+      socket.end(
+        "GET / HTTP/1.1\r\nHost: a.test\r\nHost: b.test\r\nConnection: close\r\n\r\n",
+      );
+    });
+    socket.resume();
+    try {
+      ok(badRequest(await promise));
+    } finally {
+      socket.destroy();
+      await new Promise((done) => {
+        server.close(done);
+      });
+    }
   });
 
   test("a real connection", { timeout: 5000 }, async () => {
