@@ -4,8 +4,14 @@ import { Exchange, type IExchangeReport } from "./exchange.js";
 import { defaultLogger, safe, snapshot } from "./logger.js";
 
 import type { Readable } from "node:stream";
+import type { IRedirectOptions, IRedirectStatus } from "./redirect.js";
 import type { BindenRequest } from "./request.js";
-import type { IHeadersValue, BindenResponse } from "./response.js";
+import type {
+  IClearCookie,
+  IHeadersValue,
+  BindenResponse,
+} from "./response.js";
+import type { ISendFileOptions } from "./send-file.js";
 
 export interface IBaseContext {
   readonly request: BindenRequest;
@@ -152,9 +158,13 @@ export class Context<
     await this.#reply(() => this.response.send(data));
   }
 
-  public async json(
-    data: Record<string, unknown> | unknown[],
-    stringify?: (input: Record<string, unknown> | unknown[]) => string,
+  /**
+   * Execute `response.json()` (a JSON value, with an optional `stringify`)
+   * and set `done`
+   */
+  public async json<T = unknown>(
+    data: T,
+    stringify?: (data: T) => string,
   ): Promise<void> {
     await this.#reply(async () => {
       await (typeof stringify === "undefined"
@@ -175,9 +185,56 @@ export class Context<
     await this.#reply(() => this.response.form(data));
   }
 
-  /** Send a file */
-  public async sendFile(url: URL | string): Promise<void> {
-    await this.#reply(() => this.response.sendFile(url));
+  /** Execute `response.sendFile()` (see `ISendFileOptions`) and set `done` */
+  public async sendFile(
+    path: URL | string,
+    options?: ISendFileOptions,
+  ): Promise<void> {
+    await this.#reply(async () => {
+      await (typeof options === "undefined"
+        ? this.response.sendFile(path)
+        : this.response.sendFile(path, options));
+    });
+  }
+
+  /**
+   * Execute `response.redirect()` (`302 Found` by default, to the same
+   * origin unless `allow_external`) and set `done`
+   */
+  public async redirect(
+    location: URL | string,
+    status?: IRedirectStatus,
+    options?: IRedirectOptions,
+  ): Promise<void> {
+    await this.#reply(async () => {
+      await (typeof options === "undefined"
+        ? this.response.redirect(location, status)
+        : this.response.redirect(location, status, options));
+    });
+  }
+
+  /** Execute `response.attachment()`: the response is saved as a file */
+  public attachment(filename?: string): this {
+    this.response.attachment(filename);
+    return this;
+  }
+
+  /** Execute `response.type()`: set the `Content-Type` */
+  public type(media_type: string): this {
+    this.response.type(media_type);
+    return this;
+  }
+
+  /** Execute `response.vary()`: add request headers to `Vary` */
+  public vary(...fields: string[]): this {
+    this.response.vary(...fields);
+    return this;
+  }
+
+  /** Execute `response.clearCookie()`: remove a cookie from the client */
+  public clearCookie(name: string, attributes?: IClearCookie): this {
+    this.response.clearCookie(name, attributes);
+    return this;
   }
 
   // eslint-disable-next-line class-methods-use-this

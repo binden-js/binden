@@ -365,7 +365,7 @@ await context.response.send(data);
 context.done = true;
 ```
 
-- `.json()` - execute `context.response.json()` and set `context.done` to `true`
+- `.json()` - execute `context.response.json()` (any JSON value) and set `context.done` to `true`
 
 ```typescript
 const json = { message: "Hello World!" };
@@ -430,14 +430,32 @@ await context.response.form(form);
 context.done = true;
 ```
 
-- `.sendFile()` - execute `context.response.sendFile()` and set `context.done` to `true`
+- `.sendFile()` - execute `context.response.sendFile()` (with its options, see [BindenResponse](#bindenresponse)) and set `context.done` to `true`
 
 ```typescript
 const path = "<path to file>";
-await context.sendFile(path);
+await context.sendFile(path, { max_age: 3600 });
 // or
-await context.response.sendFile(path);
+await context.response.sendFile(path, { max_age: 3600 });
 context.done = true;
+```
+
+- `.redirect()` - execute `context.response.redirect()` (`302 Found` by default, to the same origin unless `allow_external`) and set `context.done` to `true`
+
+```typescript
+await context.redirect("/login", 303);
+await context.redirect("https://example.com/", 302, { allow_external: true });
+```
+
+- `.attachment()`, `.type()`, `.vary()` and `.clearCookie()` - execute those of `context.response` (they set headers, and return the context: `done` is set by the method that sends)
+
+```typescript
+await context
+  .attachment("report.csv")
+  .type("text/csv")
+  .vary("Accept-Language")
+  .clearCookie("session", { path: "/" })
+  .send("a,b\n1,2\n");
 ```
 
 - `.throw()` - throw `BindenError`
