@@ -26,6 +26,7 @@ const errorTypes: ReadonlyMap<object, string> = new Map<object, string>([
 /** The error codes the default logger keeps: system errors and some stream/HTTP ones */
 const errorCodes: ReadonlySet<string> = new Set([
   ...Object.keys(constants.errno),
+  "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
   "ERR_HTTP_HEADERS_SENT",
   "ERR_HTTP_INVALID_HEADER_VALUE",
   "ERR_INVALID_ARG_TYPE",

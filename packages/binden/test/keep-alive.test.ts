@@ -1,8 +1,9 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual } from "node:assert";
+import { deepStrictEqual, rejects } from "node:assert";
 import { once } from "node:events";
 import { Agent, type Server, request } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Readable } from "node:stream";
 import { afterEach, beforeEach, suite, test } from "node:test";
 
 import { Binden, type Context } from "../index.js";
@@ -33,6 +34,8 @@ suite("Keep-alive", () => {
         .setHeader("Content-Length", 99)
         .response.sendFile(import.meta.filename),
     "/head": (context) => context.send("abc"),
+    "/short": (context) =>
+      context.setHeader("Content-Length", 10).send(Readable.from(["abc"])),
   };
 
   const exchange = (
@@ -61,7 +64,8 @@ suite("Keep-alive", () => {
             .once("end", () => {
               const status = response.statusCode ?? 0;
               resolve({ status, body, reused: sent.reusedSocket });
-            });
+            })
+            .once("error", reject);
         },
       );
       sent.on("error", reject).end();
@@ -100,6 +104,16 @@ suite("Keep-alive", () => {
     ],
     ["HEAD with a body", "/head", "HEAD", {}, 200],
   ];
+
+  test("a body shorter than its `Content-Length` closes the connection", async () => {
+    // The client knows that the body is truncated
+    await rejects(exchange("/short"), { code: "ECONNRESET" });
+    deepStrictEqual(await exchange("/ok"), {
+      status: 200,
+      body: "ok",
+      reused: false,
+    });
+  });
 
   for (const [name, path, method, headers, status] of cases) {
     test(`${name}, then another request`, async () => {

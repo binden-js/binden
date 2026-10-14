@@ -236,17 +236,35 @@ export class BindenResponse<
    * Writes a `Readable` into the response (with backpressure) and settles like
    * `#finished()`. The client has the whole response (and may close the
    * connection) once the `Content-Length` bytes are flushed to the connection,
-   * maybe before the source ends. The header is read at the
-   * close: compression removes it.
+   * maybe before the source ends. The header is read when it is needed:
+   * compression removes it.
+   *
+   * A source that fails, closes before its end, or does not have exactly its
+   * `Content-Length` rejects. Nothing sent yet, the error can still be replied
+   * (see `.started`); otherwise the response is destroyed, so that a truncated
+   * body does not look complete, and more bytes are not read by the client as
+   * the next response of the connection.
    */
   #pipe(data: Readable): Promise<void> {
     let flushed = 0;
-    let written = false;
-    const done = this.#finished(
-      () => flushed >= Number(this.getHeader("Content-Length")),
-    );
+    let sent = 0;
+    const done = this.#finished(() => {
+      const length = this.#length();
+      return length !== null && flushed >= length;
+    });
     return new Promise<void>((resolve, reject) => {
+      // Once the response is closed, `#finished()` tells how it ended
+      let closed = false;
+      const fail = (error: Error): void => {
+        if (sent === 0) {
+          this.#started = false;
+        } else {
+          this.destroy();
+        }
+        reject(error);
+      };
       this.once("close", () => {
+        closed = true;
         // Releases the source (e.g. the file of `sendFile()`)
         if (!data.readableEnded) {
           data.destroy();
@@ -256,7 +274,12 @@ export class BindenResponse<
         .on("data", (chunk: Uint8Array | string) => {
           try {
             const size = Buffer.byteLength(chunk);
-            written = true;
+            const length = this.#length();
+            if (length !== null && sent + size > length) {
+              data.destroy(BindenResponse.#mismatch(sent + size, length));
+              return;
+            }
+            sent += size;
             const accepted = this.write(chunk, (error?: Error | null) => {
               if (error) {
                 // Not delivered: the client went away (Node.js 24 may still
@@ -279,20 +302,46 @@ export class BindenResponse<
           }
         })
         .once("end", () => {
-          this.end();
+          const length = this.#length();
+          if (length !== null && sent < length) {
+            fail(BindenResponse.#mismatch(sent, length));
+          } else {
+            this.end();
+          }
         })
         // Every error (also one emitted while the source is destroyed later)
-        .on("error", (error) => {
-          // Nothing sent yet: the error can still be replied (see `.started`)
-          if (!written) {
-            this.#started = false;
+        .on("error", fail)
+        .once("close", () => {
+          // Destroyed without an error before its end
+          if (!closed && !data.readableEnded && data.errored === null) {
+            fail(BindenResponse.#premature());
           }
-          reject(error);
         });
       done.then(resolve, (error: Error) => {
         data.destroy();
         reject(error);
       });
+    });
+  }
+
+  /** The `Content-Length` of the response, `null` without a valid one */
+  #length(): number | null {
+    const length = Number(this.getHeader("Content-Length") ?? Number.NaN);
+    return Number.isSafeInteger(length) && length >= 0 ? length : null;
+  }
+
+  /** The error of a close before the end */
+  static #premature(): Error {
+    return Object.assign(new Error("Premature close"), {
+      code: "ERR_STREAM_PREMATURE_CLOSE",
+    });
+  }
+
+  /** The error of a body that does not have its `Content-Length` */
+  static #mismatch(size: number, length: number): Error {
+    const message = `The body (${size} bytes) does not match its Content-Length (${length} bytes)`;
+    return Object.assign(new Error(message), {
+      code: "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
     });
   }
 
@@ -312,12 +361,8 @@ export class BindenResponse<
    */
   #finished(complete: () => boolean): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const premature = (): Error =>
-        Object.assign(new Error("Premature close"), {
-          code: "ERR_STREAM_PREMATURE_CLOSE",
-        });
       if (this.destroyed) {
-        reject(premature());
+        reject(BindenResponse.#premature());
         return;
       }
       const listeners: [string, (error?: Error) => void][] = [];
@@ -341,13 +386,13 @@ export class BindenResponse<
         [
           "close",
           (): void => {
-            settle(complete() ? null : premature());
+            settle(complete() ? null : BindenResponse.#premature());
           },
         ],
         [
           "error",
           (error?: Error): void => {
-            settle(error ?? premature());
+            settle(error ?? BindenResponse.#premature());
           },
         ],
       );

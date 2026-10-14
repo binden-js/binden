@@ -570,6 +570,95 @@ suite("BindenResponse", () => {
     deepStrictEqual(await settle(sent), "ERR_STREAM_PREMATURE_CLOSE");
   });
 
+  test(".send() (a `Readable` that fails before sending can be replied)", async () => {
+    const check = async (
+      source: Readable,
+      length: number | null,
+      error: string,
+    ): Promise<void> => {
+      const replied = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          if (length !== null) {
+            response.setHeader("Content-Length", length);
+          }
+          resolve(
+            settle(response.send(source)).then(async (code) => {
+              const { started } = response;
+              await response.status(500).send("replied");
+              return { code, started };
+            }),
+          );
+        });
+      });
+      const response = await fetch(url);
+
+      deepStrictEqual(await response.text(), "replied");
+      deepStrictEqual(await replied, { code: error, started: false });
+    };
+
+    // Closed (without an error) before its end
+    const closed = new Readable({
+      read(): void {
+        this.destroy();
+      },
+    });
+    await check(closed, null, "ERR_STREAM_PREMATURE_CLOSE");
+    // More than its `Content-Length` at once
+    await check(Readable.from(["abc"]), 2, "ERR_HTTP_CONTENT_LENGTH_MISMATCH");
+  });
+
+  test(".send() (a `Readable` that fails after a part of the body cuts the response)", async () => {
+    const check = async (
+      source: Readable,
+      length: number | null,
+      error: string,
+    ): Promise<void> => {
+      const settled = new Promise<unknown>((resolve) => {
+        server.once("request", (_request, response) => {
+          if (length !== null) {
+            response.setHeader("Content-Length", length);
+          }
+          resolve(settle(response.send(source)));
+        });
+      });
+      // The truncated body is not complete for the client (which may not
+      // even get the headers)
+      const complete = await new Promise<boolean>((resolve) => {
+        get(url, (response) => {
+          response.resume().once("close", () => {
+            resolve(response.complete);
+          });
+        }).on("error", () => {
+          resolve(false);
+        });
+      });
+
+      deepStrictEqual(complete, false);
+      deepStrictEqual(await settled, error);
+    };
+
+    let reads = 0;
+    const closed = new Readable({
+      read(): void {
+        reads += 1;
+        if (reads === 1) {
+          this.push("partial-");
+        } else {
+          this.destroy();
+        }
+      },
+    });
+    await check(closed, null, "ERR_STREAM_PREMATURE_CLOSE");
+    // Less than its `Content-Length`
+    await check(Readable.from(["abc"]), 10, "ERR_HTTP_CONTENT_LENGTH_MISMATCH");
+    // More than its `Content-Length` (the rest would be the next response)
+    await check(
+      Readable.from(["ab", "cde"]),
+      4,
+      "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
+    );
+  });
+
   test(".send() (`HEAD`: the headers of the body only)", async () => {
     // Node.js rejects any body of a response to `HEAD` with this option
     const strict = createServer(
