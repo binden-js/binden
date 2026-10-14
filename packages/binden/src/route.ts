@@ -1,18 +1,19 @@
 import type { IParams } from "./context.js";
 import { BindenError } from "./error.js";
 
-/** The segments of a path pattern */
-type ISegments<Pattern extends string> =
+/** The segments of a route pattern (a union of strings) */
+export type IRouteSegments<Pattern extends string> =
   Pattern extends `${infer Head}/${infer Tail}`
-    ? Head | ISegments<Tail>
+    ? Head | IRouteSegments<Tail>
     : Pattern;
 
-/** The name of a `:name` or `*name` segment */
-type IParamName<Segment extends string> = Segment extends `:${infer Name}`
-  ? Name
-  : Segment extends `*${infer Name}`
+/** The name of the parameter of a `:name` or `*name` segment (`never` for a literal) */
+export type IRouteParamName<Segment extends string> =
+  Segment extends `:${infer Name}`
     ? Name
-    : never;
+    : Segment extends `*${infer Name}`
+      ? Name
+      : never;
 
 /**
  * The parameters of a route pattern (e.g. `{ id: string }` for
@@ -20,7 +21,7 @@ type IParamName<Segment extends string> = Segment extends `:${infer Name}`
  */
 export type IRouteParams<Pattern extends string> = string extends Pattern
   ? IParams
-  : Record<IParamName<ISegments<Pattern>>, string>;
+  : Record<IRouteParamName<IRouteSegments<Pattern>>, string>;
 
 /** The options of the matching of `route()` and `mount()` patterns */
 export interface IRoutingOptions {

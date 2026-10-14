@@ -30,7 +30,12 @@ export {
   type IServer,
   type IShutdownOptions,
 } from "./src/shutdown.js";
-export type { IRouteParams, IRoutingOptions } from "./src/route.js";
+export type {
+  IRouteParamName,
+  IRouteParams,
+  IRouteSegments,
+  IRoutingOptions,
+} from "./src/route.js";
 export {
   Stack,
   type IStack,
