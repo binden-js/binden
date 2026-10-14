@@ -134,7 +134,7 @@ export class Cookie implements ICookie {
   }
 
   public static fromString(input?: string): Cookie[] {
-    if (typeof input !== "string" || input.length < 3) {
+    if (typeof input !== "string") {
       return [];
     }
 
@@ -150,7 +150,8 @@ export class Cookie implements ICookie {
           ? raw.slice(1, -1)
           : raw;
 
-      if (index > 0 && value && !output.some((c) => c.key === key)) {
+      // An empty value is a value (RFC 6265, section 4.1.1)
+      if (index > 0 && !output.some((c) => c.key === key)) {
         try {
           output.push(new Cookie({ key, value }));
         } catch {

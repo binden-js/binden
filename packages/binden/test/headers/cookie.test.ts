@@ -126,7 +126,16 @@ suite("Cookie", () => {
 
   test(".fromString()", () => {
     deepStrictEqual(Cookie.fromString(), []);
-    deepStrictEqual(Cookie.fromString("a="), []);
+    deepStrictEqual(Cookie.fromString(""), []);
+    deepStrictEqual(Cookie.fromString("a=")[0]?.value, "");
+    // An empty value is a value
+    deepStrictEqual(
+      Cookie.fromString("a=; b=ok").map(({ key, value }) => [key, value]),
+      [
+        ["a", ""],
+        ["b", "ok"],
+      ],
+    );
 
     const input = ` Key1 = Value1 ; Key2   =  "Value2"  ; Key3 = " ; Key4=""`;
     const one = new Cookie({ key: "Key1", value: "Value1" });
@@ -134,7 +143,11 @@ suite("Cookie", () => {
 
     const parsed = Cookie.fromString(input);
 
-    deepStrictEqual(parsed.length, 2);
+    // `Key3` has an invalid value, `Key4` an empty one
+    deepStrictEqual(
+      parsed.map(({ key }) => key),
+      ["Key1", "Key2", "Key4"],
+    );
 
     const [cookie1, cookie2] = parsed;
 
@@ -217,6 +230,7 @@ suite("Cookie", () => {
         ["b", "2"],
         ["token", "abc=="],
         ["quoted", "q"],
+        ["empty", ""],
       ],
     );
   });
