@@ -306,6 +306,22 @@ const { response } = context;
 const { id } = context;
 ```
 
+- `.signal`, `.setTimeout()` and `.onCleanup()` - the abort signal, the deadline and the cleanups of the request (see [Lifecycle](#lifecycle))
+- `.state` - the state of the request, shared by every context of the request (see the `state` option of [Binden](#binden))
+- `.params` and `.mount_path` - the parameters of the matched route and mounts, and the matched mount prefixes (see [Stack and routing](#stack-and-routing))
+
+```typescript
+import { Binden } from "binden";
+
+new Binden().route("/users/:id", async (context) => {
+  context.setTimeout(5000);
+  context.onCleanup(() => {
+    context.log.debug("Done", { id: context.params.id });
+  });
+  await context.json({ id: context.params.id, state: context.state });
+});
+```
+
 - `.done` - stop passing the `context` to the following middlewares. The middleware should have started the response by then (e.g. `.send()` or a stream piped into it, even if not awaited); otherwise an empty response is sent, with the status and headers set so far. A middleware that starts the response without setting `.done` must finish it: the request is not passed on as `404 Not Found`.
 
 ```typescript
