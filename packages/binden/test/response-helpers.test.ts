@@ -4,7 +4,7 @@ import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
 import { afterEach, beforeEach, suite, test } from "node:test";
 
-import { BindenResponse, ct_json } from "../index.js";
+import { BindenResponse, Cookie, ct_json } from "../index.js";
 import { type ITestServer, listen } from "./http.js";
 
 /** `undefined`, which the linter does not let the tests write */
@@ -195,5 +195,52 @@ suite("BindenResponse helpers", () => {
       );
     }
     deepStrictEqual(response.getHeader("Vary"), "*");
+  });
+
+  test(".clearCookie()", async () => {
+    const handled = server.handle(async (_request, response) => {
+      response.cookies
+        .add(new Cookie({ key: "session", value: "1" }))
+        .add(new Cookie({ key: "session", value: "2", path: "/app" }))
+        .add(new Cookie({ key: "other", value: "3" }));
+      ok(response.clearCookie("session") === response);
+      response.clearCookie("chips", {
+        domain: "example.com",
+        path: "/x",
+        same_site: "None",
+        partitioned: true,
+      });
+      response.clearCookie("plain", { secure: true, same_site: "Strict" });
+      await response.send();
+    });
+    const { headers } = await server.request();
+    deepStrictEqual(await handled, null);
+    deepStrictEqual(headers["set-cookie"], [
+      // Another path: another cookie
+      "session=2; Path=/app; HttpOnly; SameSite=Lax",
+      "other=3; Path=/; HttpOnly; SameSite=Lax",
+      // Replaces the cookie of the same name, domain and path
+      "session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+      "chips=; Max-Age=0; Domain=example.com; Path=/x; Secure; HttpOnly; SameSite=None; Partitioned",
+      "plain=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict",
+    ]);
+
+    throws(
+      () => detached().clearCookie("a b"),
+      new TypeError("Invalid cookie name: a b"),
+    );
+  });
+
+  test("Cookie (`partitioned` implies `Secure`)", () => {
+    const cookie = new Cookie({ key: "k", value: "v", partitioned: true });
+    deepStrictEqual(cookie.partitioned, true);
+    deepStrictEqual(cookie.secure, true);
+    deepStrictEqual(
+      cookie.toString(),
+      "k=v; Path=/; Secure; HttpOnly; SameSite=Lax; Partitioned",
+    );
+    const unpartitioned = new Cookie({ key: "k", value: "v" });
+    deepStrictEqual(unpartitioned.partitioned, false);
+    deepStrictEqual(unpartitioned.secure, false);
   });
 });

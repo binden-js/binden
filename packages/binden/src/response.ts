@@ -9,7 +9,7 @@ import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import ContentRange from "./headers/content-range.js";
 import ContentType from "./headers/content-type.js";
-import Cookie from "./headers/cookie.js";
+import Cookie, { type ICookie } from "./headers/cookie.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
 import { parseHttpDate } from "./headers/http-date.js";
 import { split } from "./headers/list.js";
@@ -25,6 +25,12 @@ export const ct_form = "application/x-www-form-urlencoded";
 export type IHeadersValue = number | string | readonly string[];
 
 export type IHeaders = Record<string, IHeadersValue>;
+
+/** The attributes of a cookie to remove (see `BindenResponse.clearCookie()`) */
+export type IClearCookie = Pick<
+  ICookie,
+  "domain" | "partitioned" | "path" | "same_site" | "secure"
+>;
 
 /** The characters of `attr-char` (RFC 8187, section 3.2.1) */
 const attrChar = /^[\w!#$&+.^`|~-]$/u;
@@ -152,6 +158,31 @@ export class BindenResponse<
     return values.length === 0
       ? this
       : this.setHeader("Vary", values.join(", "));
+  }
+
+  /**
+   * Remove a cookie from the client: an empty value that expires at once,
+   * with the attributes (`domain`, `path`, …) of the cookie to remove. It
+   * replaces a cookie of the same name, domain and path set on the response.
+   */
+  public clearCookie(name: string, attributes: IClearCookie = {}): this {
+    const cookie = new Cookie({
+      ...attributes,
+      key: name,
+      value: "",
+      max_age: 0,
+    });
+    for (const other of this.cookies) {
+      if (
+        other.key === cookie.key &&
+        other.domain === cookie.domain &&
+        other.path === cookie.path
+      ) {
+        this.cookies.delete(other);
+      }
+    }
+    this.cookies.add(cookie);
+    return this;
   }
 
   /** Send a response */

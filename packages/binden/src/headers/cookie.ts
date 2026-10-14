@@ -9,6 +9,8 @@ export interface ICookie {
   readonly secure?: boolean;
   readonly http_only?: boolean;
   readonly same_site?: "Lax" | "None" | "Strict";
+  /** Partitioned by the top-level site (CHIPS): implies `Secure` */
+  readonly partitioned?: boolean;
 }
 
 /** A token (RFC 9110, section 5.6.2) */
@@ -38,6 +40,7 @@ export class Cookie implements ICookie {
   readonly #secure: boolean;
   readonly #http_only: boolean;
   readonly #same_site: "Lax" | "None" | "Strict";
+  readonly #partitioned: boolean;
 
   public constructor({
     key,
@@ -49,6 +52,7 @@ export class Cookie implements ICookie {
     secure = false,
     http_only = true,
     same_site = "Lax",
+    partitioned = false,
   }: ICookie) {
     // An invalid name or attribute could add attributes to `Set-Cookie`
     if (!token.test(key)) {
@@ -75,6 +79,7 @@ export class Cookie implements ICookie {
     this.#secure = Boolean(secure);
     this.#http_only = Boolean(http_only);
     this.#same_site = same_site;
+    this.#partitioned = Boolean(partitioned);
     this.#expires = expires instanceof Date ? new Date(expires) : null;
   }
 
@@ -107,6 +112,7 @@ export class Cookie implements ICookie {
       this.key.startsWith("__Secure-") ||
       this.key.startsWith("__Host-") ||
       this.same_site === "None" ||
+      this.#partitioned ||
       this.#secure
     );
   }
@@ -117,6 +123,10 @@ export class Cookie implements ICookie {
 
   public get same_site(): "Lax" | "None" | "Strict" {
     return this.#same_site;
+  }
+
+  public get partitioned(): boolean {
+    return this.#partitioned;
   }
 
   public toString(): string {
@@ -132,6 +142,7 @@ export class Cookie implements ICookie {
     output += this.secure ? `; Secure` : "";
     output += this.http_only ? `; HttpOnly` : "";
     output += `; SameSite=${this.same_site}`;
+    output += this.partitioned ? "; Partitioned" : "";
     return output;
   }
 
