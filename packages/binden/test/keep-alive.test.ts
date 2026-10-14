@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, suite, test } from "node:test";
 
-import { Binden, type Context } from "../index.js";
+import { Binden, BindenError, type Context } from "../index.js";
 
 /** The status, the body and whether the connection was reused */
 interface IExchange {
@@ -34,6 +34,11 @@ suite("Keep-alive", () => {
         .setHeader("Content-Length", 99)
         .response.sendFile(import.meta.filename),
     "/head": (context) => context.send("abc"),
+    "/error": (context) => {
+      // The error reply replaces the body that this length was set for
+      context.setHeader("Content-Length", 99);
+      throw new BindenError(400, { expose: true, message: "error" });
+    },
     "/short": (context) =>
       context.setHeader("Content-Length", 10).send(Readable.from(["abc"])),
   };
@@ -104,6 +109,19 @@ suite("Keep-alive", () => {
     ],
     ["HEAD with a body", "/head", "HEAD", {}, 200],
   ];
+
+  test("an error reply after a `Content-Length`, then another request", async () => {
+    deepStrictEqual(await exchange("/error"), {
+      status: 400,
+      body: "error",
+      reused: true,
+    });
+    deepStrictEqual(await exchange("/ok"), {
+      status: 200,
+      body: "ok",
+      reused: true,
+    });
+  });
 
   test("a body shorter than its `Content-Length` closes the connection", async () => {
     // The client knows that the body is truncated
