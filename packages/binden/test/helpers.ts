@@ -8,7 +8,7 @@ import {
 import type { AddressInfo } from "node:net";
 import { Logger } from "@binden/logger";
 
-import { type Binden, serializers } from "../index.js";
+import { serializers } from "../index.js";
 
 /** Resolves after `ms` milliseconds */
 export function sleep(ms: number): Promise<void> {
@@ -81,8 +81,13 @@ export interface IListening {
   close(): Promise<void>;
 }
 
+/** An application, whatever its state */
+export interface IApp {
+  createServer(): Server;
+}
+
 /** Creates the server of the application and listens on a free port */
-export async function listen(app: Binden): Promise<IListening> {
+export async function listen(app: IApp): Promise<IListening> {
   const server: Server = app.createServer();
   server.listen(0);
   await once(server, "listening");

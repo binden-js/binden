@@ -20,4 +20,12 @@ export * from "./src/response.js";
 export type { IRedirectOptions, IRedirectStatus } from "./src/redirect.js";
 export type { ISendFileOptions } from "./src/send-file.js";
 export * from "./src/router.js";
+export type { IRouteParams, IRoutingOptions } from "./src/route.js";
+export {
+  Stack,
+  type IStack,
+  type IStackItem,
+  type IStackPath,
+  type IUntypedItem,
+} from "./src/stack.js";
 export { serializers } from "./src/logger.js";

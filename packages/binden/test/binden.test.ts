@@ -855,7 +855,7 @@ suite("Binden", () => {
     app.use(router);
     const response = await fetch(url, { method: "POST" });
     deepStrictEqual(response.status, 405);
-    deepStrictEqual(response.headers.get("Allow"), "PATCH, GET, HEAD");
+    deepStrictEqual(response.headers.get("Allow"), "PATCH, GET, HEAD, OPTIONS");
   });
 
   test("guarded routers (another router allows the method)", async () => {
@@ -886,7 +886,7 @@ suite("Binden", () => {
     deepStrictEqual(await send("/three", "DELETE"), [
       405,
       "",
-      "PUT, GET, HEAD",
+      "PUT, GET, HEAD, OPTIONS",
     ]);
   });
 
@@ -906,7 +906,7 @@ suite("Binden", () => {
     newApp.use(router);
     const response = await fetch(path.toString(), { method: "POST" });
     deepStrictEqual(response.status, 405);
-    deepStrictEqual(response.headers.get("Allow"), "PATCH, GET");
+    deepStrictEqual(response.headers.get("Allow"), "PATCH, GET, OPTIONS");
 
     await new Promise((resolve) => {
       newServer.close(resolve);

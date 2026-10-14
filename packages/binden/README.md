@@ -12,39 +12,18 @@ npm install binden
 
 ### Binden
 
-`new Binden(options)` takes the following options:
+An application is a `Binden`: the root [stack](#stack-and-routing), whose options apply to every request (they are validated by the constructor: an invalid option throws a `TypeError` or a `RangeError`).
 
-- `auto_head` (default `true`) - a router without `HEAD` middlewares handles `HEAD` with its `GET` middlewares (see [Router](#router))
-- `error_handler` - replaces the default reply to an error thrown by a middleware (the thrown value may be anything, also `null`). It may be `async`: it is awaited, and it must have ended its reply when it settles. Nothing started then gets the default reply, while a reply that is not ended (e.g. a `write()` without `end()`) is cut by closing the connection. A handler that throws, rejects or does not settle within `error_handler_timeout` gets an empty `500 Internal Server Error` instead (without the framing and representation headers it may have set), or the connection is closed when its reply has started; its later reply is ignored, and its later failure is logged (`debug`).
-- `error_handler_timeout` (default `5000`) - the milliseconds the `error_handler` has to settle (an integer from 1 to 2³¹−1)
-- `timeout` (default `0`, none) - the deadline of every request in milliseconds (an integer from 0 to 2³¹−1, see [Lifecycle](#lifecycle))
-- `logger` - see [Logging](#logging)
-- `trust_proxy`, `allowed_hosts`, `request_id`, `encoded_slashes`, `query` - the options of the requests, see [Request options](#request-options)
-
-- `.use()` - Add a `Middleware/Router` to the stack
-
-```typescript
-import { Binden, type Context } from "binden";
-
-const app = new Binden().use(middleware1).use(router2);
-app.use("/path", middleware2, router2);
-app.use(new RegExp("path"), router3, middleware1);
-const middleware3 = (context: Context): Promise<void> =>
-  context.json({ message: "Hello World!" });
-app.use("/path2", middleware3);
-```
-
-A RegExp path keeps its flags, except `g` and `y` (they would make `test()` stateful).
-
-- `.off()` - remove a `Middleware/Router` from the stack (returns the removed items)
-
-```typescript
-import { Binden } from "binden";
-
-const app = new Binden().use("/path", middleware1).use(middleware2);
-// `.off()` returns the removed items
-const removed = app.off("/path", middleware1);
-```
+| Option                                                                   | Default                                  | Description                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto_head`                                                              | `true`                                   | A router without `HEAD` middlewares handles `HEAD` with its `GET` middlewares (see [Router](#router))                                                                                                                           |
+| `error_handler`                                                          | none                                     | Replaces the default reply to an error (see [Errors](#errors))                                                                                                                                                                  |
+| `error_handler_timeout`                                                  | `5000`                                   | The milliseconds that the `error_handler` has to settle (an integer from 1 to 2³¹−1)                                                                                                                                            |
+| `timeout`                                                                | `0` (none)                               | The deadline of every request in milliseconds (an integer from 0 to 2³¹−1, see [Lifecycle](#lifecycle))                                                                                                                         |
+| `logger`                                                                 | silent unless `BINDEN_LOG_LEVEL` is set  | See [Logging](#logging)                                                                                                                                                                                                         |
+| `routing`                                                                | `{ case_sensitive: true, strict: true }` | The matching of the patterns of `route()` and `mount()`: `case_sensitive: false` compares their literal segments without their case, and `strict: false` ignores one trailing `/` (see [Stack and routing](#stack-and-routing)) |
+| `state`                                                                  | `() => ({})`                             | Creates `context.state` for every request (required by the types when the state has required fields)                                                                                                                            |
+| `trust_proxy`, `allowed_hosts`, `request_id`, `encoded_slashes`, `query` | see [Request options](#request-options)  | The options of the requests                                                                                                                                                                                                     |
 
 - `.createServer()` - create a server (HTTP)
 
@@ -65,6 +44,82 @@ import { Binden } from "binden";
 const app = new Binden().use("/path", middleware).use("/path2", router);
 const secureServer = app.createSecureServer({ key, cert });
 ```
+
+The state of a request is typed by the application, and so is every middleware added to it:
+
+```typescript
+import { Binden } from "binden";
+
+interface IState {
+  user: string | null;
+}
+
+const app = new Binden<IState>({ state: () => ({ user: null }) });
+app.use((context) => {
+  context.state.user = context.request.header("x-user") as string | null;
+});
+```
+
+Middlewares typed for the default state (such as the `Middleware` classes of other packages) can be used with any state. A function middleware typed for the default state (`(context: Context) => …`) needs a state declared as a `type` (an `interface` has no index signature).
+
+### Stack and routing
+
+A `Stack` holds middlewares and routers by path. It has no options: the options of the application apply to every stack mounted in it (a `Binden` is a stack too, but it cannot be mounted).
+
+- `.use()` - add middlewares and routers for every path, for an exact path (a string, compared as received) or for the paths that a RegExp matches (a RegExp keeps its flags, except `g` and `y`, which would make `test()` stateful)
+
+```typescript
+import { Binden, type Context } from "binden";
+
+const app = new Binden().use(middleware1).use(router2);
+app.use("/path", middleware2, router2);
+app.use(new RegExp("path"), router3, middleware1);
+const middleware3 = (context: Context): Promise<void> =>
+  context.json({ message: "Hello World!" });
+app.use("/path2", middleware3);
+```
+
+- `.route()` - add middlewares and routers for the paths that a pattern matches, with its parameters in `context.params` (typed from the pattern):
+  - `:name` matches one non-empty segment, and `*name` (the last segment only) the rest of the path (zero or more segments);
+  - a name is `[A-Za-z_][A-Za-z0-9_]*`, and `\:` and `\*` are a literal `:` and `*`;
+  - the path is split into its segments first, then every parameter (and every segment of `*name`) is decoded once: a parameter that is not valid percent-encoded UTF-8, or that has an encoded `/` or `\` (`%2F`, `%5C`), is `400 Bad Request`. Literal segments are compared once decoded (write them decoded);
+  - a pattern without a leading `/`, with an empty or duplicate name, a `*name` that is not last, or a `:` or `*` inside a segment (unless escaped) throws a `TypeError`.
+
+```typescript
+import { Binden } from "binden";
+
+const app = new Binden()
+  .route("/users/:id", (context) => context.json({ id: context.params.id }))
+  .route("/files/*path", (context) => context.text(context.params.path));
+```
+
+- `.mount()` - add middlewares, routers and other stacks for the paths under a prefix (the pattern of `route()`, without `*name`), on a segment boundary (`/api` matches `/api` and `/api/x`, not `/apix`). The mounted items see the rest of the path (`/` when there is none); the parameters of the prefix are added to `context.params`, and `context.mount_path` is the matched prefix (both are restored once the mounted items are done). A stack can be mounted in several places, but not in itself (directly or through other stacks: a `TypeError`).
+
+```typescript
+import { Binden, Router, Stack } from "binden";
+
+const users = new Stack()
+  .use(
+    "/",
+    new Router().get((context) => context.json([])),
+  )
+  .route("/:id", (context) =>
+    context.json({ id: context.params.id, path: context.mount_path }),
+  );
+const app = new Binden().mount("/api/users", users);
+```
+
+- `.off()` - remove middlewares and routers added by `.use()` (returns the removed items)
+
+```typescript
+import { Binden } from "binden";
+
+const app = new Binden().use("/path", middleware1).use(middleware2);
+// `.off()` returns the removed items
+const removed = app.off("/path", middleware1);
+```
+
+- `.stack` - a copy of the layers of the stack: their items, and their path (a string, a RegExp, `null` for every path, `{ route }` or `{ mount }`)
 
 ### Logging
 
@@ -384,9 +439,9 @@ const router = new Router()
 const app = new Binden().use("/items", router);
 ```
 
-- `.get()`, `.head()`, `.post()`, `.put()`, `.patch()`, `.delete()`, `.options()`, `.trace()`, and `.on()` for any other method of Node.js but `CONNECT`, which Node.js emits as a `connect` event of the server: its requests never reach the middlewares. `.off()` removes middlewares, and `.methods` lists the methods that have some.
+- `.get()`, `.head()`, `.post()`, `.put()`, `.patch()`, `.delete()`, `.options()`, `.trace()`, and `.on()` for any other method, in any case (`.on("propfind")` is `PROPFIND`): a method must be an HTTP token, and `CONNECT` throws a `TypeError` (Node.js emits its requests as `connect` events of the server: they never reach the middlewares). `.off()` removes middlewares, and `.methods` lists the methods that have some.
 - `HEAD` is handled by the `HEAD` middlewares of a router, or else by its `GET` middlewares (unless the `auto_head` option of `Binden` is `false`). A response to `HEAD` sends no body.
-- A `guarded` router (`new Router({ guarded: true })`) that does not allow the method of a request passes it on. When nothing else handles the request, it gets `405 Method Not Allowed`, with the methods of every guarded router that has refused it in `Allow`.
+- A `guarded` router (`new Router({ guarded: true })`) that does not allow the method of a request passes it on. When nothing else handles the request, it gets `405 Method Not Allowed`, whose `Allow` lists the methods of every guarded router that has refused it (with `HEAD` for `GET` when `auto_head` is `true`, and `OPTIONS`). An `OPTIONS` request that none of them has middlewares for gets `204 No Content` with the same `Allow` instead; their own `OPTIONS` (or `HEAD`) middlewares take precedence.
 
 ```typescript
 import { Binden, type Context, Router } from "binden";
@@ -397,8 +452,26 @@ const list = new Router({ guarded: true }).get((context: Context) =>
 const create = new Router({ guarded: true }).post((context: Context) =>
   context.status(201).send(),
 );
-// `DELETE /items` gets 405, with `Allow: GET, HEAD, POST`
+// `DELETE /items` gets 405, and `OPTIONS /items` 204, with
+// `Allow: GET, HEAD, POST, OPTIONS`
 const app = new Binden().use("/items", list, create);
+```
+
+### Errors
+
+A middleware that throws (or rejects) passes the error to the error handler. The default one replies with the status of a `BindenError` (see below), or `500 Internal Server Error` for any other value; a reply that has already started is cut by closing the connection instead.
+
+The `error_handler` option replaces it. It gets the context and the thrown value (which may be anything, also `null`), may be `async` (it is awaited), and must have ended its reply when it settles: nothing started then gets the default reply, while a reply that is not ended (e.g. a `write()` without `end()`) is cut by closing the connection. A handler that throws, rejects or does not settle within `error_handler_timeout` gets an empty `500 Internal Server Error` instead (without the framing and representation headers it may have set), or the connection is closed when its reply has started; its later reply is ignored, and its later failure is logged (`debug`).
+
+```typescript
+import { Binden, BindenError, type Context } from "binden";
+
+const app = new Binden({
+  error_handler: async (context: Context, error: unknown): Promise<void> => {
+    const status = error instanceof BindenError ? error.status : 500;
+    await context.status(status).json({ error: status });
+  },
+});
 ```
 
 ### BindenError

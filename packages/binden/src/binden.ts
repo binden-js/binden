@@ -1,6 +1,5 @@
 import http from "node:http";
 import https from "node:https";
-import { isDeepStrictEqual } from "node:util";
 import type { ILogger } from "@binden/logger";
 import { Context } from "./context.js";
 import { BindenError } from "./error.js";
@@ -10,22 +9,32 @@ import { Middleware, type IMiddleware } from "./middleware.js";
 import { property } from "./property.js";
 import { BindenRequest, type ITrustProxy } from "./request.js";
 import { BindenResponse, ct_json } from "./response.js";
+import { matchPrefix, matchRoute, type IRoutingOptions } from "./route.js";
 import { Router } from "./router.js";
+import { type ILayer, layersOf, markRoot, Stack } from "./stack.js";
 import { isStatus } from "./status.js";
-
-type IUseOptions = IStackItem | RegExp | string | null | undefined;
-
-export type IStackItem = IMiddleware | Router;
-export type IStack = [IStackItem[], RegExp | string | null];
 
 export const DefaultErrorCode = 500;
 
 type ILogLevel = "debug" | "error" | "trace" | "warn";
 
-export interface IBindenOptions {
-  auto_head?: boolean;
+/** Replaces the default reply to an error (see `IBindenOptions.error_handler`) */
+export type IErrorHandler<State extends object = Record<string, unknown>> = (
+  context: Context<State>,
+  error: unknown,
+) => Promise<void> | void;
+
+/** The options of `Binden`, but its `state` */
+export interface IBindenBaseOptions<
+  State extends object = Record<string, unknown>,
+> {
+  /**
+   * Whether a router without `HEAD` middlewares handles `HEAD` with its `GET`
+   * middlewares (`true`)
+   */
+  auto_head?: boolean | undefined;
   /** Replaces the default reply to an error, unless it does not reply itself */
-  error_handler?: (context: Context, error: unknown) => Promise<void> | void;
+  error_handler?: IErrorHandler<State> | undefined;
   /**
    * The time in milliseconds that the `error_handler` has to settle (`5000`):
    * a handler that takes longer, throws or rejects gets an empty
@@ -42,14 +51,26 @@ export interface IBindenOptions {
    */
   timeout?: number | undefined;
   /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */
-  logger?: ILogger;
+  logger?: ILogger | undefined;
+  /** The matching of the patterns of `route()` and `mount()` */
+  routing?: IRoutingOptions | undefined;
   /**
    * The proxies whose `Forwarded` elements `request.protocol` trusts: none
    * (`false`, the default), all of them (`true`) or the given number of the
    * nearest ones
    */
-  trust_proxy?: ITrustProxy;
+  trust_proxy?: ITrustProxy | undefined;
 }
+
+/**
+ * The options of `Binden`: `state` creates the state of every request (an
+ * empty object by default), and is required when the state has required fields
+ */
+export type IBindenOptions<State extends object = Record<string, unknown>> =
+  IBindenBaseOptions<State> &
+    (Record<never, never> extends State
+      ? { state?: (() => State) | undefined }
+      : { state: () => State });
 
 /** The greatest delay of a Node.js timer */
 const MAX_DELAY = 2 ** 31 - 1;
@@ -60,24 +81,60 @@ const ABORTED = new Error("The request has been aborted");
 /** The outcome of an `error_handler` that has not settled in time */
 const EXPIRED = Symbol("expired");
 
-export class Binden {
-  readonly #stack: IStack[];
+/** The context of a request, which a middleware may replace */
+interface IRun {
+  context: Context;
+}
+
+/** The methods of the guarded routers that have refused a request */
+type IAllow = Set<string>;
+
+/** A level of the routing that a matching layer enters */
+interface ILevel {
+  readonly params: Readonly<Record<string, string>>;
+  /** The matched prefix of a mount, as received */
+  readonly prefix: string;
+  /** The matched prefix of a mount, as registered */
+  readonly template: string;
+  /** The rest of the path, which the items of a mount see */
+  readonly rest: string;
+}
+
+/**
+ * An application: the root stack, with the options that apply to every stack
+ * mounted in it
+ */
+export class Binden<
+  State extends object = Record<string, unknown>,
+> extends Stack<State> {
   readonly #auto_head: boolean;
-  readonly #error_handler:
-    ((context: Context, error: unknown) => Promise<void> | void) | null;
+  readonly #error_handler: IErrorHandler | null;
   readonly #error_handler_timeout: number;
   readonly #timeout: number;
   readonly #logger: ILogger;
+  readonly #routing: Required<IRoutingOptions>;
+  readonly #state: (() => object) | null;
   readonly #Request: typeof BindenRequest;
 
-  public constructor({
-    error_handler,
-    error_handler_timeout = 5000,
-    auto_head = true,
-    logger = defaultLogger,
-    timeout = 0,
-    trust_proxy = false,
-  }: IBindenOptions = {}) {
+  public constructor(
+    ...[options = {} as IBindenOptions<State>]: Record<
+      never,
+      never
+    > extends State
+      ? [options?: IBindenOptions<State>]
+      : [options: IBindenOptions<State>]
+  ) {
+    super();
+    const {
+      error_handler,
+      error_handler_timeout = 5000,
+      auto_head = true,
+      logger = defaultLogger,
+      routing = {},
+      state,
+      timeout = 0,
+      trust_proxy = false,
+    } = options;
     if (
       typeof trust_proxy === "number" &&
       !(Number.isSafeInteger(trust_proxy) && trust_proxy >= 0)
@@ -86,12 +143,29 @@ export class Binden {
     }
     Binden.#delay("timeout", timeout, 0);
     Binden.#delay("error_handler_timeout", error_handler_timeout, 1);
-    this.#stack = [];
-    this.#error_handler = error_handler ?? null;
+    Binden.#boolean("auto_head", auto_head);
+    if (
+      typeof error_handler !== "undefined" &&
+      typeof error_handler !== "function"
+    ) {
+      throw new TypeError("`error_handler` is not a function");
+    } else if (typeof state !== "undefined" && typeof state !== "function") {
+      throw new TypeError("`state` is not a function");
+    } else if (typeof routing !== "object" || (routing as unknown) === null) {
+      throw new TypeError("`routing` is not an object");
+    }
+    const { case_sensitive = true, strict = true } = routing;
+    Binden.#boolean("routing.case_sensitive", case_sensitive);
+    Binden.#boolean("routing.strict", strict);
+    markRoot(this);
+    this.#error_handler =
+      (error_handler as unknown as IErrorHandler | undefined) ?? null;
     this.#error_handler_timeout = error_handler_timeout;
     this.#timeout = timeout;
     this.#auto_head = auto_head;
     this.#logger = logger;
+    this.#routing = { case_sensitive, strict };
+    this.#state = state ?? null;
     // The requests of this application trust its proxies
     this.#Request = class extends BindenRequest {
       // eslint-disable-next-line class-methods-use-this -- the option of the app
@@ -101,13 +175,7 @@ export class Binden {
     };
   }
 
-  public get stack(): IStack[] {
-    return this.#stack.map(([r, p]) => [
-      [...r],
-      p instanceof RegExp ? new RegExp(p.source, p.flags) : p,
-    ]);
-  }
-
+  /** Creates an HTTP server that handles its requests with the application */
   public createServer(
     options: Omit<
       http.ServerOptions,
@@ -126,6 +194,7 @@ export class Binden {
     );
   }
 
+  /** Creates an HTTPS server that handles its requests with the application */
   public createSecureServer(
     options: Omit<
       https.ServerOptions,
@@ -144,107 +213,17 @@ export class Binden {
     );
   }
 
-  public use(...items: IStackItem[]): this;
-  public use(path: RegExp | string, ...items: IStackItem[]): this;
-  public use(_path: IUseOptions, ...items: IStackItem[]): this {
-    if (Binden.#validateItem(_path)) {
-      items.unshift(_path);
-    } else if (!items.length) {
-      return this;
-    }
-
-    const path =
-      _path instanceof RegExp
-        ? Binden.#pattern(_path)
-        : typeof _path === "string" && _path
-          ? _path
-          : null;
-
-    for (const item of items) {
-      if (!Binden.#validateItem(item)) {
-        throw new TypeError("Unsupported Middleware/Router");
-      }
-    }
-
-    if (this.#stack.length) {
-      const [arr, previous_path] = this.#stack[this.#stack.length - 1];
-
-      if (isDeepStrictEqual(previous_path, path)) {
-        arr.push(...items);
-        return this;
-      }
-    }
-
-    this.#stack.push([[...items], path]);
-    return this;
-  }
-
-  public off(...items: IStackItem[]): IStackItem[];
-  public off(path: RegExp | string, ...items: IStackItem[]): IStackItem[];
-  public off(_path: IUseOptions, ...items: IStackItem[]): IStackItem[] {
-    if (Binden.#validateItem(_path)) {
-      items.unshift(_path);
-    } else if (!items.length || !this.#stack.length) {
-      return [];
-    }
-
-    const path =
-      _path instanceof RegExp
-        ? Binden.#pattern(_path)
-        : typeof _path === "string" && _path
-          ? _path
-          : null;
-
-    const removed: IStackItem[] = [];
-
-    for (const item of items) {
-      const { length } = this.#stack;
-
-      for (let i = length - 1; i >= 0; i -= 1) {
-        const [arr, p] = this.#stack[i];
-
-        if (isDeepStrictEqual(p, path)) {
-          const index = arr.lastIndexOf(item);
-
-          if (index !== -1) {
-            const found = arr.splice(index, 1);
-            removed.push(...found);
-
-            if (!arr.length) {
-              if (i > 0 && i < length - 1) {
-                const [p_arr, p_path] = this.#stack[i - 1];
-                const [n_arr, n_path] = this.#stack[i + 1];
-
-                if (isDeepStrictEqual(p_path, n_path)) {
-                  p_arr.push(...n_arr);
-                  this.#stack.splice(i, 2);
-                } else {
-                  this.#stack.splice(i, 1);
-                }
-              } else {
-                this.#stack.splice(i, 1);
-              }
-            }
-
-            break;
-          }
-        }
-      }
-    }
-
-    return removed;
-  }
-
   #requestListener(
     request: BindenRequest,
     response: BindenResponse<BindenRequest>,
   ): void {
+    const { state, failure } = this.#createState();
+    const exchange = Exchange.for(request, response, { state });
     const context = new Context({ request, response, logger: this.#logger });
-    const exchange = Exchange.for(request, response);
     if (this.#timeout > 0) {
       exchange.setTimeout(this.#timeout);
     }
-    this.#run(context, exchange).catch((error: unknown) => {
+    this.#run(context, exchange, failure).catch((error: unknown) => {
       // Unexpected (every failure is handled): the process must not crash
       Binden.#log(context, "error", "The request has failed", { error });
       response.destroy();
@@ -256,12 +235,18 @@ export class Binden {
    * deadline that passes later (e.g. while a stream is sent) closes the
    * connection of a response that has not finished.
    */
-  async #run(first: Context, exchange: Exchange): Promise<void> {
-    const run = { context: first };
-    let failure: { error: unknown } | null = null;
+  async #run(
+    first: Context,
+    exchange: Exchange,
+    initial: { error: unknown } | null,
+  ): Promise<void> {
+    const run: IRun = { context: first };
+    let failure = initial;
     let stopped = false;
     try {
-      await this.#handle(run, exchange);
+      if (failure === null) {
+        await this.#handle(run, exchange);
+      }
     } catch (error: unknown) {
       if (error === ABORTED) {
         stopped = true;
@@ -299,76 +284,154 @@ export class Binden {
     }
   }
 
-  async #handle(run: { context: Context }, exchange: Exchange): Promise<void> {
-    let next = run.context;
-    // The methods of the guarded routers that have refused the request
-    const allow = new Set<string>();
+  /**
+   * Routes the request through the stack: `404 Not Found` when nothing has
+   * handled it, or `405 Method Not Allowed` when only guarded routers have
+   * refused its method (or `204` with the allowed methods for `OPTIONS`)
+   */
+  async #handle(run: IRun, exchange: Exchange): Promise<void> {
+    const { pathname } = run.context.url;
+    const allow: IAllow = new Set<string>();
 
-    for (const [items, path] of this.#stack) {
-      const regExp = path instanceof RegExp && path.test(next.url.pathname);
-      const str = typeof path === "string" && path === next.url.pathname;
-
-      if (path === null || regExp || str) {
-        for (const item of items) {
-          if (item instanceof Router) {
-            const { guarded, middlewares, methods } = item;
-            const { method = "GET" } = next.request;
-            // `HEAD` is handled by the `GET` middlewares, unless it has its own
-            const head = methods.has("HEAD");
-
-            if (
-              guarded &&
-              methods.size &&
-              methods.has("GET") &&
-              this.#auto_head
-            ) {
-              methods.add("HEAD");
-            }
-
-            // A guarded router that does not allow the method: another one may
-            // (405 when none does)
-            const refused = guarded && methods.size > 0 && !methods.has(method);
-            if (refused) {
-              for (const allowed of methods) {
-                allow.add(allowed);
-              }
-            }
-
-            const m =
-              method === "HEAD" && this.#auto_head && !head ? "GET" : method;
-            const methodMiddlewares = refused ? [] : middlewares(m);
-
-            for (const mw of methodMiddlewares) {
-              next = await Binden.#runMiddleware(mw, next, exchange);
-              run.context = next;
-
-              if (next.done) {
-                await Binden.#complete(next);
-                return;
-              }
-            }
-          } else {
-            next = await Binden.#runMiddleware(item, next, exchange);
-            run.context = next;
-
-            if (next.done) {
-              await Binden.#complete(next);
-              return;
-            }
-          }
-        }
-      }
+    if (await this.#walk(this, run, exchange, pathname, [], allow)) {
+      return;
     }
 
     // Nothing has handled the request, unless a middleware has started (or ended)
     // the response without setting `done`: it is left to finish
-    if (next.response.started) {
+    const { request, response } = run.context;
+    if (response.started) {
       return;
     } else if (allow.size) {
-      next.response.set({ Allow: [...allow].join(", ") });
+      allow.add("OPTIONS");
+      const methods = [...allow].join(", ");
+      if (request.method === "OPTIONS") {
+        response.status(204).setHeader("Allow", methods);
+        await response.send();
+        return;
+      }
+      response.setHeader("Allow", methods);
       throw new BindenError(405);
     }
     throw new BindenError(404);
+  }
+
+  /**
+   * Runs the layers of a stack that match the path (the rest of the path
+   * at a mounted level): `true` once a middleware has set `done`. A stack that
+   * is already being run (mounted in itself) fails the request.
+   */
+  async #walk(
+    stack: object,
+    run: IRun,
+    exchange: Exchange,
+    path: string,
+    chain: object[],
+    allow: IAllow,
+  ): Promise<boolean> {
+    if (chain.includes(stack)) {
+      throw new Error("A stack is mounted in itself");
+    }
+    chain.push(stack);
+
+    for (const layer of layersOf(stack)) {
+      const level = this.#match(layer, path);
+      if (
+        level !== null &&
+        (await this.#layer(layer, level, run, exchange, chain, allow))
+      ) {
+        return true;
+      }
+    }
+
+    chain.pop();
+    return false;
+  }
+
+  /** Runs the items of a layer that matches: `true` once one has set `done` */
+  async #layer(
+    layer: ILayer,
+    level: ILevel,
+    run: IRun,
+    exchange: Exchange,
+    chain: object[],
+    allow: IAllow,
+  ): Promise<boolean> {
+    const leave = exchange.enter(level);
+    let { context } = run;
+    for (const item of layer.items) {
+      if (item instanceof Stack) {
+        if (await this.#walk(item, run, exchange, level.rest, chain, allow)) {
+          return true;
+        }
+        // A middleware of the mounted stack may have replaced the context
+        ({ context } = run);
+      } else {
+        const middlewares =
+          item instanceof Router ? this.#methodOf(item, run, allow) : [item];
+        for (const middleware of middlewares) {
+          context = await Binden.#runMiddleware(middleware, context, exchange);
+          run.context = context;
+          if (context.done) {
+            await Binden.#complete(context);
+            return true;
+          }
+        }
+      }
+    }
+    // Back to the level of the stack
+    leave();
+    return false;
+  }
+
+  /**
+   * The level that a layer of the stack enters for a path (its parameters,
+   * and the prefix and the rest of the path of a mount), or `null`
+   */
+  #match(layer: ILayer, path: string): ILevel | null {
+    const none = { params: {}, prefix: "", template: "", rest: path };
+    if (layer.kind === "use") {
+      const { path: match } = layer;
+      return match === null ||
+        (match instanceof RegExp ? match.test(path) : match === path)
+        ? none
+        : null;
+    } else if (layer.kind === "route") {
+      const params = matchRoute(layer.pattern, path, this.#routing);
+      return params === null ? null : { ...none, params };
+    }
+    const { pattern } = layer;
+    const match = matchPrefix(pattern, path, this.#routing);
+    return match === null ? null : { ...match, template: pattern.source };
+  }
+
+  /**
+   * The middlewares of a router for the method of the request: `HEAD` is
+   * handled by the `GET` middlewares, unless it has its own, and a guarded
+   * router that does not allow the method (an `OPTIONS` that it has no
+   * middlewares for among them) refuses the request, which another one may
+   * handle
+   */
+  #methodOf(router: Router, run: IRun, allow: IAllow): IMiddleware[] {
+    const { guarded, middlewares, methods } = router;
+    const { method = "GET" } = run.context.request;
+    const head = methods.has("HEAD");
+
+    if (guarded && methods.size) {
+      if (methods.has("GET") && this.#auto_head) {
+        methods.add("HEAD");
+      }
+      if (!methods.has(method)) {
+        for (const allowed of methods) {
+          allow.add(allowed);
+        }
+        return [];
+      }
+    }
+
+    return middlewares(
+      method === "HEAD" && this.#auto_head && !head ? "GET" : method,
+    );
   }
 
   /**
@@ -684,14 +747,6 @@ export class Binden {
     }
   }
 
-  /**
-   * A RegExp path with its flags (e.g. `i`), except those that make `test()`
-   * stateful (`g` and `y`)
-   */
-  static #pattern(path: RegExp): RegExp {
-    return new RegExp(path.source, path.flags.replaceAll(/[gy]/gu, ""));
-  }
-
   /** A delay of a timer: an integer from `min` to the greatest delay of Node.js */
   static #delay(name: string, value: unknown, min: number): void {
     if (typeof value !== "number" || !Number.isInteger(value)) {
@@ -703,12 +758,30 @@ export class Binden {
     }
   }
 
-  static #validateItem(item: unknown): item is IStackItem {
-    return (
-      item instanceof Middleware ||
-      item instanceof Router ||
-      typeof item === "function"
-    );
+  /**
+   * The state of a request, from the `state` option: a factory that fails (or
+   * that does not return an object) fails the request
+   */
+  #createState(): { state: object; failure: { error: unknown } | null } {
+    if (!this.#state) {
+      return { state: {}, failure: null };
+    }
+    try {
+      const state: unknown = this.#state();
+      if (typeof state !== "object" || state === null) {
+        throw new TypeError("The state of the request is not an object");
+      }
+      return { state, failure: null };
+    } catch (error: unknown) {
+      return { state: {}, failure: { error } };
+    }
+  }
+
+  /** A boolean option */
+  static #boolean(name: string, value: unknown): void {
+    if (typeof value !== "boolean") {
+      throw new TypeError(`\`${name}\` is not a boolean`);
+    }
   }
 }
 

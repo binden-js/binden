@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert";
+import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
 
 import { Middleware } from "../index.js";
@@ -31,6 +31,17 @@ suite("Middleware", () => {
     middleware.ignore_errors = false;
     deepStrictEqual(middleware.ignore_errors, false);
     deepStrictEqual(middleware.disabled, false);
+  });
+
+  test("constructor (invalid options)", () => {
+    throws(
+      () => new CustomMiddleware({ disabled: 1 as unknown as boolean }),
+      new TypeError("`disabled` is not a boolean"),
+    );
+    throws(
+      () => new CustomMiddleware({ ignore_errors: "no" as unknown as boolean }),
+      new TypeError("`ignore_errors` is not a boolean"),
+    );
   });
 
   test("constructor (ignore errors and disabled)", () => {

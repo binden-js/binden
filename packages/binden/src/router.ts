@@ -1,17 +1,33 @@
-import { METHODS } from "node:http";
+import type { IParams } from "./context.js";
 import { Middleware, type IMiddleware } from "./middleware.js";
 
+/** The options of a `Router` */
 export interface IRouterOptions {
-  guarded?: boolean;
+  /**
+   * Whether a request with a method that the router has no middlewares for
+   * is refused (`false`): `405 Method Not Allowed` (or, for `OPTIONS`, `204`
+   * with the allowed methods) when nothing else handles it
+   */
+  guarded?: boolean | undefined;
 }
 
-export class Router {
-  readonly #middlewares: Map<string, IMiddleware[]>;
+/** A method: an HTTP token (RFC 9110, section 9.1) */
+const token = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+
+/** Middlewares by method, for a path of the stack */
+export class Router<
+  State extends object = Record<string, unknown>,
+  Params extends IParams = IParams,
+> {
+  readonly #middlewares: Map<string, IMiddleware<State, Params>[]>;
   #guarded: boolean;
 
   public constructor({ guarded = false }: IRouterOptions = {}) {
-    this.#guarded = Boolean(guarded);
-    this.#middlewares = new Map<string, IMiddleware[]>();
+    if (typeof guarded !== "boolean") {
+      throw new TypeError("`guarded` is not a boolean");
+    }
+    this.#guarded = guarded;
+    this.#middlewares = new Map<string, IMiddleware<State, Params>[]>();
   }
 
   public get guarded(): boolean {
@@ -35,16 +51,20 @@ export class Router {
     return methods;
   }
 
-  public get middlewares(): (method: string) => IMiddleware[] {
-    return (method: string): IMiddleware[] => [
+  /** The middlewares of a method (in any case) */
+  public get middlewares(): (method: string) => IMiddleware<State, Params>[] {
+    return (method: string): IMiddleware<State, Params>[] => [
       ...(this.#middlewares.get(method.toUpperCase()) ?? []),
     ];
   }
 
-  public on(method: string, ..._middlewares: IMiddleware[]): this {
-    if (!Router.#supports(method)) {
-      throw new TypeError(`Method ${method} is not supported`);
-    } else if (!_middlewares.length) {
+  /** Adds middlewares for a method (in any case: `get` is `GET`) */
+  public on(
+    _method: string,
+    ..._middlewares: IMiddleware<State, Params>[]
+  ): this {
+    const method = Router.#method(_method);
+    if (!_middlewares.length) {
       return this;
     }
 
@@ -61,19 +81,20 @@ export class Router {
     if (middlewares) {
       middlewares.push(..._middlewares);
     } else {
-      this.#middlewares.set(method.toUpperCase(), [..._middlewares]);
+      this.#middlewares.set(method, [..._middlewares]);
     }
 
     return this;
   }
 
-  public off(method: string, ..._middlewares: IMiddleware[]): IMiddleware[] {
-    if (!Router.#supports(method)) {
-      throw new TypeError(`Method ${method} is not supported`);
-    }
-
+  /** Removes middlewares of a method: the removed ones */
+  public off(
+    _method: string,
+    ..._middlewares: IMiddleware<State, Params>[]
+  ): IMiddleware<State, Params>[] {
+    const method = Router.#method(_method);
     const middlewares = this.#middlewares.get(method) ?? [];
-    const removed: IMiddleware[] = [];
+    const removed: IMiddleware<State, Params>[] = [];
 
     if (!middlewares.length) {
       return removed;
@@ -95,43 +116,51 @@ export class Router {
     return removed;
   }
 
-  public delete(...middlewares: IMiddleware[]): this {
+  public delete(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("DELETE", ...middlewares);
   }
 
-  public get(...middlewares: IMiddleware[]): this {
+  public get(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("GET", ...middlewares);
   }
 
-  public head(...middlewares: IMiddleware[]): this {
+  public head(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("HEAD", ...middlewares);
   }
 
-  public options(...middlewares: IMiddleware[]): this {
+  public options(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("OPTIONS", ...middlewares);
   }
 
-  public patch(...middlewares: IMiddleware[]): this {
+  public patch(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("PATCH", ...middlewares);
   }
 
-  public post(...middlewares: IMiddleware[]): this {
+  public post(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("POST", ...middlewares);
   }
 
-  public put(...middlewares: IMiddleware[]): this {
+  public put(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("PUT", ...middlewares);
   }
 
-  public trace(...middlewares: IMiddleware[]): this {
+  public trace(...middlewares: IMiddleware<State, Params>[]): this {
     return this.on("TRACE", ...middlewares);
   }
 
   /**
-   * The methods of Node.js, except `CONNECT`: Node.js emits its requests as
-   * `connect` events of the server, which never reach the middlewares
+   * A method in upper case: a token, but not `CONNECT` (Node.js emits its
+   * requests as `connect` events of the server, which never reach the
+   * middlewares)
    */
-  static #supports(method: string): boolean {
-    return METHODS.includes(method) && method !== "CONNECT";
+  static #method(method: unknown): string {
+    if (typeof method !== "string" || !token.test(method)) {
+      throw new TypeError(`Method ${String(method)} is not a valid token`);
+    }
+    const upper = method.toUpperCase();
+    if (upper === "CONNECT") {
+      throw new TypeError("Method CONNECT is not supported");
+    }
+    return upper;
   }
 }

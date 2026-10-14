@@ -168,6 +168,35 @@ export class Exchange {
     this.#mount_template = template;
   }
 
+  /**
+   * Enters a level of the routing: its parameters are merged with the
+   * current ones, and its prefix (as matched and as registered) appended to
+   * the current ones. The returned function goes back to the current level.
+   */
+  public enter({
+    params,
+    prefix,
+    template,
+  }: {
+    params: Readonly<Record<string, string>>;
+    prefix: string;
+    template: string;
+  }): () => void {
+    const current = {
+      params: this.#params,
+      mount_path: this.#mount_path,
+      mount_template: this.#mount_template,
+    };
+    this.params = { ...current.params, ...params };
+    this.#mount_path += prefix;
+    this.#mount_template += template;
+    return (): void => {
+      this.#params = current.params;
+      this.#mount_path = current.mount_path;
+      this.#mount_template = current.mount_template;
+    };
+  }
+
   public get phase(): IPhase {
     return this.#phase;
   }
