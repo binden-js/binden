@@ -3,6 +3,8 @@ import { open } from "node:fs/promises";
 import {
   type IncomingHttpHeaders,
   IncomingMessage,
+  type OutgoingHttpHeader,
+  type OutgoingHttpHeaders,
   ServerResponse,
 } from "node:http";
 import { Readable } from "node:stream";
@@ -79,6 +81,10 @@ export class BindenResponse<
     });
   }
 
+  /**
+   * The cookies to send: they are added to the `Set-Cookie` header (after the
+   * values that it has) once, when the headers are sent
+   */
   public get cookies(): Set<Cookie> {
     if (!this.#cookies) {
       this.#cookies = new Set<Cookie>();
@@ -185,6 +191,114 @@ export class BindenResponse<
     return this;
   }
 
+  /**
+   * Sends the headers (with the cookies of `.cookies`, added once to the
+   * `Set-Cookie` header: after the values given here or else set before) by
+   * every path: explicitly, or by the first `write()`, `end()`,
+   * `flushHeaders()` or piped chunk
+   */
+  public override writeHead(
+    statusCode: number,
+    statusMessage?: string,
+    headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
+  ): this;
+  public override writeHead(
+    statusCode: number,
+    headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
+  ): this;
+  public override writeHead(
+    statusCode: number,
+    reason?: OutgoingHttpHeader[] | OutgoingHttpHeaders | string,
+    headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
+  ): this {
+    // As `writeHead()` of Node.js: the headers follow a reason phrase, or are
+    // the second argument
+    const given = typeof reason === "string" ? headers : (headers ?? reason);
+    const write = (
+      fields: OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined,
+    ): this => {
+      if (typeof reason === "string") {
+        return super.writeHead(statusCode, reason, fields);
+      }
+      return super.writeHead(statusCode, fields);
+    };
+    if (this.headersSent || this.cookies.size === 0) {
+      return write(given);
+    }
+
+    const previous = this.getHeader("Set-Cookie");
+    const [explicit, rest] = BindenResponse.#takeSetCookie(given);
+    const values = [...this.cookies].map((cookie) => cookie.toString());
+    this.setHeader("Set-Cookie", [
+      ...(explicit ?? BindenResponse.#values(previous)),
+      ...values,
+    ]);
+    try {
+      return write(rest);
+    } catch (error: unknown) {
+      // Not sent (e.g. an invalid status code): the next attempt adds them
+      if (typeof previous === "undefined") {
+        this.removeHeader("Set-Cookie");
+      } else {
+        this.setHeader("Set-Cookie", previous);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The `Set-Cookie` values of the headers given to `writeHead()` (`null`
+   * without one), and the other headers. Nested pairs (`[[name, value]]`) are
+   * flattened, as the headers set before are merged with them.
+   */
+  static #takeSetCookie(
+    headers: OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined,
+  ): [string[] | null, OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined] {
+    let explicit: string[] | null = null;
+    const take = (
+      name: OutgoingHttpHeader,
+      value: OutgoingHttpHeader | undefined,
+    ): boolean => {
+      if (typeof name === "string" && name.toLowerCase() === "set-cookie") {
+        explicit = [...(explicit ?? []), ...BindenResponse.#values(value)];
+        return true;
+      }
+      return false;
+    };
+    if (Array.isArray(headers)) {
+      const flat = Array.isArray(headers[0]) ? headers.flat() : headers;
+      const rest: OutgoingHttpHeader[] = [];
+      for (let index = 0; index < flat.length; index += 2) {
+        const [name, value] = flat.slice(index, index + 2) as [
+          OutgoingHttpHeader,
+          OutgoingHttpHeader,
+        ];
+        if (!take(name, value)) {
+          rest.push(name, value);
+        }
+      }
+      return [explicit, rest];
+    } else if (headers) {
+      const rest: OutgoingHttpHeaders = {};
+      for (const [name, value] of Object.entries(headers)) {
+        if (!take(name, value)) {
+          rest[name] = value;
+        }
+      }
+      return [explicit, rest];
+    }
+    return [null, headers];
+  }
+
+  /** The values of a header as strings */
+  static #values(value: OutgoingHttpHeader | undefined): string[] {
+    return Array.isArray(value)
+      ? value.map(String)
+      : typeof value === "undefined"
+        ? []
+        : [String(value)];
+  }
+
   /** Send a response */
   public send(
     data?: Buffer | Readable | bigint | number | string,
@@ -203,20 +317,6 @@ export class BindenResponse<
     }
 
     this.#started = true;
-
-    if (!this.headersSent && this.cookies.size) {
-      const setCookie = this.getHeader("Set-Cookie");
-      const values = [...this.cookies].map((c) => c.toString());
-
-      this.setHeader(
-        "Set-Cookie",
-        typeof setCookie === "undefined"
-          ? values
-          : Array.isArray(setCookie)
-            ? [...setCookie, ...values]
-            : [`${setCookie}`, ...values],
-      );
-    }
 
     if (data instanceof Readable) {
       if (this.#bodiless()) {
