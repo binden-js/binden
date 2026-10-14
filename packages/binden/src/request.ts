@@ -34,6 +34,11 @@ export type IProtocol = "http:" | "https:";
 export interface IRequestOptions {
   /** The trusted proxies and their headers (none by default) */
   readonly trust_proxy: ITrustProxy;
+  /**
+   * Whether the path of a request-target may have an encoded slash or
+   * backslash (`%2F`, `%5C`): a `400 Bad Request` otherwise (by default)
+   */
+  readonly encoded_slashes: boolean;
   /** The greatest number of keys that `request.query` parses (1000) */
   readonly query: { readonly max_keys: number };
 }
@@ -41,6 +46,7 @@ export interface IRequestOptions {
 /** The request options as given (to `Binden`), every one of them optional */
 export interface IRequestOptionsInput {
   trust_proxy?: ITrustProxy | undefined;
+  encoded_slashes?: boolean | undefined;
   query?: { max_keys?: number | undefined } | undefined;
 }
 
@@ -63,9 +69,15 @@ function optionalObject(value: unknown, name: string): Record<string, unknown> {
 export function validateRequestOptions(
   input?: IRequestOptionsInput,
 ): IRequestOptions {
-  const { trust_proxy = false, query } = optionalObject(input, "options");
+  const {
+    trust_proxy = false,
+    encoded_slashes = false,
+    query,
+  } = optionalObject(input, "options");
   const { max_keys = 1000 } = optionalObject(query, "query");
-  if (typeof max_keys !== "number") {
+  if (typeof encoded_slashes !== "boolean") {
+    throw new TypeError("`encoded_slashes` is not a boolean");
+  } else if (typeof max_keys !== "number") {
     throw new TypeError("`query.max_keys` is not a number");
   } else if (
     max_keys !== Number.POSITIVE_INFINITY &&
@@ -75,6 +87,7 @@ export function validateRequestOptions(
   }
   return Object.freeze({
     trust_proxy: checkTrustProxy(trust_proxy),
+    encoded_slashes,
     query: Object.freeze({ max_keys }),
   });
 }
@@ -313,7 +326,7 @@ export class BindenRequest extends IncomingMessage {
     const { path, query } =
       target === "*" && this.method === "OPTIONS"
         ? { path: "*", query: "" }
-        : BindenRequest.#target(rest);
+        : BindenRequest.#target(rest, this.options.encoded_slashes);
     const origin = this.#origin(authority);
     if (origin === null) {
       throw new BindenError(400);
@@ -377,9 +390,14 @@ export class BindenRequest extends IncomingMessage {
    * The path and the query of a request-target (without its authority), which
    * must be in origin-form, without a fragment, a backslash, an invalid
    * percent-encoding, or dot-segments (which the URL parser would remove, so
-   * that the request would be routed to another path).
+   * that the request would be routed to another path); nor, unless
+   * `encoded_slashes`, with an encoded slash or backslash in its path (a
+   * segment that a router would see as several, once decoded).
    */
-  static #target(rest: string): { path: string; query: string } {
+  static #target(
+    rest: string,
+    encoded_slashes: boolean,
+  ): { path: string; query: string } {
     if (
       !rest.startsWith("/") ||
       /[#\\]/u.test(rest) ||
@@ -391,7 +409,10 @@ export class BindenRequest extends IncomingMessage {
     const index = rest.indexOf("?");
     const path = index === -1 ? rest : rest.slice(0, index);
     const query = index === -1 ? "" : rest.slice(index + 1);
-    if (path.split("/").some((part) => /^(?:\.|%2e){1,2}$/iu.test(part))) {
+    if (
+      path.split("/").some((part) => /^(?:\.|%2e){1,2}$/iu.test(part)) ||
+      (!encoded_slashes && /%(?:2f|5c)/iu.test(path))
+    ) {
       throw new BindenError(400);
     }
     return { path, query };

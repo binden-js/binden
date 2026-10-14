@@ -27,6 +27,11 @@ function portOf(server: { address(): unknown }): number {
 
 let url = "";
 
+/** Throws a `BindenError` with the status 400 */
+function badRequest(error: unknown): boolean {
+  return error instanceof BindenError && error.status === 400;
+}
+
 suite("BindenRequest", () => {
   let server: Server<typeof BindenRequest>;
 
@@ -390,6 +395,50 @@ suite("BindenRequest", () => {
     }
   });
 
+  test(".URL (`encoded_slashes`)", () => {
+    const create = (
+      target: string,
+      encoded_slashes?: boolean,
+    ): BindenRequest => {
+      const options = validateRequestOptions({ encoded_slashes });
+      class Encoded extends BindenRequest {
+        // eslint-disable-next-line class-methods-use-this -- a fixture
+        protected override get options(): IRequestOptions {
+          return options;
+        }
+      }
+      const request = new Encoded(new Socket());
+      request.url = target;
+      request.headers = { host: "trusted.test" };
+      return request;
+    };
+    const encoded = [
+      "/a%2Fb",
+      "/a%2fb",
+      "/a%5Cb",
+      "/a%5cb",
+      "/%2F",
+      "http://trusted.test/a%2Fb",
+    ];
+    for (const target of encoded) {
+      // A segment that a router would see as several once decoded
+      throws(() => create(target).URL, badRequest, target);
+      throws(() => create(target, false).URL, badRequest, target);
+      deepStrictEqual(
+        create(target, true).URL.pathname,
+        target.replace("http://trusted.test", ""),
+      );
+    }
+    // Decoded once, `%252F` is `%2F`; the query is not a path
+    deepStrictEqual(create("/a%252Fb").URL.pathname, "/a%252Fb");
+    deepStrictEqual(create("/a?b=%2F%5C").URL.search, "?b=%2F%5C");
+    // The default options of a request
+    const request = new BindenRequest(new Socket());
+    request.url = "/a%2Fb";
+    request.headers = { host: "trusted.test" };
+    throws(() => request.URL, badRequest);
+  });
+
   test(".secure (the protocol of the connection)", () => {
     const tls = new TLSSocket(new Socket());
     const request = new BindenRequest(tls);
@@ -576,6 +625,7 @@ suite("validateRequestOptions()", () => {
     const options = validateRequestOptions();
     deepStrictEqual(options, {
       trust_proxy: { trust: false, headers: "forwarded" },
+      encoded_slashes: false,
       query: { max_keys: 1000 },
     });
     ok(Object.isFrozen(options));
@@ -610,6 +660,22 @@ suite("validateRequestOptions()", () => {
         validateRequestOptions({ trust_proxy: "1" as unknown as ITrustProxy }),
       new TypeError("`trust_proxy` is not a boolean, number or function"),
     );
+  });
+
+  test("`encoded_slashes`", () => {
+    deepStrictEqual(
+      validateRequestOptions({ encoded_slashes: true }).encoded_slashes,
+      true,
+    );
+    for (const encoded_slashes of [1, "true", null]) {
+      throws(
+        () =>
+          validateRequestOptions({
+            encoded_slashes: encoded_slashes as unknown as boolean,
+          }),
+        new TypeError("`encoded_slashes` is not a boolean"),
+      );
+    }
   });
 
   test("`query`", () => {
