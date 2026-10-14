@@ -12,7 +12,15 @@ the same version.
 | [`@binden/compression`](packages/compression) | Compression middleware                  | MIT     |
 | [`@binden/multipart`](packages/multipart)     | `multipart/form-data` parser middleware | MIT     |
 
-API documentation: <https://binden-js.github.io/binden/>
+## Documentation
+
+- [API documentation](https://binden-js.github.io/binden/) of every package, and the README of
+  each package (linked above) for its usage;
+- [Migrating to binden 4](MIGRATION-4.md): from `binden` 2 and the earlier releases of the
+  `@binden/*` packages;
+- [Running binden in production](PRODUCTION.md): timeouts, graceful shutdown, reverse proxies,
+  limits, logging, static files, compression, server-sent events and security headers;
+- [Contributing](CONTRIBUTING.md), and [reporting a vulnerability](SECURITY.md).
 
 ## Development
 
