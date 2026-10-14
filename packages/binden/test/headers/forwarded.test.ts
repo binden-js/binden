@@ -40,9 +40,13 @@ suite("Forwarded", () => {
 
     const parsed = Forwarded.fromString(input);
 
-    deepStrictEqual(parsed.length, 2);
+    // `ignored=1` and `for=""` are valid elements, while `ignored` (not a
+    // parameter) and `for="` (an unterminated quoted string) are not
+    deepStrictEqual(parsed.length, 4);
 
-    const [one, two] = parsed;
+    const [one, two, extension, empty] = parsed;
+    deepStrictEqual(extension.toString(), "for=unknown");
+    deepStrictEqual(empty.for, "");
 
     deepStrictEqual(one.for, forwarded1.for);
     deepStrictEqual(one.by, forwarded1.by);
@@ -57,6 +61,24 @@ suite("Forwarded", () => {
     deepStrictEqual(two.proto, forwarded2.proto);
     deepStrictEqual(two.secret, forwarded2.secret);
     deepStrictEqual(two.toString(), forwarded2.toString());
+  });
+
+  test(".parse() (the elements in their positions)", () => {
+    const parse = (input?: string): (string | null)[] =>
+      Forwarded.parse(input).map((element) => element?.toString() ?? null);
+
+    deepStrictEqual(parse(), []);
+    deepStrictEqual(
+      parse(`for=a;proto=https, garbage, for="b,c", ext=1, , for=d;for=e`),
+      ["for=a;proto=https", null, "for=b,c", "for=unknown", null],
+    );
+    // The values that some proxies send unquoted
+    deepStrictEqual(parse("for=2001:db8::1;proto=https, for=[::1]:80"), [
+      "for=2001:db8::1;proto=https",
+      `for="[::1]:80"`,
+    ]);
+    // A repeated parameter, also in another case, is ambiguous
+    deepStrictEqual(parse("proto=http;PROTO=https"), [null]);
   });
 
   test(".fromString() (no `for` directive)", () => {

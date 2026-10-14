@@ -412,6 +412,15 @@ suite("BindenRequest", () => {
     deepStrictEqual(create(true).protocol, "http:");
     deepStrictEqual(create(true, "for=1.2.3.4").protocol, "http:");
     deepStrictEqual(create(true, "for=1.2.3.4;proto=ftp").protocol, "http:");
+    // The trusted element is the one in its position: an invalid element of a
+    // proxy does not let the one of the client take its place
+    deepStrictEqual(create(1, "for=x;proto=https, garbage").protocol, "http:");
+    deepStrictEqual(create(1, "proto=https, ext=1").protocol, "http:");
+    deepStrictEqual(create(1, `proto=https, for=""`).protocol, "http:");
+    deepStrictEqual(create(1, `proto=https, for="a,b"`).protocol, "http:");
+    deepStrictEqual(create(1, "proto=http;proto=https").protocol, "http:");
+    // Empty elements are not elements
+    deepStrictEqual(create(1, "proto=https, , ").protocol, "https:");
     // Over TLS, a trusted element without `proto` keeps `https:`
     const tls = new TLSSocket(new Socket());
     deepStrictEqual(create(true, "for=1.2.3.4", tls).protocol, "https:");

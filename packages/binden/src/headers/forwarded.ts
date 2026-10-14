@@ -1,3 +1,5 @@
+import { split, unquote } from "./list.js";
+
 export interface IForwarded {
   for: string;
   by?: string | null;
@@ -55,47 +57,55 @@ export class Forwarded implements IForwarded {
     return output;
   }
 
+  /** The valid elements of the header (see `.parse()`) */
   public static fromString(input?: string): Forwarded[] {
-    if (typeof input === "undefined" || input.length === 0) {
+    return Forwarded.parse(input).filter(
+      (element): element is Forwarded => element !== null,
+    );
+  }
+
+  /**
+   * The elements of the header in their order, `null` for an invalid one
+   * (RFC 7239, section 4): a parameter that is not `name=value` (a quoted
+   * string, or a value without spaces and separators, also the unquoted IPv6
+   * addresses and ports that some proxies send), or that occurs more than
+   * once. Empty elements are ignored (RFC 9110, section 5.6.1). Their position
+   * tells which proxy has added them: every proxy appends its own.
+   */
+  public static parse(input?: string): (Forwarded | null)[] {
+    if (typeof input === "undefined") {
       return [];
     }
-
-    return input
-      .split(",")
-      .map((e) => Forwarded.#parseDirectives(e))
-      .filter((e): e is IForwarded => Boolean(e))
-      .map((e) => new Forwarded(e));
+    return split(input, ",")
+      .filter((element) => !/^[\s;]*$/u.test(element))
+      .map((element) => Forwarded.#parseElement(element));
   }
 
   static #formatDirective(input: string): string {
     return input.startsWith("[") && input.includes("]") ? `"${input}"` : input;
   }
 
-  static #parseDirectives(input: string): IForwarded | null {
-    const props = ["for", "by", "secret", "host", "proto"];
-
-    const directives = input
-      .split(";")
-      .map((e) => e.split("="))
-      .map<[string, string]>(([k, v]) => [
-        k.trim(),
-        (v as string | undefined)?.trim() ?? "",
-      ])
-      .map<[string, string]>(([k, v]) => [
-        k.toLowerCase(),
-        v.startsWith(`"`) && v.endsWith(`"`)
-          ? v.length > 2
-            ? v.substring(1, v.length - 1)
-            : ""
-          : v,
-      ])
-      .filter(([k, v]) => k && v && props.includes(k));
-
-    return directives.length
-      ? directives.reduce<IForwarded>((a, [k, v]) => ({ ...a, [k]: v }), {
-          for: "unknown",
-        })
-      : null;
+  static #parseElement(input: string): Forwarded | null {
+    const parameters = new Map<string, string>();
+    const pairs = split(input, ";").filter((pair) => pair.trim() !== "");
+    for (const pair of pairs) {
+      const { name = "", value = "" } =
+        /^\s*(?<name>[!#$%&'*+.^_`|~\w-]+)\s*=\s*(?<value>[^\s",;]+|"(?:[^"\\]|\\.)*")\s*$/u.exec(
+          pair,
+        )?.groups ?? {};
+      const key = name.toLowerCase();
+      if (key === "" || parameters.has(key)) {
+        return null;
+      }
+      parameters.set(key, unquote(value));
+    }
+    return new Forwarded({
+      for: parameters.get("for") ?? "unknown",
+      by: parameters.get("by") ?? null,
+      host: parameters.get("host") ?? null,
+      proto: parameters.get("proto") ?? null,
+      secret: parameters.get("secret") ?? null,
+    });
   }
 }
 

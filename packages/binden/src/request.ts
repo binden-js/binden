@@ -118,7 +118,8 @@ export class BindenRequest extends IncomingMessage {
     const tls: IProtocol =
       this.socket instanceof TLSSocket ? "https:" : "http:";
     const trust = this.trust_proxy;
-    const { forwarded } = this;
+    // In their positions: an element that is not valid is not skipped
+    const forwarded = Forwarded.parse(this.headers.forwarded);
     if (trust === false || trust === 0 || forwarded.length === 0) {
       return tls;
     }
