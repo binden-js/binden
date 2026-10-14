@@ -4,6 +4,7 @@
 import { ok } from "node:assert/strict";
 import { test } from "node:test";
 import { Ajv as AJV, type JTDDataType } from "ajv/dist/jtd.js";
+import type { Context } from "binden";
 
 import {
   BodyParser,
@@ -53,6 +54,18 @@ test("types", () => {
   // @ts-expect-error -- `parse` gets a string
   is(new BodyParser({ parse: (input: number): number => input }));
 
+  // `verify` gets the decoded body, the context and the encoded body (if any)
+  is(
+    new BodyParser({
+      verify: (decoded, context, { encoded }): void => {
+        is<Buffer>(decoded);
+        is<Context>(context);
+        is<Buffer | null>(encoded);
+      },
+    }),
+  );
+  is(new BodyParser({ verify: (): Promise<boolean> => Promise.resolve(true) }));
+
   // `type` returns a kind (or `null`)
   is(
     new BodyParser({
@@ -76,6 +89,8 @@ test("types", () => {
     raw: none,
     strict: none,
     parameter_limit: none,
+    verify: none,
+    verify_encoded: none,
     disabled: none,
     ignore_errors: none,
   };

@@ -36,6 +36,23 @@ export type IParse<T = unknown> = (
   input: string,
 ) => T | undefined | Promise<T | undefined>;
 
+/** What `verify` gets besides the decoded body */
+export interface IVerifyInfo {
+  /** The body as received (before its content codings are removed), with `verify_encoded` only */
+  readonly encoded: Buffer | null;
+}
+
+/**
+ * Checks a body (e.g. its signature) before it is parsed, synchronously or
+ * not: a `BindenError` that it throws is the reply, any other failure is a
+ * `500 Internal Server Error`
+ */
+export type IVerify = (
+  decoded: Buffer,
+  context: Context,
+  info: IVerifyInfo,
+) => unknown;
+
 /** The options of a `BodyParser` */
 export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
   /**
@@ -66,6 +83,10 @@ export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
   strict?: boolean | undefined;
   /** The most parameters of a form (`1000`): more get a `413 Content Too Large` */
   parameter_limit?: number | undefined;
+  /** Checks the decoded body before it is parsed, even when it is empty */
+  verify?: IVerify | undefined;
+  /** Whether `verify` gets the body as received too (`false`) */
+  verify_encoded?: boolean | undefined;
 }
 
 /** A decoder of a content coding, created once every coding is known to be supported */
@@ -202,10 +223,10 @@ function abortError(reason: unknown): Error {
 }
 
 /**
- * Counts the bytes that pass through it: more than `limit` fails it with a
- * `413 Content Too Large`
+ * Counts the bytes that pass through it (and keeps them in `kept`, if any):
+ * more than `limit` fails it with a `413 Content Too Large`
  */
-function counter(limit: number): Transform {
+function counter(limit: number, kept: Buffer[] | null): Transform {
   let size = 0;
   return new Transform({
     transform(chunk: Buffer, _encoding, callback): void {
@@ -214,6 +235,7 @@ function counter(limit: number): Transform {
         callback(new BindenError(413));
         return;
       }
+      kept?.push(chunk);
       callback(null, chunk);
     },
   });
@@ -233,6 +255,8 @@ export class BodyParser<T = unknown> extends Middleware {
   readonly #type: ((content_type: ContentType) => unknown) | null;
   readonly #strict: boolean;
   readonly #parameter_limit: number;
+  readonly #verify: IVerify | null;
+  readonly #verify_encoded: boolean;
 
   public constructor({
     parse,
@@ -242,17 +266,22 @@ export class BodyParser<T = unknown> extends Middleware {
     raw = false,
     strict = true,
     parameter_limit = 1000,
+    verify,
+    verify_encoded = false,
     ...rest
   }: IBodyParserOptions<T> = {}) {
     super(rest);
     if (typeof parse !== "undefined" && typeof parse !== "function") {
       throw new TypeError("`parse` is not a function");
+    } else if (typeof verify !== "undefined" && typeof verify !== "function") {
+      throw new TypeError("`verify` is not a function");
     }
     this.#limit = validateLimit("limit", limit);
     this.#encoded_limit = validateLimit("encoded_limit", encoded_limit);
     this.#parameter_limit = validateLimit("parameter_limit", parameter_limit);
     validateBoolean("raw", raw);
     this.#strict = validateBoolean("strict", strict);
+    this.#verify_encoded = validateBoolean("verify_encoded", verify_encoded);
 
     if (typeof type === "function") {
       if (raw) {
@@ -274,6 +303,7 @@ export class BodyParser<T = unknown> extends Middleware {
       typeof parse === "undefined" || (parse as unknown) === JSON.parse
         ? null
         : parse;
+    this.#verify = verify ?? null;
   }
 
   public async run(context: Context): Promise<void> {
@@ -299,7 +329,27 @@ export class BodyParser<T = unknown> extends Middleware {
     claimed.add(request);
 
     const { decoders, decoder } = this.#prepare(context, kind, log);
-    const decoded = await this.#read(context, decoders, log);
+    const { decoded, encoded } = await this.#read(context, decoders, log);
+
+    if (this.#verify) {
+      const verify = this.#verify;
+      const info: IVerifyInfo = {
+        encoded: this.#verify_encoded ? (encoded ?? decoded) : null,
+      };
+      const outcome = await BodyParser.#call(
+        () => verify(decoded, context, info),
+        context,
+        log,
+      );
+      if (!outcome.ok) {
+        log.debug("`verify` has refused the body", {
+          failure: serializers.error(outcome.error),
+        });
+        throw outcome.error instanceof BindenError
+          ? outcome.error
+          : new BindenError(500, { cause: outcome.error });
+      }
+    }
 
     let text = "";
     if (decoder) {
@@ -448,15 +498,17 @@ export class BodyParser<T = unknown> extends Middleware {
     context: Context,
     decoders: readonly IDecoder[],
     log: ILog,
-  ): Promise<Buffer> {
+  ): Promise<{ decoded: Buffer; encoded: Buffer | null }> {
     const { request, response, signal } = context;
-    const wire = counter(this.#encoded_limit);
+    const kept: Buffer[] | null =
+      this.#verify_encoded && decoders.length > 0 ? [] : null;
+    const wire = counter(this.#encoded_limit, kept);
     const stages: Duplex[] = [wire];
     for (const create of decoders) {
-      stages.push(create(), counter(this.#limit));
+      stages.push(create(), counter(this.#limit, null));
     }
     if (decoders.length === 0) {
-      stages.push(counter(this.#limit));
+      stages.push(counter(this.#limit, null));
     }
     const chunks: Buffer[] = [];
     const sink = new Writable({
@@ -515,7 +567,10 @@ export class BodyParser<T = unknown> extends Middleware {
           const invalid = new BindenError(400, { cause: error });
           fail(invalid, "The body cannot be decoded");
         } else if (settle()) {
-          resolve(Buffer.concat(chunks));
+          resolve({
+            decoded: Buffer.concat(chunks),
+            encoded: kept === null ? null : Buffer.concat(kept),
+          });
         }
       });
       request.pipe(wire);
@@ -577,7 +632,7 @@ export class BodyParser<T = unknown> extends Middleware {
   }
 
   /**
-   * Calls a callback of the options (`parse`) and awaits its
+   * Calls a callback of the options (`parse` or `verify`) and awaits its
    * result, unless the request is aborted first: its late result is then
    * ignored, and its late rejection observed
    */

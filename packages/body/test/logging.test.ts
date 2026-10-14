@@ -29,6 +29,9 @@ suite("BodyParser (logging)", () => {
     for (const parser of [
       new BodyParser(),
       new BodyParser({ parse: (input): unknown => JSON.parse(input) }),
+      new BodyParser({
+        verify: (decoded): unknown => JSON.parse(decoded.toString()),
+      }),
     ]) {
       const [status, logger] = await post(parser, secret, {
         "Content-Type": ct_json,

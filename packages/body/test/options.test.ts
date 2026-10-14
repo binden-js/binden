@@ -9,10 +9,14 @@ function options(input: Record<string, unknown>): IBodyParserOptions {
 }
 
 suite("BodyParser (options)", () => {
-  test("`parse` is a function", () => {
+  test("`parse` and `verify` are functions", () => {
     throws(
       () => new BodyParser(options({ parse: 2 })),
       new TypeError("`parse` is not a function"),
+    );
+    throws(
+      () => new BodyParser(options({ verify: "verify" })),
+      new TypeError("`verify` is not a function"),
     );
   });
 
@@ -42,7 +46,7 @@ suite("BodyParser (options)", () => {
   });
 
   test("the flags are booleans", () => {
-    for (const name of ["raw", "strict"]) {
+    for (const name of ["raw", "strict", "verify_encoded"]) {
       for (const value of [1, "true", null]) {
         throws(
           () => new BodyParser(options({ [name]: value })),

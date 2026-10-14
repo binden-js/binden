@@ -151,6 +151,33 @@ suite("BodyParser (aborted requests)", () => {
   });
 
   test(
+    "a `verify` that never settles is abandoned at the deadline",
+    { timeout: 10_000 },
+    async () => {
+      const watched = watch(new BodyParser({ verify: never }));
+      const server = await listen(
+        new Binden({ timeout: 100 }).use(watched.middleware),
+      );
+      try {
+        const { req, response } = upload(
+          server,
+          { "Content-Type": ct_json, "Content-Length": 2 },
+          "[]",
+        );
+        req.end();
+        const reply = await within(response);
+        reply.resume();
+        deepStrictEqual(reply.statusCode, 503);
+        const error = failure(await within(watched.settled));
+        ok(error instanceof BindenAbortError);
+        deepStrictEqual(error.reason, "deadline");
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  test(
     "a `parse` that never settles is abandoned once the client has gone away",
     { timeout: 10_000 },
     async () => {

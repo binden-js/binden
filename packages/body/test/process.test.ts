@@ -18,10 +18,10 @@ function run(fixture: string): Record<string, unknown> {
 }
 
 suite("BodyParser (process safety)", () => {
-  test("late rejections of `parse` and `type` do not crash the process", () => {
+  test("late rejections of `verify`, `parse` and `type` do not crash the process", () => {
     deepStrictEqual(run("late-rejections.ts"), {
       status: 0,
-      stdout: "503 500\n",
+      stdout: "503 503 503 500\n",
       stderr: "",
     });
   });

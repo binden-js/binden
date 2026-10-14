@@ -50,6 +50,8 @@ The default export is a `BodyParser` with the default options (no limits).
 | `raw`             | `false`           | Whether `application/octet-stream` is parsed, as a `Buffer`                                                                 |
 | `parse`           | `JSON.parse`      | Parses a JSON body, synchronously or not (see [Custom `parse`](#custom-parse))                                              |
 | `strict`          | `true`            | Whether the default `parse` accepts only an object or an array                                                              |
+| `verify`          | none              | Checks the decoded body before it is parsed (see [Verification](#verification))                                             |
+| `verify_encoded`  | `false`           | Whether `verify` gets the body as received too                                                                              |
 | `disabled`        | `false`           | Whether the middleware is skipped                                                                                           |
 | `ignore_errors`   | `false`           | Whether its errors are ignored                                                                                              |
 
@@ -168,10 +170,52 @@ new Binden()
   });
 ```
 
+## Verification
+
+`verify(decoded, context, { encoded })` checks a body before it is parsed, synchronously or not:
+it gets the body once its content codings are removed (a `Buffer`, before its charset is decoded),
+even when it is empty, and, with `verify_encoded: true`, the body as received (`encoded`, within
+`encoded_limit`; `null` otherwise). A `BindenError` that it throws is the reply, any other failure
+is a `500 Internal Server Error`, and its result is ignored. For example, the signature of a
+webhook:
+
+```typescript
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { BindenError, type Context, Router } from "binden";
+import { BodyParser } from "@binden/body";
+
+const secret = process.env.WEBHOOK_SECRET ?? "";
+
+const webhook = new BodyParser({
+  limit: 1024 * 1024,
+  encoded_limit: 1024 * 1024,
+  verify: (decoded: Buffer, context: Context): void => {
+    const header = context.request.headers["x-signature"];
+    const signature = Buffer.from(
+      typeof header === "string" ? header : "",
+      "hex",
+    );
+    const expected = createHmac("sha256", secret).update(decoded).digest();
+    if (
+      signature.length !== expected.length ||
+      !timingSafeEqual(signature, expected)
+    ) {
+      throw new BindenError(401);
+    }
+  },
+});
+
+app.use(
+  "/webhook",
+  new Router().post(webhook, (context: Context) => context.send()),
+);
+```
+
 ## Aborted requests
 
-The reading and `parse` stop once `context.signal` is aborted: a promise of `parse` that never
-settles is abandoned (its late rejection is observed), and the parser does not stay pending.
+The reading, `verify` and `parse` stop once `context.signal` is aborted: a promise of `verify` or
+`parse` that never settles is abandoned (its late rejection is observed), and the parser does not
+stay pending.
 
 - A client that goes away gets a `BindenError(400, { code: "aborted" })` (logged at `debug`).
 - After the deadline of the request (or the timeout of a shutdown), the parser rejects with the
@@ -188,8 +232,8 @@ settles is abandoned (its late rejection is observed), and the parser does not s
 | A limit is exceeded (`limit`, `encoded_limit`, `parameter_limit`)                                                       | `413 Content Too Large`        |
 | An unknown or unsupported content coding, more than two codings, an unknown charset                                     | `415 Unsupported Media Type`   |
 | A content type that is not selected                                                                                     | skipped (the body is not read) |
-| A `BindenError` of `parse`                                                                                              | that error                     |
-| Any other failure of `parse`, a `type` function that fails, a body that something else has read                         | `500 Internal Server Error`    |
+| A `BindenError` of `parse` or `verify`                                                                                  | that error                     |
+| Any other failure of `parse` or `verify`, a `type` function that fails, a body that something else has read             | `500 Internal Server Error`    |
 
 The parser never logs the body itself: its logs have the reason of the refusal, and the type,
 known `code` and status of an error.
