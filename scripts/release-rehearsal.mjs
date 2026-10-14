@@ -2,8 +2,11 @@
 // Rehearses the release of the current commit, without tagging or publishing
 // anything: semantic-release (with its analyzer and its notes only) computes the
 // next version in a clone whose remote is a local mirror, then
-// `scripts/release.mjs` checks that no workspace is published at it yet, and
-// sets it in every workspace of the clone.
+// `scripts/release.mjs` runs as the release job does in the clone: `verify` (no
+// workspace is published at that version yet), `version`, `pack` (the archives and
+// their manifest), and `publish --dry-run` (the registry check, then `npm publish
+// --dry-run` of every archive). When no release is due, the current version is
+// packed.
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
@@ -20,6 +23,7 @@ const root = join(import.meta.dirname, "..");
 const dir = mkdtempSync(join(tmpdir(), "binden-rehearsal-"));
 const mirror = join(dir, "mirror.git");
 const work = join(dir, "work");
+const archives = join(dir, "archives");
 const plugins = new Set([
   "@semantic-release/commit-analyzer",
   "@semantic-release/release-notes-generator",
@@ -86,13 +90,26 @@ try {
     throw new Error(`semantic-release failed (${status})`);
   }
 
+  // `pack` packs committed files only
+  git(["checkout", "--quiet", "--", ".releaserc.json"]);
+
   const version = /The next release version is (?<version>\S+)/u.exec(stdout)
     ?.groups?.version;
   if (typeof version === "undefined") {
-    log("no release is due");
+    const { workspaces } = JSON.parse(
+      readFileSync(join(work, "package.json"), "utf8"),
+    );
+    const { version: current } = JSON.parse(
+      readFileSync(join(work, workspaces[0], "package.json"), "utf8"),
+    );
+    log(`no release is due: packing the current version (${current})`);
+    node(["scripts/release.mjs", "version", current]);
+    node(["scripts/release.mjs", "pack", archives]);
   } else {
     node(["scripts/release.mjs", "verify", version]);
     node(["scripts/release.mjs", "version", version]);
+    node(["scripts/release.mjs", "pack", archives]);
+    node(["scripts/release.mjs", "publish", archives, "--dry-run"]);
     log(`the next release is ${version}`);
   }
 } finally {

@@ -139,8 +139,8 @@
       "@semantic-release/exec",
       {
         "verifyReleaseCmd": "node scripts/release.mjs verify ${nextRelease.version}",
-        "prepareCmd": "node scripts/release.mjs version ${nextRelease.version}",
-        "publishCmd": "node scripts/release.mjs publish"
+        "prepareCmd": "node scripts/release.mjs version ${nextRelease.version} && node scripts/release.mjs pack \"$RELEASE_DIR\"",
+        "publishCmd": "node scripts/release.mjs publish \"$RELEASE_DIR\""
       }
     ],
     "@semantic-release/github"

@@ -17,6 +17,8 @@
     "dist/src/context.js",
     "dist/src/error.d.ts",
     "dist/src/error.js",
+    "dist/src/exchange.d.ts",
+    "dist/src/exchange.js",
     "dist/src/headers/accept-encoding.d.ts",
     "dist/src/headers/accept-encoding.js",
     "dist/src/headers/authorization.d.ts",

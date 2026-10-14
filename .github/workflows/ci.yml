@@ -58,7 +58,7 @@ jobs:
       - name: ESLint
         run: npm run eslint
 
-      - name: Tooling tests (release script, test runner)
+      - name: Tooling tests (release scripts, test runner)
         run: npm run test:tooling
 
       - name: Packed files (scripts/pack-files.json)
@@ -67,8 +67,9 @@ jobs:
       - name: Consumer check (packed packages, TypeScript and ESM)
         run: npm run consumer:check
 
-      # The next version and its release notes, as semantic-release computes them (nothing is
-      # tagged or published)
+      # The next version, its release notes and its archives, made as the release job makes
+      # them (scripts/release.mjs `verify`, `version`, `pack` and `publish --dry-run`):
+      # nothing is tagged or published
       - name: Release rehearsal
         run: npm run release:rehearsal
 
@@ -139,7 +140,7 @@ jobs:
       - name: Tests
         run: npm test
 
-      - name: Tooling tests (release script, test runner)
+      - name: Tooling tests (release scripts, test runner)
         run: npm run test:tooling
 
   release:
@@ -175,21 +176,23 @@ jobs:
         run: npm ci
 
       # Tags the release, publishes every workspace with the same version (see
-      # scripts/release.mjs) and creates the GitHub Release, whose notes are the changelog.
-      # Nothing is committed to `main`, so its branch protection applies as usual.
-      # npm uses trusted publishing (OIDC) when it is configured for a package and
-      # falls back to NODE_AUTH_TOKEN otherwise.
+      # scripts/release.mjs: `version`, `pack` into RELEASE_DIR, then `publish` of these
+      # archives once the registry is checked for all of them) and creates the GitHub Release,
+      # whose notes are the changelog. Nothing is committed to `main`, so its branch
+      # protection applies as usual. npm uses trusted publishing (OIDC) when it is configured
+      # for a package and falls back to NODE_AUTH_TOKEN otherwise.
       - name: Release
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
+          RELEASE_DIR: ${{ runner.temp }}/release
 
   # Publishes the packages of a release that are not published yet, from the commit of its
-  # tag (`scripts/release.mjs` checks that the published ones come from it), and creates its
-  # GitHub Release when it is missing. Run from the Actions tab (in this workflow, which npm
-  # trusts for publishing).
+  # tag (`scripts/release.mjs` checks that the published ones are the same archives), and
+  # creates its GitHub Release when it is missing. Run from the Actions tab (in this
+  # workflow, which npm trusts for publishing).
   recover:
     if: github.event_name == 'workflow_dispatch'
 
@@ -220,10 +223,13 @@ jobs:
       - name: Install dependencies and build the workspaces
         run: npm ci
 
+      # Packs the archives again, checks the registry for all of them, then publishes the
+      # missing ones with provenance
       - name: Publish the packages that are not published yet
         run: |
           node scripts/release.mjs version "$VERSION"
-          node scripts/release.mjs publish --skip-existing
+          node scripts/release.mjs pack "$RUNNER_TEMP/release"
+          node scripts/release.mjs publish "$RUNNER_TEMP/release" --skip-existing
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
