@@ -12,20 +12,35 @@ export type IMultipartConfig = Omit<BusboyConfig, "headers">;
 export interface IMultipartOptions extends IMiddlewareParams {
   config?: IMultipartConfig;
   throw_limits?: boolean;
+  /**
+   * The largest body in bytes, all of its parts included (no limit by
+   * default): a larger one is not read further, and gets a
+   * `413 Content Too Large`
+   */
+  limit?: number;
 }
 
 export class Multipart extends Middleware {
   readonly #config: IMultipartConfig;
   readonly #throw_limits: boolean;
+  readonly #limit: number | null;
 
   public constructor({
     config = {},
     throw_limits = true,
+    limit,
     ...rest
   }: IMultipartOptions = {}) {
     super(rest);
+    if (
+      typeof limit !== "undefined" &&
+      !(Number.isSafeInteger(limit) && limit >= 0)
+    ) {
+      throw new TypeError("`limit` is not a non-negative integer");
+    }
     this.#config = config;
     this.#throw_limits = throw_limits;
+    this.#limit = limit ?? null;
   }
 
   public async run(context: Context): Promise<void> {
@@ -56,14 +71,19 @@ export class Multipart extends Middleware {
 
     await new Promise<void>((resolve, reject) => {
       const fd = new FormData();
+      let size = 0;
+      let tooLarge = false;
+      const limit = this.#limit;
       const bb = busboy({ headers, ...this.#config })
         .once("error", (cause) => {
           const message = "`busboy` internal error";
           reject(new BindenError(415, { message, cause }));
         })
         .once("close", () => {
-          request.body = fd;
-          resolve();
+          if (!tooLarge) {
+            request.body = fd;
+            resolve();
+          }
         })
         .on("field", (name, value, { valueTruncated }) => {
           // `nameTruncated` is never set for `multipart/form-data` (busboy applies
@@ -129,6 +149,21 @@ export class Multipart extends Middleware {
           bb.destroy(error);
         }
       });
+      if (limit !== null) {
+        request.on("data", (chunk: Buffer) => {
+          size += chunk.byteLength;
+          if (size > limit && !tooLarge) {
+            // Not read further: the connection is closed after the reply
+            tooLarge = true;
+            log.debug("The body is too large", { limit });
+            request.unpipe(bb);
+            request.pause();
+            bb.destroy();
+            context.setHeader("Connection", "close");
+            reject(new BindenError(413));
+          }
+        });
+      }
       request.pipe(bb);
     });
   }

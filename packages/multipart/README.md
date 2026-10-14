@@ -29,6 +29,23 @@ const next = (context: Context): Promise<void> => {
 app.use("/formdata", new Router().post(formDataParser, next));
 ```
 
+### Limits
+
+Fields and files are read into memory, and nothing limits them by default (`busboy` limits only
+the size of a field, to 1 MiB). Set the `busboy` [limits](https://github.com/mscdex/busboy/#api)
+of the files (`fileSize`, `files`, `parts`), and `limit`, the largest body in bytes (all of its
+parts included): a larger one gets `413 Content Too Large`, and is not read further (the
+connection is closed after the reply).
+
+```typescript
+import { Multipart } from "@binden/multipart";
+
+const formDataParser = new Multipart({
+  limit: 20 * 1024 * 1024,
+  config: { limits: { fileSize: 10 * 1024 * 1024, files: 10, parts: 1000 } },
+});
+```
+
 ### Truncated `FormData`
 
 Set the `throw_limits` to `false` to avoid throwing errors. `FormData` might be truncated due to `config.limits` (See `busboy` [limits](https://github.com/mscdex/busboy/#api))

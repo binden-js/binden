@@ -1,6 +1,6 @@
 /* eslint-disable init-declarations, sort-imports */
-import { deepEqual, ok } from "node:assert/strict";
-import { request, Server } from "node:http";
+import { deepEqual, ok, throws } from "node:assert/strict";
+import { Agent, request, Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { Binden, Context } from "binden";
@@ -20,6 +20,55 @@ describe("Multipart", () => {
         resolve();
       });
     });
+  });
+
+  it("`limit` (the size of the body, all parts included)", async () => {
+    const received: unknown[] = [];
+    app.use(new Multipart({ limit: 1024 }), async (ct: Context) => {
+      received.push((ct.request.body as FormData).get("field"));
+      await ct.send();
+    });
+    // Keeps its connections (unlike the global agent of the tests)
+    const agent = new Agent({ keepAlive: true });
+    const send = async (form: FormData): Promise<unknown> => {
+      const encoded = new Request(url, { method: "POST", body: form });
+      const body = Buffer.from(await encoded.arrayBuffer());
+      const type = encoded.headers.get("Content-Type") ?? "";
+      return new Promise((resolve, reject) => {
+        request(url, {
+          agent,
+          method: "POST",
+          headers: { "Content-Type": type },
+        })
+          .on("response", (response) => {
+            response.resume().once("end", () => {
+              resolve([response.statusCode, response.headers.connection]);
+            });
+          })
+          .on("error", reject)
+          .end(body);
+      });
+    };
+    const small = new FormData();
+    small.append("field", "value");
+    const large = new FormData();
+    large.append("field", "value");
+    large.append("file", new File([new Uint8Array(1024)], "file.bin"));
+
+    deepEqual(await send(small), [200, "keep-alive"]);
+    // Not read further: the connection is closed after the reply
+    deepEqual(await send(large), [413, "close"]);
+    deepEqual(received, ["value"]);
+    agent.destroy();
+  });
+
+  it("`limit` (invalid)", () => {
+    for (const limit of [-1, 0.5, Number.NaN]) {
+      throws(
+        () => new Multipart({ limit }),
+        new TypeError("`limit` is not a non-negative integer"),
+      );
+    }
   });
 
   it("Skips when method is `GET`", async () => {
