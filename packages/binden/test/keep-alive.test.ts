@@ -14,6 +14,18 @@ interface IExchange {
   reused: boolean;
 }
 
+/**
+ * As a compression: the `Content-Length` is removed when the headers are
+ * committed, and the body is chunked
+ */
+function dropLength({ response }: Context): void {
+  const writeHead = response.writeHead.bind(response);
+  response.writeHead = (code: number): typeof response => {
+    response.removeHeader("Content-Length");
+    return writeHead(code);
+  };
+}
+
 // The other tests use a fresh connection for every request (`test/setup.ts`):
 // here every request reuses the one connection of the agent. A response whose
 // framing does not match its body leaves the next one waiting for bytes that
@@ -40,6 +52,14 @@ suite("Keep-alive", () => {
     },
     "/short": (context) =>
       context.setHeader("Content-Length", 10).send(Readable.from(["abc"])),
+    "/chunked": (context) => {
+      dropLength(context);
+      return context.send("chunked");
+    },
+    "/chunked-error": (context) => {
+      dropLength(context);
+      throw new BindenError(400, { expose: true, message: "error" });
+    },
   };
 
   const exchange = (
@@ -120,6 +140,21 @@ suite("Keep-alive", () => {
       body: "ok",
       reused: true,
     });
+  });
+
+  test("a body whose length is removed at its commit is chunked, then another request", async () => {
+    for (const [path, status, body] of [
+      ["/chunked", 200, "chunked"],
+      ["/chunked-error", 400, "error"],
+    ] as const) {
+      deepStrictEqual(await exchange(path), { status, body, reused: true });
+      // Not ended by closing the connection
+      deepStrictEqual(await exchange("/ok"), {
+        status: 200,
+        body: "ok",
+        reused: true,
+      });
+    }
   });
 
   test("a body shorter than its `Content-Length` closes the connection", async () => {

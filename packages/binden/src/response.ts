@@ -509,7 +509,7 @@ export class BindenResponse<
    */
   #endNotModified(length: number): void {
     this.statusCode = 304;
-    this.removeHeader("Transfer-Encoding");
+    this.#remove("Transfer-Encoding");
     this.setHeader("Content-Length", length);
     this.end();
   }
@@ -696,16 +696,29 @@ export class BindenResponse<
       return;
     } else if (statusCode === 205) {
       // No content, framed as such (RFC 9110, section 15.3.6)
-      this.removeHeader("Transfer-Encoding");
+      this.#remove("Transfer-Encoding");
       this.setHeader("Content-Length", 0);
     } else if (BindenResponse.#noContent(statusCode)) {
       // Never a body, nor the length of one
-      this.removeHeader("Content-Length");
-      this.removeHeader("Transfer-Encoding");
+      this.#remove("Content-Length", "Transfer-Encoding");
     } else if (length !== null) {
       // Also for `HEAD`: the length of the body it would send
-      this.removeHeader("Transfer-Encoding");
+      this.#remove("Transfer-Encoding");
       this.setHeader("Content-Length", length);
+    }
+  }
+
+  /**
+   * Removes the headers that are set. Node.js also remembers the removal of
+   * a header that is not set: once both `Transfer-Encoding` and
+   * `Content-Length` have been removed (e.g. the length by a compression),
+   * it frames the body by closing the connection, instead of chunking it.
+   */
+  #remove(...names: string[]): void {
+    for (const name of names) {
+      if (this.hasHeader(name)) {
+        this.removeHeader(name);
+      }
     }
   }
 

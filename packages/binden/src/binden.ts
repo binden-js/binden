@@ -825,9 +825,14 @@ export class Binden<
     }
     context.log[level]("The request has failed", extra);
 
-    // The framing and representation of the body that is not sent
+    // The framing and representation of the body that is not sent. Only
+    // when set: Node.js remembers the removal of a header that is not, and
+    // once `Transfer-Encoding` and `Content-Length` (e.g. by a compression)
+    // have both been removed, it closes the connection to end the body.
     for (const name of Binden.#representation) {
-      response.removeHeader(name);
+      if (response.hasHeader(name)) {
+        response.removeHeader(name);
+      }
     }
     response.status(status);
     if (error instanceof BindenError) {

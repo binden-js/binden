@@ -235,7 +235,8 @@ suite("Lifecycle", () => {
       {},
       (app) => {
         app.use((context: Context) => {
-          // The default reply then fails
+          // The default reply then fails: it removes the `ETag` of the body
+          context.setHeader("ETag", `"tag"`);
           context.response.removeHeader = (): never => {
             throw new Error("Unexpected");
           };

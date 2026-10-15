@@ -1,3 +1,4 @@
+import { Agent, type IncomingMessage, request } from "node:http";
 import { BindenError, type Context } from "binden";
 import { Compression, type ICompressionOptions } from "../index.js";
 import {
@@ -10,7 +11,6 @@ import {
   text,
   within,
 } from "./helpers.js";
-import { type IncomingMessage, request } from "node:http";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, rejects } from "node:assert";
 import { Readable } from "node:stream";
@@ -72,6 +72,57 @@ suite("Streaming through the compressor", () => {
     const current = served;
     served = null;
     await current?.close();
+  });
+
+  test("a compressed reply keeps its connection alive (chunked)", async () => {
+    const body = text(4096);
+    const url = await start((context: Context) => {
+      const { pathname } = context.url;
+      if (pathname === "/json") {
+        return context.json({ body });
+      } else if (pathname === "/error") {
+        // The reply of the default error handler
+        throw new BindenError(400, { expose: true, json: { body } });
+      }
+      return context.send(body);
+    });
+    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+    try {
+      const outcomes: unknown[] = [];
+      for (const path of ["/send", "/json", "/error", "/send"]) {
+        const sent = request(new URL(path, url), {
+          agent,
+          signal: AbortSignal.timeout(5000),
+        }).end();
+        const [response] = (await within(once(sent, "response"))) as [
+          IncomingMessage,
+        ];
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        await within(once(response, "end"));
+        const { headers } = response;
+        const decoded = decode(
+          headers["content-encoding"],
+          Buffer.concat(chunks),
+        );
+        outcomes.push([
+          path,
+          response.statusCode,
+          headers["transfer-encoding"],
+          headers.connection,
+          decoded.toString().includes(body),
+          sent.reusedSocket,
+        ]);
+      }
+      deepStrictEqual(outcomes, [
+        ["/send", 200, "chunked", "keep-alive", true, false],
+        ["/json", 200, "chunked", "keep-alive", true, true],
+        ["/error", 400, "chunked", "keep-alive", true, true],
+        ["/send", 200, "chunked", "keep-alive", true, true],
+      ]);
+    } finally {
+      agent.destroy();
+    }
   });
 
   test("the compressor is created for a compressed body only", async () => {
