@@ -1,11 +1,10 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { suite, test } from "node:test";
-import { gzipSync } from "node:zlib";
 import { BindenError, type Context, ct_json, ct_text } from "binden";
-
 import { BodyParser, type IVerify, type IVerifyInfo } from "../index.js";
 import { type IBody, type IReply, send, serve } from "./helpers.js";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { gzipSync } from "node:zlib";
 
 /** Sends one request through the parser (then `echo`) */
 async function post(

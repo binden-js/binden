@@ -1,4 +1,4 @@
-import { once } from "node:events";
+import { BindenRequest, BindenResponse } from "../index.js";
 import {
   type IncomingHttpHeaders,
   IncomingMessage,
@@ -8,8 +8,7 @@ import {
   request as httpRequest,
 } from "node:http";
 import type { AddressInfo } from "node:net";
-
-import { BindenRequest, BindenResponse } from "../index.js";
+import { once } from "node:events";
 
 /** A response as the client receives it */
 export interface IReply {

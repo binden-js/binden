@@ -1,8 +1,7 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { suite, test } from "node:test";
-
 import { Binden, type Context } from "../index.js";
+import { deepStrictEqual, ok } from "node:assert/strict";
 import { listen, send } from "./helpers.js";
+import { suite, test } from "node:test";
 
 suite("Context (response helpers)", () => {
   test("redirect(), sendFile() and json() send the response and set `done`", async () => {

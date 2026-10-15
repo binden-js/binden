@@ -1,8 +1,3 @@
-import { deepStrictEqual, ok, throws } from "node:assert/strict";
-import { Socket } from "node:net";
-import { suite, test } from "node:test";
-import { Logger, type ILogger } from "@binden/logger";
-
 import {
   BindenAbortError,
   BindenError,
@@ -10,6 +5,7 @@ import {
   BindenResponse,
   Context,
 } from "../index.js";
+import { type ILogger, Logger } from "@binden/logger";
 import {
   createSerializers,
   isLogger,
@@ -17,6 +13,9 @@ import {
   serializers,
   snapshot,
 } from "../src/logger.js";
+import { deepStrictEqual, ok, throws } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { Socket } from "node:net";
 
 const secrets = [
   "secret-token",

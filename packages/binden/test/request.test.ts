@@ -1,24 +1,24 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, ok, throws } from "node:assert";
-import { Server, createServer } from "node:http";
 import { type AddressInfo, Socket } from "node:net";
-import { TLSSocket } from "node:tls";
-import { stringify, parse } from "node:querystring";
-import { afterEach, beforeEach, suite, test } from "node:test";
-import fetch from "node-fetch";
-
 import {
-  Range,
   BindenError,
   BindenRequest,
-  Forwarded,
   Cookie,
-  IfModifiedSince,
+  Forwarded,
   type IRequestOptions,
   type IRequestOptionsInput,
   type ITrustProxy,
+  IfModifiedSince,
+  Range,
   validateRequestOptions,
 } from "../index.js";
+import { Server, createServer } from "node:http";
+import { afterEach, beforeEach, suite, test } from "node:test";
+import { deepStrictEqual, ok, throws } from "node:assert";
+import { parse, stringify } from "node:querystring";
+import { TLSSocket } from "node:tls";
+import fetch from "node-fetch";
+import { toError } from "./helpers.js";
 
 /** The port of a listening server */
 function portOf(server: { address(): unknown }): number {
@@ -60,7 +60,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(request.accept_encoding[3].encoding, "compress");
           deepStrictEqual(request.accept_encoding[3].q_value, 0.15);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -111,7 +111,7 @@ suite("BindenRequest", () => {
             "YWxhZGRpbjpvcGVuc2VzYW1l",
           );
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -142,7 +142,7 @@ suite("BindenRequest", () => {
             ["x-gzip", "br", "compress"],
           );
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -164,7 +164,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(content_type.type, "multipart/form-data");
           deepStrictEqual(content_type.boundary, "something");
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -184,7 +184,7 @@ suite("BindenRequest", () => {
           ok(id);
           ok(typeof id === "string");
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -200,7 +200,7 @@ suite("BindenRequest", () => {
         try {
           deepStrictEqual(request.secure, false);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -216,7 +216,7 @@ suite("BindenRequest", () => {
         try {
           deepStrictEqual(request.protocol, "http:");
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -236,7 +236,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(request.query.b.pop(), "3");
           deepStrictEqual(request.query, expected);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -262,7 +262,7 @@ suite("BindenRequest", () => {
           body.b = 3;
           deepStrictEqual(request.body, body);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -289,7 +289,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(request.cookies[0].path, cookie.path);
           deepStrictEqual(request.cookies[0].same_site, cookie.same_site);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -520,7 +520,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(request.forwarded[0].secret, forwarded.secret);
           deepStrictEqual(request.forwarded[0].host, forwarded.host);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -543,7 +543,7 @@ suite("BindenRequest", () => {
           );
           deepStrictEqual(request.if_modified_since.toString(), ims.toString());
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -565,7 +565,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(actual.end, range.end);
           deepStrictEqual(actual.toString(), range.toString());
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -582,7 +582,7 @@ suite("BindenRequest", () => {
         try {
           deepStrictEqual(request.URL, newUrl);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -602,7 +602,7 @@ suite("BindenRequest", () => {
           deepStrictEqual(request.header("X-CUSTOM-HEADER"), value);
           deepStrictEqual(request.header("x-custom-header"), value);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }

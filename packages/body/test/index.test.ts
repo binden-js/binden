@@ -1,16 +1,12 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { once } from "node:events";
-import { suite, test } from "node:test";
 import { Ajv as AJV, type JTDDataType } from "ajv/dist/jtd.js";
 import {
   BindenError,
-  type Context,
   type ContentType,
+  type Context,
   ct_form,
   ct_json,
   ct_text,
 } from "binden";
-
 import { BodyParser, type IParse } from "../index.js";
 import {
   type IBody,
@@ -20,6 +16,9 @@ import {
   serve,
   summarize,
 } from "./helpers.js";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { once } from "node:events";
 
 /** Sends one request through the middlewares (then `echo`) */
 async function post(

@@ -1,8 +1,3 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { once } from "node:events";
-import { type IncomingMessage, request } from "node:http";
-import { suite, test } from "node:test";
-import { gzipSync } from "node:zlib";
 import {
   Binden,
   BindenAbortError,
@@ -12,9 +7,13 @@ import {
   ct_json,
   ct_text,
 } from "binden";
-
-import { BodyParser } from "../index.js";
 import { type IServer, Recorder, listen, never, within } from "./helpers.js";
+import { type IncomingMessage, request } from "node:http";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { BodyParser } from "../index.js";
+import { gzipSync } from "node:zlib";
+import { once } from "node:events";
 
 /** How the parser has settled */
 type IOutcome = { error: unknown } | { ok: true };

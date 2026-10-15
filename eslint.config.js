@@ -259,43 +259,4 @@ export default [
       "@typescript-eslint/explicit-module-boundary-types": "off",
     },
   },
-  {
-    // Code carried over unchanged from the former separate repositories predates
-    // the current rule set. Only infrastructure moved; clean these up separately.
-    name: "binden/legacy",
-    files: [
-      "packages/binden/**/*.ts",
-      "packages/body/**/*.ts",
-      "packages/logger/**/*.ts",
-    ],
-    rules: { "sort-imports": "off" },
-  },
-  {
-    name: "binden/legacy-binden-tests",
-    files: ["packages/binden/test/**/*.ts"],
-    rules: { "@typescript-eslint/prefer-promise-reject-errors": "off" },
-  },
-  {
-    name: "binden/legacy-method-signature-style",
-    files: ["packages/binden/src/binden.ts"],
-    rules: { "@typescript-eslint/method-signature-style": "off" },
-  },
-  {
-    name: "binden/legacy-strict-boolean-expressions",
-    files: ["packages/binden/src/headers/forwarded.ts"],
-    rules: { "@typescript-eslint/strict-boolean-expressions": "off" },
-  },
-  {
-    name: "binden/legacy-switch-exhaustiveness-check",
-    files: [
-      "packages/binden/src/headers/authorization.ts",
-      "packages/logger/index.ts",
-    ],
-    rules: { "@typescript-eslint/switch-exhaustiveness-check": "off" },
-  },
-  {
-    name: "binden/legacy-no-unnecessary-type-assertion",
-    files: ["packages/multipart/test/multipart.test.ts"],
-    rules: { "@typescript-eslint/no-unnecessary-type-assertion": "off" },
-  },
 ];

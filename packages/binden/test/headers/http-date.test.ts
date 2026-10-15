@@ -1,6 +1,5 @@
-import { deepStrictEqual } from "node:assert";
 import { suite, test } from "node:test";
-
+import { deepStrictEqual } from "node:assert";
 import { parseHttpDate } from "../../src/headers/http-date.js";
 
 suite("HTTP-date", () => {

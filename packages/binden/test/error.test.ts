@@ -1,8 +1,7 @@
 import { deepStrictEqual, ok, throws } from "node:assert";
-import { STATUS_CODES } from "node:http";
 import { suite, test } from "node:test";
-
 import { BindenError } from "../index.js";
+import { STATUS_CODES } from "node:http";
 
 suite("BindenError", () => {
   test("constructor", () => {

@@ -1,6 +1,3 @@
-import { deepStrictEqual, ok, throws } from "node:assert/strict";
-import { suite, test } from "node:test";
-
 import {
   Binden,
   BindenError,
@@ -9,12 +6,14 @@ import {
   Middleware,
 } from "../index.js";
 import {
-  capture,
   type ICaptured,
   type IListening,
+  capture,
   listen,
   send,
 } from "./helpers.js";
+import { deepStrictEqual, ok, throws } from "node:assert/strict";
+import { suite, test } from "node:test";
 
 /** Runs `fn` with a listening application (with a captured debug logger) */
 async function withApp(

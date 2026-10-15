@@ -1,5 +1,5 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /** Why the work of a request has been abandoned */
 export type IAbortReason = "client_closed" | "deadline" | "shutdown";

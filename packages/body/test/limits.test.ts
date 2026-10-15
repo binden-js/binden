@@ -1,17 +1,16 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { once } from "node:events";
+import { type IBody, type IReply, chunked, send, serve } from "./helpers.js";
 import {
   type IncomingMessage,
   type OutgoingHttpHeaders,
   request,
 } from "node:http";
-import { randomBytes } from "node:crypto";
-import { suite, test } from "node:test";
 import { brotliCompressSync, gzipSync } from "node:zlib";
-import { ct_text } from "binden";
-
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
 import { BodyParser } from "../index.js";
-import { type IBody, type IReply, chunked, send, serve } from "./helpers.js";
+import { ct_text } from "binden";
+import { once } from "node:events";
+import { randomBytes } from "node:crypto";
 
 /** Sends one request through the parser (then `echo`) */
 async function post(

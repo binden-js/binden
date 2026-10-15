@@ -1,8 +1,8 @@
 import type { Server as HttpServer, ServerResponse } from "node:http";
+import type { Exchange } from "./exchange.js";
 import type { Server as HttpsServer } from "node:https";
 import type { Socket } from "node:net";
 import { validateDelay } from "./delay.js";
-import type { Exchange } from "./exchange.js";
 
 /** A server that `shutdown()` closes */
 export type IServer = HttpServer | HttpsServer;

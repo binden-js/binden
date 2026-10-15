@@ -1,11 +1,10 @@
 /* eslint-disable init-declarations */
+import { BindenResponse, Cookie, ct_json } from "../index.js";
+import { type ITestServer, listen } from "./http.js";
+import { afterEach, beforeEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, throws } from "node:assert";
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
-import { afterEach, beforeEach, suite, test } from "node:test";
-
-import { BindenResponse, Cookie, ct_json } from "../index.js";
-import { type ITestServer, listen } from "./http.js";
 
 /** `undefined`, which the linter does not let the tests write */
 const none = ({} as { value?: undefined }).value;

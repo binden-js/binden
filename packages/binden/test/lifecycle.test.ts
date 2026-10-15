@@ -1,7 +1,3 @@
-import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
-import { Readable } from "node:stream";
-import { suite, test } from "node:test";
-
 import {
   Binden,
   BindenAbortError,
@@ -10,14 +6,17 @@ import {
   type IBindenOptions,
 } from "../index.js";
 import {
-  capture,
   type ICaptured,
   type IListening,
+  capture,
   listen,
   never,
   send,
   sleep,
 } from "./helpers.js";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { Readable } from "node:stream";
 
 /** Runs `fn` with a listening application (with a captured debug logger) */
 async function withApp(

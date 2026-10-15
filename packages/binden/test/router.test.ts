@@ -1,7 +1,6 @@
+import { Middleware, Router } from "../index.js";
 import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
-
-import { Router, Middleware } from "../index.js";
 
 class CustomMiddleware extends Middleware {
   public i = 0;

@@ -1,17 +1,16 @@
-import type { ILogger } from "@binden/logger";
 import { BindenError, type IBindenErrorOptions } from "./error.js";
-import { Exchange, type IExchangeReport } from "./exchange.js";
-import { defaultLogger, safe, snapshot } from "./logger.js";
-
-import type { Readable } from "node:stream";
-import type { IRedirectOptions, IRedirectStatus } from "./redirect.js";
-import type { BindenRequest } from "./request.js";
 import type {
+  BindenResponse,
   IClearCookie,
   IHeadersValue,
-  BindenResponse,
 } from "./response.js";
+import { Exchange, type IExchangeReport } from "./exchange.js";
+import type { IRedirectOptions, IRedirectStatus } from "./redirect.js";
+import { defaultLogger, safe, snapshot } from "./logger.js";
+import type { BindenRequest } from "./request.js";
+import type { ILogger } from "@binden/logger";
 import type { ISendFileOptions } from "./send-file.js";
+import type { Readable } from "node:stream";
 
 /** The request and the response that a context handles */
 export interface IBaseContext {

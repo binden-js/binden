@@ -1,7 +1,6 @@
-import type { IncomingHttpHeaders } from "node:http";
 import { SocketAddress, isIPv4, isIPv6 } from "node:net";
-
 import Forwarded from "./headers/forwarded.js";
+import type { IncomingHttpHeaders } from "node:http";
 
 /**
  * Whether the address of a hop (`0` is the peer, then the addresses of the

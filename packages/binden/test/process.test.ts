@@ -1,7 +1,7 @@
-import { deepStrictEqual } from "node:assert";
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
 import { suite, test } from "node:test";
+import { deepStrictEqual } from "node:assert";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 /**
  * Runs a fixture (`test/fixtures`) in a process of its own: a crash (e.g. an

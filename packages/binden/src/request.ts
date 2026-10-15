@@ -1,21 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { IncomingMessage } from "node:http";
-import { parse, type ParsedUrlQuery } from "node:querystring";
-import { TLSSocket } from "node:tls";
-
-import { BindenError } from "./error.js";
-import Accept from "./headers/accept.js";
-import AcceptCharset from "./headers/accept-charset.js";
-import AcceptEncoding from "./headers/accept-encoding.js";
-import AcceptLanguage from "./headers/accept-language.js";
-import Authorization from "./headers/authorization.js";
-import ContentEncoding from "./headers/content-encoding.js";
-import ContentType from "./headers/content-type.js";
-import Cookie from "./headers/cookie.js";
-import Forwarded from "./headers/forwarded.js";
-import IfModifiedSince from "./headers/if-modified-since.js";
-import { token } from "./headers/list.js";
-import Range from "./headers/range.js";
 import {
   type IProxyResult,
   type ITrustProxy,
@@ -24,6 +6,23 @@ import {
   resolveProxy,
   strictBoolean,
 } from "./proxy.js";
+import { type ParsedUrlQuery, parse } from "node:querystring";
+import Accept from "./headers/accept.js";
+import AcceptCharset from "./headers/accept-charset.js";
+import AcceptEncoding from "./headers/accept-encoding.js";
+import AcceptLanguage from "./headers/accept-language.js";
+import Authorization from "./headers/authorization.js";
+import { BindenError } from "./error.js";
+import ContentEncoding from "./headers/content-encoding.js";
+import ContentType from "./headers/content-type.js";
+import Cookie from "./headers/cookie.js";
+import Forwarded from "./headers/forwarded.js";
+import IfModifiedSince from "./headers/if-modified-since.js";
+import { IncomingMessage } from "node:http";
+import Range from "./headers/range.js";
+import { TLSSocket } from "node:tls";
+import { randomUUID } from "node:crypto";
+import { token } from "./headers/list.js";
 
 /** The trusted proxies (see `IRequestOptions.trust_proxy`) */
 export type { IProxyHeaders, ITrustFn, ITrustProxy } from "./proxy.js";

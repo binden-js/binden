@@ -1,8 +1,3 @@
-import { deepStrictEqual, ok, throws } from "node:assert";
-import { Socket } from "node:net";
-import { TLSSocket } from "node:tls";
-import { after, suite, test } from "node:test";
-
 import {
   BindenError,
   BindenRequest,
@@ -11,6 +6,10 @@ import {
   type IRequestOptionsInput,
   validateRequestOptions,
 } from "../index.js";
+import { after, suite, test } from "node:test";
+import { deepStrictEqual, ok, throws } from "node:assert";
+import { Socket } from "node:net";
+import { TLSSocket } from "node:tls";
 
 const sockets: Socket[] = [];
 

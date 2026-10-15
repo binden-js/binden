@@ -1,12 +1,11 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, rejects } from "node:assert";
-import { once } from "node:events";
 import { Agent, type Server, request } from "node:http";
+import { Binden, BindenError, type Context } from "../index.js";
+import { afterEach, beforeEach, suite, test } from "node:test";
+import { deepStrictEqual, rejects } from "node:assert";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
-import { afterEach, beforeEach, suite, test } from "node:test";
-
-import { Binden, BindenError, type Context } from "../index.js";
+import { once } from "node:events";
 
 /** The status, the body and whether the connection was reused */
 interface IExchange {

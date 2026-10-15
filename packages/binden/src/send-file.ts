@@ -1,20 +1,19 @@
-import { constants } from "node:fs";
 import { type FileHandle, open, realpath } from "node:fs/promises";
-import type { IncomingHttpHeaders } from "node:http";
 import native, { type PlatformPath, join } from "node:path";
-import type { Readable } from "node:stream";
-import { fileURLToPath } from "node:url";
-
 import { BindenError } from "./error.js";
+import { BindenRequest } from "./request.js";
+import type { BindenResponse } from "./response.js";
 import ContentRange from "./headers/content-range.js";
 import ContentType from "./headers/content-type.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
+import type { IncomingHttpHeaders } from "node:http";
+import Range from "./headers/range.js";
+import type { Readable } from "node:stream";
+import { constants } from "node:fs";
+import { contentTypeOf } from "./mime.js";
+import { fileURLToPath } from "node:url";
 import { parseHttpDate } from "./headers/http-date.js";
 import { split } from "./headers/list.js";
-import Range from "./headers/range.js";
-import { contentTypeOf } from "./mime.js";
-import { BindenRequest } from "./request.js";
-import type { BindenResponse } from "./response.js";
 
 /** The options of `BindenResponse.sendFile()` */
 export interface ISendFileOptions {

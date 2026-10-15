@@ -1,4 +1,3 @@
-import { constants } from "node:os";
 import pino, {
   type Bindings,
   type DestinationStream,
@@ -6,6 +5,7 @@ import pino, {
   type Logger as PinoLogger,
   type LoggerOptions as PinoLoggerOptions,
 } from "pino";
+import { constants } from "node:os";
 
 /** The options of a `Logger` */
 export interface LoggerOptions extends PinoLoggerOptions {
@@ -335,7 +335,7 @@ export class Logger implements ILogger {
       env: { [env_name]: LEVEL },
     } = process;
 
-    const level = LEVEL?.trim().toLowerCase();
+    const level = (LEVEL ?? "").trim().toLowerCase();
 
     switch (level) {
       case "trace":

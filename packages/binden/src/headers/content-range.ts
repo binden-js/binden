@@ -1,4 +1,4 @@
-import { Range, type IRange } from "./range.js";
+import { type IRange, Range } from "./range.js";
 
 /** The range of `Content-Range` (none when unsatisfied) and the size of the content */
 export interface IContentRange extends IRange {

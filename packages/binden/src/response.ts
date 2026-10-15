@@ -1,12 +1,3 @@
-import { createHash } from "node:crypto";
-import {
-  IncomingMessage,
-  type OutgoingHttpHeader,
-  type OutgoingHttpHeaders,
-  ServerResponse,
-} from "node:http";
-import { Readable } from "node:stream";
-import ContentType from "./headers/content-type.js";
 import Cookie, { type ICookie } from "./headers/cookie.js";
 import {
   type IRedirectOptions,
@@ -14,10 +5,19 @@ import {
   isRedirectStatus,
   redirectLocation,
 } from "./redirect.js";
-import { BindenRequest } from "./request.js";
-import { kSeal } from "./seal.js";
 import { type ISendFileOptions, matches, sendFileTo } from "./send-file.js";
+import {
+  IncomingMessage,
+  type OutgoingHttpHeader,
+  type OutgoingHttpHeaders,
+  ServerResponse,
+} from "node:http";
+import { BindenRequest } from "./request.js";
+import ContentType from "./headers/content-type.js";
+import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
+import { kSeal } from "./seal.js";
 
 /** The media type of `response.json()` */
 export const ct_json = "application/json";

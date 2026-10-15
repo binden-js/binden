@@ -1,6 +1,3 @@
-import { deepStrictEqual, ok, throws } from "node:assert/strict";
-import { suite, test } from "node:test";
-
 import {
   Binden,
   BindenError,
@@ -10,9 +7,11 @@ import {
   Router,
   Stack,
 } from "../index.js";
-import { compile, matchPrefix, matchRoute } from "../src/route.js";
-import { layersOf } from "../src/stack.js";
 import { type IApp, type IListening, listen, send } from "./helpers.js";
+import { compile, matchPrefix, matchRoute } from "../src/route.js";
+import { deepStrictEqual, ok, throws } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { layersOf } from "../src/stack.js";
 
 /** Runs `fn` with a listening application */
 async function withApp(

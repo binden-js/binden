@@ -1,10 +1,10 @@
-import { once } from "node:events";
-import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { Readable } from "node:stream";
-import { Binden, type Context, type IMiddleware } from "binden";
-import type { ILogger } from "@binden/logger";
 import { Agent, request } from "undici";
+import { Binden, type Context, type IMiddleware } from "binden";
+import type { AddressInfo } from "node:net";
+import type { ILogger } from "@binden/logger";
+import { Readable } from "node:stream";
+import type { Server } from "node:http";
+import { once } from "node:events";
 
 /** A server of the tests */
 export interface IServer {

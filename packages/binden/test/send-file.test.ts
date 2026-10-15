@@ -1,4 +1,15 @@
 /* eslint-disable init-declarations */
+import { BindenError, type ISendFileOptions } from "../index.js";
+import { type IReply, type ITestServer, listen } from "./http.js";
+import {
+  after,
+  afterEach,
+  before,
+  beforeEach,
+  mock,
+  suite,
+  test,
+} from "node:test";
 import { deepStrictEqual, ok } from "node:assert";
 import fsp, {
   mkdir,
@@ -11,25 +22,13 @@ import fsp, {
   utimes,
   writeFile,
 } from "node:fs/promises";
+import { join, posix, relative, win32 } from "node:path";
+import { relativeSegments, within } from "../src/send-file.js";
+import { contentTypeOf } from "../src/mime.js";
+import { kSeal } from "../src/seal.js";
+import { pathToFileURL } from "node:url";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { join, posix, relative, win32 } from "node:path";
-import { pathToFileURL } from "node:url";
-import {
-  after,
-  afterEach,
-  before,
-  beforeEach,
-  mock,
-  suite,
-  test,
-} from "node:test";
-
-import { BindenError, type ISendFileOptions } from "../index.js";
-import { contentTypeOf } from "../src/mime.js";
-import { relativeSegments, within } from "../src/send-file.js";
-import { kSeal } from "../src/seal.js";
-import { type IReply, type ITestServer, listen } from "./http.js";
 
 interface IServed extends IReply {
   /** `null` once `sendFile()` has resolved, otherwise its error */

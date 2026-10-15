@@ -1,39 +1,39 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, ok, throws, rejects } from "node:assert";
-import { randomUUID } from "node:crypto";
-import { once } from "node:events";
+import { type AddressInfo, Socket } from "node:net";
+import {
+  BindenRequest,
+  BindenResponse,
+  Cookie,
+  ct_form,
+  ct_html,
+  ct_json,
+  ct_text,
+} from "../index.js";
 import {
   type FileHandle,
   appendFile,
-  writeFile,
-  rm,
   mkdir,
   mkdtemp,
   open,
   rename,
+  rm,
   stat as statOf,
   utimes,
+  writeFile,
 } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
 import { IncomingMessage, Server, createServer, get } from "node:http";
-import { type AddressInfo, Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { type Stats, createReadStream } from "node:fs";
+import { afterEach, beforeEach, suite, test } from "node:test";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert";
+import { Readable } from "node:stream";
+import { execFileSync } from "node:child_process";
 import fastJSON from "fast-json-stringify";
 import fetch from "node-fetch";
-import { createReadStream, type Stats } from "node:fs";
-import { Readable } from "node:stream";
-import { afterEach, beforeEach, suite, test } from "node:test";
-
-import {
-  BindenResponse,
-  BindenRequest,
-  Cookie,
-  ct_json,
-  ct_text,
-  ct_form,
-  ct_html,
-} from "../index.js";
+import { join } from "node:path";
+import { once } from "node:events";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { toError } from "./helpers.js";
 
 /** The port of a listening server */
 function portOf(server: { address(): unknown }): number {
@@ -151,7 +151,7 @@ suite("BindenResponse", () => {
         try {
           deepStrictEqual(response instanceof BindenResponse, true);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -169,7 +169,7 @@ suite("BindenResponse", () => {
           ok(response.status(status) instanceof BindenResponse);
           deepStrictEqual(response.statusCode, status);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -198,7 +198,7 @@ suite("BindenResponse", () => {
           }
           response.status(200);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -218,7 +218,7 @@ suite("BindenResponse", () => {
         try {
           ok(response.set(headers) instanceof BindenResponse);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -278,7 +278,7 @@ suite("BindenResponse", () => {
             deepStrictEqual(response.writableEnded, true);
             response.send().then(resolve).catch(reject);
           } catch (error) {
-            reject(error);
+            reject(toError(error));
           }
         });
       });

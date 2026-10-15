@@ -1,17 +1,16 @@
 /* eslint-disable init-declarations */
-import { deepStrictEqual, ok, rejects, throws } from "node:assert";
-import { once } from "node:events";
-import { type Server, createServer, get } from "node:http";
-import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, suite, test } from "node:test";
-
 import {
   BindenAbortError,
   BindenRequest,
   BindenResponse,
   Context,
 } from "../index.js";
+import { type Server, createServer, get } from "node:http";
+import { afterEach, beforeEach, suite, test } from "node:test";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert";
+import type { AddressInfo } from "node:net";
 import { Exchange } from "../src/exchange.js";
+import { once } from "node:events";
 
 type IServer = Server<typeof BindenRequest, typeof BindenResponse>;
 

@@ -2,9 +2,9 @@
 // destroyed, and their errors must not crash the process
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Binden } from "../../index.js";
 import { Readable } from "node:stream";
 import { once } from "node:events";
-import { Binden } from "../../index.js";
 
 setTimeout(() => {
   process.stderr.write("Timed out\n");

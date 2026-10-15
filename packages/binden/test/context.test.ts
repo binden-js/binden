@@ -1,18 +1,18 @@
 /* eslint-disable init-declarations, @typescript-eslint/no-loop-func */
-import { ok, deepStrictEqual } from "node:assert";
-import { Server, createServer } from "node:http";
-import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, suite, test } from "node:test";
-import fastJSON from "fast-json-stringify";
-import fetch from "node-fetch";
-import sinon from "sinon";
-
 import {
-  Context,
   BindenError,
   BindenRequest,
   BindenResponse,
+  Context,
 } from "../index.js";
+import { Server, createServer } from "node:http";
+import { afterEach, beforeEach, suite, test } from "node:test";
+import { deepStrictEqual, ok } from "node:assert";
+import type { AddressInfo } from "node:net";
+import fastJSON from "fast-json-stringify";
+import fetch from "node-fetch";
+import sinon from "sinon";
+import { toError } from "./helpers.js";
 
 /** The port of a listening server */
 function portOf(server: { address(): unknown }): number {
@@ -52,7 +52,7 @@ suite("Context", () => {
           context.done = false;
           ok(context.done);
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -78,7 +78,7 @@ suite("Context", () => {
           deepStrictEqual(context.setHeader(name, value), context);
           mock.verify();
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -104,7 +104,7 @@ suite("Context", () => {
           deepStrictEqual(context.status(status), context);
           mock.verify();
         } catch (error) {
-          reject(error);
+          reject(toError(error));
         } finally {
           response.end(resolve);
         }
@@ -167,7 +167,7 @@ suite("Context", () => {
               .finally(() => context.response.end(resolve));
           } catch (error) {
             context.response.end(() => {
-              reject(error);
+              reject(toError(error));
             });
           }
         });
@@ -236,7 +236,7 @@ suite("Context", () => {
             deepStrictEqual(error.json, json);
             deepStrictEqual(error.status, status);
           } catch (err) {
-            reject(err);
+            reject(toError(err));
           }
         } finally {
           response.end(resolve);

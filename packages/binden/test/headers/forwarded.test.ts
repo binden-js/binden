@@ -1,7 +1,6 @@
+import { Forwarded, type IForwarded } from "../../index.js";
 import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
-
-import { Forwarded, type IForwarded } from "../../index.js";
 
 suite("Forwarded", () => {
   test("constructor", () => {

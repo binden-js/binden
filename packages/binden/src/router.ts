@@ -1,5 +1,5 @@
+import { type IMiddleware, Middleware } from "./middleware.js";
 import type { IParams } from "./context.js";
-import { Middleware, type IMiddleware } from "./middleware.js";
 
 /** The options of a `Router` */
 export interface IRouterOptions {

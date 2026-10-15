@@ -1,14 +1,13 @@
-import { deepStrictEqual, ok, throws } from "node:assert";
-import { createServer } from "node:http";
 import { type AddressInfo, Socket, connect } from "node:net";
-import { after, suite, test } from "node:test";
-
 import {
   BindenRequest,
   type IRequestIdOptions,
   type IRequestOptions,
   validateRequestOptions,
 } from "../index.js";
+import { after, suite, test } from "node:test";
+import { deepStrictEqual, ok, throws } from "node:assert";
+import { createServer } from "node:http";
 
 const uuid =
   /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/u;

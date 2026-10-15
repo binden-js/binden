@@ -1,11 +1,10 @@
+import { BindenResponse, type IRedirectStatus } from "../index.js";
+import { type ITestServer, listen } from "./http.js";
+import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok } from "node:assert";
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
-import { afterEach, suite, test } from "node:test";
-
-import { BindenResponse, type IRedirectStatus } from "../index.js";
 import { redirectLocation } from "../src/redirect.js";
-import { type ITestServer, listen } from "./http.js";
 
 const base = new URL("http://example.com:8080/dir/page?q=1");
 const { origin } = base;

@@ -1,19 +1,4 @@
-import http from "node:http";
-import https from "node:https";
-import type { ILogger } from "@binden/logger";
-import { Context } from "./context.js";
-import { BindenError } from "./error.js";
-import { validateDelay } from "./delay.js";
 import { BindenAbortError, Exchange } from "./exchange.js";
-import {
-  defaultLogger,
-  type ILocation,
-  isLogger,
-  safe,
-  snapshot,
-} from "./logger.js";
-import { Middleware, type IMiddleware } from "./middleware.js";
-import { pathOf, property } from "./property.js";
 import {
   BindenRequest,
   type IRequestOptions,
@@ -22,20 +7,38 @@ import {
 } from "./request.js";
 import {
   BindenResponse,
-  ct_json,
   type IResponseOptions,
+  ct_json,
   validateResponseOptions,
 } from "./response.js";
+import { type ILayer, Stack, layersOf, markRoot } from "./stack.js";
+import {
+  type ILocation,
+  defaultLogger,
+  isLogger,
+  safe,
+  snapshot,
+} from "./logger.js";
 import {
   type IMatchOptions,
+  type IRoutingOptions,
   matchPrefix,
   matchRoute,
-  type IRoutingOptions,
 } from "./route.js";
-import { Router } from "./router.js";
-import { kSeal } from "./seal.js";
+import { type IMiddleware, Middleware } from "./middleware.js";
 import { isClosing, register, track } from "./shutdown.js";
-import { type ILayer, layersOf, markRoot, Stack } from "./stack.js";
+import { pathOf, property } from "./property.js";
+import { BindenError } from "./error.js";
+import { Context } from "./context.js";
+import type { ILogger } from "@binden/logger";
+import { Router } from "./router.js";
+import http from "node:http";
+import https from "node:https";
+import { kSeal } from "./seal.js";
+import { validateDelay } from "./delay.js";
+
+/** Creates the state of a request (see the `state` option of `Binden`) */
+export type IStateFactory<State extends object> = () => State;
 
 /**
  * The status of the reply to an error without a valid status of its own (and
@@ -127,11 +130,11 @@ export type IBindenOptions<State extends object = Record<string, unknown>> =
     (Record<never, never> extends State
       ? {
           /** Creates the state of every request (an empty object by default) */
-          state?: (() => State) | undefined;
+          state?: IStateFactory<State> | undefined;
         }
       : {
           /** Creates the state of every request: it has required fields */
-          state: () => State;
+          state: IStateFactory<State>;
         });
 
 /** Thrown through the stack once the request has been aborted: the stack stops */

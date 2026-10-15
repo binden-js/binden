@@ -1,11 +1,11 @@
 // Run by `process.test.ts`: a logger whose methods return rejected promises
 // (or throw) must neither crash the process (`unhandledRejection`) nor keep
 // the requests from being handled, whoever logs (the framework or a context)
+import { Binden, BindenError } from "../../index.js";
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
-import { once } from "node:events";
 import type { ILogger } from "@binden/logger";
-import { Binden, BindenError } from "../../index.js";
+import { once } from "node:events";
 
 process.on("unhandledRejection", () => {
   process.stderr.write("unhandledRejection\n");

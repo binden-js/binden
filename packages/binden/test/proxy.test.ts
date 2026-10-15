@@ -1,9 +1,4 @@
-import { deepStrictEqual, ok, throws } from "node:assert";
-import { createServer, type IncomingHttpHeaders } from "node:http";
 import { type AddressInfo, Socket, connect } from "node:net";
-import { TLSSocket } from "node:tls";
-import { after, suite, test } from "node:test";
-
 import {
   BindenError,
   BindenRequest,
@@ -11,6 +6,10 @@ import {
   type ITrustProxy,
   validateRequestOptions,
 } from "../index.js";
+import { type IncomingHttpHeaders, createServer } from "node:http";
+import { after, suite, test } from "node:test";
+import { deepStrictEqual, ok, throws } from "node:assert";
+import { TLSSocket } from "node:tls";
 
 interface IFixture {
   /** The address of the peer (none: `undefined`) */

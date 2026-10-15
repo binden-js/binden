@@ -1,7 +1,6 @@
+import { ContentEncoding, type IEncodings } from "../../index.js";
 import { deepStrictEqual, throws } from "node:assert";
 import { suite, test } from "node:test";
-
-import { ContentEncoding, type IEncodings } from "../../index.js";
 
 suite("ContentEncoding", () => {
   test("constructor", () => {

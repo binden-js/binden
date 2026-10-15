@@ -1,9 +1,3 @@
-import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
-import { once } from "node:events";
-import { createServer, type Server } from "node:http";
-import { connect, type Socket } from "node:net";
-import { suite, test } from "node:test";
-
 import {
   Binden,
   BindenAbortError,
@@ -13,7 +7,12 @@ import {
   isClosing,
   shutdown,
 } from "../index.js";
+import { type Server, createServer } from "node:http";
+import { type Socket, connect } from "node:net";
 import { capture, listen, never, send, sleep, within } from "./helpers.js";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { once } from "node:events";
 
 /** A connection to a server, with everything it has received */
 interface IConnection {

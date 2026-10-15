@@ -1,9 +1,8 @@
+import { Binden, ct_json, ct_text } from "binden";
+import { type IBody, Recorder, echo, listen, send } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
-import { Binden, ct_json, ct_text } from "binden";
-
 import { BodyParser } from "../index.js";
-import { type IBody, Recorder, echo, listen, send } from "./helpers.js";
 
 /** Sends a request through a parser, with a logger that keeps everything */
 async function post(

@@ -1,9 +1,9 @@
 import { deepEqual, equal, ok, rejects, throws } from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
 import { describe, it } from "node:test";
+import log, { Logger, createSerializers, serializers } from "../index.js";
+import { join } from "node:path";
 import pino from "pino";
-import log, { createSerializers, Logger, serializers } from "../index.js";
+import { spawnSync } from "node:child_process";
 
 type Line = Record<string, unknown>;
 

@@ -1,31 +1,30 @@
 /* eslint-disable init-declarations, class-methods-use-this, @typescript-eslint/only-throw-error */
-import { deepStrictEqual, ok, rejects, throws } from "node:assert";
-import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import {
+  Binden,
+  BindenError,
+  Context,
+  Cookie,
+  DefaultErrorCode,
+  type IBindenErrorOptions,
+  type IBindenOptions,
+  type IMiddlewareParams,
+  Middleware,
+  Router,
+  ct_html,
+  ct_json,
+  ct_text,
+  serializers,
+} from "../index.js";
+import { Logger, type LoggerOptions } from "@binden/logger";
 import { Server, request as httpRequest } from "node:http";
+import { afterEach, beforeEach, suite, test } from "node:test";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert";
 import type { AddressInfo } from "node:net";
 import { Agent } from "node:https";
 import { Readable } from "node:stream";
-import { afterEach, beforeEach, suite, test } from "node:test";
-import { Logger, type LoggerOptions } from "@binden/logger";
 import fetch from "node-fetch";
-
-import {
-  DefaultErrorCode,
-  Binden,
-  BindenError,
-  type IBindenErrorOptions,
-  type IBindenOptions,
-  Middleware,
-  type IMiddlewareParams,
-  Context,
-  Cookie,
-  Router,
-  ct_text,
-  ct_json,
-  ct_html,
-  serializers,
-} from "../index.js";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 class CustomMiddleware extends Middleware {
   public readonly id: string;

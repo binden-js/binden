@@ -1,5 +1,4 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { suite, test } from "node:test";
+import { type IBody, type IReply, send, serve } from "./helpers.js";
 import {
   brotliCompressSync,
   constants,
@@ -9,9 +8,9 @@ import {
   zstdCompressSync,
 } from "node:zlib";
 import { ct_json, ct_text } from "binden";
-
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
 import { BodyParser } from "../index.js";
-import { type IBody, type IReply, send, serve } from "./helpers.js";
 
 /** Sends one request through the parser (then `echo`) */
 async function post(

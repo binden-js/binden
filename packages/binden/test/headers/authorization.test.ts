@@ -1,7 +1,6 @@
+import { Authorization, type IAuthenticationType } from "../../index.js";
 import { deepStrictEqual, ok, throws } from "node:assert";
 import { suite, test } from "node:test";
-
-import { Authorization, type IAuthenticationType } from "../../index.js";
 
 suite("Authorization", () => {
   test("constructor", () => {

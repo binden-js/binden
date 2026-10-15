@@ -1,8 +1,3 @@
-import { deepStrictEqual, ok, throws } from "node:assert/strict";
-import { once } from "node:events";
-import { connect } from "node:net";
-import { suite, test } from "node:test";
-
 import {
   Binden,
   type Context,
@@ -10,14 +5,18 @@ import {
   shutdown,
 } from "../index.js";
 import {
-  capture,
   type ICaptured,
   type IListening,
+  capture,
   listen,
   never,
   send,
   sleep,
 } from "./helpers.js";
+import { deepStrictEqual, ok, throws } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { connect } from "node:net";
+import { once } from "node:events";
 
 /** Runs `fn` with a listening application (with a captured debug logger) */
 async function withApp(

@@ -1,8 +1,8 @@
-import { isDeepStrictEqual } from "node:util";
-import type { IParams } from "./context.js";
 import { type IMiddleware, Middleware } from "./middleware.js";
-import { compile, type IPattern, type IRouteParams } from "./route.js";
+import { type IPattern, type IRouteParams, compile } from "./route.js";
+import type { IParams } from "./context.js";
 import { Router } from "./router.js";
+import { isDeepStrictEqual } from "node:util";
 
 /** A middleware or a router of a stack, for its state and its parameters */
 export type IStackItem<

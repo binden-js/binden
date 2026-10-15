@@ -1,4 +1,12 @@
-import { addAbortListener } from "node:events";
+import {
+  BindenAbortError,
+  BindenError,
+  type ContentType,
+  type Context,
+  type IMiddlewareParams,
+  Middleware,
+  serializers,
+} from "binden";
 import {
   type Duplex,
   Transform,
@@ -13,15 +21,7 @@ import {
   createInflate,
   createZstdDecompress,
 } from "node:zlib";
-import {
-  BindenAbortError,
-  BindenError,
-  type ContentType,
-  type Context,
-  type IMiddlewareParams,
-  Middleware,
-  serializers,
-} from "binden";
+import { addAbortListener } from "node:events";
 
 /** How a selected body is parsed: JSON (with `parse`), text, a form or raw bytes */
 export type IBodyKind = "form" | "json" | "raw" | "text";

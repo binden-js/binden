@@ -1,16 +1,3 @@
-import { deepStrictEqual, ok, rejects, throws } from "node:assert";
-import { createHash } from "node:crypto";
-import {
-  IncomingMessage,
-  type OutgoingHttpHeader,
-  type OutgoingHttpHeaders,
-  get,
-  request,
-} from "node:http";
-import { Socket } from "node:net";
-import { Readable } from "node:stream";
-import { afterEach, suite, test } from "node:test";
-
 import {
   BindenResponse,
   Cookie,
@@ -18,8 +5,20 @@ import {
   ct_text,
   validateResponseOptions,
 } from "../index.js";
+import { type IListenOptions, type ITestServer, listen } from "./http.js";
+import {
+  IncomingMessage,
+  type OutgoingHttpHeader,
+  type OutgoingHttpHeaders,
+  get,
+  request,
+} from "node:http";
+import { afterEach, suite, test } from "node:test";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert";
+import { Readable } from "node:stream";
+import { Socket } from "node:net";
+import { createHash } from "node:crypto";
 import { kSeal } from "../src/seal.js";
-import { type ITestServer, type IListenOptions, listen } from "./http.js";
 
 /** A response without a connection: nothing is actually sent */
 function detached(): BindenResponse {

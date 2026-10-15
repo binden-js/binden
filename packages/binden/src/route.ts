@@ -1,5 +1,5 @@
-import type { IParams } from "./context.js";
 import { BindenError } from "./error.js";
+import type { IParams } from "./context.js";
 
 /** The segments of a route pattern (a union of strings) */
 export type IRouteSegments<Pattern extends string> =

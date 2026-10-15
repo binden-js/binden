@@ -1,14 +1,21 @@
-import { once } from "node:events";
 import {
   type IncomingHttpHeaders,
   type OutgoingHttpHeaders,
-  request as httpRequest,
   type Server,
+  request as httpRequest,
 } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Logger } from "@binden/logger";
-
+import { once } from "node:events";
 import { serializers } from "../index.js";
+
+/**
+ * A caught value as the reason of a rejection: the `Error` itself (assertions
+ * throw one), or an `Error` of its text
+ */
+export function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
 
 /** Resolves after `ms` milliseconds */
 export function sleep(ms: number): Promise<void> {

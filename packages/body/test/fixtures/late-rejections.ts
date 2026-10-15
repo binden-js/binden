@@ -1,12 +1,11 @@
 // Run by `process.test.ts`: the late rejections of `verify`, `parse` and a
 // `type` function must not crash the process (`unhandledRejection`), and the
 // parser must not keep a request without a reply
+import { Binden, BindenError } from "binden";
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
-import { once } from "node:events";
-import { Binden, BindenError } from "binden";
-
 import { BodyParser } from "../../index.js";
+import { once } from "node:events";
 
 process.on("unhandledRejection", () => {
   process.stderr.write("unhandledRejection\n");

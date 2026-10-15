@@ -1,7 +1,6 @@
+import { BodyParser, type IBodyParserOptions } from "../index.js";
 import { deepStrictEqual, throws } from "node:assert/strict";
 import { suite, test } from "node:test";
-
-import { BodyParser, type IBodyParserOptions } from "../index.js";
 
 /** Options of the wrong type, for the tests */
 function options(input: Record<string, unknown>): IBodyParserOptions {

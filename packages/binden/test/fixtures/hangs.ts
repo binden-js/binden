@@ -1,10 +1,10 @@
 // Run by `process.test.ts`: hung middlewares and error handlers, and their late
 // failures, must neither crash the process (`unhandledRejection`) nor keep a
 // request without a reply
+import { Binden, BindenError, type Context } from "../../index.js";
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { once } from "node:events";
-import { Binden, BindenError, type Context } from "../../index.js";
 
 process.on("unhandledRejection", () => {
   process.stderr.write("unhandledRejection\n");

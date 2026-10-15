@@ -1,17 +1,16 @@
 // Type tests: compiled by `tsc` (the build of the package), where every
 // `@ts-expect-error` must be an error. The test only checks that the typed
 // values can be created.
-import { ok } from "node:assert/strict";
-import { test } from "node:test";
 import { Ajv as AJV, type JTDDataType } from "ajv/dist/jtd.js";
-import type { Context } from "binden";
-
 import {
   BodyParser,
   type IBodyKind,
   type IBodyParserOptions,
   type IParse,
 } from "../index.js";
+import type { Context } from "binden";
+import { ok } from "node:assert/strict";
+import { test } from "node:test";
 
 interface IUser {
   user: string;

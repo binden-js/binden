@@ -2,9 +2,9 @@
 // crash the process, nor keep the request from being handled
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
-import { once } from "node:events";
-import { Logger } from "@binden/logger";
 import { Binden } from "../../index.js";
+import { Logger } from "@binden/logger";
+import { once } from "node:events";
 
 setTimeout(() => {
   process.stderr.write("Timed out\n");

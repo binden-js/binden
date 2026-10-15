@@ -1,9 +1,6 @@
 // Type tests: compiled by `tsc` (the build of the package), where every
 // `@ts-expect-error` must be an error. The test only checks that the typed
 // values can be created.
-import { ok } from "node:assert/strict";
-import { test } from "node:test";
-
 import {
   Binden,
   type Context,
@@ -13,6 +10,8 @@ import {
   Router,
   Stack,
 } from "../index.js";
+import { ok } from "node:assert/strict";
+import { test } from "node:test";
 
 interface IUser {
   user: string;
