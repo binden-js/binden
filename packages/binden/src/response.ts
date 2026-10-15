@@ -173,15 +173,33 @@ interface IOnce {
 /** The methods of `EventEmitter` that a response replaces (see its static block) */
 const parent = ServerResponse.prototype;
 
-/** The properties of Node.js that frame the connection of a response */
+/**
+ * The properties of Node.js that frame a response (its connection and its
+ * body), which it reads as it commits the headers and writes the body
+ */
 interface IConnection {
+  chunkedEncoding: boolean;
+  maxRequestsOnConnectionReached: boolean;
   sendDate: boolean;
   shouldKeepAlive: boolean;
+  strictContentLength: boolean;
+  useChunkedEncodingByDefault: boolean;
 }
 
+/** Their values as the constructor of `OutgoingMessage` sets them */
+const initial: Readonly<IConnection> = Object.freeze({
+  chunkedEncoding: false,
+  maxRequestsOnConnectionReached: false,
+  sendDate: false,
+  shouldKeepAlive: true,
+  strictContentLength: false,
+  useChunkedEncodingByDefault: true,
+});
+
 /**
- * The `sendDate` and `shouldKeepAlive` of the responses: the constructors of
- * Node.js set them before the private fields of a response exist
+ * The framing properties of the responses (see `IConnection`): the
+ * constructors of Node.js set them before the private fields of a response
+ * exist
  */
 const connections = new WeakMap<object, IConnection>();
 
@@ -370,9 +388,15 @@ export class BindenResponse<
         value: add("prependListener", true),
       },
     });
-    // Nor whether it sends a `Date` and keeps its connection open (the
-    // framework sets them with its rights, e.g. at a shutdown)
-    for (const name of ["sendDate", "shouldKeepAlive"] as const) {
+    // Nor how it is framed: whether it sends a `Date`, keeps its connection
+    // open (or says that it closes it), chunks its body (also by default) or
+    // checks its length. Node.js sets them in the calls of the work that may
+    // mutate the response (e.g. as it commits the headers), the framework
+    // with its rights (e.g. at a shutdown). The other fields of Node.js are
+    // its own state (e.g. `finished`, `outputData`, and those whose name
+    // starts with `_`, such as `_hasBody`), which only its code writes: an
+    // application never assigns them.
+    for (const name of Object.keys(initial) as (keyof IConnection)[]) {
       Object.defineProperty(this.prototype, name, {
         configurable: true,
         enumerable: true,
@@ -388,11 +412,7 @@ export class BindenResponse<
           if (connection) {
             connection[name] = value;
           } else {
-            connections.set(this, {
-              sendDate: false,
-              shouldKeepAlive: true,
-              [name]: value,
-            });
+            connections.set(this, { ...initial, [name]: value });
           }
         },
       });

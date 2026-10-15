@@ -559,4 +559,102 @@ suite("The deadline", () => {
       },
     );
   });
+
+  test("the abandoned work cannot change how the reply of the deadline is framed", async () => {
+    /** The framing properties of Node.js, and what the abandoned work sets */
+    const assigned: Record<string, boolean> = {
+      chunkedEncoding: true,
+      maxRequestsOnConnectionReached: true,
+      strictContentLength: true,
+      useChunkedEncodingByDefault: false,
+    };
+    /** The replies of the deadline: the default one, a native one, a stream */
+    const handlers: Record<
+      string,
+      [IBindenOptions["error_handler"], string, string]
+    > = {
+      default: [({} as { value?: undefined }).value, "Content-Length: 0", ""],
+      native: [
+        async ({ response }: Context): Promise<void> => {
+          response.writeHead(503, { "Content-Length": 4 }).write("busy");
+          // While the abandoned work assigns them again
+          await sleep(30);
+          response.end();
+        },
+        "Content-Length: 4",
+        "busy",
+      ],
+      stream: [
+        async (context: Context): Promise<void> => {
+          context.response.status(503);
+          await context.send(
+            Readable.from(
+              (async function* produce(): AsyncGenerator<string> {
+                yield "bu";
+                await sleep(30);
+                yield "sy";
+              })(),
+            ),
+          );
+        },
+        "Transfer-Encoding: chunked",
+        "busy",
+      ],
+    };
+    for (const [property, value] of Object.entries(assigned)) {
+      for (const [name, [handler, framing, body]] of Object.entries(handlers)) {
+        await withApp(
+          {
+            timeout: 30,
+            ...(typeof handler === "undefined"
+              ? {}
+              : { error_handler: handler }),
+          },
+          (app) => {
+            app.use(async (context: Context) => {
+              const { response, signal, url } = context;
+              if (url.pathname === "/next") {
+                // Queued behind the reply of the deadline: never cut by its own
+                context.setTimeout(0);
+                await context.send("next");
+                return;
+              }
+              const assign = (): void => {
+                Reflect.set(response, property, value);
+              };
+              signal.addEventListener("abort", () => {
+                // Strict once the reply has written its body (strict before,
+                // Node.js would count its bytes)
+                if (property !== "strictContentLength") {
+                  assign();
+                }
+                setTimeout(assign, 10);
+              });
+              await never();
+            });
+          },
+          async ({ port }) => {
+            const key = `${property} (${name})`;
+            const [replied, next] = (await converse(
+              port,
+              "GET / HTTP/1.1\r\nHost: a\r\n\r\n" +
+                "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+            )) as [
+              { head: string; body: string },
+              { head: string; body: string },
+            ];
+            const head = replied.head.split("\r\n");
+            deepStrictEqual(head[0], "HTTP/1.1 503 Service Unavailable", key);
+            ok(head.includes(framing), `${key}: ${replied.head}`);
+            ok(
+              head.includes("Connection: keep-alive"),
+              `${key}: ${replied.head}`,
+            );
+            deepStrictEqual(replied.body, body, key);
+            deepStrictEqual(next.body, "next", key);
+          },
+        );
+      }
+    }
+  });
 });
