@@ -2,7 +2,9 @@ import {
   type IRaw,
   type IServed,
   converse,
+  decode,
   framed,
+  none,
   serve,
   sleep,
   text,
@@ -129,3 +131,136 @@ suite("Early hints of a pipelined request with a compressed reply", () => {
     });
   }
 });
+
+suite(
+  "Early hints, then a native write in any encoding, with a compression",
+  () => {
+    let served: IServed | null = null;
+
+    afterEach(async () => {
+      const current = served;
+      served = null;
+      await current?.close();
+    });
+
+    /** A reply that passes `callback` to the methods of Node.js `callbacks` times */
+    interface ICase {
+      readonly callbacks: number;
+      reply(response: Context["response"], callback: () => void): unknown;
+    }
+
+    /** Whether Node.js writes an odd hex string to a socket (see below) */
+    const oddHex = Number(process.versions.node.split(".")[0]) >= 26;
+    // Sent as they are (below the threshold), and compressed
+    const sizes = { small: 100, large: 2048 };
+    const cases: Record<string, (content: string) => ICase> = {
+      "end(string, 'utf-8')": (content) => ({
+        callbacks: 0,
+        reply: (r): unknown => r.end(content, "utf-8"),
+      }),
+      "write(base64) + end()": (content) => ({
+        callbacks: 0,
+        reply: (r): unknown => {
+          r.write(Buffer.from(content).toString("base64"), "base64");
+          return r.end();
+        },
+      }),
+      "end(odd hex)": (content) => ({
+        callbacks: 0,
+        reply: (r): unknown =>
+          r.end(`${Buffer.from(content).toString("hex")}f`, "hex"),
+      }),
+      "write(bytes, undefined, callback) + end()": (content) => ({
+        callbacks: 1,
+        reply: (r, cb): unknown => {
+          r.write(Buffer.from(content), none as unknown as BufferEncoding, cb);
+          return r.end();
+        },
+      }),
+      "write(bytes, null, callback) + end()": (content) => ({
+        callbacks: 1,
+        reply: (r, cb): unknown => {
+          r.write(Buffer.from(content), null as unknown as BufferEncoding, cb);
+          return r.end();
+        },
+      }),
+      "end(bytes, undefined, callback)": (content) => ({
+        callbacks: 1,
+        reply: (r, cb): unknown =>
+          r.end(Buffer.from(content), none as unknown as BufferEncoding, cb),
+      }),
+    };
+
+    test("the hints come first, and the body is exact (callbacks once)", async () => {
+      let replied = gate();
+      const calls = new Map<string, number>();
+      served = await serve(
+        {},
+        new Compression({ format: "gzip" }),
+        async (context: Context) => {
+          const { pathname } = context.url;
+          if (pathname === "/first") {
+            await replied.promise;
+            await sleep(20);
+            await context.send("first");
+            return;
+          }
+          const [, size = "", name = ""] =
+            decodeURIComponent(pathname).split("/");
+          const reply = cases[name](text(sizes[size as keyof typeof sizes]));
+          context.response
+            .setHeader("Content-Type", "text/plain")
+            .writeEarlyHints(hints);
+          reply.reply(context.response, () => {
+            const key = `${size}/${name}`;
+            calls.set(key, (calls.get(key) ?? 0) + 1);
+          });
+          replied.open();
+          await sleep(50);
+        },
+      );
+      for (const [size, length] of Object.entries(sizes)) {
+        // Node.js 24 aborts the process when it writes an odd hex string to
+        // a socket (also without binden); a compressor decodes it
+        const tested = Object.entries(cases).filter(
+          ([name]) => oddHex || size === "large" || name !== "end(odd hex)",
+        );
+        for (const [name, make] of tested) {
+          replied = gate();
+          const key = `${size}/${name}`;
+          const responses = await converse(
+            served.url,
+            `GET /first HTTP/1.1\r\nHost: a\r\n\r\n` +
+              `GET /${size}/${encodeURIComponent(name)} HTTP/1.1\r\nHost: a\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n`,
+          );
+          deepStrictEqual(responses.length, 3, key);
+          const [first, early, second] = responses as [IRaw, IRaw, IRaw];
+          deepStrictEqual(first.body.toString(), "first", key);
+          deepStrictEqual(
+            [early.head, early.body.length],
+            [`http/1.1 103 early hints\r\nlink: ${hints.link}`, 0],
+            key,
+          );
+          ok(second.head.startsWith("http/1.1 200 "), key);
+          // The bodies of an unknown length are compressed, as the large ones
+          deepStrictEqual(
+            second.head.includes("\r\ncontent-encoding: gzip"),
+            size === "large" || name.startsWith("write("),
+            key,
+          );
+          const coding = /\r\ncontent-encoding: (?<coding>\w+)/u.exec(
+            second.head,
+          )?.groups?.coding;
+          deepStrictEqual(
+            decode(coding, framed(second)).toString(),
+            text(length),
+            key,
+          );
+          // Once flushed
+          await sleep(20);
+          deepStrictEqual(calls.get(key) ?? 0, make("").callbacks, key);
+        }
+      }
+    });
+  },
+);

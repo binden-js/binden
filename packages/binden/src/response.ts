@@ -39,6 +39,7 @@ import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
+import { isUint8Array } from "node:util/types";
 import { parseHttpDate } from "./headers/http-date.js";
 
 /** The media type of `response.json()` */
@@ -181,6 +182,9 @@ interface IConnection {
  * Node.js set them before the private fields of a response exist
  */
 const connections = new WeakMap<object, IConnection>();
+
+/** Whether a value is truthy, as Node.js tests a chunk or an encoding (e.g. `""` is none) */
+const truthy = (value: unknown): boolean => Boolean(value);
 
 /** Without `[kSeal]()`, nothing may mutate a sealed response */
 const never = (): boolean => false;
@@ -843,33 +847,97 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return true;
     }
-    return super.write(...(this.#callbacks(this.#ordered(args)) as [unknown]));
+    this.#ordered(args, false);
+    return super.write(...(this.#callbacks(args) as [unknown]));
   }
 
   /**
-   * The arguments of a write (or an end) whose chunk would commit the head of
-   * the response while output is queued before it (e.g. a `103 Early Hints` of
-   * a pipelined request, which waits for the response before it): Node.js
-   * puts the head before what is queued when the chunk is bytes (but after it
-   * for a string), so that the client would read the informational response
-   * as the body. The bytes are then written as a `latin1` string, which they
-   * are byte for byte, and which keeps the order.
+   * Checks the chunk of a write (or of an `end()`) of the body as Node.js
+   * checks it, but before anything is sent: an unknown encoding throws
+   * `ERR_UNKNOWN_ENCODING`, which Node.js throws only once the head is
+   * committed (or, for a response that waits for the one before it, as it
+   * flushes it later, out of any call: the process crashes).
+   *
+   * Then keeps the order of a chunk that would commit the head while output
+   * is queued before it (e.g. a `103 Early Hints` of a pipelined request,
+   * which waits for the response before it): Node.js puts the head before
+   * what is queued when the chunk is bytes, or a string in an encoding other
+   * than exactly `utf8`, `latin1` or none (e.g. `utf-8`, `hex`, `base64`), so
+   * that the client would read the informational response as the body. The
+   * head is then committed by an empty `latin1` write (which Node.js queues in
+   * order), framed as Node.js frames that chunk (the only chunk of `end()`
+   * gives the `Content-Length` of a body without one), and the chunk is
+   * written as it is: nothing of it is converted.
    */
-  #ordered(args: readonly unknown[]): readonly unknown[] {
-    const [chunk, ...rest] = args;
-    // The state of the send queue of Node.js: the head has not been queued,
-    // and output has
+  #ordered(args: readonly unknown[], end: boolean): void {
+    // A callback in place of the chunk is not bytes (see below)
+    const [chunk, second] = args;
+    // As Node.js reads it: a falsy one (e.g. `undefined`) is none
+    const encoding: unknown =
+      typeof second === "function" || !truthy(second) ? null : second;
     if (
-      !(chunk instanceof Uint8Array) ||
-      Reflect.get(this, "_headerSent") === true ||
-      Reflect.get(this, "outputSize") === 0
+      // Ignored by Node.js: a falsy chunk of `end()`, a response that has
+      // ended or is destroyed (the callback gets the error), or without a
+      // body (e.g. to `HEAD`)
+      (end && !truthy(chunk)) ||
+      Reflect.get(this, "finished") === true ||
+      this.destroyed ||
+      // Refused by Node.js before it changes anything (e.g. `null`)
+      (typeof chunk !== "string" && !isUint8Array(chunk)) ||
+      !this.#hasBody()
     ) {
-      return args;
+      return;
+    } else if (
+      encoding !== null &&
+      !(
+        typeof encoding === "string" &&
+        (Buffer.isEncoding(encoding) ||
+          (typeof chunk !== "string" && encoding === "buffer"))
+      )
+    ) {
+      throw Object.assign(
+        new TypeError(`Unknown encoding: ${encoding as string}`),
+        { code: "ERR_UNKNOWN_ENCODING" },
+      );
+    } else if (
+      // The state of the send queue of Node.js: the head has been queued, or
+      // no output has
+      Reflect.get(this, "_headerSent") === true ||
+      Reflect.get(this, "outputSize") === 0 ||
+      // Queued after the head by Node.js itself
+      (typeof chunk === "string" &&
+        (encoding === null || encoding === "utf8" || encoding === "latin1"))
+    ) {
+      return;
     }
-    const bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    // The encoding of a chunk of bytes is ignored
-    const callbacks = typeof rest[0] === "string" ? rest.slice(1) : rest;
-    return [bytes.toString("latin1"), "latin1", ...callbacks];
+    if (end && typeof Reflect.get(this, "_header") !== "string") {
+      // As `end()` of Node.js: a body of one chunk has its length
+      Reflect.set(
+        this,
+        "_contentLength",
+        typeof chunk === "string"
+          ? Buffer.byteLength(chunk, encoding as BufferEncoding)
+          : chunk.byteLength,
+      );
+    }
+    super.write("", "latin1");
+  }
+
+  /**
+   * Whether Node.js writes the body of the response: not to `HEAD`, and not
+   * with a 1xx, 204 or 304 status (which `writeHead()` applies)
+   */
+  #hasBody(): boolean {
+    const status = this.statusCode;
+    return (
+      Reflect.get(this, "_hasBody") === true &&
+      (Boolean(Reflect.get(this, "_header")) ||
+        !(
+          BindenResponse.#informational(status) ||
+          status === 204 ||
+          status === 304
+        ))
+    );
   }
 
   /**
@@ -909,7 +977,8 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return this;
     }
-    return super.end(...(this.#callbacks(this.#ordered(args)) as []));
+    this.#ordered(args, true);
+    return super.end(...(this.#callbacks(args) as []));
   }
 
   /** Sends the headers (see `flushHeaders()` of Node.js), unless the response is sealed */
