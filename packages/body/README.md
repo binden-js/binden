@@ -135,8 +135,9 @@ selected are not checked.
 
 Data after the end of a coding (e.g. after the end of a `deflate` or `br` stream, or zero padding
 after a `gzip` member), which the decoders of Node.js would ignore while they go on reading it, is
-corrupt data too: the reading stops there. Concatenated `gzip` members (or `zstd` frames) are one
-body.
+corrupt data too: the reading stops there. Concatenated `gzip` members are one body, and so are
+concatenated `zstd` frames where Node.js decodes them all (Node.js 24 decodes only the first one:
+the body is then a `400`, never a truncated one).
 
 `zstd: true` decodes `zstd` too. Its API is experimental in Node.js, and a `zstd` decoder
 allocates the window that a frame declares, whatever `limit` is: the parser refuses a window larger
