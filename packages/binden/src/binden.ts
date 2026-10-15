@@ -142,6 +142,9 @@ export type IBindenOptions<State extends object = Record<string, unknown>> =
 /** Thrown through the stack once the request has been aborted: the stack stops */
 const ABORTED = new Error("The request has been aborted");
 
+/** The route of the access log for the replies of the framework (e.g. `404`) */
+const UNMATCHED = "<unmatched>";
+
 /** The outcome of an `error_handler` that has not settled in time */
 const EXPIRED = Symbol("expired");
 
@@ -473,7 +476,9 @@ export class Binden<
     const { request, response } = run.context;
     if (response.started) {
       return;
-    } else if (allow.size) {
+    }
+    Binden.#unmatched(exchange);
+    if (allow.size) {
       allow.add("OPTIONS");
       const methods = [...allow].join(", ");
       if (request.method === "OPTIONS") {
@@ -542,11 +547,12 @@ export class Binden<
         const middlewares =
           item instanceof Router ? this.#methodOf(item, run, allow) : [item];
         for (const middleware of middlewares) {
-          // The route of the access log: the template of the latest layer
-          // that has run a middleware
-          const route = exchange.mount_template + level.route;
-          if (route !== "") {
-            exchange.route = route;
+          if (!context.response.started) {
+            // The route of the access log: the template of the layer that
+            // runs a middleware, until the reply has started (`*` for a
+            // `use()` without a path at the root)
+            const route = exchange.mount_template + level.route;
+            exchange.route = route === "" ? "*" : route;
           }
           context = await this.#runMiddleware(middleware, context, exchange);
           run.context = context;
@@ -645,6 +651,11 @@ export class Binden<
       context.log.debug(message, { reason: reason.reason });
       response.destroy();
     }
+  }
+
+  /** The access log names the replies of the framework (e.g. `404`) `<unmatched>` */
+  static #unmatched(exchange: Exchange): void {
+    exchange.route = UNMATCHED;
   }
 
   /** A middleware has set `done`: a response that nothing has started is sent empty */
@@ -1023,7 +1034,8 @@ export class Binden<
 
   /**
    * Logs a request once its response is closed: its method, route (the
-   * templates of the matched mounts and layer, or `<unmatched>`), status
+   * templates of the matched mounts and of the layer that has started the
+   * reply, or `<unmatched>` for a reply of the framework), status
    * (`null` when the headers have not been sent), duration, the bytes of the
    * body (as written, e.g. compressed), id and whether it has been aborted
    */
@@ -1069,7 +1081,7 @@ export class Binden<
       const duration = performance.now() - start;
       context.log[level]("The request has completed", {
         method: request.method,
-        route: exchange.route ?? "<unmatched>",
+        route: exchange.route ?? UNMATCHED,
         // A request of a server always has its request-target
         ...(path === "path" ? { path: pathOf(request.url as string) } : {}),
         status: response.headersSent ? response.statusCode : null,

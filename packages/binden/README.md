@@ -194,13 +194,15 @@ With the `access_log` option, every request is logged once (at `info`, or at `de
 | Field         | Description                                                                                                                                          |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `method`      | The method of the request                                                                                                                            |
-| `route`       | The templates of the matched mounts and of the latest `route()` or `use()` layer that has run a middleware (e.g. `/api/users/:id`), or `<unmatched>` |
+| `route`       | The templates of the matched mounts and of the layer that has started the reply (e.g. `/api/users/:id`), or `<unmatched>` (a reply of the framework) |
 | `path`        | The path of the request, without its query (with `{ path: "path" }` only: it may name a user or a resource)                                          |
 | `status`      | The status of the response, or `null` when it has been aborted before its headers were sent                                                          |
 | `duration_ms` | The milliseconds from the request to the close of its response                                                                                       |
 | `body_bytes`  | The bytes of the body, as written (e.g. compressed), without the headers                                                                             |
 | `id`          | The id of the request                                                                                                                                |
 | `aborted`     | Whether the request has been aborted (see [Lifecycle](#lifecycle))                                                                                   |
+
+The `route` of a `use()` without a path is the template of its mounts (`*` at the root), and the replies of the framework (its `404`, `405` and the `204` of `OPTIONS`) are `<unmatched>`.
 
 ```typescript
 import { Binden } from "binden";

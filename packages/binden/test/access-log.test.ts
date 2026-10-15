@@ -1,5 +1,6 @@
 import {
   Binden,
+  BindenError,
   type Context,
   type IBindenOptions,
   Router,
@@ -163,6 +164,82 @@ suite("Access log", () => {
     );
   });
 
+  test("the route of the layer that has started the reply", async () => {
+    await withApp(
+      { access_log: true },
+      (app) => {
+        const api = new Stack()
+          // Runs, but does not reply
+          .route("/users/:id", (context: Context) => {
+            context.state.seen = true;
+          })
+          .route("/items/:id", () => {
+            throw new BindenError(404);
+          })
+          .use((context: Context) => {
+            if (context.url.pathname === "/api/fallback") {
+              return context.send("api");
+            }
+            return context;
+          })
+          .route(
+            "/guarded",
+            new Router({ guarded: true }).get((context: Context) =>
+              context.send("guarded"),
+            ),
+          );
+        app
+          // Runs for every request
+          .use((context: Context) => {
+            context.state.logged = true;
+          })
+          .mount("/api", api)
+          .use("/root", (context: Context) => {
+            // Started here, but not done: the next layers do not take it
+            context.response.write("root");
+          })
+          .use((context: Context) => {
+            if (context.url.pathname.startsWith("/api/users/")) {
+              return context.status(404).send("fallback");
+            } else if (context.url.pathname === "/root") {
+              context.response.end();
+              context.done = true;
+            }
+            return context;
+          });
+      },
+      async ({ port }, captured) => {
+        const paths = [
+          "/api/users/1",
+          "/api/items/1",
+          "/api/fallback",
+          "/root",
+          "/nothing",
+        ];
+        for (const path of paths) {
+          await send(port, { path });
+        }
+        await send(port, { path: "/api/guarded", method: "POST" });
+        await waitFor(captured, 6);
+        deepStrictEqual(
+          records(captured).map(({ route, status }) => [route, status]),
+          [
+            // The fallback of the root, not the route that has run before
+            ["*", 404],
+            // The error of a route
+            ["/api/items/:id", 404],
+            // A `use()` without a path in a mount
+            ["/api", 200],
+            ["/root", 200],
+            // The `404` and `405` of the framework
+            ["<unmatched>", 404],
+            ["<unmatched>", 405],
+          ],
+        );
+      },
+    );
+  });
+
   test("the level, and the path of the request", async () => {
     await withApp(
       { access_log: { level: "debug", path: "path" } },
@@ -266,7 +343,7 @@ suite("Access log", () => {
           {
             level: 30,
             method: "GET",
-            route: "<unmatched>",
+            route: "*",
             status: null,
             body_bytes: 0,
             aborted: true,
@@ -291,7 +368,7 @@ suite("Access log", () => {
           {
             level: 30,
             method: "GET",
-            route: "<unmatched>",
+            route: "*",
             status: 503,
             body_bytes: 0,
             aborted: true,
