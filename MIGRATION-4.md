@@ -238,8 +238,8 @@ Trusting the proxies by their addresses is safer: see
 
 #### Request-targets
 
-- A request-target with a fragment, a backslash, an invalid percent-encoding or a dot-segment
-  (`/a/../b`, also percent-encoded), a request with several `Host` field lines, and a request
+- A request-target with a fragment, a backslash, a space or a control character, an invalid
+  percent-encoding or a dot-segment (`/a/../b`, also percent-encoded), a request with several `Host` field lines, and a request
   without a valid host get `400 Bad Request` (an invalid `Host` used to be a `500`, and several
   were reduced to the first one).
 - The scheme of an absolute-form target no longer sets `request.secure` and the protocol of
@@ -269,6 +269,11 @@ const decodable = (context: Context): void => {
   `IfModifiedSince` (an Invalid Date, or a year out of 0 to 9999).
 - `ContentType#toString()` includes every parameter, and `Forwarded#toString()` quotes the values
   that are not tokens.
+- `ContentType` requires the `boundary` of `multipart/form-data` in any case of the media type
+  (e.g. `Multipart/Form-Data`), and refuses a parameter value that is not a valid field value (a
+  control character, or a character above `\xFF`): so does `response.type()`.
+- `new ContentRange({ size: "*" })` without a range throws a `TypeError`: an unsatisfied range
+  needs the complete length (`bytes */<size>`).
 - `new Cookie()` throws a `TypeError` for a name, a value or an attribute that would change the
   `Set-Cookie` header (e.g. a value with `;`), and `request.cookies` skips such cookies.
 
