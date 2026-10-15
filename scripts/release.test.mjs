@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { deepEqual, doesNotMatch, equal, match, ok } from "node:assert/strict";
 import { delimiter, dirname, join } from "node:path";
-import { integrity, manifestFile } from "./tarballs.mjs";
+import { integrity, manifestFile, readTarball } from "./tarballs.mjs";
 import { npmTarball } from "./fixtures/tar.mjs";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -98,6 +98,12 @@ const invalidVersions = [
 ];
 // Valid SemVer, but npm publishes `1.0.0+a` as `1.0.0`
 const buildVersions = ["1.0.0+build", "1.0.0+001", "1.0.0-rc.1+build.1-x"];
+
+// The package.json that `scripts/release.mjs version` writes
+const pretty = (manifest) => `${JSON.stringify(manifest, null, 2)}\n`;
+
+// The errors that scripts/release.mjs lists (indented by two spaces, unlike the stack)
+const listed = (stderr) => stderr.match(/^ {2}\S.*$/gmu);
 
 describe("scripts/release.mjs", () => {
   let root = "";
@@ -504,6 +510,45 @@ describe("scripts/release.mjs", () => {
       }
     });
 
+    it("refuses archives whose package.json is not the one of the workspace", () => {
+      succeed(["version", "2.0.0"]);
+      for (const [env, error] of [
+        // In the archive only: a script that npm runs at install, a dependency
+        [
+          {
+            FAKE_NPM_PACK_PATCH: JSON.stringify({
+              "packages/b": { scripts: { postinstall: "node -e 1" } },
+            }),
+          },
+          "fixture-b-2.0.0.tgz: package.json differs from packages/b/package.json",
+        ],
+        [
+          {
+            FAKE_NPM_PACK_PATCH: JSON.stringify({
+              "packages/c": { dependencies: { "left-pad": "*" } },
+            }),
+          },
+          "fixture-c-2.0.0.tgz: package.json differs from packages/c/package.json",
+        ],
+        // Written into the workspace while it is packed (by a `prepack` script): not the
+        // package.json that `version` wrote
+        [
+          {
+            FAKE_NPM_PREPACK: JSON.stringify({
+              "packages/a": { scripts: { install: "node -e 1" } },
+            }),
+          },
+          "fixture-a-2.0.0.tgz: package.json differs from packages/a/package.json",
+        ],
+      ]) {
+        rmSync(out, { force: true, recursive: true });
+        const { status, stderr } = release(["pack", out], env);
+        equal(status, 1);
+        deepEqual(listed(stderr), [`  ${error}`]);
+        equal(existsSync(join(out, manifestFile)), false);
+      }
+    });
+
     it("refuses archives with unexpected or missing files", () => {
       writeFileSync(path("packages/a/secret.pem"), "secret");
       writeJSON("scripts/pack-files.json", {
@@ -729,6 +774,52 @@ describe("scripts/release.mjs", () => {
         const { status, stderr } = release(["publish", out]);
         equal(status, 1);
         match(stderr, error);
+      }
+      deepEqual(npmCalls("view", "publish"), []);
+    });
+
+    // npm installs what the package.json of an archive declares: it must be the bytes that
+    // `version` wrote into the workspace, not only the same name, version and gitHead
+    it("publishes nothing when a package.json is not the one that version wrote", () => {
+      const packages = prepare();
+      const written = readFileSync(path("packages/b/package.json"), "utf8");
+      const manifest = JSON.parse(written);
+      const substitute = (content) => {
+        const data = npmTarball({
+          "README.md": "# @fixture/b\n",
+          "index.js": "",
+          "package.json": content,
+        });
+        writeFileSync(join(out, packages[1].file), data);
+        const [a, b, c] = packages;
+        writeJSON(`release/${manifestFile}`, {
+          packages: [a, { ...b, integrity: integrity(data) }, c],
+        });
+      };
+      // Another archive with the same package.json passes
+      substitute(written);
+      succeed(["publish", out, "--dry-run"]);
+      rmSync(path("npm.log"));
+      for (const content of [
+        pretty({ ...manifest, scripts: { postinstall: "node -e 1" } }),
+        pretty({
+          ...manifest,
+          dependencies: { ...manifest.dependencies, "left-pad": "*" },
+        }),
+        pretty({ ...manifest, bin: { b: "index.js" } }),
+        // The same fields, written otherwise
+        JSON.stringify(manifest),
+        written.replaceAll("\n", "\r\n"),
+        written.trimEnd(),
+      ]) {
+        substitute(content);
+        for (const options of [[], ["--skip-existing"]]) {
+          const { status, stderr } = release(["publish", out, ...options]);
+          equal(status, 1);
+          deepEqual(listed(stderr), [
+            "  fixture-b-2.0.0.tgz: package.json differs from packages/b/package.json",
+          ]);
+        }
       }
       deepEqual(npmCalls("view", "publish"), []);
     });
@@ -1036,6 +1127,47 @@ describe("scripts/release.mjs", () => {
         publisher,
         /@fixture\/b: not in release-manifest\.json/u,
       );
+    });
+
+    // An archive of the release whose package.json gained a script that npm runs at
+    // install or a dependency, listed in a consistent manifest (S5 of the review): its
+    // name, version, gitHead and files are the ones of the release
+    it("refuses an archive whose package.json is not the one of the release, before the tag", () => {
+      const artifact = packageJob("2.0.0");
+      const [a, b, c] = artifactManifest(artifact);
+      const manifest = JSON.parse(
+        readTarball(readFileSync(join(artifact, b.file))).get("package.json"),
+      );
+      const publisher = checkout();
+      for (const fields of [
+        { scripts: { postinstall: "node -e 1" } },
+        { dependencies: { ...manifest.dependencies, "left-pad": "*" } },
+      ]) {
+        const data = npmTarball({
+          "README.md": "",
+          "index.js": "",
+          "package.json": pretty({ ...manifest, ...fields }),
+        });
+        writeFileSync(join(artifact, b.file), data);
+        writeFileSync(
+          join(artifact, manifestFile),
+          JSON.stringify({
+            packages: [a, { ...b, integrity: integrity(data) }, c],
+          }),
+        );
+        const { status, stderr } = run(
+          "prepareCmd",
+          "2.0.0",
+          artifact,
+          publisher,
+        );
+        equal(status, 1, stderr);
+        deepEqual(listed(stderr), [
+          "  fixture-b-2.0.0.tgz: package.json differs from packages/b/package.json",
+        ]);
+        deepEqual(npmLog("npm-release.log", "publish"), []);
+        deepEqual(registry(), {});
+      }
     });
 
     it("recovers a partial publication from the archives of another job", () => {

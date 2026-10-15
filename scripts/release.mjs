@@ -9,13 +9,15 @@
 //   version <version>   set <version> and `gitHead` (the commit of HEAD) in every workspace,
 //                       and refresh package-lock.json (nothing is built or packed)
 //   pack <dir>          pack every workspace once into <dir> (missing or empty), check the
-//                       name, the version, the `gitHead` and the files (scripts/pack-files.json)
-//                       inside each archive, and list them in <dir>/release-manifest.json
+//                       package.json (byte for byte the one of the workspace), the name, the
+//                       version, the `gitHead` and the files (scripts/pack-files.json) inside
+//                       each archive, and list them in <dir>/release-manifest.json
 //   publish <dir>       check the archives of <dir>/release-manifest.json against the
 //                       workspaces (one archive of each, of their version, packed from HEAD,
-//                       with the integrity of the manifest, the expected files and the rules
-//                       of scripts/pack-rules.mjs), then the registry for all of them, and only
-//                       then publish them in dependency order
+//                       with the integrity of the manifest, byte for byte the package.json
+//                       that `version` wrote into the workspace, the expected files and the
+//                       rules of scripts/pack-rules.mjs), then the registry for all of them,
+//                       and only then publish them in dependency order
 //     --skip-existing   skip the versions already published from the same archive (`gitHead`
 //                       and `dist.integrity`), to recover a release that failed half-way: from
 //                       the commit of its tag only
@@ -243,9 +245,16 @@ function readArchive(data) {
 }
 
 // The differences between an archive (`readArchive`) and the expected package, and
-// the files that break the rules of the published files (scripts/pack-rules.mjs)
+// the files that break the rules of the published files (scripts/pack-rules.mjs). Its
+// package.json must be the bytes that `version` wrote into the workspace: npm installs
+// what it declares (scripts, dependencies, bins, exports), and nothing else checks them.
 function archiveErrors(file, { manifest, files, contents }, expected) {
   const errors = [];
+  if (!contents.get("package.json").equals(expected.packageJSON)) {
+    errors.push(
+      `${file}: package.json differs from ${expected.dir}/package.json`,
+    );
+  }
   for (const field of ["name", "version", "gitHead"]) {
     if (manifest[field] !== expected[field]) {
       errors.push(
@@ -277,6 +286,10 @@ function pack(dir) {
   if (readdirSync(dir).length > 0) {
     throw new Error(`${dir} is not empty`);
   }
+  // As `version` wrote them, before the scripts of `npm pack` (`prepack`, `prepare`) run
+  const written = new Map(
+    packages.map(({ file, manifest }) => [manifest.name, readFileSync(file)]),
+  );
   npm(["pack", "--workspaces", "--pack-destination", dir, "--loglevel=warn"], {
     stdio: ["ignore", process.stderr, "inherit"],
   });
@@ -298,7 +311,7 @@ function pack(dir) {
   }
   const allFiles = expectedFiles();
   const ordered = dependencyOrder(packages);
-  for (const { manifest } of ordered) {
+  for (const { dir: workspace, manifest } of ordered) {
     const archive = archives.get(manifest.name);
     if (typeof archive === "undefined") {
       errors.push(`${manifest.name}: no archive`);
@@ -309,6 +322,8 @@ function pack(dir) {
           version,
           gitHead: head,
           files: allFiles[manifest.name] ?? [],
+          dir: workspace,
+          packageJSON: written.get(manifest.name),
         }),
       );
     }
@@ -360,7 +375,7 @@ function releaseArchives(dir, packages, version, head) {
   }
   const allFiles = expectedFiles();
   const ordered = [];
-  for (const { manifest } of dependencyOrder(packages)) {
+  for (const { dir: workspace, file, manifest } of dependencyOrder(packages)) {
     const entry = entries.get(manifest.name);
     if (typeof entry === "undefined") {
       errors.push(`${manifest.name}: not in ${manifestFile}`);
@@ -376,6 +391,9 @@ function releaseArchives(dir, packages, version, head) {
           version: entry.version,
           gitHead: entry.sha,
           files: allFiles[entry.name] ?? [],
+          dir: workspace,
+          // As `version` wrote it into this checkout
+          packageJSON: readFileSync(file),
         }),
       );
       ordered.push(entry);

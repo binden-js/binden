@@ -10,9 +10,11 @@
 //       adds the archive to the registry (its `gitHead` and its integrity), but fails
 //       (E500) for the package FAKE_NPM_FAIL_PUBLISH
 //   pack --workspaces --pack-destination <dir>
-//       packs every file of every workspace inside `package/`, like npm, with the
-//       package.json fields of FAKE_NPM_PACK_PATCH ({ "<workspace>": { ...fields } });
-//       fails when FAKE_NPM_FAIL_PACK is set
+//       packs every file of every workspace inside `package/` as it is on disk, like npm,
+//       but with the package.json fields of FAKE_NPM_PACK_PATCH in the archive only
+//       ({ "<workspace>": { ...fields } }, written as `scripts/release.mjs version` writes
+//       it), after the fields of FAKE_NPM_PREPACK are written into the package.json of the
+//       workspace (as a `prepack` script could); fails when FAKE_NPM_FAIL_PACK is set
 //   install
 //       rewrites package-lock.json
 //
@@ -89,7 +91,13 @@ function pack(options) {
   }
   const destination = options[options.indexOf("--pack-destination") + 1];
   const patches = JSON.parse(env.FAKE_NPM_PACK_PATCH ?? "{}");
+  const prepack = JSON.parse(env.FAKE_NPM_PREPACK ?? "{}");
+  const write = (manifest) => `${JSON.stringify(manifest, null, 2)}\n`;
   for (const dir of readJSON("package.json").workspaces) {
+    if (dir in prepack) {
+      const file = join(dir, "package.json");
+      writeFileSync(file, write({ ...readJSON(file), ...prepack[dir] }));
+    }
     const files = {};
     for (const path of readdirSync(dir, { recursive: true })) {
       if (statSync(join(dir, path)).isFile()) {
@@ -97,7 +105,9 @@ function pack(options) {
       }
     }
     const manifest = JSON.parse(files["package.json"]);
-    files["package.json"] = JSON.stringify({ ...manifest, ...patches[dir] });
+    if (dir in patches) {
+      files["package.json"] = write({ ...manifest, ...patches[dir] });
+    }
     const file = `${manifest.name.replace("@", "").replace("/", "-")}-${manifest.version}.tgz`;
     writeFileSync(join(destination, file), npmTarball(files));
   }

@@ -144,7 +144,8 @@ that npm receives are the bytes that were checked.
    at it yet (only a 404 of the registry means "not published": any other error stops the release);
 2. `package`: `scripts/release.mjs version` sets that version in **every** workspace (and the
    internal dependency ranges to `^<version>`), with the commit as `gitHead`, then `pack` packs
-   every workspace once, checks the name, the version, the `gitHead` and the files
+   every workspace once, checks the `package.json` (byte for byte the one that `version` wrote),
+   the name, the version, the `gitHead` and the files
    ([`scripts/pack-files.json`](scripts/pack-files.json) and the rules of
    [`scripts/pack-rules.mjs`](scripts/pack-rules.mjs)) inside each archive, and lists the archives
    (name, version, commit, `sha512` integrity, file) in `release-manifest.json`;
@@ -153,9 +154,10 @@ that npm receives are the bytes that were checked.
 4. `release`: semantic-release computes the next version again. Its `prepareCmd` runs
    `scripts/release.mjs version` (the manifests and the lockfile: nothing is built or packed), then
    `publish --dry-run` of the downloaded archives: there must be one archive of every workspace, of
-   that version, packed from `HEAD`, with the integrity of the manifest, the expected files and none
-   that the rules refuse, none may be published yet, and `npm publish --dry-run` must accept each
-   one. Any difference (a version or a commit that is not the one of the archives, an archive that
+   that version, packed from `HEAD`, with the integrity of the manifest, byte for byte the
+   `package.json` that `version` wrote into the workspace (what npm installs: scripts,
+   dependencies, entry points), the expected files and none that the rules refuse, none may be
+   published yet, and `npm publish --dry-run` must accept each one. Any difference (a version or a commit that is not the one of the archives, an archive that
    changed or was substituted) fails the release **before anything is tagged**;
 5. the `v<version>` tag is pushed;
 6. `scripts/release.mjs publish` checks the archives again, then the registry for **all** the
@@ -198,7 +200,7 @@ without any right to publish:
    artifact of the `recover-package` job of the same run and checks the digest of its manifest, sets
    the version (`scripts/release.mjs version`: nothing is installed, built or packed), and publishes
    with `scripts/release.mjs publish --skip-existing`: the archives must be the ones of the commit
-   of the tag, the registry is checked for all the packages first, a version that is already
+   of the tag, with the `package.json` that `version` wrote, the registry is checked for all the packages first, a version that is already
    published is skipped only when it is the same archive (its `gitHead` and `dist.integrity` on
    npm), and any other difference, or any registry error other than a 404, publishes nothing. The
    missing packages are published with provenance;
