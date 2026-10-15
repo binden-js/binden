@@ -164,7 +164,7 @@ suite("BodyParser (aborted requests)", () => {
   );
 
   test(
-    "a client that has gone away before the body is read, once the response has finished",
+    "a parser that starts once the response has finished and its client has gone away",
     { timeout: 10_000 },
     async () => {
       const parser = new BodyParser();
@@ -176,7 +176,7 @@ suite("BodyParser (aborted requests)", () => {
           const gone = once(socket, "close");
           await context.send("early");
           await gone;
-          // Read only now: no event of the request tells it
+          // Only now, once the response has finished
           await parser.run(context).then(
             () => {
               settle({ ok: true });
@@ -198,7 +198,12 @@ suite("BodyParser (aborted requests)", () => {
         received.resume();
         await within(once(received, "end"));
         req.destroy();
-        ok(isAborted(failure(await within(settled))));
+        const error = failure(await within(settled));
+        ok(error instanceof BindenError);
+        deepStrictEqual(
+          [error.status, error.message],
+          [500, "The body has been discarded once the response finished"],
+        );
       } finally {
         await server.close();
       }
@@ -451,6 +456,95 @@ suite("BodyParser (aborted requests)", () => {
         ok(isAborted(error));
         deepStrictEqual((error as Error).cause, streamError);
         req.destroy();
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+suite("BodyParser (once the response has finished)", () => {
+  const discarded = "The body has been discarded once the response finished";
+
+  test(
+    "a parser that starts once the response has finished refuses the body",
+    { timeout: 10_000 },
+    async () => {
+      for (const [type, payload] of [
+        [ct_json, '{"a":1}'],
+        [ct_text, "hello"],
+        ["application/octet-stream", "hello"],
+      ] as const) {
+        const watched = watch(
+          new BodyParser({ raw: true }),
+          async (context) => {
+            if (!context.response.writableFinished) {
+              await once(context.response, "finish");
+            }
+          },
+        );
+        const logger = new Recorder();
+        const server = await listen(
+          new Binden({ logger }).use(async (context: Context) => {
+            // Without `done`: the next middleware runs
+            await context.response.status(202).send("accepted");
+          }, watched.middleware),
+        );
+        try {
+          // The body once the client has the reply
+          const { req, response } = upload(
+            server,
+            { "Content-Type": type, "Content-Length": payload.length },
+            "",
+          );
+          const received = await within(response);
+          received.resume();
+          await within(once(received, "end"));
+          req.end(payload);
+          const error = failure(await within(watched.settled));
+          ok(error instanceof BindenError);
+          deepStrictEqual([error.status, error.message], [500, discarded]);
+          ok(logger.messages("error").includes(discarded));
+        } finally {
+          await server.close();
+        }
+      }
+    },
+  );
+
+  test(
+    "a parser that starts once the response has ended, but not finished, reads the body",
+    { timeout: 10_000 },
+    async () => {
+      // Larger than what the connection buffers: the response cannot finish
+      // before the client reads it
+      const large = Buffer.alloc(32 * 1024 * 1024, 0x61);
+      const states: boolean[] = [];
+      const watched = watch(new BodyParser(), (context) => {
+        const { response } = context;
+        states.push(response.writableEnded, response.writableFinished);
+      });
+      const server = await listen(
+        new Binden().use((context: Context) => {
+          context.response.end(large);
+        }, watched.middleware),
+      );
+      try {
+        const { req, response } = upload(
+          server,
+          { "Content-Type": ct_text, "Content-Length": 5 },
+          "",
+        );
+        const context = await within(watched.started);
+        req.end("hello");
+        deepStrictEqual(await within(watched.settled), { ok: true });
+        deepStrictEqual(
+          [states, context.request.body],
+          [[true, false], "hello"],
+        );
+        const received = await within(response);
+        received.resume();
+        await within(once(received, "end"));
       } finally {
         await server.close();
       }

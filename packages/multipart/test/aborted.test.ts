@@ -7,8 +7,8 @@ import {
   shutdown,
 } from "binden";
 import { type IMultipartOptions, Multipart } from "../index.js";
-import { type TestContext, describe, it } from "node:test";
 import {
+  RecordingLogger,
   body,
   listen,
   part,
@@ -19,6 +19,7 @@ import {
   upload,
   within,
 } from "./helpers.js";
+import { type TestContext, describe, it } from "node:test";
 import { deepEqual, equal, ok } from "node:assert/strict";
 import { finished } from "node:stream/promises";
 import { once } from "node:events";
@@ -290,5 +291,98 @@ describe("Multipart (a client that goes away once the response has finished)", (
     }
 
     deepEqual([sockets.size, counts.length, new Set(counts).size], [1, 3, 1]);
+  });
+});
+
+describe("Multipart (a parse that starts once the response has ended)", () => {
+  const discarded = "The body has been discarded once the response finished";
+
+  it("refuses the body once the response has finished", async (t) => {
+    const { promise: settled, resolve: settle } =
+      Promise.withResolvers<unknown>();
+    const logger = new RecordingLogger();
+    const parser = new Multipart();
+    const { url } = await serve(
+      t,
+      [
+        async (context: Context): Promise<void> => {
+          // Without `done`: the next middleware runs
+          await context.response.status(202).send("accepted");
+        },
+        async (context: Context): Promise<void> => {
+          if (!context.response.writableFinished) {
+            await once(context.response, "finish");
+          }
+          await parser.run(context).then(settle, settle);
+        },
+      ],
+      { logger },
+    );
+    const form = body(part('name="a"', "1"));
+
+    // The body once the client has the reply
+    const client = httpRequest(url, {
+      method: "POST",
+      headers: { "Content-Type": type, "Content-Length": form.length },
+    });
+    client.on("error", ignore);
+    client.flushHeaders();
+    const [response] = (await within(once(client, "response"))) as [
+      IncomingMessage,
+    ];
+    response.resume();
+    await within(once(response, "end"));
+    client.end(form);
+    const error = await within(settled);
+
+    ok(error instanceof BindenError);
+    deepEqual([error.status, error.message], [500, discarded]);
+    ok(
+      logger.records.some(
+        ({ level, message }) => level === "error" && message === discarded,
+      ),
+    );
+  });
+
+  it("parses the body once the response has ended, but not finished", async (t) => {
+    // Larger than what the connection buffers: the response cannot finish
+    // before the client reads it
+    const large = Buffer.alloc(32 * 1024 * 1024, 0x61);
+    const states: boolean[] = [];
+    const { promise: settled, resolve: settle } =
+      Promise.withResolvers<unknown>();
+    const { promise: started, resolve: start } = Promise.withResolvers<null>();
+    const parser = new Multipart();
+    const { url } = await serve(t, [
+      (context: Context): void => {
+        context.response.end(large);
+      },
+      async (context: Context): Promise<void> => {
+        const { response } = context;
+        states.push(response.writableEnded, response.writableFinished);
+        start(null);
+        await parser.run(context).then(() => {
+          settle([...(context.request.body as FormData)]);
+        }, settle);
+      },
+    ]);
+    const form = body(part('name="a"', "1"));
+
+    const client = httpRequest(url, {
+      method: "POST",
+      headers: { "Content-Type": type, "Content-Length": form.length },
+    });
+    client.on("error", ignore);
+    client.flushHeaders();
+    await within(started);
+    client.end(form);
+
+    deepEqual(await within(settled), [["a", "1"]]);
+    deepEqual(states, [true, false]);
+    const [response] = (await within(once(client, "response"))) as [
+      IncomingMessage,
+    ];
+    response.resume();
+    await within(once(response, "end"));
   });
 });

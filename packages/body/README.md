@@ -231,6 +231,11 @@ stay pending.
   reason of the signal (a `BindenAbortError`), and the connection is closed after the reply of
   the framework.
 
+A parser must start before the response has finished: Node.js then reads and discards what has
+not been read of the body. A parser that starts later (e.g. after a middleware that has replied
+without `done`) refuses the body with a `500 Internal Server Error` (logged at `error`), never
+with an empty body.
+
 ## Errors
 
 | Situation                                                                                                               | Reply                          |
@@ -243,6 +248,7 @@ stay pending.
 | A content type that is not selected                                                                                     | skipped (the body is not read) |
 | A `BindenError` of `parse` or `verify`                                                                                  | that error                     |
 | Any other failure of `parse` or `verify`, a `type` function that fails, a body that something else has read             | `500 Internal Server Error`    |
+| A parser that starts once the response has finished                                                                     | `500 Internal Server Error`    |
 
 The parser never logs the body itself: its logs have the reason of the refusal, and the type,
 known `code` and status of an error.

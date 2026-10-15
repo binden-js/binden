@@ -114,6 +114,9 @@ const ZSTD_WINDOW_LOG_MAX = 23;
 /** The most content codings that a body may have */
 const MAX_CODINGS = 2;
 
+/** The error of a parser that starts once the response has finished */
+const DISCARDED = "The body has been discarded once the response finished";
+
 const kinds: ReadonlySet<string> = new Set(["form", "json", "raw", "text"]);
 
 const token = "[!#$%&'*+.^_`|~\\w-]+";
@@ -449,7 +452,12 @@ export class BodyParser<T = unknown> extends Middleware {
     };
 
     // An aborted signal stops the reading (see `#read()`)
-    if (request.readableDidRead || request.readableEnded) {
+    if (context.response.writableFinished) {
+      // Node.js reads and discards what has not been read once the response
+      // has finished: what is left of the body would be missing
+      log.error(DISCARDED);
+      throw new BindenError(500, { message: DISCARDED });
+    } else if (request.readableDidRead || request.readableEnded) {
       // E.g. by a middleware that has read the stream itself
       log.error("The body has already been read");
       throw new BindenError(500);
@@ -607,7 +615,9 @@ export class BodyParser<T = unknown> extends Middleware {
 
       // Once the response has finished, Node.js no longer tells the request
       // that the client has gone away, but its connection closes. A body that
-      // has been received whole is still read.
+      // has been received whole is still read. (A parser does not start once
+      // the response has finished, and before, a closed connection has
+      // destroyed the request.)
       const { socket } = request;
       const closed = (): void => {
         if (!request.complete) {
@@ -618,9 +628,6 @@ export class BodyParser<T = unknown> extends Middleware {
       cleanups.push(() => {
         socket.off("close", closed);
       });
-      if (socket.destroyed) {
-        closed();
-      }
     });
   }
 

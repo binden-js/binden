@@ -206,11 +206,14 @@ The `filename` of a file is the name that the client has sent, without its contr
 | A file refused by `file_filter`, a field of an unknown charset | `415 Unsupported Media Type`                                               |
 | A `BindenError` thrown by `file_filter` or `on_file`           | Its status                                                                 |
 | Another failure of `file_filter`, `on_file` or the storage     | `500 Internal Server Error`                                                |
+| A parse that starts once the response has finished             | `500 Internal Server Error`                                                |
 | Another media type than `multipart/form-data`                  | Skipped: the body is not read                                              |
 | The client goes away                                           | `run()` rejects with a `400` of code `aborted`                             |
 | The deadline passes, or the server shuts down                  | `run()` rejects with the reason of `context.signal` (a `BindenAbortError`) |
 
 After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response that has already started destroys the request.
+
+A parse must start before the response has finished: Node.js then reads and discards what has not been read of the body. A parse that starts later (e.g. after a middleware that has replied without `done`) refuses the body with a `500` (logged at `error`), never with an empty form.
 
 A client that goes away is seen also when the parser is still reading once the response has finished (e.g. it was not awaited): `context.signal` is no longer aborted then, but the connection closes before the body has been received whole, and `run()` rejects with a `400` of code `aborted`. The streams of the files in progress are destroyed (a body received whole is still parsed).
 

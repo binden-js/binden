@@ -553,6 +553,12 @@ export class Multipart extends Middleware {
     if (info === null) {
       log.debug("The body has already been parsed");
       return;
+    } else if (context.response.writableFinished) {
+      // Node.js reads and discards what has not been read once the response
+      // has finished: what is left of the body would be missing
+      const message = "The body has been discarded once the response finished";
+      log.error(message);
+      throw new BindenError(500, { message });
     }
     await new Parser(context, log, info, this.#options).run();
   }
