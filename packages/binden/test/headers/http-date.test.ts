@@ -32,6 +32,22 @@ suite("HTTP-date", () => {
     );
   });
 
+  test("the years 0 to 99 of four digits", () => {
+    for (const [input, iso] of [
+      ["Sat, 01 Jan 0000 00:00:00 GMT", "0000-01-01T00:00:00.000Z"],
+      ["Sun, 06 Nov 0099 08:49:37 GMT", "0099-11-06T08:49:37.000Z"],
+      ["Thu Nov  6 08:49:37 0050", "0050-11-06T08:49:37.000Z"],
+    ] as const) {
+      deepStrictEqual(parseHttpDate(input)?.toISOString(), iso, input);
+    }
+    // February 29 of a leap year, not of 1900
+    deepStrictEqual(
+      parseHttpDate("Tue, 29 Feb 0000 00:00:00 GMT")?.toISOString(),
+      "0000-02-29T00:00:00.000Z",
+    );
+    deepStrictEqual(parseHttpDate("Thu, 29 Feb 0001 00:00:00 GMT"), null);
+  });
+
   test("anything else", () => {
     for (const input of [
       "",
@@ -44,7 +60,6 @@ suite("HTTP-date", () => {
       "Sun, 6 Nov 1994 08:49:37 GMT",
       "Sun, 30 Feb 1994 08:49:37 GMT",
       "Sun, 06 Nov 1994 24:00:00 GMT",
-      "Sun, 06 Nov 0099 08:49:37 GMT",
       " Sun, 06 Nov 1994 08:49:37 GMT",
     ]) {
       deepStrictEqual(parseHttpDate(input), null, JSON.stringify(input));

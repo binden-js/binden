@@ -61,7 +61,10 @@ export function parseHttpDate(input: string, now = Date.now()): Date | null {
     ...[date, hour, minute, second].map(Number),
   ];
   const [y = 0, m = 0, d = 0, h = 0, min = 0, s = 0] = components;
-  const parsed = new Date(Date.UTC(y, m, d, h, min, s));
+  // Not `Date.UTC()`, which reads the years 0 to 99 as 1900 to 1999
+  const parsed = new Date(0);
+  parsed.setUTCFullYear(y, m, d);
+  parsed.setUTCHours(h, min, s, 0);
 
   // Out of range components (e.g. February 30, or 24:00:00) do not round trip
   return parsed.getUTCFullYear() === y &&

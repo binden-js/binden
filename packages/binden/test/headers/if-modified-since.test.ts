@@ -26,10 +26,16 @@ suite("If-Modified-Since", () => {
         `${year}`,
       );
     }
-    for (const year of [0, 9999]) {
+    for (const year of [0, 50, 99, 9999]) {
       const date = new Date(Date.UTC(2000, 0, 1));
       date.setUTCFullYear(year);
-      deepStrictEqual(new IfModifiedSince({ date }).date, date);
+      const header = new IfModifiedSince({ date });
+      deepStrictEqual(header.date, date);
+      // Parsed back, also before the year 100
+      deepStrictEqual(
+        IfModifiedSince.fromString(header.toString())?.date,
+        date,
+      );
     }
   });
 

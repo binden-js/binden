@@ -418,10 +418,10 @@ suite("Headers (properties)", () => {
     fields: ({ date }) => ({ date }),
     create: (fields) => new IfModifiedSince(fields),
     serialize: (element) => element.toString(),
-    // The years before 100 are not parsed: `Date.UTC()` reads them as 19xx
+    // Every year of four digits
     valid: fc
       .date({
-        min: new Date("0100-01-01T00:00:00Z"),
+        min: new Date("0000-01-01T00:00:00Z"),
         max: new Date("9999-12-31T23:59:59Z"),
         noInvalidDate: true,
       })
