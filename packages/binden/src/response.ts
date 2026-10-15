@@ -896,7 +896,8 @@ export class BindenResponse<
       if (this.#bodiless()) {
         // Nothing of the source would be sent: it is not read at all
         BindenResponse.#discard(data);
-        this.#frame(null);
+        // The length that it declares, without a stale `Transfer-Encoding`
+        this.#frame(this.#length());
         const done = this.#finished(() => false);
         this.end();
         return done;
@@ -910,10 +911,9 @@ export class BindenResponse<
 
     if (typeof data === "undefined" || this.destroyed) {
       // No body: as for `GET`, `Content-Length: 0`, but a valid length given
-      // to `HEAD` (of the body that `GET` would send) is kept
-      this.#frame(
-        this.req.method === "HEAD" && this.#length() !== null ? null : 0,
-      );
+      // to `HEAD` (of the body that `GET` would send) is kept, without a
+      // stale `Transfer-Encoding`
+      this.#frame(this.req.method === "HEAD" ? (this.#length() ?? 0) : 0);
       this.end();
       return done;
     }
@@ -1268,6 +1268,10 @@ export class BindenResponse<
     }
     const operation = this.#operation();
     const declared = this.#length();
+    // A body of a declared length is framed by it: a stale
+    // `Transfer-Encoding` would frame it by chunks as well (RFC 9112,
+    // section 6.1), which a client or a proxy may read either way
+    this.#frame(declared);
     const key = {};
     let flushed = 0;
     let sent = 0;

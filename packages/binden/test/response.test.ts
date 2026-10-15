@@ -778,6 +778,34 @@ suite("BindenResponse", () => {
     await check("HEAD", (r) => r.setHeader("Content-Length", 1234).send(), {
       "content-length": "1234",
     });
+    // A stream or a file is framed by the length that it declares, without a
+    // stale `Transfer-Encoding` (also for `HEAD`)
+    const declared = { ...stale, "Content-Length": 3 };
+    await check(
+      "GET",
+      (r) => r.set(declared).send(Readable.from([Buffer.from("abc")])),
+      { "content-length": "3" },
+      "abc",
+    );
+    await check(
+      "GET",
+      (r) => r.set(stale).sendFile(filePath),
+      {
+        "content-length": `${msg.byteLength}`,
+        "content-type": "application/octet-stream",
+      },
+      msg.toString(),
+    );
+    await check("HEAD", (r) => r.set(declared).send(), {
+      "content-length": "3",
+    });
+    await check("HEAD", (r) => r.set(declared).send(Readable.from(["abc"])), {
+      "content-length": "3",
+    });
+    await check("HEAD", (r) => r.set(stale).sendFile(filePath), {
+      "content-length": `${msg.byteLength}`,
+      "content-type": "application/octet-stream",
+    });
     // Sent headers are not changed: the body follows their framing
     await check(
       "GET",
