@@ -491,7 +491,8 @@ export class BindenResponse<
   /**
    * Whether the response has been started: by `.send()` or `.sendFile()`
    * (until they fail before sending anything, or are cancelled), by a stream
-   * piped into it, or by its headers being sent
+   * piped into it (until a deadline cancels it before it has written
+   * anything), or by its headers being sent
    */
   public get started(): boolean {
     return (

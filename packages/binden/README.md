@@ -895,7 +895,7 @@ import { BindenResponse } from "binden";
 const server = createServer({ ServerResponse: BindenResponse });
 ```
 
-- `.started` - whether the response has been started: by `.send()` or `.sendFile()` (until they fail before sending anything, or a deadline cancels them), by a stream piped into it, or by its headers being sent
+- `.started` - whether the response has been started: by `.send()` or `.sendFile()` (until they fail before sending anything, or a deadline cancels them), by a stream piped into it (until a deadline abandons it before it has written anything), or by its headers being sent
 
 - `writeHead()` checks the reason phrase that it would send and the headers that it is given before it changes the response: one that Node.js refuses throws, and the status, the reason phrase and the headers are left as they were (Node.js would have set them first). A reason phrase that Node.js refuses once it sends the headers (e.g. a `statusMessage` assigned before `.send()`, or a `Trailer` of a body that is not chunked) makes `.send()`, `.sendFile()` and `.flush()` reject before anything is sent, so that the error can still be replied (with the reason phrase of its own status).
 
