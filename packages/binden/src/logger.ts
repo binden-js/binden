@@ -228,18 +228,19 @@ export function safe(logger: ILogger): ILogger {
  * that they can be given as they are to the `serializers` of a logger
  */
 export type IBindenSerializers = Record<
-  "context" | "error" | "request" | "response",
+  "context" | "err" | "error" | "request" | "response",
   (value: unknown) => Record<string, unknown>
 > &
   Record<"body", (body?: unknown) => string>;
 
 /**
  * The serializers of a logger of binden: those of `@binden/logger` (an
- * allowlist of the details of a request and a response), an `error` that
- * names the errors of binden, a redacted `body` and a `context` without the
- * fields that the application sets on it. With `error_details`, an `error`
- * adds its message, its stack, its cause and any `code`, which may quote the
- * input of a request (as `log_error_details` does for the framework logs).
+ * allowlist of the details of a request and a response), an `error` (and
+ * `err`, the key of `pino`) that names the errors of binden, a redacted
+ * `body` and a `context` without the fields that the application sets on it.
+ * With `error_details`, an `error` adds its message, its stack, its cause and
+ * any `code`, which may quote the input of a request (as `log_error_details`
+ * does for the framework logs).
  */
 export function createSerializers({
   error_details = false,
@@ -247,17 +248,19 @@ export function createSerializers({
   if (typeof error_details !== "boolean") {
     throw new TypeError("`error_details` is not a boolean");
   }
+  const error = (value: unknown): Record<string, unknown> => {
+    const logged = snapshot(value, {
+      location: "middleware",
+      details: error_details,
+    });
+    // Where the framework met it: not known here
+    delete logged.location;
+    return logged;
+  };
   return {
     ...defaultSerializers,
-    error: (error: unknown): Record<string, unknown> => {
-      const logged = snapshot(error, {
-        location: "middleware",
-        details: error_details,
-      });
-      // Where the framework met it: not known here
-      delete logged.location;
-      return logged;
-    },
+    error,
+    err: error,
     body: (): string => "[Redacted]",
     context: (input: unknown): Record<string, unknown> => {
       if (!(input instanceof Context)) {

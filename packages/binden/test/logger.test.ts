@@ -216,7 +216,13 @@ suite("createSerializers()", () => {
     );
     for (const plain of [createSerializers(), serializers]) {
       deepStrictEqual(plain.error(error), { type: "TypeError", status: 409 });
+      // `err`, the key of `pino`, as well
+      deepStrictEqual(plain.err(error), { type: "TypeError", status: 409 });
     }
+    deepStrictEqual(
+      createSerializers({ error_details: true }).err(error),
+      detailed,
+    );
     // The other serializers are the same
     const { body, context, request, response } = createSerializers({
       error_details: true,

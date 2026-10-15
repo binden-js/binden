@@ -164,7 +164,7 @@ The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/t
 - a `response` is its status code;
 - a `context` is its `id`, request and response (not the fields the application sets on it);
 - a `body` that the application logs (e.g. `context.log.debug({ body }, "Received")`) is redacted (the body parsers never log the bodies themselves);
-- an `error` is reduced to its type, a known `code` and its `status`, as in the snapshots.
+- an `error` (and `err`, the key under which `pino` logs an `Error`) is reduced to its type, a known `code` and its `status`, as in the snapshots.
 
 A value of another kind under these keys is reduced to its type. A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option: any object with the methods of `ILogger` (`fatal`, `error`, `warn`, `info`, `debug`, `trace` and `child`). The default `serializers` are exported to build on, and `createSerializers({ error_details: true })` creates them with an `error` that adds its message, its stack, its cause and any `code` (which may quote the input of a request). The `error_details` option of `@binden/logger` does not apply to them: the `error` of binden replaces the one of the logger.
 
