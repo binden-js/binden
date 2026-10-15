@@ -35,6 +35,7 @@ import {
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
+import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
@@ -156,6 +157,18 @@ function isStrictMediaType(media_type: string): boolean {
 
 /** A character that a reason phrase cannot have (as Node.js checks it) */
 const invalidReason = /[^\t\x20-\x7E\x80-\xFF]/u;
+
+/** A listener of an event, or a callback (e.g. of `write()`) */
+type IListener = (...args: unknown[]) => unknown;
+
+/** Removes a listener that has run once (see `BindenResponse.#bind()`) */
+interface IOnce {
+  readonly emitter: EventEmitter;
+  readonly event: string | symbol;
+}
+
+/** The methods of `EventEmitter` that a response replaces (see its static block) */
+const parent = ServerResponse.prototype;
 
 /** The properties of Node.js that frame the connection of a response */
 interface IConnection {
@@ -305,6 +318,39 @@ export class BindenResponse<
         },
       },
     });
+    // The listeners added by the application run as the work that has added
+    // them (see `#bind()`), never as whoever emits their event. Replaced at
+    // run time only: the types are those of Node.js.
+    const add = (
+      name: "addListener" | "on" | "prependListener",
+      once: boolean,
+    ): ((
+      this: BindenResponse,
+      event: string | symbol,
+      listener: IListener,
+    ) => BindenResponse) =>
+      function listen(this: BindenResponse, event, listener) {
+        const owner = owners.getStore();
+        const bound = this.#bind(
+          listener,
+          owner,
+          once ? { emitter: this, event } : null,
+        );
+        return parent[name].call(this, event, bound) as BindenResponse;
+      };
+    Object.defineProperties(this.prototype, {
+      addListener: { configurable: true, value: add("addListener", false) },
+      on: { configurable: true, value: add("on", false) },
+      once: { configurable: true, value: add("on", true) },
+      prependListener: {
+        configurable: true,
+        value: add("prependListener", false),
+      },
+      prependOnceListener: {
+        configurable: true,
+        value: add("prependListener", true),
+      },
+    });
     // Nor whether it sends a `Date` and keeps its connection open (the
     // framework sets them with its rights, e.g. at a shutdown)
     for (const name of ["sendDate", "shouldKeepAlive"] as const) {
@@ -338,12 +384,99 @@ export class BindenResponse<
   public constructor(...args: [request: Request, options?: unknown]) {
     // node:http passes its options as well
     super(...(args as [Request]));
-    // `Readable.pipe()` emits `pipe` on its destination synchronously
-    this.on("pipe", () => {
-      if (this.#allows()) {
+    // `Readable.pipe()` emits `pipe` on its destination synchronously, in the
+    // work that pipes: a listener of the response itself, as it is emitted
+    super.on("pipe", (source: unknown) => {
+      const owner = owners.getStore();
+      if (this.#allows(owner)) {
         this.#piped = true;
       }
+      this.#adopt(source, owner);
     });
+  }
+
+  /**
+   * A listener (or a callback) that runs as the work of `owner` (`undefined`
+   * for any other work), whose rights it keeps (and only those: never the
+   * rights of the framework, which may emit its event), with its arguments and
+   * `this`. Its `listener` is the original, which `removeListener()` and
+   * `listeners()` find (as for a `once()` of Node.js). With `once`, it removes
+   * itself from its emitter before it runs, once.
+   */
+  #bind(
+    listener: IListener,
+    owner: object | undefined,
+    once: IOnce | null,
+  ): IListener {
+    if (typeof listener !== "function") {
+      // Refused by Node.js as it is
+      return listener;
+    }
+    let fired = false;
+    const bound = Object.assign(
+      (...args: unknown[]): unknown => {
+        if (once !== null) {
+          if (fired) {
+            return null;
+          }
+          fired = true;
+          once.emitter.removeListener(once.event, bound);
+        }
+        return this.#as(owner, () => Reflect.apply(listener, this, args));
+      },
+      { listener },
+    );
+    return bound;
+  }
+
+  /** Runs a function as the work of `owner`, without the rights of the framework */
+  #as<T>(owner: object | undefined, fn: () => T): T {
+    const forced = this.#forced;
+    this.#forced = 0;
+    try {
+      return typeof owner === "undefined"
+        ? owners.exit(fn)
+        : owners.run(owner, fn);
+    } finally {
+      this.#forced = forced;
+    }
+  }
+
+  /**
+   * Adopts a source that a `pipe()` of Node.js has just piped into the
+   * response: its writes (its last `data` listener) and its end (its last
+   * `end` listener, unless it has ended already) run as the work that has
+   * piped it, whose rights they keep, whatever work pushes its chunks (e.g. a
+   * timer of another one). Its other listeners are left as they are: piping
+   * gives no rights to another writer.
+   */
+  #adopt(source: unknown, owner: object | undefined): void {
+    if (!(source instanceof EventEmitter)) {
+      return;
+    }
+    const events =
+      (source as Partial<Readable>).readableEnded === true
+        ? ["data"]
+        : ["data", "end"];
+    for (const event of events) {
+      const listener = source.rawListeners(event).at(-1) as
+        (IListener & { listener?: IListener }) | undefined;
+      if (typeof listener !== "undefined") {
+        // `once()` of Node.js wraps it
+        const original = listener.listener ?? listener;
+        source.removeListener(event, listener);
+        source.on(
+          event,
+          this.#bind(
+            original,
+            owner,
+            original === listener
+              ? null
+              : { emitter: source as EventEmitter, event },
+          ),
+        );
+      }
+    }
   }
 
   /**
@@ -709,7 +842,25 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return true;
     }
-    return super.write(...(args as [unknown]));
+    return super.write(...(this.#callbacks(args) as [unknown]));
+  }
+
+  /**
+   * The arguments of a method of Node.js whose callback runs as the work that
+   * has called it (see `#bind()`): Node.js calls it once the socket has
+   * written, as whoever has flushed it then
+   */
+  #callbacks(args: readonly unknown[]): unknown[] {
+    const owner = owners.getStore();
+    const bound: unknown[] = [];
+    for (const arg of args) {
+      bound.push(
+        typeof arg === "function"
+          ? this.#bind(arg as IListener, owner, null)
+          : arg,
+      );
+    }
+    return bound;
   }
 
   /**
@@ -731,7 +882,7 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return this;
     }
-    return super.end(...(args as []));
+    return super.end(...(this.#callbacks(args) as []));
   }
 
   /** Sends the headers (see `flushHeaders()` of Node.js), unless the response is sealed */
@@ -842,7 +993,7 @@ export class BindenResponse<
       BindenResponse.#ignore([callback]);
       return;
     }
-    super.writeContinue(callback);
+    super.writeContinue(...(this.#callbacks([callback]) as []));
   }
 
   /**
@@ -854,7 +1005,7 @@ export class BindenResponse<
       BindenResponse.#ignore([callback]);
       return;
     }
-    super.writeProcessing(callback);
+    super.writeProcessing(...(this.#callbacks([callback]) as []));
   }
 
   /**
@@ -869,7 +1020,7 @@ export class BindenResponse<
       BindenResponse.#ignore([callback]);
       return;
     }
-    super.writeEarlyHints(hints, callback);
+    super.writeEarlyHints(hints, ...(this.#callbacks([callback]) as []));
   }
 
   /**
@@ -892,7 +1043,7 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return;
     }
-    super.writeInformation(...(args as [number]));
+    super.writeInformation(...(this.#callbacks(args) as [number]));
   }
 
   /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
