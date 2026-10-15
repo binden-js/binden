@@ -166,20 +166,23 @@ The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/t
 - a `body` that the application logs (e.g. `context.log.debug({ body }, "Received")`) is redacted (the body parsers never log the bodies themselves);
 - an `error` is reduced to its type, a known `code` and its `status`, as in the snapshots.
 
-A value of another kind under these keys is reduced to its type. A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option: any object with the methods of `ILogger` (`fatal`, `error`, `warn`, `info`, `debug`, `trace` and `child`). The default `serializers` are exported to build on:
+A value of another kind under these keys is reduced to its type. A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option: any object with the methods of `ILogger` (`fatal`, `error`, `warn`, `info`, `debug`, `trace` and `child`). The default `serializers` are exported to build on, and `createSerializers({ error_details: true })` creates them with an `error` that adds its message, its stack, its cause and any `code` (which may quote the input of a request). The `error_details` option of `@binden/logger` does not apply to them: the `error` of binden replaces the one of the logger.
 
 ```typescript
-import { Binden, serializers } from "binden";
+import { Binden, createSerializers, serializers } from "binden";
 import { Logger } from "@binden/logger";
 
 const logger = new Logger({ level: "debug", serializers });
 const app = new Binden({ logger });
 
-// Log the request bodies, and the details of the errors, as well
+// Log the request bodies, and the details of the errors, as well: those that
+// the application logs (`error`) and those of the framework (`failure`)
 const verbose = new Logger({
   level: "debug",
-  error_details: true,
-  serializers: { ...serializers, body: (body: unknown): unknown => body },
+  serializers: {
+    ...createSerializers({ error_details: true }),
+    body: (body: unknown): unknown => body,
+  },
 });
 const debugApp = new Binden({ logger: verbose, log_error_details: true });
 ```

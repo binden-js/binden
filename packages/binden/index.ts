@@ -43,4 +43,9 @@ export {
   type IStackPath,
   type IUntypedItem,
 } from "./src/stack.js";
-export { type ILocation, serializers } from "./src/logger.js";
+export {
+  type IBindenSerializers,
+  type ILocation,
+  createSerializers,
+  serializers,
+} from "./src/logger.js";

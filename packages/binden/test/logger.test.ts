@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
+import { deepStrictEqual, ok, throws } from "node:assert/strict";
 import { Socket } from "node:net";
 import { suite, test } from "node:test";
 import { Logger, type ILogger } from "@binden/logger";
@@ -10,7 +10,13 @@ import {
   BindenResponse,
   Context,
 } from "../index.js";
-import { isLogger, safe, serializers, snapshot } from "../src/logger.js";
+import {
+  createSerializers,
+  isLogger,
+  safe,
+  serializers,
+  snapshot,
+} from "../src/logger.js";
 
 const secrets = [
   "secret-token",
@@ -163,6 +169,96 @@ suite("serializers", () => {
     deepStrictEqual(lines.length, 1);
     assertNoSecrets(lines.join(""));
     ok(lines.join("").includes("[Redacted]"));
+  });
+});
+
+suite("createSerializers()", () => {
+  /** The records that a logger with the serializers writes */
+  const records = (
+    options: ConstructorParameters<typeof Logger>[0],
+  ): Record<string, unknown>[] => {
+    const lines: string[] = [];
+    const log = new Logger({
+      ...options,
+      level: "debug",
+      destination: {
+        write: (line: string): void => {
+          lines.push(line);
+        },
+      },
+    });
+    const error = Object.assign(new TypeError("the message"), {
+      code: "E_APP",
+      cause: new Error("the cause"),
+    });
+    log.debug("Failed", { error, body: { field: "value" } });
+    return lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  };
+
+  test("the details of the errors, only with `error_details`", () => {
+    const error = Object.assign(new TypeError("the message"), {
+      code: "E_APP",
+      status: 409,
+      cause: new Error("the cause"),
+    });
+    const detailed = createSerializers({ error_details: true }).error(error);
+    const { stack } = detailed;
+    const cause = detailed.cause as Record<string, unknown>;
+    deepStrictEqual(
+      { ...detailed, stack: typeof stack, cause: cause.message },
+      {
+        type: "TypeError",
+        code: "E_APP",
+        status: 409,
+        message: "the message",
+        stack: "string",
+        cause: "the cause",
+      },
+    );
+    for (const plain of [createSerializers(), serializers]) {
+      deepStrictEqual(plain.error(error), { type: "TypeError", status: 409 });
+    }
+    // The other serializers are the same
+    const { body, context, request, response } = createSerializers({
+      error_details: true,
+    });
+    deepStrictEqual(body({ password: "secret" }), "[Redacted]");
+    const created = createContext();
+    deepStrictEqual(context(created), serializers.context(created));
+    deepStrictEqual(request(created.request), { method: "GET", path: "/path" });
+    deepStrictEqual(response(created.response), { status: 200 });
+  });
+
+  test("invalid `error_details`", () => {
+    for (const error_details of [1, "true", null]) {
+      throws(
+        () =>
+          createSerializers({
+            error_details: error_details as unknown as boolean,
+          }),
+        new TypeError("`error_details` is not a boolean"),
+      );
+    }
+  });
+
+  test("a logger with them logs the details of the errors", () => {
+    const [detailed] = records({
+      serializers: {
+        ...createSerializers({ error_details: true }),
+        body: (body: unknown): unknown => body,
+      },
+    });
+    const error = detailed.error as Record<string, unknown>;
+    deepStrictEqual(
+      [error.type, error.message, detailed.body],
+      ["TypeError", "the message", { field: "value" }],
+    );
+    // The serializers of binden replace the `error_details` of the logger
+    const [plain] = records({ error_details: true, serializers });
+    deepStrictEqual(
+      [plain.error, plain.body],
+      [{ type: "TypeError" }, "[Redacted]"],
+    );
   });
 });
 
