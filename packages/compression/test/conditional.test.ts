@@ -2,6 +2,7 @@ import { BindenAbortError, type Context } from "binden";
 import {
   type IReceived,
   type IServed,
+  capture,
   fetchRaw,
   none,
   serve,
@@ -14,6 +15,7 @@ import { deepStrictEqual, ok } from "node:assert";
 import { randomBytes, randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { Compression } from "../index.js";
+import { Readable } from "node:stream";
 import { join } from "node:path";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
@@ -250,6 +252,72 @@ suite("Conditional requests of compressed responses", () => {
       }
     } finally {
       await rm(small);
+    }
+  });
+
+  test("a stream replaced with `406` is no longer read, without an error", async () => {
+    const big = join(tmpdir(), `binden-compression-${randomUUID()}.txt`);
+    const chunk = Buffer.from(text(64 * 1024));
+    const chunks = 16;
+    await writeFile(big, Buffer.concat(Array(chunks).fill(chunk)));
+    const captured = capture();
+    const outcomes: unknown[] = [];
+    let reads = 0;
+    try {
+      served = await serve(
+        { app: { logger: captured.logger } },
+        new Compression(),
+        async (context: Context) => {
+          const { response } = context;
+          // A file, or a source whose chunks come at once
+          const source = new Readable({
+            read(): void {
+              reads += 1;
+              this.push(reads > chunks ? null : chunk);
+            },
+          });
+          const sent =
+            context.url.pathname === "/file"
+              ? response.sendFile(big)
+              : response
+                  .set({
+                    "Content-Type": "text/plain",
+                    "Content-Length": chunks * chunk.length,
+                  })
+                  .send(source);
+          outcomes.push(
+            await sent.then(
+              () => null,
+              (error: unknown) => error,
+            ),
+            response.writableFinished,
+            source.destroyed || reads === 0,
+          );
+        },
+      );
+      for (const path of ["/file", "/stream"]) {
+        const refused = await fetchRaw(served.url, {
+          path,
+          headers: accepts.refused,
+        });
+        deepStrictEqual(representation(refused), {
+          status: 406,
+          etag: none,
+          vary: "Accept-Encoding",
+          encoding: none,
+          length: "0",
+          ranges: none,
+        });
+        deepStrictEqual(refused.raw.length, 0);
+      }
+      deepStrictEqual(outcomes, [null, true, true, null, true, true]);
+      ok(reads < chunks, `${reads}`);
+      deepStrictEqual(
+        captured.records.filter(({ level }) => Number(level) >= 40),
+        [],
+      );
+    } finally {
+      await rm(big);
     }
   });
 

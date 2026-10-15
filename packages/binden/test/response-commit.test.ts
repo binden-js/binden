@@ -551,6 +551,46 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     ok(!response.hasHeader("Content-Length"));
   });
 
+  test(".send() (stops reading a `Readable` once another writer has ended the response)", async () => {
+    const app = await start();
+    const chunk = Buffer.alloc(64 * 1024, "a");
+    const chunks = 16;
+    let reads = 0;
+    const source = new Readable({
+      read(): void {
+        reads += 1;
+        this.push(reads > chunks ? null : chunk);
+      },
+    });
+    const handled = app.handle(async (_request, response) => {
+      // As a compression that replaces the response with an empty `406` when
+      // the first chunk commits the headers, and discards the next writes
+      response.write = ((...args: unknown[]): boolean => {
+        const callback = args.find((arg) => typeof arg === "function") as
+          (() => void) | undefined;
+        if (!response.headersSent) {
+          response.writeHead(406, { "Content-Length": 0 }).end();
+        }
+        if (callback) {
+          process.nextTick(callback);
+        }
+        return true;
+      }) as BindenResponse["write"];
+      response.setHeader("Content-Length", chunks * chunk.length);
+      await response.send(source);
+      ok(response.writableFinished);
+    });
+    const { status, headers, body } = await app.request();
+    deepStrictEqual(await handled, null);
+    deepStrictEqual(
+      [status, headers["content-length"], body.length],
+      [406, "0", 0],
+    );
+    // Released before its end
+    ok(source.destroyed);
+    ok(reads < chunks, `${reads}`);
+  });
+
   test("[kSeal]() (late sends write nothing)", async () => {
     const response = detached();
     response[kSeal]();

@@ -721,6 +721,11 @@ export class BindenResponse<
    * (see `.started`); otherwise the response is destroyed, so that a truncated
    * body does not look complete, and more bytes are not read by the client as
    * the next response of the connection.
+   *
+   * Once another writer has ended the response (e.g. a compression that has
+   * replaced it with `406` when its first chunk committed the headers), the
+   * rest of the source is not read: it is released, and the response is left
+   * as it is.
    */
   #pipe(data: Readable): Promise<void> {
     let flushed = 0;
@@ -732,8 +737,13 @@ export class BindenResponse<
     return new Promise<void>((resolve, reject) => {
       // Once the response is closed, `#finished()` tells how it ended
       let closed = false;
+      // Once the response has been ended by another writer
+      let stopped = false;
       const fail = (error: Error): void => {
-        if (sent === 0) {
+        if (stopped) {
+          // E.g. the source released below: the response is not changed
+          return;
+        } else if (sent === 0) {
           this.#started = false;
         } else {
           this.destroy();
@@ -749,6 +759,11 @@ export class BindenResponse<
       });
       data
         .on("data", (chunk: Uint8Array | string) => {
+          if (this.writableEnded) {
+            stopped = true;
+            BindenResponse.#discard(data);
+            return;
+          }
           try {
             const size = Buffer.byteLength(chunk);
             const length = this.#length();
