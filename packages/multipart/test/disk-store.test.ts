@@ -39,6 +39,13 @@ function system(overrides: Partial<IFileSystem> = {}): IFileSystem {
 
 const posix = process.platform !== "win32";
 
+/** The refusal of a file once the cleanup has started */
+const refusal = {
+  status: 500,
+  message:
+    "A file cannot be stored once the cleanup of the request has started",
+};
+
 /** An error of the system */
 function failure(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(code), { code });
@@ -451,10 +458,7 @@ describe("DiskStore", () => {
       file.persist(join(root, "kept.txt")),
       new Error("The file has been removed"),
     );
-    throws(
-      () => store.add(info, content("Hello")),
-      new Error("The storage has been cleaned up"),
-    );
+    throws(() => store.add(info, content("Hello")), refusal);
     deepEqual(await readdir(root), []);
   });
 
@@ -512,7 +516,7 @@ describe("DiskStore", () => {
     const cleaned = store.cleanup();
     open(null);
 
-    await rejects(file.written, new Error("The storage has been cleaned up"));
+    await rejects(file.written, refusal);
     await within(cleaned);
     deepEqual(await readdir(root), []);
   });
@@ -526,7 +530,7 @@ describe("DiskStore", () => {
     await eventually(() => file.path !== "");
     await within(store.cleanup());
 
-    await rejects(file.written);
+    await rejects(file.written, refusal);
     deepEqual(await readdir(root), []);
   });
 

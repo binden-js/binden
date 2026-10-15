@@ -8,6 +8,7 @@ import {
   DiskStore,
   type IFileStream,
   type IStoredFile,
+  cleanedUp,
   storedForm,
 } from "./disk.js";
 import {
@@ -387,16 +388,24 @@ class Parser {
 
   /**
    * Stores a file on the disk, in the private directory of the request
-   * (created with its first file, and removed with its cleanup)
+   * (created with its first file, and removed with its cleanup): a `500`
+   * once the cleanup of the request has started (see `cleanedUp()`)
    */
   async #disk(
     dir: string | null,
     info: IFileInfo,
     stream: IFileStream,
   ): Promise<IStoredFile> {
-    this.#store ??= new DiskStore(dir ?? tmpdir(), (cleanup) => {
-      this.#context.onCleanup(cleanup);
-    });
+    if (this.#store === null) {
+      try {
+        this.#store = new DiskStore(dir ?? tmpdir(), (cleanup) => {
+          this.#context.onCleanup(cleanup);
+        });
+      } catch (error: unknown) {
+        // `onCleanup()` throws once the cleanup has started
+        throw cleanedUp(error);
+      }
+    }
     const file = this.#store.add(info, stream);
     await file.written;
     return file;

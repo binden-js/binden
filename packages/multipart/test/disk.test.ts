@@ -1,3 +1,4 @@
+import { Agent, type IncomingMessage, request as httpRequest } from "node:http";
 import { BindenError, type Context } from "binden";
 import { type TestContext, describe, it } from "node:test";
 import { basename, dirname, join } from "node:path";
@@ -24,7 +25,7 @@ import {
 } from "node:fs/promises";
 import multipart, { type IStoredFile, type IStoredForm } from "../index.js";
 import { existsSync } from "node:fs";
-import { request as httpRequest } from "node:http";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 
 const uuid =
@@ -247,6 +248,59 @@ describe("Multipart (disk storage)", () => {
 
     ok(error instanceof Error);
     equal(error.message, "The file has been removed");
+  });
+
+  it("stores a body received before the cleanup, refuses the files that come after it", async (t) => {
+    const dir = await directory(t);
+    const { promise: settled, resolve: settle } =
+      Promise.withResolvers<unknown>();
+    const { promise: cleaned, resolve: clean } = Promise.withResolvers<null>();
+    const parser = multipart({ storage: { dir } });
+    const { url } = await serve(t, [
+      async (context: Context): Promise<void> => {
+        // Not awaited: the response is closed before the body is received
+        parser.run(context).then(settle, settle);
+        context.onCleanup(() => {
+          clean(null);
+        });
+        await context.send("early");
+      },
+    ]);
+
+    // Kept alive: the server reads the rest of the body after its reply
+    const agent = new Agent({ keepAlive: true });
+    t.after(() => {
+      agent.destroy();
+    });
+    const client = httpRequest(url, {
+      method: "POST",
+      agent,
+      headers: { "Content-Type": type, "Content-Length": form.length },
+    });
+    client.on("error", () => {
+      // The test closes the connection
+    });
+    client.flushHeaders();
+    const [response] = (await within(once(client, "response"))) as [
+      IncomingMessage,
+    ];
+    response.resume();
+    await within(cleaned);
+    // The whole body, once the cleanup of the request has started
+    client.end(form);
+    const error = await within(settled);
+    client.destroy();
+
+    ok(error instanceof BindenError);
+    deepEqual(
+      [error.status, error.message, (error.cause as Error).message],
+      [
+        500,
+        "A file cannot be stored once the cleanup of the request has started",
+        "The request has been completed",
+      ],
+    );
+    deepEqual(await readdir(dir), []);
   });
 
   it("keeps a persisted file when the client goes away", async (t) => {

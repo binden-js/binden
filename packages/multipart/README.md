@@ -116,6 +116,8 @@ Each file is written to a file of its own (`0600`, named by a random UUID, opene
 
 Once the response is closed (also when the request has been refused or aborted), the files that have not been persisted are removed, with the directory. `persist(target)` keeps a file: it moves it to `target` (a hard link, or a copy where there cannot be one: another file system, or one without hard links), which must not exist: an existing file or symbolic link is an `EEXIST` error, and is never replaced. A copy writes into a new file that it creates itself (`O_EXCL`): a copy that fails removes that file, and only while `target` is still that file (the same device and inode, without following a symbolic link). The directory of `target` must be trusted: nothing can make that check and the removal atomic against another process that renames files in it. Persist the files before the response is closed: a removed file cannot be persisted. Persisting a file again to the same path does nothing, to another path throws. A persisted file keeps its mode (`0600`).
 
+The files are stored until the cleanup of the request, which starts once the response is closed. A body received before it is stored as usual (and its files removed by the cleanup, unless persisted), but a parse that goes on after it (e.g. one that has not been awaited before the reply) refuses the files that come later, as no cleanup would remove them: `run()` rejects with a `500` (`A file cannot be stored once the cleanup of the request has started`).
+
 ```typescript
 import { type Context, Router } from "binden";
 import { type IStoredForm, Multipart } from "@binden/multipart";
@@ -213,11 +215,12 @@ The `filename` of a file is the name that the client has sent, without its contr
 | Another media type than `multipart/form-data`                  | Skipped: the body is not read                                              |
 | The client goes away                                           | `run()` rejects with a `400` of code `aborted`                             |
 | The deadline passes, or the server shuts down                  | `run()` rejects with the reason of `context.signal` (a `BindenAbortError`) |
+| A file once the cleanup of the request has started (disk)      | `run()` rejects with a `500`                                               |
 
 After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response whose headers have been sent destroys the request (its reply cannot tell the error): a send whose headers are not sent yet (e.g. of a stream that has not given its first chunk) is left to the framework, whose reply closes the connection.
 
 A parse must start before the response has finished: Node.js then reads and discards what has not been read of the body. A parse that starts later (e.g. after a middleware that has replied without `done`) refuses the body with a `500` (logged at `error`), never with an empty form.
 
-A client that goes away is seen also when the parser is still reading once the response has finished (e.g. it was not awaited): `context.signal` is no longer aborted then, but the connection closes before the body has been received whole, and `run()` rejects with a `400` of code `aborted`. The streams of the files in progress are destroyed (a body received whole is still parsed).
+A client that goes away is seen also when the parser is still reading once the response has finished (e.g. it was not awaited): `context.signal` is no longer aborted then, but the connection closes before the body has been received whole, and `run()` rejects with a `400` of code `aborted`. The streams of the files in progress are destroyed (a body received whole is still parsed, and with the disk storage its files are stored until the cleanup of the request).
 
 The middleware logs with `context.log`, as `{ middleware: "Multipart" }`.

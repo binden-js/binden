@@ -1,6 +1,7 @@
 import { type BigIntStats, type WriteStream, constants } from "node:fs";
 import fs, { type FileHandle } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { BindenError } from "binden";
 import type { IFileInfo } from "./options.js";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -75,6 +76,16 @@ const unlinkable: ReadonlySet<unknown> = new Set([
   "ENOTSUP",
   "EMLINK",
 ]);
+
+/**
+ * The refusal of a file once the cleanup of the request has started (the
+ * response is closed): the cleanup would not remove it
+ */
+export function cleanedUp(cause?: unknown): BindenError {
+  const message =
+    "A file cannot be stored once the cleanup of the request has started";
+  return new BindenError(500, { message, cause });
+}
 
 /** Ignores an error that is reported otherwise */
 function ignore(): void {
@@ -193,10 +204,10 @@ export class StoredFile implements IStoredFile {
     });
   }
 
-  /** Stops writing the file (its content is no longer read) */
+  /** Stops writing the file (its content is no longer read), as the cleanup has started */
   public stop(): void {
     this.#stopped = true;
-    this.#output?.destroy();
+    this.#output?.destroy(cleanedUp());
   }
 
   /** Closes the descriptor of the file, if it is open */
@@ -229,7 +240,7 @@ export class StoredFile implements IStoredFile {
     this.#temp = path;
     this.#path = path;
     if (this.#stopped) {
-      throw new Error("The storage has been cleaned up");
+      throw cleanedUp();
     }
     const output = handle.createWriteStream();
     this.#output = output;
@@ -373,11 +384,11 @@ export class DiskStore {
 
   /**
    * Writes a file into the directory (see `StoredFile.written`): none once
-   * the cleanup has started, which would leave it behind
+   * the cleanup has started (a `500`), which would leave it behind
    */
   public add(info: IFileInfo, stream: IFileStream): StoredFile {
     if (this.#cleaned) {
-      throw new Error("The storage has been cleaned up");
+      throw cleanedUp();
     }
     const file = new StoredFile(info, this.#system, this.#directory, stream);
     this.#files.push(file);

@@ -330,6 +330,9 @@ app.use("/documents", new Router().post(documents, save));
 - A copy writes into a new file that it creates itself, and a copy that fails removes only that
   file, while `target` is still it. Persist into a directory that only the application writes to:
   the check and the removal cannot be atomic against another process that renames files there.
+- Await the parse before the reply: the files are stored until the cleanup of the request (once
+  the response is closed), and a file that comes after it is refused (`run()` rejects with a
+  `500`).
 - `file_filter` checks what a file declares (its field, its name, its media type), which the
   client chooses: check the content itself (e.g. its first bytes) before the application uses it.
 - A request over a limit gets `413 Content Too Large`, and is not read further.
