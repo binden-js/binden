@@ -11,7 +11,9 @@
 //   pack <dir>          pack every workspace once into <dir> (missing or empty), check the
 //                       package.json (byte for byte the one of the workspace), the name, the
 //                       version, the `gitHead` and the files (scripts/pack-files.json) inside
-//                       each archive, and list them in <dir>/release-manifest.json
+//                       each archive, and list them in <dir>/release-manifest.json. An archive
+//                       is read strictly, and npm's own tar must read the same files in it
+//                       (scripts/tarballs.mjs), here and before `publish`
 //   publish <dir>       check the archives of <dir>/release-manifest.json against the
 //                       workspaces (one archive of each, of their version, packed from HEAD,
 //                       with the integrity of the manifest, byte for byte the package.json

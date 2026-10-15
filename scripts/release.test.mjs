@@ -12,7 +12,7 @@ import {
 import { deepEqual, doesNotMatch, equal, match, ok } from "node:assert/strict";
 import { delimiter, dirname, join } from "node:path";
 import { integrity, manifestFile, readTarball } from "./tarballs.mjs";
-import { npmTarball } from "./fixtures/tar.mjs";
+import { npmTarball, tar } from "./fixtures/tar.mjs";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -104,6 +104,41 @@ const pretty = (manifest) => `${JSON.stringify(manifest, null, 2)}\n`;
 
 // The errors that scripts/release.mjs lists (indented by two spaces, unlike the stack)
 const listed = (stderr) => stderr.match(/^ {2}\S.*$/gmu);
+
+// Archives whose package.json is not the same for npm and for a reader that stops at
+// the first zero block, or that takes the prefix of a GNU header for a ustar one: the
+// first is refused by the rules of scripts/tarballs.mjs, the second by npm's own tar
+const misread = (written) => [
+  [
+    tar([
+      { name: "package/README.md", content: "# @fixture/b\n" },
+      { name: "package/index.js" },
+      { name: "package/package.json", content: written },
+      Buffer.alloc(512),
+      {
+        name: "package/package.json",
+        content: pretty({
+          ...JSON.parse(written),
+          scripts: { postinstall: "node -e 1" },
+        }),
+      },
+    ]),
+    "A single zero block in the tarball, before its end",
+  ],
+  [
+    tar([
+      { name: "package/README.md", content: "# @fixture/b\n" },
+      { name: "package/index.js" },
+      {
+        name: "package.json",
+        prefix: "package",
+        magic: "ustar  \0",
+        content: written,
+      },
+    ]),
+    "npm's tar reads the tarball otherwise: entry 3 is package.json (File) for npm, package/package.json (file) here",
+  ],
+];
 
 describe("scripts/release.mjs", () => {
   let root = "";
@@ -590,6 +625,22 @@ describe("scripts/release.mjs", () => {
       equal(existsSync(join(out, manifestFile)), false);
     });
 
+    it("refuses archives that npm would read otherwise", () => {
+      succeed(["version", "2.0.0"]);
+      const written = readFileSync(path("packages/b/package.json"), "utf8");
+      for (const [data, error] of misread(written)) {
+        rmSync(out, { force: true, recursive: true });
+        const { status, stderr } = release(["pack", out], {
+          FAKE_NPM_PACK_ARCHIVE: JSON.stringify({
+            "packages/b": data.toString("base64"),
+          }),
+        });
+        equal(status, 1);
+        ok(stderr.includes(error), stderr);
+        equal(existsSync(join(out, manifestFile)), false);
+      }
+    });
+
     it("fails when npm cannot pack", () => {
       succeed(["version", "2.0.0"]);
       const { status } = release(["pack", out], { FAKE_NPM_FAIL_PACK: "1" });
@@ -819,6 +870,26 @@ describe("scripts/release.mjs", () => {
           deepEqual(listed(stderr), [
             "  fixture-b-2.0.0.tgz: package.json differs from packages/b/package.json",
           ]);
+        }
+      }
+      deepEqual(npmCalls("view", "publish"), []);
+    });
+
+    // npm reads the package.json of an archive with its own tar: the archives are read
+    // with it, and must hold the same files for it, before anything is published
+    it("publishes nothing when npm would read an archive otherwise", () => {
+      const packages = prepare();
+      const written = readFileSync(path("packages/b/package.json"), "utf8");
+      for (const [data, error] of misread(written)) {
+        writeFileSync(join(out, packages[1].file), data);
+        const [a, b, c] = packages;
+        writeJSON(`release/${manifestFile}`, {
+          packages: [a, { ...b, integrity: integrity(data) }, c],
+        });
+        for (const options of [[], ["--skip-existing"]]) {
+          const { status, stderr } = release(["publish", out, ...options]);
+          equal(status, 1);
+          ok(stderr.includes(error), stderr);
         }
       }
       deepEqual(npmCalls("view", "publish"), []);

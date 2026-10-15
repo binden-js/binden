@@ -14,7 +14,9 @@
 //       but with the package.json fields of FAKE_NPM_PACK_PATCH in the archive only
 //       ({ "<workspace>": { ...fields } }, written as `scripts/release.mjs version` writes
 //       it), after the fields of FAKE_NPM_PREPACK are written into the package.json of the
-//       workspace (as a `prepack` script could); fails when FAKE_NPM_FAIL_PACK is set
+//       workspace (as a `prepack` script could); fails when FAKE_NPM_FAIL_PACK is set.
+//       FAKE_NPM_PACK_ARCHIVE replaces the archives of some workspaces with other bytes
+//       ({ "<workspace>": "<base64>" }), as a packer that lies could
 //   install
 //       rewrites package-lock.json
 //
@@ -92,6 +94,7 @@ function pack(options) {
   const destination = options[options.indexOf("--pack-destination") + 1];
   const patches = JSON.parse(env.FAKE_NPM_PACK_PATCH ?? "{}");
   const prepack = JSON.parse(env.FAKE_NPM_PREPACK ?? "{}");
+  const archives = JSON.parse(env.FAKE_NPM_PACK_ARCHIVE ?? "{}");
   const write = (manifest) => `${JSON.stringify(manifest, null, 2)}\n`;
   for (const dir of readJSON("package.json").workspaces) {
     if (dir in prepack) {
@@ -109,7 +112,11 @@ function pack(options) {
       files["package.json"] = write({ ...manifest, ...patches[dir] });
     }
     const file = `${manifest.name.replace("@", "").replace("/", "-")}-${manifest.version}.tgz`;
-    writeFileSync(join(destination, file), npmTarball(files));
+    const data =
+      dir in archives
+        ? Buffer.from(archives[dir], "base64")
+        : npmTarball(files);
+    writeFileSync(join(destination, file), data);
   }
 }
 

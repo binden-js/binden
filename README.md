@@ -157,7 +157,11 @@ that npm receives are the bytes that were checked.
    the name, the version, the `gitHead` and the files
    ([`scripts/pack-files.json`](scripts/pack-files.json) and the rules of
    [`scripts/pack-rules.mjs`](scripts/pack-rules.mjs)) inside each archive, and lists the archives
-   (name, version, commit, `sha512` integrity, file) in `release-manifest.json`;
+   (name, version, commit, `sha512` integrity, file) in `release-manifest.json`. Every check reads
+   an archive in memory ([`scripts/tarballs.mjs`](scripts/tarballs.mjs): nothing is extracted or
+   run), strictly (complete headers, data and end of archive, checksums, octal sizes, only the pax
+   records that npm writes, regular files and directories at normalized paths, each once), and with
+   the `tar` of the npm that publishes it, which must read the same entries, types and bytes;
 3. `package`: `scripts/pack-check.mjs --tarballs` and `scripts/consumer-check.mjs --tarballs` check
    these archives, which are uploaded with their manifest;
 4. `release`: semantic-release computes the next version again. Its `prepareCmd` runs
