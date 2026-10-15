@@ -65,6 +65,42 @@ type IResponse = BindenResponse<BindenRequest>;
 
 type ICallback = (error?: Error | null) => void;
 
+/** The names of the headers of a message as they are set (in their order) */
+interface IRawNames {
+  getRawHeaderNames(): string[];
+}
+
+/** A response before an attempt to commit its headers (see `#commit()`) */
+interface IState {
+  /** Its status (its reason phrase is restored by `writeHead()` of binden) */
+  readonly status: number;
+  /** The headers, by their names as set, in their order */
+  readonly headers: readonly (readonly [string, OutgoingHttpHeader])[];
+  /** The values of the fields of `framing` */
+  readonly framing: readonly (readonly [string, unknown])[];
+}
+
+/**
+ * The fields of Node.js that frame a response and its connection, which a
+ * head that Node.js refuses may have changed already (e.g. `_last`, once it
+ * has chosen to close the connection), and which the removal of a header
+ * changes (e.g. `_removedContLen`): restored with the headers, so that the
+ * reply that follows frames itself as if the attempt never happened
+ */
+const framing = [
+  "_contentLength",
+  "_defaultKeepAlive",
+  "_hasBody",
+  "_keepAliveTimeout",
+  "_last",
+  "_removedConnection",
+  "_removedContLen",
+  "_removedTE",
+  "chunkedEncoding",
+  "sendDate",
+  "shouldKeepAlive",
+] as const;
+
 /** A response without a body, whatever the request accepts */
 const AS_IS: IOutcome = { kind: "as_is", vary: false };
 
@@ -227,6 +263,8 @@ export class CompressedResponse {
    */
   #chosen: IOutcome | null = null;
   #compressor: ICompressor | null = null;
+  /** The listener of the response that destroys the compressor once closed */
+  #destroy: (() => void) | null = null;
   /** The flush of the coding of the compressor (see `flushKind()`) */
   #kind = 0;
   /** Whether the application has ended a compressed response */
@@ -387,7 +425,13 @@ export class CompressedResponse {
     } else if (!isChunk(chunk)) {
       return Reflect.apply(this.#write, this.#response, args) as boolean;
     } else if (this.#sink === "pending") {
-      this.#decideForBody(null);
+      const sent = this.#decideForBody(
+        null,
+        () => Reflect.apply(this.#write, this.#response, args) as boolean,
+      );
+      if (sent !== null) {
+        return sent.value;
+      }
     }
     const callback = (typeof second === "function" ? second : third) as
       ICallback | undefined;
@@ -444,11 +488,15 @@ export class CompressedResponse {
     ) as ICallback | undefined;
     if (this.#sink === "pending") {
       // Without writes before it, its chunk is the body
-      this.#decideForBody(
+      const sent = this.#decideForBody(
         chunk === null
           ? 0
           : Buffer.byteLength(chunk, encoding as BufferEncoding),
+        () => Reflect.apply(this.#end, response, args) as IResponse,
       );
+      if (sent !== null) {
+        return sent.value;
+      }
     }
     if (this.#sink === "compressor") {
       if (!this.#ended) {
@@ -489,16 +537,24 @@ export class CompressedResponse {
 
   /**
    * Takes the decision for the body that is written (`size` is the size of
-   * the whole body when `end()` writes it, `null` otherwise): a compressed
-   * body commits the headers at once
+   * the whole body when `end()` writes it, `null` otherwise), and commits the
+   * headers: at once for a compressed body, and by `send` (the `write()` or
+   * the `end()` of the response, whose result is returned) for a body sent
+   * as it is, so that a head that Node.js refuses then is rolled back as
+   * well. `null` when the body does not go to the response as it is (or the
+   * headers have been sent by another path: it is then left as it is).
    */
-  #decideForBody(size: number | null): void {
+  #decideForBody<T>(
+    size: number | null,
+    send: () => T,
+  ): { readonly value: T } | null {
     const response = this.#response;
     if (response.headersSent) {
       // Sent by another path: left as it is
       this.#sink = "as_is";
-      return;
+      return null;
     }
+    let sent: { readonly value: T } | null = null;
     this.#commit(() => {
       // What Node.js would refuse (e.g. a reason phrase), before anything is
       // changed: no compressor is created
@@ -506,44 +562,77 @@ export class CompressedResponse {
       this.#apply(this.#outcome(size));
       if (this.#sink === "compressor") {
         this.#writeHead(response.statusCode);
+      } else if (this.#sink === "as_is") {
+        sent = { value: send() };
       }
     });
+    return sent;
   }
 
   /**
    * Takes the decision and commits the headers (`commit`). Node.js may still
    * refuse them once the decision is taken (e.g. a status code out of range,
-   * or a `Trailer` of a body that is not chunked): nothing of the decision is
-   * then left (the compressor is destroyed, the status and the headers are
-   * those from before), and the representation chosen for the body, which is
-   * not sent, is forgotten. The error is replied with a decision of its own,
-   * rather than followed by compressed bytes.
+   * or a `Trailer` of a body that is not chunked), after it has changed how
+   * it frames the response: nothing of the attempt is then left (see
+   * `#rollback()`), and the representation chosen for the body, which is not
+   * sent, is forgotten. The error is replied with a decision of its own,
+   * rather than followed by compressed bytes. Once the headers are sent
+   * (e.g. a chunk in an unknown encoding, which Node.js refuses after them),
+   * the decision stands.
    */
   #commit(commit: () => void): void {
     const response = this.#response;
-    const status = response.statusCode;
-    const headers = new Map(
-      response.getHeaderNames().map((name) => [name, response.getHeader(name)]),
-    );
+    // Of every outgoing message (the types have it for a request only)
+    const names = (response as unknown as IRawNames).getRawHeaderNames();
+    const state: IState = {
+      status: response.statusCode,
+      headers: names.map((name) => [
+        name,
+        response.getHeader(name) as OutgoingHttpHeader,
+      ]),
+      framing: framing.map((name) => [name, Reflect.get(response, name)]),
+    };
     try {
       commit();
     } catch (error: unknown) {
-      this.#compressor?.destroy();
-      this.#compressor = null;
-      this.#chosen = null;
-      this.#sink = "pending";
-      response.statusCode = status;
-      for (const name of response.getHeaderNames()) {
-        if (!headers.has(name)) {
-          response.removeHeader(name);
-        }
-      }
-      for (const [name, value] of headers) {
-        if (response.getHeader(name) !== value) {
-          response.setHeader(name, value as OutgoingHttpHeader);
-        }
+      if (!response.headersSent) {
+        this.#rollback(state);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Restores the response as it was before an attempt to commit its headers
+   * (see `#commit()`): the compressor is destroyed (its listener on the
+   * response removed), the decision is pending again, and the status, the
+   * headers (their names, values and order) and the framing fields of
+   * Node.js are those of `state`. Only these: the listeners of the
+   * application and the I/O that the attempt has performed (none before its
+   * head) are never restored.
+   */
+  #rollback(state: IState): void {
+    const response = this.#response;
+    const compressor = this.#compressor;
+    if (compressor !== null) {
+      response.removeListener("close", this.#destroy as () => void);
+      compressor.destroy();
+      this.#compressor = null;
+    }
+    this.#chosen = null;
+    this.#sink = "pending";
+    response.statusCode = state.status;
+    for (const name of response.getHeaderNames()) {
+      response.removeHeader(name);
+    }
+    for (const [name, value] of state.headers) {
+      response.setHeader(name, value);
+    }
+    // Last: Node.js sets some of them as headers are removed
+    for (const [name, value] of state.framing) {
+      if (!Object.is(Reflect.get(response, name), value)) {
+        Reflect.set(response, name, value);
+      }
     }
   }
 
@@ -837,10 +926,11 @@ export class CompressedResponse {
       .once("end", () => {
         operation.run(() => this.#end());
       });
-    response.once("close", () => {
+    this.#destroy = (): void => {
       // Its pending writes fail (and `flush()` rejects by itself)
       compressor.destroy();
-    });
+    };
+    response.once("close", this.#destroy);
     return compressor;
   }
 
