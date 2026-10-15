@@ -50,6 +50,30 @@ const packed = (files) =>
     })),
   );
 
+describe(".github/secret_scanning.yml", () => {
+  it("excludes the key of the tests of binden, and nothing else", () => {
+    const repository = join(import.meta.dirname, "..");
+    const config = readFileSync(
+      join(repository, ".github/secret_scanning.yml"),
+      "utf8",
+    );
+    const entries = config
+      .split("\n")
+      .filter((line) => line !== "" && !line.startsWith("#"));
+    deepEqual(entries, [
+      "paths-ignore:",
+      `  - "packages/binden/test/cert/key.pem"`,
+    ]);
+    match(
+      readFileSync(
+        join(repository, "packages/binden/test/cert/key.pem"),
+        "utf8",
+      ),
+      /^-----BEGIN /u,
+    );
+  });
+});
+
 describe("scripts/pack-check.mjs", () => {
   let root = "";
 
@@ -248,6 +272,33 @@ describe("scripts/pack-check.mjs", () => {
     equal(status, 1);
     match(stderr, /a: unexpected dist\/test\/a\.test\.js/u);
     match(stderr, /a: missing dist\/index\.js/u);
+  });
+
+  it("fails with the key of the tests, even when it is expected", () => {
+    const files = [
+      "LICENSE",
+      "dist/index.js",
+      "package.json",
+      "test/cert/key.pem",
+    ];
+    writeFileSync(
+      join(root, "scripts/pack-files.json"),
+      JSON.stringify({ a: files }),
+    );
+    const { status, stderr } = check({ a: files });
+    equal(status, 1);
+    match(stderr, /a: test\/cert\/key\.pem: \S.* must not be published/u);
+    // Nor written as expected
+    const update = check({ a: files }, "--update");
+    equal(update.status, 1);
+    match(
+      update.stderr,
+      /a: test\/cert\/key\.pem: \S.* must not be published/u,
+    );
+    deepEqual(
+      JSON.parse(readFileSync(join(root, "scripts/pack-files.json"), "utf8")),
+      { a: files },
+    );
   });
 
   it("fails with an unexpected workspace", () => {
