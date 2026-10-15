@@ -128,7 +128,8 @@ A body is parsed once: another `BodyParser` that selects it later skips it.
 ## Content codings
 
 `gzip`, `x-gzip`, `deflate` and `br` are decoded, as are two of them combined (e.g.
-`Content-Encoding: gzip, br`). More than two codings, an unknown or unsupported coding (e.g.
+`Content-Encoding: gzip, br`). `identity` is no coding (RFC 9110): it is ignored, as in
+`Content-Encoding: identity`. More than two codings, an unknown or unsupported coding (e.g.
 `compress`) and an unknown charset (of a body that is not `raw`) get `415 Unsupported Media Type`,
 before the body is read; corrupt data gets `400 Bad Request`. The codings of a body that is not
 selected are not checked.

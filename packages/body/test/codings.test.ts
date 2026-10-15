@@ -89,11 +89,34 @@ suite("BodyParser (content codings)", () => {
 
   test("unknown and unsupported codings are a 415", async () => {
     const parser = new BodyParser();
-    for (const coding of ["foo", "gzip, foo", "identity", "compress", "zstd"]) {
+    for (const coding of [
+      "foo",
+      "gzip, foo",
+      "identity, foo",
+      "compress",
+      "zstd",
+    ]) {
       const body = coding === "zstd" ? zstdCompressSync(hello) : hello;
       deepStrictEqual(
         await post(parser, body, text(coding)),
         { status: 415, connection: "close", body: null },
+        coding,
+      );
+    }
+  });
+
+  test("`identity` is no coding", async () => {
+    const parser = new BodyParser();
+    for (const [coding, body] of [
+      ["identity", hello],
+      ["IDENTITY", hello],
+      [" identity , identity ", hello],
+      ["gzip, identity", gzipSync(hello)],
+      ["identity, br", brotliCompressSync(hello)],
+    ] as const) {
+      deepStrictEqual(
+        await post(parser, body, text(coding)),
+        { status: 200, connection: "keep-alive", body: parsed },
         coding,
       );
     }

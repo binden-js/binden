@@ -1,6 +1,7 @@
 import {
   BindenAbortError,
   BindenError,
+  ContentEncoding,
   type ContentType,
   type Context,
   type IMiddlewareParams,
@@ -224,6 +225,17 @@ function tooManyParameters(form: string, max: number): boolean {
     start = end + 1;
   }
   return count > max;
+}
+
+/**
+ * The content codings of a body, in the order to remove them, or `null` when
+ * one is unknown: `identity` is no coding (RFC 9110, section 8.4.1)
+ */
+function codingsOf(header: string | undefined): ContentEncoding[] | null {
+  const codings = (header ?? "")
+    .split(",")
+    .filter((element) => element.trim().toLowerCase() !== "identity");
+  return ContentEncoding.fromString(codings.join(","));
 }
 
 /** A limit: a non-negative integer, or `Infinity` */
@@ -726,7 +738,7 @@ export class BodyParser<T = unknown> extends Middleware {
       throw refuse(abortError(null), "The request has been aborted");
     }
 
-    const codings = request.content_encoding;
+    const codings = codingsOf(request.headers["content-encoding"]);
     if (codings === null) {
       throw refuse(new BindenError(415), "Unsupported content coding");
     } else if (codings.length > MAX_CODINGS) {
