@@ -182,12 +182,24 @@ suite("Accept", () => {
       negotiate("text/*;q=0.1, */*;q=0.4", "a/b", "text/html"),
       "a/b",
     );
-    // The parameters of a range must be those of the offer (their values are
-    // case-insensitive)
+    // The parameters of a range must be those of the offer: their names are
+    // case-insensitive, and so is the value of `charset` only
     deepStrictEqual(negotiate("text/html;level=1", "text/html"), false);
     deepStrictEqual(
-      negotiate("text/html;level=A", "text/html;LEVEL=a;x=y"),
+      negotiate("text/html;Level=a", "text/html;LEVEL=a;x=y"),
       "text/html;LEVEL=a;x=y",
+    );
+    deepStrictEqual(negotiate("text/html;level=A", "text/html;level=a"), false);
+    deepStrictEqual(
+      negotiate(
+        `application/x;profile="https://a.test/A"`,
+        `application/x;profile="https://a.test/a"`,
+      ),
+      false,
+    );
+    deepStrictEqual(
+      negotiate("text/plain;CHARSET=UTF-8", "text/plain;charset=utf-8"),
+      "text/plain;charset=utf-8",
     );
     deepStrictEqual(negotiate("text/html;level=1", "text/html;level=2"), false);
     // A range with more parameters is more specific

@@ -157,19 +157,24 @@ export class Accept implements IAccept {
 
   /**
    * How specific a media range that matches the media type is (its type,
-   * subtype and parameters), or `null` when it does not match
+   * subtype and parameters), or `null` when it does not match. The names of
+   * the parameters are case-insensitive, and so is the value of `charset`
+   * only (RFC 9110, section 8.3.1): the other values are compared as they are.
    */
   static #specificity(range: Accept, media: IMediaType): number | null {
     const [type = "", subtype = ""] = range.type.toLowerCase().split("/");
     const parameters = [...range.#parameters];
     const level = type === "*" ? 0 : subtype === "*" ? 1 : 2;
+    const same = (name: string, value: string): boolean => {
+      const offered = media.parameters.get(name);
+      return name === "charset"
+        ? offered?.toLowerCase() === value.toLowerCase()
+        : offered === value;
+    };
     if (
       (level > 0 && type !== media.type) ||
       (level > 1 && subtype !== media.subtype) ||
-      parameters.some(
-        ([name, value]) =>
-          media.parameters.get(name)?.toLowerCase() !== value.toLowerCase(),
-      )
+      parameters.some(([name, value]) => !same(name, value))
     ) {
       return null;
     }
