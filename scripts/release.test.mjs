@@ -109,19 +109,27 @@ describe("scripts/release.mjs", () => {
   };
   const readJSON = (file) => JSON.parse(readFileSync(path(file), "utf8"));
 
-  // scripts/release.mjs of the checkout `cwd` (the fixture by default)
-  const release = (args, env = {}, cwd = root) =>
-    spawnSync(process.execPath, [join(cwd, "scripts/release.mjs"), ...args], {
-      encoding: "utf8",
-      timeout: 60_000,
-      env: {
-        ...process.env,
-        npm_execpath: fakeNpm,
-        FAKE_NPM_LOG: path("npm.log"),
-        FAKE_NPM_REGISTRY: path("registry.json"),
-        ...env,
+  // scripts/release.mjs of the checkout `cwd` (the fixture by default), with the
+  // line endings of its stderr normalized (Node.js writes an uncaught error with
+  // CRLF on Windows)
+  const release = (args, env = {}, cwd = root) => {
+    const result = spawnSync(
+      process.execPath,
+      [join(cwd, "scripts/release.mjs"), ...args],
+      {
+        encoding: "utf8",
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          npm_execpath: fakeNpm,
+          FAKE_NPM_LOG: path("npm.log"),
+          FAKE_NPM_REGISTRY: path("registry.json"),
+          ...env,
+        },
       },
-    });
+    );
+    return { ...result, stderr: result.stderr.replaceAll("\r\n", "\n") };
+  };
   const succeed = (args, env, cwd) => {
     const { status, stderr } = release(args, env, cwd);
     equal(status, 0, stderr);
@@ -217,6 +225,8 @@ describe("scripts/release.mjs", () => {
       writeFileSync(path(`${dir}/README.md`), `# ${manifest.name}\n`);
     }
     git("init", "-q");
+    // The git of the release script too (no CRLF warnings on Windows)
+    git("config", "core.autocrlf", "false");
     commit("initial");
   });
 
