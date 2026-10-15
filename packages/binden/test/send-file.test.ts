@@ -568,7 +568,7 @@ suite("sendFile", () => {
     ]);
   });
 
-  test("`304 Not Modified` has the length of the whole file", async () => {
+  test("`304` has the length of the whole file, `412` is empty", async () => {
     const file = join(root, "index.html");
     const length = `${Buffer.byteLength(html)}`;
     const send = async (
@@ -595,9 +595,11 @@ suite("sendFile", () => {
         method,
       );
     }
-    // Not of the file
-    const [code, failed, , size] = await send("GET", { "If-Match": `"x"` });
-    deepStrictEqual([code, failed, size], [412, "0", 0]);
+    // Not of the file: empty, also for `HEAD`
+    for (const method of ["GET", "HEAD"]) {
+      const [code, failed, , size] = await send(method, { "If-Match": `"x"` });
+      deepStrictEqual([code, failed, size], [412, "0", 0], method);
+    }
   });
 
   test("a `304` that is late writes nothing", async () => {

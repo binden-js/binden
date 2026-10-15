@@ -507,7 +507,8 @@ export async function sendFileTo(
       await notModified(size);
       return;
     } else if (failed !== null) {
-      await response.status(failed).send();
+      // Empty, also for `HEAD` (which would keep the length of a body)
+      await response.status(failed).setHeader("Content-Length", 0).send();
       return;
     } else if (method === "HEAD") {
       // The headers of the whole file, without reading it
