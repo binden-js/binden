@@ -219,6 +219,8 @@ The `filename` of a file is the name that the client has sent, without its contr
 
 After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response whose headers have been sent destroys the request (its reply cannot tell the error): a send whose headers are not sent yet (e.g. of a stream that has not given its first chunk) is left to the framework, whose reply closes the connection.
 
+After the deadline, the framework replies `503 Service Unavailable` and closes the connection (a send that has not sent its headers is cancelled first). When the server shuts down and its `timeout` passes, the connection is closed without a reply.
+
 A parse must start before the response has finished: Node.js then reads and discards what has not been read of the body. A parse that starts later (e.g. after a middleware that has replied without `done`) refuses the body with a `500` (logged at `error`), never with an empty form.
 
 A client that goes away is seen also when the parser is still reading once the response has finished (e.g. it was not awaited): `context.signal` is no longer aborted then, but the connection closes before the body has been received whole, and `run()` rejects with a `400` of code `aborted`. The streams of the files in progress are destroyed (a body received whole is still parsed, and with the disk storage its files are stored until the cleanup of the request).

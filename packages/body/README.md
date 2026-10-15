@@ -244,9 +244,10 @@ stay pending.
   when the parser is still reading once the response has finished (e.g. it was not awaited): then
   `context.signal` is no longer aborted, but the connection closes before the body has been
   received whole.
-- After the deadline of the request (or the timeout of a shutdown), the parser rejects with the
-  reason of the signal (a `BindenAbortError`), and the connection is closed after the reply of
-  the framework.
+- After the deadline of the request, the parser rejects with the reason of the signal (a
+  `BindenAbortError` of reason `deadline`): the framework replies `503 Service Unavailable`, and
+  closes the connection. When the timeout of a shutdown passes, the parser rejects with the
+  reason `shutdown`, and the connection is closed without a reply.
 
 A parser must start before the response has finished: Node.js then reads and discards what has
 not been read of the body. A parser that starts later (e.g. after a middleware that has replied

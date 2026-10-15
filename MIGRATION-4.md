@@ -489,7 +489,8 @@ const values = new BodyParser({ strict: false, limit: 1024 * 1024 });
   a boundary `400` (it was skipped).
 - A client that goes away rejects `run()` with a `400` of code `aborted`. After the deadline or
   during a shutdown, `run()` rejects with the reason of `context.signal` (a `BindenAbortError`), as
-  `@binden/body` does: the framework replies `503`.
+  `@binden/body` does: after the deadline the framework replies `503`, and a shutdown closes the
+  connection without a reply.
 - A parse that starts once the response has finished (Node.js has then discarded the body)
   rejects with a `500`: it was an empty or a malformed form.
 - A body with a content coding (a `Content-Encoding` other than `identity`) gets
