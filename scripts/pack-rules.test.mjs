@@ -45,6 +45,65 @@ describe("scripts/pack-rules.mjs", () => {
       }
     });
 
+    it("refuses mocks, Go-style tests, keys and credential files", () => {
+      for (const [path, reason] of [
+        ["dist/__mocks__/a.js", "a file of a __mocks__/ directory"],
+        ["__mocks__/fs.ts", "a file of a __mocks__/ directory"],
+        ["dist/a_test.js", "a test"],
+        ["src/server_test.ts", "a test"],
+        ["dist/a_test.d.ts", "a test"],
+        ["src/id_rsa", "a certificate or a key"],
+        ["id_ed25519", "a certificate or a key"],
+        ["src/id_ecdsa.pub", "a certificate or a key"],
+        ["keys/release.jks", "a certificate or a key"],
+        ["android.keystore", "a certificate or a key"],
+        ["AuthKey_ABC123.p8", "a certificate or a key"],
+        ["src/putty.ppk", "a certificate or a key"],
+        [".netrc", "a credential file"],
+        ["src/.netrc", "a credential file"],
+        [".pypirc", "a credential file"],
+        ["dist/.git-credentials", "a credential file"],
+      ]) {
+        equal(deniedReason(path), reason, path);
+      }
+    });
+
+    // On the case-insensitive file systems of macOS and Windows, they are the same files
+    it("compares the names without case", () => {
+      for (const [path, reason] of [
+        ["dist/Test/a.js", "a file of a test/ directory"],
+        ["TESTS/a.ts", "a file of a tests/ directory"],
+        ["src/__Tests__/a.ts", "a file of a __tests__/ directory"],
+        ["src/__MOCKS__/a.ts", "a file of a __mocks__/ directory"],
+        ["Fixtures/a.json", "a file of a fixtures/ directory"],
+        ["Certs/a.txt", "a file of a certs/ directory"],
+        ["CERT/a.txt", "a file of a cert/ directory"],
+        ["Coverage/lcov.info", "a file of a coverage/ directory"],
+        ["Node_Modules/a/index.js", "a file of a node_modules/ directory"],
+        [".GIT/config", "a file of a .git/ directory"],
+        ["src/a.Test.ts", "a test"],
+        ["dist/a.SPEC.js", "a test"],
+        ["dist/a_TEST.js", "a test"],
+        ["src/server.PEM", "a certificate or a key"],
+        ["src/ID_RSA", "a certificate or a key"],
+        ["a.JKS", "a certificate or a key"],
+        ["a.KeyStore", "a certificate or a key"],
+        ["a.P8", "a certificate or a key"],
+        ["a.PPK", "a certificate or a key"],
+        [".NETRC", "a credential file"],
+        [".PyPIrc", "a credential file"],
+        [".Git-Credentials", "a credential file"],
+        [".ENV", "an environment file"],
+        [".Env.Local", "an environment file"],
+        [".NPMRC", "an npm configuration file"],
+        ["NPM-DEBUG.LOG", "a build artefact"],
+        ["binden-1.0.0.TGZ", "a build artefact"],
+        ["tsconfig.TsBuildInfo", "a build artefact"],
+      ]) {
+        equal(deniedReason(path), reason, path);
+      }
+    });
+
     it("accepts the files of a package", () => {
       for (const path of [
         "LICENSE",
@@ -62,6 +121,16 @@ describe("scripts/pack-rules.mjs", () => {
         "src/certificate.ts",
         "src/environment.ts",
         "dist/src/.envelope.js",
+        "src/identity.ts",
+        "dist/src/request-id.js",
+        "dist/src/valid_id.js",
+        "dist/src/latest_tests.js",
+        "dist/src/contest.js",
+        "dist/Testing/a.js",
+        "dist/mocks/a.js",
+        "src/credentials.ts",
+        "dist/netrc.js",
+        "src/keys.ts",
       ]) {
         equal(deniedReason(path), null, path);
       }
@@ -234,15 +303,123 @@ describe("scripts/pack-rules.mjs", () => {
       );
     });
 
-    it("only reads the link at the end of a generated file", () => {
+    // Node.js and the browsers follow the last link, wherever it is (not only at the end)
+    it("checks the last link of a generated file, in both comment forms", () => {
+      deepEqual(
+        errors({
+          "dist/a.js":
+            "export {};\n//# sourceMappingURL=/abs/a.js.map\n// generated\n",
+          "dist/b.js": "export {};\n/*# sourceMappingURL=/abs/b.js.map */\n",
+          "dist/c.mjs": "/*@ sourceMappingURL=/abs/c.mjs.map*/",
+          "dist/d.cjs": "/*#sourceMappingURL=/abs/d.cjs.map",
+          "dist/e.js":
+            "//# sourceMappingURL=e.js.map\n//# sourceMappingURL=/abs/e.js.map\n",
+          "dist/f.d.ts":
+            "/*# sourceMappingURL=f.d.ts.map */\n//@ sourceMappingURL=\n",
+          "dist/g.js":
+            "/* sourceMappingURL=/abs/g.js.map */\n// sourceMappingURL=/abs/g.js.map\n",
+        }),
+        [
+          'dist/a.js: sourceMappingURL "/abs/a.js.map" is not a relative path to a map inside the package',
+          'dist/b.js: sourceMappingURL "/abs/b.js.map" is not a relative path to a map inside the package',
+          'dist/c.mjs: sourceMappingURL "/abs/c.mjs.map" is not a relative path to a map inside the package',
+          'dist/d.cjs: sourceMappingURL "/abs/d.cjs.map" is not a relative path to a map inside the package',
+          'dist/e.js: sourceMappingURL "/abs/e.js.map" is not a relative path to a map inside the package',
+          'dist/f.d.ts: sourceMappingURL "" is not a relative path to a map inside the package',
+        ],
+      );
+    });
+
+    it("accepts a last link to a published map, in both comment forms", () => {
+      deepEqual(
+        errors({
+          "index.ts": "",
+          "dist/a.js":
+            "//# sourceMappingURL=/abs/a.js.map\nexport {};\n//# sourceMappingURL=a.js.map\n",
+          "dist/a.js.map": map(["../index.ts"]),
+          "dist/b.js": "export {};\n/*# sourceMappingURL=b.js.map */\n",
+          "dist/b.js.map": map(["../index.ts"]),
+          "dist/c.js": "export {};\n/*@ sourceMappingURL=c.js.map*/",
+          "dist/c.js.map": map(["../index.ts"]),
+        }),
+        [],
+      );
+    });
+
+    // A string that looks like a link is checked too (the safe side): the generated files of
+    // the packages have no such string
+    it("checks a link inside a string of a generated file, not of other files", () => {
       deepEqual(
         errors({
           "dist/a.js":
             'const a = "//# sourceMappingURL=/abs/a.js.map";\nexport { a };\n',
           "README.md": "//# sourceMappingURL=/abs/a.js.map",
+          "index.ts": "//# sourceMappingURL=/abs/index.ts.map",
         }),
-        [],
+        [
+          'dist/a.js: sourceMappingURL "/abs/a.js.map\\";" is not a relative path to a map inside the package',
+        ],
       );
+    });
+
+    it("recognises generated files and maps without case", () => {
+      deepEqual(
+        errors({
+          "dist/A.JS": "//# sourceMappingURL=/abs/A.JS.map",
+          "dist/B.D.TS": "export {};",
+          "dist/B.D.TS.MAP": map(["/abs/b.ts"]),
+          "dist/C.MJS": "//# sourceMappingURL=C.MJS.Map",
+        }),
+        [
+          'dist/A.JS: sourceMappingURL "/abs/A.JS.map" is not a relative path to a map inside the package',
+          'dist/B.D.TS.MAP: source "/abs/b.ts" is not a relative path inside the package',
+          "dist/C.MJS: sourceMappingURL dist/C.MJS.Map is not published",
+        ],
+      );
+    });
+
+    // The cases of the review of the rules (pack-sneak): each one is refused next to a
+    // package whose own maps are valid
+    it("refuses every file that the review slipped through", () => {
+      const valid = {
+        "dist/index.js": "x\n//# sourceMappingURL=index.js.map\n",
+        "dist/index.js.map": map(["../index.ts"]),
+        "index.ts": "x",
+      };
+      deepEqual(errors(valid), []);
+      for (const [path, content, error] of [
+        ["src/server.PEM", "k", "a certificate or a key"],
+        [
+          "src/id_rsa",
+          "-----BEGIN OPENSSH PRIVATE KEY-----",
+          "a certificate or a key",
+        ],
+        ["src/.netrc", "machine x login y password z", "a credential file"],
+        ["src/key.jks", "k", "a certificate or a key"],
+        ["dist/Test/a.js", "x", "a file of a test/ directory"],
+        ["dist/a_test.js", "x", "a test"],
+        ["dist/__mocks__/a.js", "x", "a file of a __mocks__/ directory"],
+        [
+          "dist/abs.js",
+          "x\n//# sourceMappingURL=/Users/me/abs.js.map\n// generated\n",
+          'sourceMappingURL "/Users/me/abs.js.map"',
+        ],
+        [
+          "dist/abs2.js",
+          "x\n/*# sourceMappingURL=/Users/me/abs2.js.map */\n",
+          'sourceMappingURL "/Users/me/abs2.js.map"',
+        ],
+        [
+          "dist/abs3.js",
+          "x\n//# sourceMappingURL=/Users/me/abs3.js.map\n",
+          'sourceMappingURL "/Users/me/abs3.js.map"',
+        ],
+      ]) {
+        const [refused, ...rest] = errors({ ...valid, [path]: content });
+        deepEqual(rest, [], path);
+        equal(refused?.startsWith(`${path}: `), true, path);
+        equal(refused.includes(error), true, refused);
+      }
     });
   });
 });
