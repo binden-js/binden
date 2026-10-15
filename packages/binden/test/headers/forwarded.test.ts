@@ -144,7 +144,13 @@ suite("Forwarded", () => {
       `for="b\\\\"`,
       "for=c",
     ]);
-    deepStrictEqual(parse(`for="a\\",b", for=c`), [`for="a\\",b"`, "for=c"]);
+    deepStrictEqual(parse(`for="a,\\"b", for=c`), [`for="a,\\"b"`, "for=c"]);
+    // A quote after an even number of backslashes is not escaped
+    deepStrictEqual(parse(`for=x, a\\\\"b, c", for=y`), [
+      "for=x",
+      null,
+      "for=y",
+    ]);
     // Every field line apart, in their order
     deepStrictEqual(parse([`for="x`, "for=192.0.2.1", `for=a, for="y`]), [
       null,
