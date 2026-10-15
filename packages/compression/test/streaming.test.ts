@@ -239,6 +239,39 @@ suite("Streaming through the compressor", () => {
     deepStrictEqual(await within(code), "ERR_STREAM_ALREADY_FINISHED");
   });
 
+  test("an `end()` that throws does not end a compressed response", async () => {
+    const states: unknown[] = [];
+    const url = await start((context) => {
+      const { response } = context;
+      context.done = true;
+      response.write(text(2048));
+      for (const args of [[{}], ["x", "unknown"]]) {
+        try {
+          Reflect.apply(response.end.bind(response), response, [
+            ...args,
+            (): void => {
+              states.push("called");
+            },
+          ]);
+        } catch (error: unknown) {
+          states.push((error as { code?: unknown }).code);
+        }
+        states.push(response.writableEnded);
+      }
+      // Ended now, with its chunk
+      response.end(" end");
+    });
+    const response = await fetchRaw(url, { headers: gzip });
+
+    deepStrictEqual(response.body, `${text(2048)} end`);
+    deepStrictEqual(states, [
+      "ERR_INVALID_ARG_TYPE",
+      false,
+      "ERR_UNKNOWN_ENCODING",
+      false,
+    ]);
+  });
+
   test("`end()` with a callback only, while the response is not finished", async () => {
     const url = await start(async (context) => {
       const { response } = context;

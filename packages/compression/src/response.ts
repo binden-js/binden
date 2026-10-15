@@ -439,6 +439,18 @@ export class CompressedResponse {
       );
     }
     if (this.#sink === "compressor") {
+      if (!this.#ended) {
+        // As Node.js, a chunk that the compressor refuses (e.g. an object)
+        // throws, and the response is not ended
+        (this.#compressor as ICompressor).end(
+          chunk,
+          encoding as BufferEncoding,
+        );
+        this.#ended = true;
+        // What the compressor has accepted is sent, even if the work that
+        // has ended the response is abandoned afterwards
+        (this.#operation as IResponseOperation).transfer();
+      }
       // As Node.js: the callback runs once the response has finished (or
       // with `ERR_STREAM_ALREADY_FINISHED` once it has), and a second `end()`
       // writes nothing
@@ -450,16 +462,6 @@ export class CompressedResponse {
             callback();
           });
         }
-      }
-      if (!this.#ended) {
-        this.#ended = true;
-        // What the compressor has accepted is sent, even if the work that
-        // has ended the response is abandoned afterwards
-        (this.#operation as IResponseOperation).transfer();
-        (this.#compressor as ICompressor).end(
-          chunk,
-          encoding as BufferEncoding,
-        );
       }
       return response;
     } else if (this.#sink === "discard") {
