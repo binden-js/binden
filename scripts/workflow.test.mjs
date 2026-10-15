@@ -124,6 +124,42 @@ function jobBlock(name, key) {
   return index === -1 ? null : block(lines, index);
 }
 
+/** The names of the jobs of the CI workflow, in their order */
+function jobNames() {
+  const lines = workflow.split("\n");
+  return lines
+    .slice(lines.indexOf("jobs:") + 1)
+    .map((line) => /^ {2}(?<name>[\w-]+):$/u.exec(line)?.groups.name)
+    .filter((name) => typeof name !== "undefined");
+}
+
+/**
+ * Whether the `if` of a job holds in `context` ({ event_name, ref }): a conjunction of
+ * comparisons of `github.event_name` or `github.ref` with a string (anything else fails)
+ */
+function holds(name, context) {
+  const condition = jobKey(name, "if");
+  return (
+    condition === null ||
+    condition.split(" && ").every((term) => {
+      const { key, operator, value } =
+        /^github\.(?<key>event_name|ref) (?<operator>[!=]=) '(?<value>[^']*)'$/u.exec(
+          term,
+        )?.groups ?? {};
+      ok(typeof key !== "undefined", `${name}: unsupported condition ${term}`);
+      return (context[key] === value) === (operator === "==");
+    })
+  );
+}
+
+/** Whether a job runs in `context`: its `if` holds, and the jobs that it needs run */
+function runs(name, context) {
+  const needs = jobKey(name, "needs");
+  const needed =
+    needs === null ? [] : needs.replace(/^\[|\]$/gu, "").split(", ");
+  return holds(name, context) && needed.every((need) => runs(need, context));
+}
+
 /** An expression of GitHub Actions: `${{ <inner> }}` */
 const expression = (inner) => `\${{ ${inner} }}`;
 
@@ -314,9 +350,83 @@ describe("the release jobs of .github/workflows/ci.yml", () => {
         script(name, "Check the tag and its commit"),
         script("recover", "Check the tag and its commit"),
       );
-      equal(jobKey(name, "if"), "github.event_name == 'workflow_dispatch'");
     }
-    equal(jobKey("package", "if"), "github.event_name != 'workflow_dispatch'");
+  });
+
+  // The `release` environment admits `main` only (see "Repository settings" in the README),
+  // and the npm trusted publisher of the packages requires it: every job that can publish to
+  // npm runs in it, which keeps the workflow of another branch from publishing
+  it("publishes only in the release environment", () => {
+    const text = (name) => job(name).join("\n");
+    deepEqual(
+      jobNames().filter((name) =>
+        ["NODE_AUTH_TOKEN", "secrets.NPM_TOKEN", "registry-url"].some((right) =>
+          text(name).includes(right),
+        ),
+      ),
+      ["release", "recover"],
+    );
+    for (const name of ["release", "recover"]) {
+      equal(jobKey(name, "environment"), "release", name);
+    }
+    // And the deployment of the documentation (GitHub Pages), in its own environment
+    deepEqual(
+      jobNames().filter((name) => text(name).includes("id-token: write")),
+      ["release", "recover", "pages"],
+    );
+    deepEqual(jobBlock("pages", "environment"), [
+      "name: github-pages",
+      `url: ${expression("steps.deployment.outputs.page_url")}`,
+    ]);
+  });
+
+  // A release is published from `main` only: by a push (`release`), or by a recovery
+  // dispatched from `main` (`recover-package` and `recover`, which nothing else runs with)
+  it("runs the jobs of a release from main only", () => {
+    const checks = ["lint", "package", "test", "windows", "macos"];
+    for (const [context, expected] of [
+      [
+        { event_name: "push", ref: "refs/heads/main" },
+        [...checks, "release", "pages"],
+      ],
+      [{ event_name: "push", ref: "refs/heads/other" }, checks],
+      [
+        { event_name: "pull_request", ref: "refs/pull/1/merge" },
+        [...checks, "dependency-review"],
+      ],
+      [
+        { event_name: "workflow_dispatch", ref: "refs/heads/main" },
+        ["recover-package", "recover"],
+      ],
+      [{ event_name: "workflow_dispatch", ref: "refs/heads/other" }, []],
+      [{ event_name: "workflow_dispatch", ref: "refs/tags/v1.0.0" }, []],
+    ]) {
+      deepEqual(
+        jobNames().filter((name) => runs(name, context)),
+        expected,
+        JSON.stringify(context),
+      );
+    }
+    // Each publishing job checks the branch itself, not only through the jobs it needs
+    for (const name of ["release", "recover"]) {
+      for (const ref of ["refs/heads/other", "refs/tags/v1.0.0"]) {
+        for (const event of ["push", "workflow_dispatch"]) {
+          equal(holds(name, { event_name: event, ref }), false, name);
+        }
+      }
+    }
+    deepEqual(jobNames(), [
+      "lint",
+      "package",
+      "test",
+      "windows",
+      "macos",
+      "dependency-review",
+      "release",
+      "recover-package",
+      "recover",
+      "pages",
+    ]);
   });
 });
 

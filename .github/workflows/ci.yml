@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Recovers a release that failed after its tag was pushed (see "Releases" in the README)
+  # Recovers a release that failed after its tag was pushed (see "Releases" in the README):
+  # from `main` only (dispatched from another branch, the recovery jobs are skipped)
   workflow_dispatch:
     inputs:
       version:
@@ -352,9 +353,12 @@ jobs:
   # The archives of a release to recover (see "Recovering a release" in the README), made
   # without any right to publish: once the version, its tag and the commit of the tag are
   # checked, the commit of the tag is packed on the runtime of the release, and the archives
-  # are checked and uploaded as an artifact of this run for the `recover` job
+  # are checked and uploaded as an artifact of this run for the `recover` job. From `main` only:
+  # a run dispatched from another branch runs the workflow of that branch (which may not have
+  # this condition), whose `recover` job the `release` environment refuses (it admits `main`
+  # only, see "Repository settings" in the README)
   recover-package:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
 
     runs-on: ubuntu-latest
 
@@ -449,9 +453,9 @@ jobs:
   # Publishes the packages of a release that are not published yet, from the archives of the
   # `recover-package` job of this run (`scripts/release.mjs` checks that the published ones are
   # the same archives), and creates its GitHub Release when it is missing. Run from the Actions
-  # tab (in this workflow, which npm trusts for publishing).
+  # tab (in this workflow, which npm trusts for publishing), from `main`.
   recover:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
 
     needs: recover-package
 

@@ -133,10 +133,12 @@ that npm receives are the bytes that were checked.
   packs the archives of the next release, checks them, and uploads them with their manifest as an
   artifact of the run; the digest of the manifest is an output of the job.
 - The `release` job runs after the tests and the `package` job, in the `release` environment (the
-  one that the npm trusted publisher of the packages expects), one publication at a time (with the
-  `recover` job). It installs only the release tooling (`npm ci --ignore-scripts`), downloads the
-  artifact of the `package` job of the same run (by its id: never an artifact of another run),
-  checks the digest of its manifest, and publishes these archives.
+  one that the npm trusted publisher of the packages expects, which admits `main` only and waits
+  for the approval of a maintainer: see [Repository settings](#repository-settings)), one
+  publication at a time (with the `recover` job). It installs only the release tooling
+  (`npm ci --ignore-scripts`), downloads the artifact of the `package` job of the same run (by its
+  id: never an artifact of another run), checks the digest of its manifest, and publishes these
+  archives.
 
 1. `package`: the next version is derived from [Conventional Commits](https://conventionalcommits.org)
    since the last `v*` tag (semantic-release in a local clone, as `npm run release:rehearsal` does),
@@ -157,8 +159,9 @@ that npm receives are the bytes that were checked.
    that version, packed from `HEAD`, with the integrity of the manifest, byte for byte the
    `package.json` that `version` wrote into the workspace (what npm installs: scripts,
    dependencies, entry points), the expected files and none that the rules refuse, none may be
-   published yet, and `npm publish --dry-run` must accept each one. Any difference (a version or a commit that is not the one of the archives, an archive that
-   changed or was substituted) fails the release **before anything is tagged**;
+   published yet, and `npm publish --dry-run` must accept each one. Any difference (a version or a
+   commit that is not the one of the archives, an archive that changed or was substituted) fails
+   the release **before anything is tagged**;
 5. the `v<version>` tag is pushed;
 6. `scripts/release.mjs publish` checks the archives again, then the registry for **all** the
    packages, and only then publishes these archives (`npm publish <tgz>`, with provenance) in
@@ -188,8 +191,11 @@ Nothing is tagged or published.
 
 When a release fails after its tag was pushed (for example, some packages were published, but not
 all of them), the next release would start after that tag: recover it instead, by running the CI
-workflow manually (Actions → CI → Run workflow) with its version. Two jobs recover it, the first one
-without any right to publish:
+workflow manually from `main` (Actions → CI → Run workflow, "Use workflow from" `main`) with its
+version. Two jobs recover it, the first one without any right to publish, and both run only for a
+dispatch from `main`. Dispatched from another branch, they are skipped; as such a run uses the
+workflow of that branch (where these conditions may be gone), the `release` environment, which
+admits `main` only, is what keeps it from publishing:
 
 1. `recover-package` runs nothing of the repository (not even `npm ci`) before it has checked that
    the version is a SemVer version, that its tag exists, and that the commit of the tag is on
@@ -199,18 +205,18 @@ without any right to publish:
 2. `recover` checks the version, the tag and its commit again, checks out that commit, downloads the
    artifact of the `recover-package` job of the same run and checks the digest of its manifest, sets
    the version (`scripts/release.mjs version`: nothing is installed, built or packed), and publishes
-   with `scripts/release.mjs publish --skip-existing`: the archives must be the ones of the commit
-   of the tag, with the `package.json` that `version` wrote, the registry is checked for all the packages first, a version that is already
-   published is skipped only when it is the same archive (its `gitHead` and `dist.integrity` on
-   npm), and any other difference, or any registry error other than a 404, publishes nothing. The
-   missing packages are published with provenance;
+   with `scripts/release.mjs publish --skip-existing` once a maintainer approved the job (the
+   `release` environment): the archives must be the ones of the commit of the tag, with the
+   `package.json` that `version` wrote, the registry is checked for all the packages first, a
+   version that is already published is skipped only when it is the same archive (its `gitHead`
+   and `dist.integrity` on npm), and any other difference, or any registry error other than a 404,
+   publishes nothing. The missing packages are published with provenance;
 3. `recover` then creates the GitHub Release when the GitHub API answers 404 for it (any other
    answer fails the job), with notes generated by GitHub.
 
-A recovery runs in the concurrency group of the runs of `main` (`ci-refs/heads/main`, when it is
-dispatched from `main`), and its `recover` job in the `publish` group of the `release` job. With the
-default queue of GitHub (`queue: single`), a group keeps at most one pending run (or job), and a
-newly queued one cancels it
+A recovery runs in the concurrency group of the runs of `main` (`ci-refs/heads/main`), and its
+`recover` job in the `publish` group of the `release` job. With the default queue of GitHub
+(`queue: single`), a group keeps at most one pending run (or job), and a newly queued one cancels it
 ([concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)):
 a recovery dispatched while a run of `main` is in progress waits for it, and is cancelled if a
 commit is pushed to `main` meanwhile; dispatching a recovery likewise cancels a run of `main` that
@@ -231,3 +237,32 @@ node scripts/release.mjs publish <dir> --skip-existing
 
 The `CHANGELOG.md` files inside `packages/*` describe the history before the packages were merged
 into this repository.
+
+### Repository settings
+
+The releases rely on settings of GitHub and npm that are not in the repository. Check them before
+the first release, and after any change of the release jobs:
+
+- **The `release` environment** (Settings → Environments): its deployment branches and tags
+  limited to "Selected branches and tags" with the single rule `main` (a branch, no tag), required
+  reviewers (the maintainers), and no bypass of these rules for administrators. The `release` and
+  `recover` jobs wait for the approval of a reviewer. A run dispatched from another branch uses the
+  workflow of that branch, whose conditions may be gone: this environment keeps it from
+  publishing.
+- **npm trusted publishing** for each of `binden`, `@binden/logger`, `@binden/body`,
+  `@binden/compression` and `@binden/multipart` (the settings of the package on npm): the
+  repository `binden-js/binden`, the workflow `ci.yml` and the environment `release` (without it,
+  any job of `ci.yml`, on any branch, could publish). Once it works, no `NPM_TOKEN` is needed; until
+  then, the token is a secret of the `release` environment, never of the repository (which the
+  workflow of any branch can read).
+- **The protection of `main`** (a ruleset or a branch protection rule, for administrators too):
+  changes through pull requests only, approved by a code owner, without force pushes or deletion,
+  and with the required status checks `lint`, `package`, `test (24.14.1)`, `test (24)`,
+  `test (26)`, `windows`, `macos`, `dependency-review` and `Analyze (javascript-typescript)`
+  (CodeQL). `package` rehearses the release on its runtime: without it, a change whose archives the
+  `release` job would refuse could be merged.
+- **The former repositories** of the packages (`binden-js/logger`, `binden-js/body`,
+  `binden-js/compression` and `binden-js/multipart`): archived, their release workflows disabled
+  and their npm tokens revoked, so that only this workflow publishes the packages.
+- **Security** (the security settings of the repository): private vulnerability reporting (see
+  [SECURITY.md](SECURITY.md)), secret scanning and push protection.
