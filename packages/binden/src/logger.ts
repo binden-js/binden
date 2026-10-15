@@ -153,7 +153,8 @@ function ignore(): void {
 /**
  * A logger whose calls never fail: a method (or `child()`) that throws is
  * ignored, and a rejected promise that it returns is observed. A `child()`
- * that fails (or that does not return a logger) gives the logger itself.
+ * that fails (or that does not return a logger, e.g. a promise) gives the
+ * logger itself.
  */
 class SafeLogger implements ILogger {
   readonly #logger: ILogger;
@@ -189,7 +190,11 @@ class SafeLogger implements ILogger {
   public child(bindings: Record<string, unknown>): ILogger {
     try {
       const child: unknown = this.#logger.child(bindings);
-      if (isLogger(child)) {
+      if (typeof property(child, "then") === "function") {
+        // Not a logger (e.g. of an `async` function): its rejection is
+        // observed, and the logger itself is used
+        Promise.resolve(child).catch(ignore);
+      } else if (isLogger(child)) {
         return new SafeLogger(child);
       }
     } catch {

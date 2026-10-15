@@ -1,6 +1,7 @@
-// Run by `process.test.ts`: a logger whose methods return rejected promises
-// (or throw) must neither crash the process (`unhandledRejection`) nor keep
-// the requests from being handled, whoever logs (the framework or a context)
+// Run by `process.test.ts`: a logger whose methods (and `child()`) return
+// rejected promises must neither crash the process (`unhandledRejection`) nor
+// keep the requests from being handled, whoever logs (the framework or a
+// context): a `child()` that returns a promise gives its parent
 import { Binden, BindenError } from "../../index.js";
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -25,7 +26,8 @@ const logger: ILogger = {
   info: reject,
   debug: reject,
   trace: reject,
-  child: () => logger,
+  // E.g. an `async` function: not a logger
+  child: reject as unknown as ILogger["child"],
 };
 
 const app = new Binden({ logger }).use((context) => {

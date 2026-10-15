@@ -140,7 +140,7 @@ const removed = app.off("/path", middleware1);
 
 ### Logging
 
-Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. Its calls never fail: a logger that throws (or whose `child()` throws) is ignored, and a promise it returns is observed, so that logging never breaks the handling of a request (also in the other packages, which log through it).
+Every context logs through `context.log`: a child (with the `trace_id` of the context) of the logger of the application. Its calls never fail: a logger that throws (or whose `child()` throws) is ignored, and a promise it returns is observed (a `child()` that returns one, or anything but a logger, gives the logger itself), so that logging never breaks the handling of a request (also in the other packages, which log through it).
 
 The framework logs only snapshots that it builds itself, under the `failure` key: the type of the error (the nearest of `BindenError`, `BindenAbortError` and the built-in error classes, never a name that the error defines), its `code` when it is a system error code (such as `ECONNRESET`), one of a few stream and HTTP codes (such as `ERR_STREAM_PREMATURE_CLOSE`) or a code of the framework (`deadline`, `aborted`), its `status`, the `request_id` and the `location` in the framework (`middleware`, `error_handler`, `send`, `cleanup` or `shutdown`). The message, the stack, the cause and any other `code` of an error may quote the input of a request (e.g. an error of `JSON.parse()`): they are added only with the `log_error_details: true` option.
 
