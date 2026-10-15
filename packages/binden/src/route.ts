@@ -206,7 +206,7 @@ function leading(
 }
 
 /** The segments of a path (which starts with `/`), as received */
-function split(path: string): string[] {
+export function split(path: string): string[] {
   return path.slice(1).split("/");
 }
 
@@ -220,26 +220,31 @@ export interface IMatchOptions extends IRoutingOptions {
   readonly encoded_slashes?: boolean | undefined;
 }
 
-/** Matches a whole path: the parameters of a route, or `null` */
+/**
+ * Matches a whole path (or its segments, see `split()`, which the layers of a
+ * stack share): the parameters of a route, or `null`. The number of the
+ * segments is compared first.
+ */
 export function matchRoute(
   pattern: IPattern,
-  path: string,
+  path: readonly string[] | string,
   {
     case_sensitive = true,
     strict = true,
     encoded_slashes = false,
   }: IMatchOptions,
 ): IParams | null {
-  let parts = split(path);
+  const parts = typeof path === "string" ? split(path) : path;
   // One trailing `/` of the path, or of the pattern, may be missing
   const segments = strict ? pattern.segments : pattern.loose;
-  if (!strict && parts.length > 1 && parts.at(-1) === "") {
-    parts = parts.slice(0, -1);
-  }
+  const count =
+    !strict && parts.length > 1 && parts.at(-1) === ""
+      ? parts.length - 1
+      : parts.length;
   if (
     pattern.wildcard === null
-      ? parts.length !== segments.length
-      : parts.length < segments.length
+      ? count !== segments.length
+      : count < segments.length
   ) {
     return null;
   }
@@ -247,7 +252,7 @@ export function matchRoute(
   if (params && pattern.wildcard !== null) {
     // The rest of the path, each segment decoded once
     const rest = parts
-      .slice(segments.length)
+      .slice(segments.length, count)
       .map((part) => value(part, encoded_slashes))
       .join("/");
     return { ...params, ...Object.fromEntries([[pattern.wildcard, rest]]) };
@@ -256,15 +261,16 @@ export function matchRoute(
 }
 
 /**
- * Matches the leading segments of a path (on a segment boundary): the
- * parameters, the matched part and the rest of the path, or `null`
+ * Matches the leading segments of a path (or its segments, see `split()`) on a
+ * segment boundary: the parameters, the matched part and the rest of the
+ * path, or `null`. The number of the segments is compared first.
  */
 export function matchPrefix(
   pattern: IPattern,
-  path: string,
+  path: readonly string[] | string,
   { case_sensitive = true, encoded_slashes = false }: IMatchOptions,
 ): IPrefixMatch | null {
-  const parts = split(path);
+  const parts = typeof path === "string" ? split(path) : path;
   const { length } = pattern.segments;
   if (parts.length < length) {
     return null;

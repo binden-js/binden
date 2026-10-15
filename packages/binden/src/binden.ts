@@ -25,6 +25,7 @@ import {
   type IRoutingOptions,
   matchPrefix,
   matchRoute,
+  split,
 } from "./route.js";
 import { type IMiddleware, Middleware } from "./middleware.js";
 import { isClosing, register, track } from "./shutdown.js";
@@ -503,8 +504,10 @@ export class Binden<
     }
     chain.push(stack);
 
+    // Split once for every layer of the stack
+    const parts = split(path);
     for (const layer of layersOf(stack)) {
-      const level = this.#match(layer, path);
+      const level = this.#match(layer, path, parts);
       if (
         level !== null &&
         (await this.#layer(layer, level, run, exchange, chain, allow))
@@ -563,7 +566,7 @@ export class Binden<
    * The level that a layer of the stack enters for a path (its parameters,
    * and the prefix and the rest of the path of a mount), or `null`
    */
-  #match(layer: ILayer, path: string): ILevel | null {
+  #match(layer: ILayer, path: string, parts: readonly string[]): ILevel | null {
     const none = {
       params: {},
       prefix: "",
@@ -578,13 +581,13 @@ export class Binden<
         ? { ...none, route: match === null ? "" : String(match) }
         : null;
     } else if (layer.kind === "route") {
-      const params = matchRoute(layer.pattern, path, this.#routing);
+      const params = matchRoute(layer.pattern, parts, this.#routing);
       return params === null
         ? null
         : { ...none, params, route: layer.pattern.source };
     }
     const { pattern } = layer;
-    const match = matchPrefix(pattern, path, this.#routing);
+    const match = matchPrefix(pattern, parts, this.#routing);
     return match === null
       ? null
       : { ...match, template: pattern.source, route: "" };

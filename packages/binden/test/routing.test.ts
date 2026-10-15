@@ -306,6 +306,37 @@ suite("Routing", () => {
       });
     });
 
+    test("a path is split once for the layers of a stack, whatever their number", async (t) => {
+      // A long path that no layer matches, through many `route()` and
+      // `mount()` layers (and a mounted stack)
+      const path = `/${"a/".repeat(1000)}b`;
+      const splits = async (layers: number): Promise<number> => {
+        const app = new Binden().mount("/", new Stack().use("/x", echo()));
+        for (let index = 0; index < layers; index += 1) {
+          app.route(`/r${index}/:id`, echo()).mount(`/m${index}`, echo());
+        }
+        let calls = 0;
+        await withApp(app, async ({ port }) => {
+          const split = t.mock.method(String.prototype, "split");
+          try {
+            deepStrictEqual((await get(port, path))[0], 404);
+          } finally {
+            // The splits of the long path (or of its rest at a mount)
+            calls = split.mock.calls.filter(
+              (call) => String(call.this).length >= path.length - 1,
+            ).length;
+            split.mock.restore();
+          }
+        });
+        return calls;
+      };
+      const few = await splits(2);
+      const many = await splits(200);
+      // The request-target, the root and the mounted stack
+      ok(few <= 3, `${few} splits`);
+      deepStrictEqual(many, few);
+    });
+
     test("`use()` keeps an exact path", async () => {
       const app = new Binden({
         routing: { case_sensitive: false, strict: false },
