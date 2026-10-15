@@ -7,7 +7,6 @@ import {
   deflateSync,
   gzipSync,
   zstdCompressSync,
-  zstdDecompressSync,
 } from "node:zlib";
 import { ct_json, ct_text } from "binden";
 import { deepStrictEqual, ok } from "node:assert/strict";
@@ -165,24 +164,17 @@ suite("BodyParser (content codings)", () => {
     }
   });
 
-  test("concatenated `gzip` members are one body, `zstd` frames never a truncated one", async () => {
+  test("concatenated `gzip` members and `zstd` frames are one body", async () => {
     const parser = new BodyParser({ zstd: true });
     const twice = { type: "text", value: hello.repeat(2) };
     const members = Buffer.concat([gzipSync(hello), gzipSync(hello)]);
     deepStrictEqual((await post(parser, members, text("gzip"))).body, twice);
-
-    // The decoder of Node.js 24 decodes only the first frame
+    // Also on Node.js 24, whose decoder decodes only the first frame
     const frames = Buffer.concat([
       zstdCompressSync(hello),
       zstdCompressSync(hello),
     ]);
-    const whole = zstdDecompressSync(frames).toString() === twice.value;
-    deepStrictEqual(
-      await post(parser, frames, text("zstd")),
-      whole
-        ? { status: 200, connection: "keep-alive", body: twice }
-        : { status: 400, connection: "close", body: null },
-    );
+    deepStrictEqual((await post(parser, frames, text("zstd"))).body, twice);
   });
 
   test(
