@@ -10,13 +10,28 @@ import {
   writeFileSync,
 } from "node:fs";
 import { deepEqual, doesNotMatch, equal, match, ok } from "node:assert/strict";
+import { delimiter, dirname, join } from "node:path";
 import { integrity, manifestFile } from "./tarballs.mjs";
-import { join } from "node:path";
 import { npmTarball } from "./fixtures/tar.mjs";
+import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
 const fakeNpm = join(import.meta.dirname, "fixtures", "fake-npm.mjs");
+const repository = join(import.meta.dirname, "..");
+
+// The commands of @semantic-release/exec in .releaserc.json
+function execCommands() {
+  const { plugins } = JSON.parse(
+    readFileSync(join(repository, ".releaserc.json"), "utf8"),
+  );
+  return plugins.find(
+    (plugin) => Array.isArray(plugin) && plugin[0] === "@semantic-release/exec",
+  )[1];
+}
+
+// @semantic-release/exec runs its commands in a shell (`sh` there): not on Windows
+const posixShell = process.platform === "win32" && "the shell of the commands";
 
 const manifests = {
   "packages/a": { name: "@fixture/a", version: "1.0.0" },
@@ -94,8 +109,9 @@ describe("scripts/release.mjs", () => {
   };
   const readJSON = (file) => JSON.parse(readFileSync(path(file), "utf8"));
 
-  const release = (args, env = {}) =>
-    spawnSync(process.execPath, [path("scripts/release.mjs"), ...args], {
+  // scripts/release.mjs of the checkout `cwd` (the fixture by default)
+  const release = (args, env = {}, cwd = root) =>
+    spawnSync(process.execPath, [join(cwd, "scripts/release.mjs"), ...args], {
       encoding: "utf8",
       timeout: 60_000,
       env: {
@@ -106,14 +122,14 @@ describe("scripts/release.mjs", () => {
         ...env,
       },
     });
-  const succeed = (args, env) => {
-    const { status, stderr } = release(args, env);
+  const succeed = (args, env, cwd) => {
+    const { status, stderr } = release(args, env, cwd);
     equal(status, 0, stderr);
     return stderr;
   };
 
   // Without the hooks and the signing of the user
-  const git = (...args) => {
+  const gitAt = (cwd, ...args) => {
     const { status, stdout, stderr } = spawnSync(
       "git",
       [
@@ -131,19 +147,21 @@ describe("scripts/release.mjs", () => {
         "core.autocrlf=false",
         ...args,
       ],
-      { cwd: root, encoding: "utf8", timeout: 60_000 },
+      { cwd, encoding: "utf8", timeout: 60_000 },
     );
     equal(status, 0, stderr);
     return stdout.trim();
   };
+  const git = (...args) => gitAt(root, ...args);
   const commit = (message) => {
     git("add", "-A");
     git("commit", "-q", "--no-verify", "--allow-empty", "-m", message);
     return git("rev-parse", "HEAD");
   };
 
-  const npmCalls = (...commands) => {
-    const log = path("npm.log");
+  // The npm commands of a log of the fake npm (npm.log by default)
+  const npmLog = (file, ...commands) => {
+    const log = path(file);
     return existsSync(log)
       ? readFileSync(log, "utf8")
           .split("\n")
@@ -152,6 +170,7 @@ describe("scripts/release.mjs", () => {
           .filter(([name]) => commands.includes(name))
       : [];
   };
+  const npmCalls = (...commands) => npmLog("npm.log", ...commands);
   function registry() {
     return existsSync(path("registry.json")) ? readJSON("registry.json") : {};
   }
@@ -187,7 +206,10 @@ describe("scripts/release.mjs", () => {
     );
     writeJSON("package.json", { private: true, workspaces });
     writeJSON("package-lock.json", { lockfileVersion: 3 });
-    writeFileSync(path(".gitignore"), "npm.log\nregistry.json\nrelease/\n");
+    writeFileSync(
+      path(".gitignore"),
+      "jobs/\nnpm*.log\nregistry.json\nrelease/\n",
+    );
     for (const [dir, manifest] of Object.entries(manifests)) {
       mkdirSync(path(dir), { recursive: true });
       writeJSON(`${dir}/package.json`, manifest);
@@ -780,24 +802,384 @@ describe("scripts/release.mjs", () => {
     });
   });
 
-  // The commands that semantic-release runs are the ones that the rehearsal runs
-  it(".releaserc.json verifies, then versions and packs, then publishes the archives", () => {
-    const { plugins } = JSON.parse(
-      readFileSync(join(import.meta.dirname, "../.releaserc.json"), "utf8"),
-    );
-    const [, exec] = plugins.find(
-      (plugin) =>
-        Array.isArray(plugin) && plugin[0] === "@semantic-release/exec",
-    );
+  // The commands that semantic-release runs are the ones that the rehearsal runs: the
+  // archives are packed by the `package` job, never by the release job
+  it(".releaserc.json verifies, then versions and checks the archives, then publishes them", () => {
+    const exec = execCommands();
     match(
       exec.verifyReleaseCmd,
       /^node scripts\/release\.mjs verify \$\{nextRelease\.version\}$/u,
     );
     match(
       exec.prepareCmd,
-      /^node scripts\/release\.mjs version \$\{nextRelease\.version\} && node scripts\/release\.mjs pack "\$RELEASE_DIR"$/u,
+      /^node scripts\/release\.mjs version \$\{nextRelease\.version\} && node scripts\/release\.mjs publish "\$RELEASE_DIR" --dry-run$/u,
     );
     equal(exec.publishCmd, 'node scripts/release.mjs publish "$RELEASE_DIR"');
+  });
+
+  // The CI jobs run in checkouts of their own: only the archives and their manifest (the
+  // artifact) go from the job that packs them (`package` or `recover-package`) to the one
+  // that publishes them (`release` or `recover`)
+  describe("the archives of another job", { skip: posixShell }, () => {
+    let jobs = 0;
+
+    // A clone of the fixture at `ref`, as actions/checkout makes it
+    const checkout = (ref = "HEAD") => {
+      jobs += 1;
+      const dir = path(`jobs/checkout-${jobs}`);
+      const sha = git("rev-parse", `${ref}^{commit}`);
+      gitAt(root, "clone", "-q", "--no-checkout", root, dir);
+      gitAt(dir, "checkout", "-q", "--detach", sha);
+      return dir;
+    };
+    // The `package` job: `version` and `pack` of a checkout of `ref`, into an artifact
+    const packageJob = (version, ref = "HEAD") => {
+      const dir = checkout(ref);
+      const artifact = path(`jobs/artifact-${jobs}`);
+      const env = { FAKE_NPM_LOG: path("npm-package.log") };
+      succeed(["version", version], env, dir);
+      succeed(["pack", artifact], env, dir);
+      return artifact;
+    };
+    const artifactManifest = (artifact) =>
+      JSON.parse(readFileSync(join(artifact, manifestFile), "utf8")).packages;
+    // A command of .releaserc.json in the checkout `cwd`, as @semantic-release/exec runs it
+    const run = (name, version, artifact, cwd, env = {}) =>
+      spawnSync(
+        execCommands()[name].replaceAll(
+          /\$\{nextRelease\.version\}/gu,
+          version,
+        ),
+        {
+          cwd,
+          shell: true,
+          encoding: "utf8",
+          timeout: 60_000,
+          env: {
+            ...process.env,
+            PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH}`,
+            npm_execpath: fakeNpm,
+            FAKE_NPM_LOG: path("npm-release.log"),
+            FAKE_NPM_REGISTRY: path("registry.json"),
+            RELEASE_DIR: artifact,
+            ...env,
+          },
+        },
+      );
+    // The registry: { name: integrity }
+    const published = () =>
+      Object.fromEntries(
+        Object.values(registry()).map(({ name, dist }) => [
+          name,
+          dist.integrity,
+        ]),
+      );
+    const integrities = (artifact) =>
+      Object.fromEntries(
+        artifactManifest(artifact).map(({ name, integrity: sum }) => [
+          name,
+          sum,
+        ]),
+      );
+    // `prepareCmd` fails (the release fails before the tag), and nothing is published
+    const refused = (version, artifact, cwd, error) => {
+      const { status, stderr } = run("prepareCmd", version, artifact, cwd);
+      equal(status, 1, stderr);
+      match(stderr, error);
+      deepEqual(npmLog("npm-release.log", "publish"), []);
+      deepEqual(registry(), {});
+    };
+
+    beforeEach(() => {
+      jobs = 0;
+    });
+
+    it("publishes the archives that another checkout packed, without packing", () => {
+      const artifact = packageJob("2.0.0");
+      const publisher = checkout();
+      const prepared = run("prepareCmd", "2.0.0", artifact, publisher);
+      equal(prepared.status, 0, prepared.stderr);
+      deepEqual(registry(), {});
+      deepEqual(
+        npmLog("npm-release.log", "publish"),
+        artifactManifest(artifact).map(({ file }) => [
+          "publish",
+          join(artifact, file),
+          "--dry-run",
+        ]),
+      );
+
+      const result = run("publishCmd", "2.0.0", artifact, publisher);
+      equal(result.status, 0, result.stderr);
+      deepEqual(published(), integrities(artifact));
+      for (const { gitHead } of Object.values(registry())) {
+        equal(gitHead, git("rev-parse", "HEAD"));
+      }
+      // Only the lockfile, the registry checks and the uploads
+      deepEqual(
+        [
+          ...new Set(
+            npmLog(
+              "npm-release.log",
+              "install",
+              "view",
+              "publish",
+              "pack",
+              "run",
+            ).map(([name]) => name),
+          ),
+        ],
+        ["install", "view", "publish"],
+      );
+    });
+
+    it("refuses the archives of another version, before the tag", () => {
+      const artifact = packageJob("2.0.0");
+      refused(
+        "2.0.1",
+        artifact,
+        checkout(),
+        /fixture-a-2\.0\.0\.tgz: 2\.0\.0 from [\da-f]{40}, expected 2\.0\.1 from [\da-f]{40} \(HEAD\)/u,
+      );
+    });
+
+    it("refuses the archives of another commit, before the tag", () => {
+      const packed = git("rev-parse", "HEAD");
+      const artifact = packageJob("2.0.0");
+      const head = commit("later");
+      refused(
+        "2.0.0",
+        artifact,
+        checkout(),
+        new RegExp(
+          `fixture-a-2\\.0\\.0\\.tgz: 2\\.0\\.0 from ${packed}, expected 2\\.0\\.0 from ${head} \\(HEAD\\)`,
+          "u",
+        ),
+      );
+    });
+
+    it("refuses an archive that changed after it was packed, before the tag", () => {
+      const artifact = packageJob("2.0.0");
+      const [, b] = artifactManifest(artifact);
+      appendFileSync(join(artifact, b.file), "x");
+      refused(
+        "2.0.0",
+        artifact,
+        checkout(),
+        /fixture-b-2\.0\.0\.tgz: integrity sha512-\S+ differs from/u,
+      );
+    });
+
+    it("refuses substituted archives or manifests, before the tag", () => {
+      const head = git("rev-parse", "HEAD");
+      const artifact = packageJob("2.0.0");
+      const packages = artifactManifest(artifact);
+      const [a, b, c] = packages;
+      const manifest = (fields) =>
+        JSON.stringify({
+          ...readJSON("packages/b/package.json"),
+          version: "2.0.0",
+          dependencies: { "@fixture/a": "^2.0.0" },
+          gitHead: head,
+          ...fields,
+        });
+      const publisher = checkout();
+      for (const [content, error] of [
+        // An archive of the release with another file, and its integrity in the manifest
+        [
+          { "package.json": manifest({}), "evil.js": "" },
+          /fixture-b-2\.0\.0\.tgz: @fixture\/b: unexpected evil\.js/u,
+        ],
+        // An archive of another package, under the name of the release
+        [
+          { "package.json": manifest({ name: "@fixture/x" }) },
+          /fixture-b-2\.0\.0\.tgz: name @fixture\/x, expected @fixture\/b/u,
+        ],
+        // An archive packed from another commit
+        [
+          { "package.json": manifest({ gitHead: "0".repeat(40) }) },
+          /fixture-b-2\.0\.0\.tgz: gitHead 0{40}, expected [\da-f]{40}/u,
+        ],
+      ]) {
+        const data = npmTarball({
+          "README.md": "",
+          "index.js": "",
+          ...content,
+        });
+        writeFileSync(join(artifact, b.file), data);
+        writeFileSync(
+          join(artifact, manifestFile),
+          JSON.stringify({
+            packages: [a, { ...b, integrity: integrity(data) }, c],
+          }),
+        );
+        refused("2.0.0", artifact, publisher, error);
+      }
+      // A manifest without one of the packages
+      writeFileSync(
+        join(artifact, manifestFile),
+        JSON.stringify({ packages: [a, c] }),
+      );
+      refused(
+        "2.0.0",
+        artifact,
+        publisher,
+        /@fixture\/b: not in release-manifest\.json/u,
+      );
+    });
+
+    it("recovers a partial publication from the archives of another job", () => {
+      const artifact = packageJob("2.0.0");
+      const publisher = checkout();
+      equal(run("prepareCmd", "2.0.0", artifact, publisher).status, 0);
+      git("tag", "v2.0.0");
+      const failed = run("publishCmd", "2.0.0", artifact, publisher, {
+        FAKE_NPM_FAIL_PUBLISH: "@fixture/b",
+      });
+      equal(failed.status, 1);
+      deepEqual(Object.keys(published()), ["@fixture/a"]);
+
+      // The `recover-package` job packs the commit of the tag again: the same archives
+      const recovered = packageJob("2.0.0", "v2.0.0");
+      deepEqual(artifactManifest(recovered), artifactManifest(artifact));
+
+      // The `recover` job publishes them from another checkout of the tag
+      const recoverer = checkout("v2.0.0");
+      const env = { FAKE_NPM_LOG: path("npm-recover.log") };
+      succeed(["version", "2.0.0"], env, recoverer);
+      const stderr = succeed(
+        ["publish", recovered, "--skip-existing"],
+        env,
+        recoverer,
+      );
+      match(stderr, /skip @fixture\/a@2\.0\.0: already published/u);
+      deepEqual(published(), integrities(artifact));
+      deepEqual(npmLog("npm-recover.log", "pack"), []);
+    });
+  });
+
+  // semantic-release itself, with the commands of .releaserc.json: `prepareCmd` runs before
+  // the tag is pushed, so archives that are not the ones of the release tag nothing
+  describe("semantic-release", { skip: posixShell }, () => {
+    let origin = "";
+
+    // A clone of `origin`, and semantic-release run there as the release job runs it (in a
+    // local repository, without the CI of this repository and the signing of the user)
+    const clone = (name) => {
+      const dir = path(`jobs/${name}`);
+      gitAt(root, "clone", "-q", origin, dir);
+      return dir;
+    };
+    const semanticRelease = (cwd, artifact) => {
+      const hidden = new Set([
+        "CI",
+        "GITHUB_ACTIONS",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+      ]);
+      const env = Object.fromEntries(
+        Object.entries(process.env).filter(([name]) => !hidden.has(name)),
+      );
+      return spawnSync(
+        process.execPath,
+        [
+          join(
+            repository,
+            "node_modules/semantic-release/bin/semantic-release.js",
+          ),
+          "--no-ci",
+          "--repository-url",
+          pathToFileURL(origin).href,
+        ],
+        {
+          cwd,
+          encoding: "utf8",
+          timeout: 120_000,
+          env: {
+            ...env,
+            PATH: `${dirname(process.execPath)}${delimiter}${env.PATH}`,
+            GIT_CONFIG_COUNT: "2",
+            GIT_CONFIG_KEY_0: "tag.gpgSign",
+            GIT_CONFIG_VALUE_0: "false",
+            GIT_CONFIG_KEY_1: "commit.gpgSign",
+            GIT_CONFIG_VALUE_1: "false",
+            npm_execpath: fakeNpm,
+            FAKE_NPM_LOG: path("npm-release.log"),
+            FAKE_NPM_REGISTRY: path("registry.json"),
+            RELEASE_DIR: artifact,
+          },
+        },
+      );
+    };
+    const tags = () => gitAt(root, "ls-remote", "--tags", origin);
+
+    beforeEach(() => {
+      // The commands of .releaserc.json, without the notes and the GitHub Release
+      const config = JSON.parse(
+        readFileSync(join(repository, ".releaserc.json"), "utf8"),
+      );
+      config.plugins = config.plugins.filter(
+        (plugin) =>
+          Array.isArray(plugin) &&
+          [
+            "@semantic-release/commit-analyzer",
+            "@semantic-release/exec",
+          ].includes(plugin[0]),
+      );
+      writeJSON(".releaserc.json", config);
+      commit("chore: release configuration");
+      git("tag", "v1.0.0");
+      commit("feat: a feature");
+      origin = path("jobs/origin.git");
+      gitAt(root, "clone", "-q", "--bare", root, origin);
+    });
+
+    // The `package` job: `version` and `pack` of 1.1.0 in a clone of `origin`
+    const packageJob = (version) => {
+      const dir = clone("package");
+      const artifact = path("jobs/artifact");
+      const env = { FAKE_NPM_LOG: path("npm-package.log") };
+      succeed(["version", version], env, dir);
+      succeed(["pack", artifact], env, dir);
+      return artifact;
+    };
+
+    it("publishes the archives of the package job after the tag", () => {
+      const artifact = packageJob("1.1.0");
+      const { status, stdout, stderr } = semanticRelease(
+        clone("release"),
+        artifact,
+      );
+      equal(status, 0, `${stdout}${stderr}`);
+      match(tags(), /refs\/tags\/v1\.1\.0$/mu);
+      deepEqual(
+        Object.values(registry()).map(({ name, dist }) => [
+          name,
+          dist.integrity,
+        ]),
+        JSON.parse(
+          readFileSync(join(artifact, manifestFile), "utf8"),
+        ).packages.map(({ name, integrity: sum }) => [name, sum]),
+      );
+      deepEqual(npmLog("npm-release.log", "pack"), []);
+    });
+
+    it("tags and publishes nothing when the archives are not the ones of the release", () => {
+      // Packed for another version
+      const artifact = packageJob("1.0.1");
+      const { status, stdout, stderr } = semanticRelease(
+        clone("release"),
+        artifact,
+      );
+      equal(status, 1);
+      match(
+        `${stdout}${stderr}`,
+        /fixture-a-1\.0\.1\.tgz: 1\.0\.1 from [\da-f]{40}, expected 1\.1\.0 from [\da-f]{40} \(HEAD\)/u,
+      );
+      doesNotMatch(tags(), /v1\.1\.0/u);
+      deepEqual(registry(), {});
+      deepEqual(npmLog("npm-release.log", "publish"), []);
+    });
   });
 
   describe("arguments", () => {

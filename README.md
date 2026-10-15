@@ -43,8 +43,9 @@ npm run ci:all            # everything CI runs
 Commands for a single package: `npm test -w packages/binden`.
 
 `npm run pack:check` and `npm run consumer:check` pack the workspaces of the working tree. CI checks
-the archives of the release rehearsal instead, the way the release job makes them (from the
-commit, with the next version and its `gitHead`), without packing them again:
+the archives of the release rehearsal instead (in the `package` job: from the commit, with the next
+version and its `gitHead`), the very archives that the release job publishes, without packing them
+again:
 
 ```bash
 npm run release:rehearsal -- <dir>                 # keeps the archives and their manifest in <dir>
@@ -120,57 +121,86 @@ one is accepted:
 ## Releases
 
 Releases are fully automated by [semantic-release](https://github.com/semantic-release/semantic-release)
-on every push to `main` (see [`.releaserc.json`](.releaserc.json)), in the `release` job of the CI
-workflow. The job runs in the `release` environment (the one that the npm trusted publisher of the
-packages expects), one publication at a time (with the `recover` job), on Node.js 24.16.0 with its
-npm 11.13.0 (both checked): the `recover` job uses the same runtime, so that both pack the same
-archives, bit for bit, from the same commit.
+on every push to `main` (see [`.releaserc.json`](.releaserc.json)), by two jobs of the CI workflow,
+both on Node.js 24.16.0 with its npm 11.13.0 (both checked). The archives are packed once, by a job
+that cannot publish, and the job that publishes them never builds or packs anything: the packages
+that npm receives are the bytes that were checked.
 
-1. the next version is derived from [Conventional Commits](https://conventionalcommits.org) since
-   the last `v*` tag, and [`scripts/release.mjs`](scripts/release.mjs) `verify` checks that no
-   workspace is published at it yet (only a 404 of the registry means "not published": any other
-   error stops the release);
-2. `scripts/release.mjs version` sets that version in **every** workspace (and the internal
-   dependency ranges to `^<version>`), with the commit as `gitHead`;
-3. `scripts/release.mjs pack` packs every workspace once, checks the name, the version, the
-   `gitHead` and the files ([`scripts/pack-files.json`](scripts/pack-files.json)) inside each
-   archive, and lists the archives (name, version, commit, `sha512` integrity, file) in
-   `release-manifest.json`;
-4. the `v<version>` tag is pushed;
-5. `scripts/release.mjs publish` checks the integrity and the content of the archives, then the
-   registry for **all** the packages, and only then publishes these archives
-   (`npm publish <tgz>`, with provenance) in dependency order;
-6. a [GitHub Release](https://github.com/binden-js/binden/releases) with the release notes is
+- The `package` job has no right to publish (`contents: read` only: no npm token, no OIDC). It
+  packs the archives of the next release, checks them, and uploads them with their manifest as an
+  artifact of the run; the digest of the manifest is an output of the job.
+- The `release` job runs after the tests and the `package` job, in the `release` environment (the
+  one that the npm trusted publisher of the packages expects), one publication at a time (with the
+  `recover` job). It installs only the release tooling (`npm ci --ignore-scripts`), downloads the
+  artifact of the `package` job of the same run (by its id: never an artifact of another run),
+  checks the digest of its manifest, and publishes these archives.
+
+1. `package`: the next version is derived from [Conventional Commits](https://conventionalcommits.org)
+   since the last `v*` tag (semantic-release in a local clone, as `npm run release:rehearsal` does),
+   and [`scripts/release.mjs`](scripts/release.mjs) `verify` checks that no workspace is published
+   at it yet (only a 404 of the registry means "not published": any other error stops the release);
+2. `package`: `scripts/release.mjs version` sets that version in **every** workspace (and the
+   internal dependency ranges to `^<version>`), with the commit as `gitHead`, then `pack` packs
+   every workspace once, checks the name, the version, the `gitHead` and the files
+   ([`scripts/pack-files.json`](scripts/pack-files.json) and the rules of
+   [`scripts/pack-rules.mjs`](scripts/pack-rules.mjs)) inside each archive, and lists the archives
+   (name, version, commit, `sha512` integrity, file) in `release-manifest.json`;
+3. `package`: `scripts/pack-check.mjs --tarballs` and `scripts/consumer-check.mjs --tarballs` check
+   these archives, which are uploaded with their manifest;
+4. `release`: semantic-release computes the next version again. Its `prepareCmd` runs
+   `scripts/release.mjs version` (the manifests and the lockfile: nothing is built or packed), then
+   `publish --dry-run` of the downloaded archives: there must be one archive of every workspace, of
+   that version, packed from `HEAD`, with the integrity of the manifest, the expected files and none
+   that the rules refuse, none may be published yet, and `npm publish --dry-run` must accept each
+   one. Any difference (a version or a commit that is not the one of the archives, an archive that
+   changed or was substituted) fails the release **before anything is tagged**;
+5. the `v<version>` tag is pushed;
+6. `scripts/release.mjs publish` checks the archives again, then the registry for **all** the
+   packages, and only then publishes these archives (`npm publish <tgz>`, with provenance) in
+   dependency order;
+7. a [GitHub Release](https://github.com/binden-js/binden/releases) with the release notes is
    created: they are the changelog (see [`CHANGELOG.md`](CHANGELOG.md)).
+
+When the `release` job fails before the tag because the archives are not the ones of the release,
+re-run all the jobs of the workflow, so that the `package` job packs them again: re-running the
+failed job alone checks the same archives.
 
 Nothing is committed back to `main`, as
 [recommended by semantic-release](https://semantic-release.gitbook.io/semantic-release/support/faq):
 a release commit would have to bypass the branch protection of `main`. The versions in the
 repository therefore stay at `0.0.0-development` (and the internal ranges at `^0.0.0-development`);
-the published version is set only in the checkout of the release job. Versions are strict
+the published version is set only in the checkouts of the release jobs. Versions are strict
 [SemVer 2.0.0](https://semver.org) without build metadata (which npm drops).
 
 `npm run release:check` verifies that all workspaces share one version. Every pull request rehearses
-the release (`npm run release:rehearsal`): semantic-release computes the next version and its notes
-in a clone, where `scripts/release.mjs` runs `verify`, `version`, `pack` and `publish --dry-run`
-(the registry check and `npm publish --dry-run` of every archive). Nothing is tagged or published.
+the release in the `package` job (`npm run release:rehearsal`): semantic-release computes the next
+version and its notes in a clone, where `scripts/release.mjs` runs `verify`, `version` and `pack`,
+then, in another clone of the commit as the `release` job does, `version` and `publish --dry-run`
+(the checks of the archives, the registry check and `npm publish --dry-run` of every archive).
+Nothing is tagged or published.
 
 ### Recovering a release
 
 When a release fails after its tag was pushed (for example, some packages were published, but not
 all of them), the next release would start after that tag: recover it instead, by running the CI
-workflow manually (Actions → CI → Run workflow) with its version. The `recover` job:
+workflow manually (Actions → CI → Run workflow) with its version. Two jobs recover it, the first one
+without any right to publish:
 
-1. runs nothing of the repository (not even `npm ci`) before it has checked that the version is a
-   SemVer version, that its tag exists, and that the commit of the tag is on `main`;
-2. checks out that commit, and packs the archives again with `scripts/release.mjs version` and
-   `pack` (the same archives as the release job);
-3. publishes with `scripts/release.mjs publish --skip-existing`: the registry is checked for all the
-   packages first, a version that is already published is skipped only when it is the same archive
-   (its `gitHead` and `dist.integrity` on npm), and any other difference, or any registry error
-   other than a 404, publishes nothing. The missing packages are published with provenance;
-4. creates the GitHub Release when the GitHub API answers 404 for it (any other answer fails the
-   job), with notes generated by GitHub.
+1. `recover-package` runs nothing of the repository (not even `npm ci`) before it has checked that
+   the version is a SemVer version, that its tag exists, and that the commit of the tag is on
+   `main`; it then checks out that commit, packs the archives again with `scripts/release.mjs version` and
+   `pack` on the runtime of the release (the same archives, bit for bit, as the `package` job made),
+   checks them, and uploads them as an artifact of the run;
+2. `recover` checks the version, the tag and its commit again, checks out that commit, downloads the
+   artifact of the `recover-package` job of the same run and checks the digest of its manifest, sets
+   the version (`scripts/release.mjs version`: nothing is installed, built or packed), and publishes
+   with `scripts/release.mjs publish --skip-existing`: the archives must be the ones of the commit
+   of the tag, the registry is checked for all the packages first, a version that is already
+   published is skipped only when it is the same archive (its `gitHead` and `dist.integrity` on
+   npm), and any other difference, or any registry error other than a 404, publishes nothing. The
+   missing packages are published with provenance;
+3. `recover` then creates the GitHub Release when the GitHub API answers 404 for it (any other
+   answer fails the job), with notes generated by GitHub.
 
 The same can be done by hand from a checkout of the tag (packages published from outside of CI have
 no provenance). With another runtime than Node.js 24.16.0 and npm 11.13.0, the archives may differ

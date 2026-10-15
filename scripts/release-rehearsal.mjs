@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 // Rehearses the release of the current commit, without tagging or publishing
 // anything: semantic-release (with its analyzer and its notes only) computes the
-// next version in a clone whose remote is a local mirror, then
-// `scripts/release.mjs` runs as the release job does in the clone: `verify` (no
-// workspace is published at that version yet), `version`, `pack` (the archives and
-// their manifest), and `publish --dry-run` (the registry check, then `npm publish
-// --dry-run` of every archive). When no release is due, the current version is
-// packed.
+// next version in a clone whose remote is a local mirror. `scripts/release.mjs` then
+// runs as the CI jobs do. In that clone, as the `package` job: `verify` (no workspace
+// is published at that version yet), `version` and `pack` (the archives and their
+// manifest). In another clone of the commit, as the `release` job does before the tag
+// (`prepareCmd` of .releaserc.json): `version`, then `publish --dry-run` of these
+// archives (their checks against the workspaces and HEAD, the registry check, then
+// `npm publish --dry-run` of every archive). When no release is due, the current
+// version is packed.
 //
 //   node scripts/release-rehearsal.mjs [<dir>]
 //
 // <dir> (missing or empty) keeps the archives and their manifest, for the checks that
 // run on them (`scripts/pack-check.mjs --tarballs <dir>`, `scripts/consumer-check.mjs
-// --tarballs <dir>`).
+// --tarballs <dir>`) and for the artifact of the `package` job.
 import { execFileSync, spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import {
@@ -30,6 +32,8 @@ const [destination] = process.argv.slice(2);
 const dir = mkdtempSync(join(tmpdir(), "binden-rehearsal-"));
 const mirror = join(dir, "mirror.git");
 const work = join(dir, "work");
+// The checkout of the release job, which publishes the archives packed in `work`
+const publisher = join(dir, "publisher");
 const archives =
   typeof destination === "undefined"
     ? join(dir, "archives")
@@ -51,9 +55,9 @@ function git(args, cwd = work) {
   }).trim();
 }
 
-function node(args) {
+function node(args, cwd = work) {
   execFileSync(process.execPath, args, {
-    cwd: work,
+    cwd,
     stdio: ["ignore", process.stderr, "inherit"],
   });
 }
@@ -119,7 +123,12 @@ try {
     node(["scripts/release.mjs", "verify", version]);
     node(["scripts/release.mjs", "version", version]);
     node(["scripts/release.mjs", "pack", archives]);
-    node(["scripts/release.mjs", "publish", archives, "--dry-run"]);
+
+    // Nothing of `work` but the archives: a fresh checkout of the same commit
+    git(["clone", "--quiet", "--no-checkout", mirror, publisher], dir);
+    git(["checkout", "--quiet", "--detach", head], publisher);
+    node(["scripts/release.mjs", "version", version], publisher);
+    node(["scripts/release.mjs", "publish", archives, "--dry-run"], publisher);
     log(`the next release is ${version}`);
   }
   log(`archives: ${archives}`);

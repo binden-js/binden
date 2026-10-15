@@ -1,19 +1,26 @@
 #!/usr/bin/env node
-// Lockstep release helper for the npm workspaces of this repository.
+// Lockstep release helper for the npm workspaces of this repository. The archives of a
+// release are packed once, by a CI job without any right to publish (`version`, then `pack`),
+// and the publishing job publishes these archives as they are (`version`, then `publish`):
+// it never builds or packs.
 //
 //   check               all workspaces share one version and pin each other to `^<version>`
 //   verify <version>    none of the workspaces is published at <version> yet
 //   version <version>   set <version> and `gitHead` (the commit of HEAD) in every workspace,
-//                       and refresh package-lock.json
+//                       and refresh package-lock.json (nothing is built or packed)
 //   pack <dir>          pack every workspace once into <dir> (missing or empty), check the
 //                       name, the version, the `gitHead` and the files (scripts/pack-files.json)
 //                       inside each archive, and list them in <dir>/release-manifest.json
-//   publish <dir>       publish the archives of <dir>/release-manifest.json in dependency order,
-//                       once the registry has been checked for all of them
+//   publish <dir>       check the archives of <dir>/release-manifest.json against the
+//                       workspaces (one archive of each, of their version, packed from HEAD,
+//                       with the integrity of the manifest, the expected files and the rules
+//                       of scripts/pack-rules.mjs), then the registry for all of them, and only
+//                       then publish them in dependency order
 //     --skip-existing   skip the versions already published from the same archive (`gitHead`
 //                       and `dist.integrity`), to recover a release that failed half-way: from
 //                       the commit of its tag only
-//     --dry-run         everything but the upload (`npm publish --dry-run`)
+//     --dry-run         everything but the upload (`npm publish --dry-run`): the release job
+//                       runs it before the tag is pushed (`prepareCmd` of .releaserc.json)
 //
 // Versions follow SemVer 2.0.0 strictly. Provenance is enabled by the CI release job
 // (NPM_CONFIG_PROVENANCE), so a manual `publish --skip-existing` works outside of CI too.

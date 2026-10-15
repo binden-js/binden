@@ -75,18 +75,6 @@ jobs:
       - name: Acceptance (examples and process-level scenarios)
         run: npm run acceptance
 
-      # The next version, its release notes and its archives, made as the release job makes
-      # them (scripts/release.mjs `verify`, `version`, `pack` and `publish --dry-run`):
-      # nothing is tagged or published. The next checks use these archives.
-      - name: Release rehearsal
-        run: npm run release:rehearsal -- "$RUNNER_TEMP/release"
-
-      - name: Packed files (scripts/pack-files.json)
-        run: node scripts/pack-check.mjs --tarballs "$RUNNER_TEMP/release"
-
-      - name: Consumer check (the archives of the rehearsal, TypeScript and ESM)
-        run: node scripts/consumer-check.mjs --tarballs "$RUNNER_TEMP/release"
-
       - name: Docs
         run: npm run docs:build
 
@@ -95,6 +83,82 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs
+
+  # The archives of the next release, made without any right to publish: the next version
+  # (semantic-release in a local clone, see scripts/release-rehearsal.mjs), `verify`,
+  # `version` and `pack` of every workspace on the runtime of the release, the checks of the
+  # archives, then the archives and their manifest as an artifact of this run. The `release`
+  # job publishes exactly these archives (see "Releases" in the README); in pull requests,
+  # this job is the rehearsal of the release.
+  package:
+    if: github.event_name != 'workflow_dispatch'
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      manifest-digest: ${{ steps.digest.outputs.sha256 }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The runtime of the `release` and `recover` jobs, so that the archives that they
+      # publish are the ones that npm would pack there
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.16.0
+
+      - name: Runtime (Node.js 24.16.0 and its npm 11.13.0)
+        run: |
+          node --version
+          npm --version
+          test "$(node --version)" = v24.16.0
+          test "$(npm --version)" = 11.13.0
+
+      - name: Install dependencies and build the workspaces
+        run: npm ci
+
+      - name: Signatures of the dependencies
+        run: npm audit signatures
+
+      # The next version and its release notes (or the current version when no release is
+      # due), then the archives of the release and their manifest (scripts/release.mjs
+      # `verify`, `version` and `pack`), checked in another clone as the release job checks
+      # them (`version` and `publish --dry-run`): nothing is tagged or published
+      - name: Release rehearsal
+        run: npm run release:rehearsal -- "$RUNNER_TEMP/release"
+
+      - name: Packed files (scripts/pack-files.json)
+        run: node scripts/pack-check.mjs --tarballs "$RUNNER_TEMP/release"
+
+      - name: Consumer check (the archives of the release, TypeScript and ESM)
+        run: node scripts/consumer-check.mjs --tarballs "$RUNNER_TEMP/release"
+
+      # Reported as an output of this job, which the publishing job compares with the
+      # manifest of the artifact that it downloads
+      - name: Digest of the manifest
+        id: digest
+        run: |
+          digest=$(sha256sum "$RUNNER_TEMP/release/release-manifest.json" | cut -d ' ' -f 1)
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the archives
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-archives
+          path: |
+            ${{ runner.temp }}/release/release-manifest.json
+            ${{ runner.temp }}/release/*.tgz
+          if-no-files-found: error
 
   test:
     if: github.event_name != 'workflow_dispatch'
@@ -198,7 +262,7 @@ jobs:
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-    needs: [lint, test, windows, macos]
+    needs: [lint, test, windows, macos, package]
 
     runs-on: ubuntu-latest
 
@@ -226,8 +290,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The same runtime as the `recover` job, so that both pack the same archives
-      # (bit for bit) from the same commit
+      # The runtime of the `package` job, which made the archives: its npm publishes them
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.16.0
@@ -240,18 +303,42 @@ jobs:
           test "$(node --version)" = v24.16.0
           test "$(npm --version)" = 11.13.0
 
-      - name: Install dependencies and build the workspaces
-        run: npm ci
+      # semantic-release and its plugins only: nothing is built or packed in this job, and
+      # the scripts of the dependencies do not run with its rights
+      - name: Install the release tooling
+        run: npm ci --ignore-scripts
 
       - name: Signatures of the dependencies
         run: npm audit signatures
 
-      # Tags the release, publishes every workspace with the same version (see
-      # scripts/release.mjs: `version`, `pack` into RELEASE_DIR, then `publish` of these
-      # archives once the registry is checked for all of them) and creates the GitHub Release,
-      # whose notes are the changelog. Nothing is committed to `main`, so its branch
-      # protection applies as usual. npm uses trusted publishing (OIDC) when it is configured
-      # for a package and falls back to NODE_AUTH_TOKEN otherwise.
+      # The artifact that the `package` job of this run uploaded (by its id, never the
+      # artifact of another run), whose digest the action checks
+      - name: Download the archives of the package job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact-id }}
+          path: ${{ runner.temp }}/release
+
+      - name: Check the manifest of the archives
+        run: |
+          digest=$(sha256sum "$RUNNER_TEMP/release/release-manifest.json" | cut -d ' ' -f 1)
+          if [ "$digest" != "$MANIFEST_DIGEST" ]; then
+            echo "::error::The manifest of the archives ($digest) is not the one that the packing job reported (${MANIFEST_DIGEST:-none})"
+            exit 1
+          fi
+        env:
+          MANIFEST_DIGEST: ${{ needs.package.outputs.manifest-digest }}
+
+      # Tags the release, publishes the archives of the `package` job and creates the GitHub
+      # Release, whose notes are the changelog. Before the tag, `prepareCmd` sets the version of
+      # the release in the workspaces (scripts/release.mjs `version`, no build and no pack)
+      # and checks the archives with `publish --dry-run`: their version must be the next one,
+      # their commit HEAD, their integrity the one of the manifest, their files the expected
+      # ones, and none may be published yet. Any difference fails the release before anything
+      # is tagged. `publishCmd` then publishes these archives once the registry is checked for
+      # all of them. Nothing is committed to `main`, so its branch protection applies as
+      # usual. npm uses trusted publishing (OIDC) when it is configured for a package and
+      # falls back to NODE_AUTH_TOKEN otherwise.
       - name: Release
         run: npx semantic-release
         env:
@@ -260,30 +347,26 @@ jobs:
           NPM_CONFIG_PROVENANCE: true
           RELEASE_DIR: ${{ runner.temp }}/release
 
-  # Publishes the packages of a release that are not published yet, from the commit of its
-  # tag (`scripts/release.mjs` checks that the published ones are the same archives), and
-  # creates its GitHub Release when it is missing. Run from the Actions tab (in this
-  # workflow, which npm trusts for publishing).
-  recover:
+  # The archives of a release to recover (see "Recovering a release" in the README), made
+  # without any right to publish: once the version, its tag and the commit of the tag are
+  # checked, the commit of the tag is packed on the runtime of the release, and the archives
+  # are checked and uploaded as an artifact of this run for the `recover` job
+  recover-package:
     if: github.event_name == 'workflow_dispatch'
 
     runs-on: ubuntu-latest
 
     timeout-minutes: 30
 
-    environment: release
-
-    concurrency:
-      group: publish
-      cancel-in-progress: false
-
     permissions:
-      contents: write
-      id-token: write
+      contents: read
 
     env:
-      HUSKY: 0
       VERSION: ${{ inputs.version }}
+
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      manifest-digest: ${{ steps.digest.outputs.sha256 }}
 
     steps:
       # Nothing of the repository runs (not even `npm ci`, which runs its `prepare` script)
@@ -315,10 +398,11 @@ jobs:
           fi
           git checkout --quiet --detach "$commit"
 
+      # The runtime of the `release` job, so that the archives are the ones that it packed
+      # (bit for bit) from the same commit
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.16.0
-          registry-url: https://registry.npmjs.org
 
       - name: Runtime (Node.js 24.16.0 and its npm 11.13.0)
         run: |
@@ -333,12 +417,120 @@ jobs:
       - name: Signatures of the dependencies
         run: npm audit signatures
 
-      # Packs the archives again (the same ones, bit for bit, as the release job), checks the
+      - name: Pack the archives of the release
+        run: |
+          node scripts/release.mjs version "$VERSION"
+          node scripts/release.mjs pack "$RUNNER_TEMP/release"
+
+      - name: Packed files (scripts/pack-files.json)
+        run: node scripts/pack-check.mjs --tarballs "$RUNNER_TEMP/release"
+
+      - name: Consumer check (the archives of the release, TypeScript and ESM)
+        run: node scripts/consumer-check.mjs --tarballs "$RUNNER_TEMP/release"
+
+      - name: Digest of the manifest
+        id: digest
+        run: |
+          digest=$(sha256sum "$RUNNER_TEMP/release/release-manifest.json" | cut -d ' ' -f 1)
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the archives
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-archives
+          path: |
+            ${{ runner.temp }}/release/release-manifest.json
+            ${{ runner.temp }}/release/*.tgz
+          if-no-files-found: error
+
+  # Publishes the packages of a release that are not published yet, from the archives of the
+  # `recover-package` job of this run (`scripts/release.mjs` checks that the published ones are
+  # the same archives), and creates its GitHub Release when it is missing. Run from the Actions
+  # tab (in this workflow, which npm trusts for publishing).
+  recover:
+    if: github.event_name == 'workflow_dispatch'
+
+    needs: recover-package
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+    environment: release
+
+    concurrency:
+      group: publish
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+      id-token: write
+
+    env:
+      VERSION: ${{ inputs.version }}
+
+    steps:
+      # The same checks as the `recover-package` job, before anything of the repository runs
+      - name: Check the version
+        run: |
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+          if ! LC_ALL=C bash -c '[[ $1 =~ $2 ]]' bash "$VERSION" "$semver"; then
+            echo "::error::The version is not a SemVer version (without build metadata)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag and its commit
+        run: |
+          if ! commit=$(git rev-parse --verify --quiet "refs/tags/v$VERSION^{commit}"); then
+            echo "::error::The tag v$VERSION does not exist"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
+            echo "::error::The commit of v$VERSION ($commit) is not on main"
+            exit 1
+          fi
+          git checkout --quiet --detach "$commit"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.16.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Runtime (Node.js 24.16.0 and its npm 11.13.0)
+        run: |
+          node --version
+          npm --version
+          test "$(node --version)" = v24.16.0
+          test "$(npm --version)" = 11.13.0
+
+      - name: Download the archives of the recover-package job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.recover-package.outputs.artifact-id }}
+          path: ${{ runner.temp }}/release
+
+      - name: Check the manifest of the archives
+        run: |
+          digest=$(sha256sum "$RUNNER_TEMP/release/release-manifest.json" | cut -d ' ' -f 1)
+          if [ "$digest" != "$MANIFEST_DIGEST" ]; then
+            echo "::error::The manifest of the archives ($digest) is not the one that the packing job reported (${MANIFEST_DIGEST:-none})"
+            exit 1
+          fi
+        env:
+          MANIFEST_DIGEST: ${{ needs.recover-package.outputs.manifest-digest }}
+
+      # Sets the version in the workspaces (no build, no pack: nothing of the dependencies is
+      # installed in this job), checks the archives against the commit of the tag and the
       # registry for all of them, then publishes the missing ones with provenance
       - name: Publish the packages that are not published yet
         run: |
           node scripts/release.mjs version "$VERSION"
-          node scripts/release.mjs pack "$RUNNER_TEMP/release"
           node scripts/release.mjs publish "$RUNNER_TEMP/release" --skip-existing
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
