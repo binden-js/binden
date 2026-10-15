@@ -77,8 +77,12 @@ With TypeScript, use the `"nodenext"` (or `"bundler"`) module resolution, which 
 
 The packages declare `"sideEffects": false` (a bundler may drop what an application does not
 use), and they publish their TypeScript sources with source maps and declaration maps: stack
-traces and "go to definition" lead to the sources rather than to `dist`. The types of `pino` (used by `@binden/logger`) need `skipLibCheck` with
-`@types/node` 26 (see the [known issues](https://github.com/binden-js/binden#known-issues)).
+traces and "go to definition" lead to the sources rather than to `dist`.
+
+The supported TypeScript setups are `@types/node` 24, type checked strictly, and `@types/node` 26
+with `skipLibCheck: true`: with `@types/node` 26, the types of `thread-stream` (used by `pino`, the
+logger of `@binden/logger`) do not compile, so `skipLibCheck: false` fails (see the
+[known issues](https://github.com/binden-js/binden#known-issues)).
 
 ### MIT license
 

@@ -15,8 +15,10 @@ on:
 permissions:
   contents: read
 
-# Outdated pull request runs are cancelled. Runs on `main` are never cancelled,
-# so a release cannot be interrupted half-way (tag pushed, packages partially published).
+# Outdated pull request runs are cancelled. Runs on `main` are never cancelled once they run,
+# so a release cannot be interrupted half-way (tag pushed, packages partially published). A
+# waiting run is cancelled by the next one of its group (GitHub keeps one pending run per
+# group): a dispatched recovery may be, see "Recovering a release" in the README.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

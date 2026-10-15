@@ -565,6 +565,9 @@ context.response.cookies.add(
 
 - **Node.js**: `>=24.14.1`; `headersTimeout`, `requestTimeout` and `keepAliveTimeout` set, the
   latter longer than the idle timeout of the proxy.
+- **TypeScript**: `@types/node` 24, or `@types/node` 26 with `skipLibCheck: true` (the types of
+  `thread-stream`, used by `pino`, do not compile against it: see the
+  [known issues](https://github.com/binden-js/binden#known-issues)).
 - **Deadlines**: `timeout` set (e.g. 30 s); `context.setTimeout()` for the slow routes and
   `context.setTimeout(0)` for the streams; `context.signal` passed to the work of the requests.
 - **Shutdown**: `shutdown(server)` on `SIGTERM`, within the grace period of the platform; `node`
