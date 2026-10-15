@@ -1,4 +1,5 @@
 import { deepStrictEqual, ok } from "node:assert/strict";
+import { validateHeaderValue } from "node:http";
 import { suite, test } from "node:test";
 import fc from "fast-check";
 
@@ -96,6 +97,8 @@ interface IHeader<T, F> {
   serialize(element: T): string;
   /** Valid fields of an element */
   readonly valid: fc.Arbitrary<F>;
+  /** Fields of an element, valid or not (see `valid` without them) */
+  readonly any?: fc.Arbitrary<F> | undefined;
   /** The fields of the element of a field value of valid fields (as parsed) */
   parsed(fields: F): F;
 }
@@ -119,6 +122,16 @@ function inputs<T, F>(header: IHeader<T, F>): fc.Arbitrary<string> {
         return `${value.slice(0, index)}${fragment}${value.slice(index)}`;
       }),
   );
+}
+
+/** The result of a function, or the `TypeError` that it throws */
+function attempt<T>(fn: () => T): T | TypeError {
+  try {
+    return fn();
+  } catch (error: unknown) {
+    ok(error instanceof TypeError, String(error));
+    return error;
+  }
 }
 
 /** The properties of the parser and the serialization of a header class */
@@ -145,6 +158,7 @@ function properties<T, F>(name: string, header: IHeader<T, F>): void {
       check(
         fc.property(header.valid, (fields) => {
           const element = header.create(fields);
+          validateHeaderValue(name, header.serialize(element));
           deepStrictEqual(
             header
               .parse(header.serialize(element))
@@ -154,6 +168,28 @@ function properties<T, F>(name: string, header: IHeader<T, F>): void {
         }),
       );
     });
+
+    const { any } = header;
+    if (any) {
+      test("refuses (`TypeError`) the elements that it cannot serialize, and serializes the others", () => {
+        check(
+          fc.property(any, (fields) => {
+            const element = attempt(() => header.create(fields));
+            if (element instanceof TypeError) {
+              return;
+            }
+            validateHeaderValue(name, header.serialize(element));
+            deepStrictEqual(
+              header
+                .parse(header.serialize(element))
+                .map((e) => header.fields(e)),
+              [header.parsed(header.fields(element))],
+            );
+          }),
+          1000,
+        );
+      });
+    }
   });
 }
 
@@ -332,9 +368,14 @@ suite("Headers (properties)", () => {
         .tuple(position, position)
         .map(([a, b]) => ({ start: Math.min(a, b), end: Math.max(a, b) }))
         .map(({ start, end }) => ({ start, end, size: "*" as const })),
-      // An unsatisfied range has a size (`bytes *\/*` is not a content range)
       position.map((size) => ({ start: null, end: null, size })),
     ),
+    // `{ size: "*" }` among them, which is not a content range (`bytes *\/*`)
+    any: fc.record({
+      start: fc.option(fc.nat(9)),
+      end: fc.option(fc.nat(9)),
+      size: fc.oneof(fc.constant("*" as const), fc.nat(9)),
+    }),
     parsed: (fields) => fields,
   });
 

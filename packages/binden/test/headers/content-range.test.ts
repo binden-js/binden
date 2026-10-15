@@ -44,6 +44,15 @@ suite("ContentRange", () => {
     );
     // An empty representation (`bytes */0`)
     deepStrictEqual(new ContentRange({ size: 0 }).toString(), "bytes */0");
+    // Not `bytes */*`: an unsatisfied range has a size
+    throws(
+      () => new ContentRange({ size: "*" }),
+      new TypeError("An unsatisfied range needs a `size`"),
+    );
+    throws(
+      () => new ContentRange({ start: null, end: null, size: "*" }),
+      new TypeError("An unsatisfied range needs a `size`"),
+    );
     throws(
       () => new ContentRange({ size, end: size }),
       new TypeError("`end` is greater than `size`"),

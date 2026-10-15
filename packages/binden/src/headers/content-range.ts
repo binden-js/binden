@@ -12,8 +12,8 @@ export class ContentRange extends Range implements IContentRange {
 
   /**
    * The range of `start` to `end` (non-negative integers, `end` within `size`),
-   * or neither of them (an unsatisfied range), and the size of the content:
-   * anything else throws a `TypeError`
+   * or neither of them (an unsatisfied range, which needs a numeric `size`),
+   * and the size of the content: anything else throws a `TypeError`
    */
   public constructor({ start = null, end = null, size }: IContentRange) {
     if (typeof start === "number" && !Number.isSafeInteger(start)) {
@@ -30,6 +30,9 @@ export class ContentRange extends Range implements IContentRange {
       throw new TypeError("`size` is less than zero");
     } else if (typeof end === "number" && size !== "*" && end >= size) {
       throw new TypeError("`end` is greater than `size`");
+    } else if (start === null && end === null && size === "*") {
+      // `bytes *\/*` is not a content range (RFC 9110, section 14.4)
+      throw new TypeError("An unsatisfied range needs a `size`");
     } else if (typeof start !== "number" && typeof end === "number") {
       throw new TypeError("`start` is missing");
     } else if (typeof start === "number" && typeof end !== "number") {
