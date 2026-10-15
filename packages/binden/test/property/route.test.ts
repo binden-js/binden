@@ -1,10 +1,9 @@
-import { deepStrictEqual, ok, throws } from "node:assert/strict";
-import { suite, test } from "node:test";
-import fc from "fast-check";
-
 import { BindenError, type IParams, Stack } from "../../index.js";
 import { compile, matchPrefix, matchRoute } from "../../src/route.js";
+import { deepStrictEqual, ok, throws } from "node:assert/strict";
+import { suite, test } from "node:test";
 import { check } from "./check.js";
+import fc from "fast-check";
 
 /** A segment of a pattern: a literal, a parameter, or the tail */
 type ISpec =

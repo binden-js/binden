@@ -1,8 +1,3 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { validateHeaderValue } from "node:http";
-import { suite, test } from "node:test";
-import fc from "fast-check";
-
 import {
   Accept,
   AcceptCharset,
@@ -20,8 +15,12 @@ import {
   IfModifiedSince,
   Range,
 } from "../../index.js";
-import { quote, split, unquote } from "../../src/headers/list.js";
 import { anyString, check, fieldValueChar, qvalue, token } from "./check.js";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { quote, split, unquote } from "../../src/headers/list.js";
+import { suite, test } from "node:test";
+import fc from "fast-check";
+import { validateHeaderValue } from "node:http";
 
 /** The characters and fragments of the syntax of the headers */
 const syntax: readonly string[] = [

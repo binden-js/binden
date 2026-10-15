@@ -1,9 +1,3 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import type { IncomingHttpHeaders } from "node:http";
-import { Socket } from "node:net";
-import { suite, test } from "node:test";
-import fc from "fast-check";
-
 import {
   BindenRequest,
   type IProxyHeaders,
@@ -11,7 +5,12 @@ import {
   type ITrustProxy,
   validateRequestOptions,
 } from "../../index.js";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
+import type { IncomingHttpHeaders } from "node:http";
+import { Socket } from "node:net";
 import { check } from "./check.js";
+import fc from "fast-check";
 
 /** What an element of a proxy header is */
 type IKind = "invalid" | "obfuscated" | "unknown" | "v4" | "v6";

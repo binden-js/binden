@@ -1,8 +1,3 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { Socket } from "node:net";
-import { suite, test } from "node:test";
-import fc from "fast-check";
-
 import {
   BindenError,
   BindenRequest,
@@ -10,6 +5,10 @@ import {
   validateRequestOptions,
 } from "../../index.js";
 import { check, visible } from "./check.js";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { Socket } from "node:net";
+import fc from "fast-check";
 
 /** The URL of a request-target (with `Host: origin.test`), or its error */
 function urlOf(

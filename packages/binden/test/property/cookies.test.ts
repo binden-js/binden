@@ -1,9 +1,3 @@
-import { deepStrictEqual, ok } from "node:assert/strict";
-import { validateHeaderValue } from "node:http";
-import { Socket } from "node:net";
-import { suite, test } from "node:test";
-import fc from "fast-check";
-
 import {
   BindenRequest,
   BindenResponse,
@@ -11,6 +5,11 @@ import {
   type ICookie,
 } from "../../index.js";
 import { anyString, check, token } from "./check.js";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { suite, test } from "node:test";
+import { Socket } from "node:net";
+import fc from "fast-check";
+import { validateHeaderValue } from "node:http";
 
 /** Characters that could end a cookie, its attributes or its field line */
 const injections: readonly string[] = [
