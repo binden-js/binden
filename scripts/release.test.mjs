@@ -170,7 +170,12 @@ describe("scripts/release.mjs", () => {
     root = mkdtempSync(join(tmpdir(), "binden-release-"));
     out = path("release");
     mkdirSync(path("scripts"));
-    for (const script of ["release.mjs", "npm.mjs", "tarballs.mjs"]) {
+    for (const script of [
+      "release.mjs",
+      "npm.mjs",
+      "pack-rules.mjs",
+      "tarballs.mjs",
+    ]) {
       copyFileSync(
         join(import.meta.dirname, script),
         path(`scripts/${script}`),
@@ -485,6 +490,25 @@ describe("scripts/release.mjs", () => {
       match(
         stderr,
         /fixture-b-2\.0\.0\.tgz: @fixture\/b: missing dist\/index\.js/u,
+      );
+      equal(existsSync(join(out, manifestFile)), false);
+    });
+
+    it("refuses archives with files that must not be published", () => {
+      // Listed as expected: the rules refuse it all the same
+      writeFileSync(path("packages/a/secret.pem"), "secret");
+      writeJSON("scripts/pack-files.json", {
+        "@fixture/a": [...files, "secret.pem"],
+        "@fixture/b": files,
+        "@fixture/c": files,
+      });
+      commit("secret");
+      succeed(["version", "2.0.0"]);
+      const { status, stderr } = release(["pack", out]);
+      equal(status, 1);
+      match(
+        stderr,
+        /fixture-a-2\.0\.0\.tgz: secret\.pem: \S.* must not be published/u,
       );
       equal(existsSync(join(out, manifestFile)), false);
     });

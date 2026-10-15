@@ -20,15 +20,16 @@
 // Everything is logged to stderr: @semantic-release/exec parses the stdout of `publishCmd`.
 import {
   compareFiles,
-  inspectTarball,
   integrity,
   manifestFile,
   readRelease,
+  readTarball,
 } from "./tarballs.mjs";
 import { join, resolve } from "node:path";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { npm as execNpm } from "./npm.mjs";
+import { packageErrors } from "./pack-rules.mjs";
 
 const root = join(import.meta.dirname, "..");
 const dependencyFields = [
@@ -220,8 +221,23 @@ function assertCommitted(packages) {
   }
 }
 
-// The differences between an archive (`inspectTarball`) and the expected package
-function archiveErrors(file, { manifest, files }, expected) {
+// The package.json, the sorted file list and the contents of the files of an archive
+function readArchive(data) {
+  const contents = readTarball(data);
+  const manifest = contents.get("package.json");
+  if (typeof manifest === "undefined") {
+    throw new Error("No package.json in the tarball");
+  }
+  return {
+    manifest: JSON.parse(manifest),
+    files: [...contents.keys()].sort(),
+    contents,
+  };
+}
+
+// The differences between an archive (`readArchive`) and the expected package, and
+// the files that break the rules of the published files (scripts/pack-rules.mjs)
+function archiveErrors(file, { manifest, files, contents }, expected) {
   const errors = [];
   for (const field of ["name", "version", "gitHead"]) {
     if (manifest[field] !== expected[field]) {
@@ -234,7 +250,12 @@ function archiveErrors(file, { manifest, files }, expected) {
     { [expected.name]: expected.files },
     { [expected.name]: files },
   );
-  return [...errors, ...differences.map((error) => `${file}: ${error}`)];
+  const rules = packageErrors(files, (path) => contents.get(path));
+  return [
+    ...errors,
+    ...differences.map((error) => `${file}: ${error}`),
+    ...rules.map((error) => `${file}: ${error}`),
+  ];
 }
 
 function expectedFiles() {
@@ -260,7 +281,7 @@ function pack(dir) {
     const archive = {
       file,
       integrity: integrity(data),
-      ...inspectTarball(data),
+      ...readArchive(data),
     };
     const { name } = archive.manifest;
     if (archives.has(name)) {
@@ -343,7 +364,7 @@ function releaseArchives(dir, packages, version, head) {
         );
       }
       errors.push(
-        ...archiveErrors(entry.file, inspectTarball(readFileSync(entry.path)), {
+        ...archiveErrors(entry.file, readArchive(readFileSync(entry.path)), {
           name: entry.name,
           version: entry.version,
           gitHead: entry.sha,
