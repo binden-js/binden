@@ -3,8 +3,9 @@
 // `scripts/pack-files.json`: a file that is missing (e.g. a module not built) or that
 // should not be published (e.g. tests, sources or secrets) fails the check. On top of
 // the list, the rules of `scripts/pack-rules.mjs` refuse tests, fixtures, certificates
-// and secrets whatever the list says, and source maps that do not point to the
-// published sources with relative paths.
+// and secrets whatever the list says, source maps that do not point to the published
+// sources with relative paths, and links to source maps (in any file) that are not
+// relative paths to published maps.
 //
 //   node scripts/pack-check.mjs                    `npm pack --dry-run` of the workspaces,
 //                                                  which must be built before (their

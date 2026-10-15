@@ -10,27 +10,44 @@ import { posix } from "node:path";
 
 const deniedDirectories = new Set([
   ".git",
+  "__fixtures__",
   "__mocks__",
   "__tests__",
   "cert",
   "certs",
   "coverage",
+  "e2e",
+  "fixture",
   "fixtures",
+  "mocks",
   "node_modules",
+  "spec",
   "test",
+  "testdata",
   "tests",
 ]);
 
 const deniedFiles = [
-  [/(?:\.(?:test|spec)|_test)\.[^/]+$/iu, "a test"],
+  // *.test.*, *.spec.*, *.e2e.*, *_test.*, *-test.* and test.*
   [
-    /\.(?:cer|crt|csr|der|jks|key|keystore|p12|p8|pem|pfx|ppk)$/iu,
+    /(?:(?:\.(?:test|spec|e2e)|[_-]test)\.[^/]+|(?:^|\/)test\.[^/]+)$/iu,
+    "a test",
+  ],
+  [/\.mock\.[^/]+$/iu, "a mock"],
+  [
+    /\.(?:asc|cer|crt|csr|der|gpg|jks|kdbx|key|keystore|ovpn|p12|p7b|p8|pem|pfx|pkcs12|ppk)$/iu,
     "a certificate or a key",
   ],
-  // The private (and public) keys of SSH: id_rsa, id_ed25519, …
-  [/(?:^|\/)id_[^/]*$/iu, "a certificate or a key"],
-  [/(?:^|\/)(?:\.git-credentials|\.netrc|\.pypirc)$/iu, "a credential file"],
-  [/(?:^|\/)\.env(?:\.[^/]*)?$/iu, "an environment file"],
+  // The private (and public) keys of SSH: id_rsa, id_ed25519_sk.pub, … (not id_token.js)
+  [
+    /(?:^|\/)id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?(?:\.pub)?$/iu,
+    "a certificate or a key",
+  ],
+  [
+    /(?:^|\/)(?:\.git-credentials|[._]netrc|\.pypirc|\.pgpass|\.htpasswd|\.yarnrc\.yml|credentials\.json|\.aws\/credentials|\.docker\/config\.json|\.kube\/config)$/iu,
+    "a credential file",
+  ],
+  [/(?:^|\/)\.env(?:rc|\.[^/]*)?$/iu, "an environment file"],
   [/(?:^|\/)\.npmrc$/iu, "an npm configuration file"],
   [/\.(?:log|tgz|tsbuildinfo)$/iu, "a build artefact"],
 ];
@@ -38,15 +55,17 @@ const deniedFiles = [
 // A URL scheme, or a Windows drive (`C:`)
 const scheme = /^[A-Za-z][\d+.A-Za-z-]*:/u;
 
-// The comments that link a generated file to its source map, in both forms
-// (`//# sourceMappingURL=<url>` and `/*# sourceMappingURL=<url> */`, or `@` instead of
-// `#`). Node.js and the browsers follow the last one wherever it is, not only on the last
-// line: every one is found, and the last one is checked.
+// The links to a source map, in both comment forms: `//# sourceMappingURL=<url>` (to the end
+// of the line) and `/*# sourceMappingURL=<url> */` (to the end of the comment), or `@`
+// instead of `#`. V8 (Node.js) and the browsers follow the last COMMENT, wherever it is,
+// while a search of the text cannot tell a comment from a string or a template literal
+// that looks like one: every match is checked, in every published file (Node.js runs
+// TypeScript sources too, bundlers and browsers read other files), and its value must be
+// one relative path to a published map.
 const mappingURLs =
-  /\/(?:\/[#@]\s*sourceMappingURL=(?<line>\S*)|\*[#@]\s*sourceMappingURL=(?<block>\S*?)(?:\*\/|\s|$))/gu;
+  /\/(?:\/[#@]\s*sourceMappingURL=(?<line>[^\n\r\u2028\u2029]*)|\*[#@]\s*sourceMappingURL=(?<block>(?:[^*]|\*(?!\/))*))/gu;
 
-// The generated files that may link to a source map, and the source maps
-const generated = /\.(?:[cm]?js|d\.[cm]?ts)$/iu;
+// The source maps
 const sourceMap = /\.map$/iu;
 
 /** Why `path` (relative to the root of the package) must not be published, or null */
@@ -102,6 +121,16 @@ function mapErrors(path, content, files) {
       `${path}: sourceRoot ${JSON.stringify(map.sourceRoot)} (the sources must be relative to the map)`,
     );
   }
+  // The generated file, relative to the map (never the path where it was built)
+  if (
+    typeof map.file !== "undefined" &&
+    map.file !== "" &&
+    (typeof map.file !== "string" || resolveInside(path, map.file) === null)
+  ) {
+    errors.push(
+      `${path}: file ${JSON.stringify(map.file)} is not a relative path inside the package`,
+    );
+  }
   if (map.sources.length === 0) {
     errors.push(`${path}: no sources`);
   }
@@ -120,20 +149,20 @@ function mapErrors(path, content, files) {
 }
 
 function mappingURLErrors(path, content, files) {
-  const last = [...content.toString("utf8").matchAll(mappingURLs)].at(-1);
-  if (typeof last === "undefined") {
-    return [];
-  }
-  const url = last.groups.line ?? last.groups.block;
-  const target = resolveInside(path, url);
-  if (target === null || !sourceMap.test(target)) {
-    return [
-      `${path}: sourceMappingURL ${JSON.stringify(url)} is not a relative path to a map inside the package`,
-    ];
-  }
-  return files.has(target)
-    ? []
-    : [`${path}: sourceMappingURL ${target} is not published`];
+  return [...content.toString("utf8").matchAll(mappingURLs)].flatMap(
+    ({ groups }) => {
+      const url = (groups.line ?? groups.block).trim();
+      const target = /\s/u.test(url) ? null : resolveInside(path, url);
+      if (target === null || !sourceMap.test(target)) {
+        return [
+          `${path}: sourceMappingURL ${JSON.stringify(url)} is not a relative path to a map inside the package`,
+        ];
+      }
+      return files.has(target)
+        ? []
+        : [`${path}: sourceMappingURL ${target} is not published`];
+    },
+  );
 }
 
 /**
@@ -149,7 +178,7 @@ export function packageErrors(paths, read) {
       errors.push(`${path}: ${reason} must not be published`);
     } else if (sourceMap.test(path)) {
       errors.push(...mapErrors(path, read(path), files));
-    } else if (generated.test(path)) {
+    } else {
       errors.push(...mappingURLErrors(path, read(path), files));
     }
   }

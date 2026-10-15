@@ -76,6 +76,8 @@ describe(".github/secret_scanning.yml", () => {
 
 describe("scripts/pack-check.mjs", () => {
   let root = "";
+  // The workspaces of the root
+  const names = new Set();
 
   const check = (files, ...args) =>
     spawnSync(
@@ -100,11 +102,17 @@ describe("scripts/pack-check.mjs", () => {
       .filter((line) => line !== "")
       .map((line) => JSON.parse(line));
 
-  // A workspace `packages/<name>` of the root with `files` ({ path: content })
+  // A workspace `packages/<name>` of the root with `files` ({ path: content }): every
+  // packed file is read from the disk (the links to source maps of each one are checked)
   const workspace = (name, files) => {
+    names.add(name);
     writeFileSync(
       join(root, "package.json"),
-      JSON.stringify({ workspaces: [`packages/${name}`] }),
+      JSON.stringify({
+        workspaces: [...names].map(
+          (workspaceName) => `packages/${workspaceName}`,
+        ),
+      }),
     );
     for (const [path, content] of Object.entries({
       ...files,
@@ -145,6 +153,7 @@ describe("scripts/pack-check.mjs", () => {
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "binden-pack-check-"));
+    names.clear();
     mkdirSync(join(root, "scripts"));
     for (const script of [
       "pack-check.mjs",
@@ -162,7 +171,7 @@ describe("scripts/pack-check.mjs", () => {
       join(root, "scripts/pack-files.json"),
       JSON.stringify({ a: ["LICENSE", "dist/index.js", "package.json"] }),
     );
-    workspace("a", { "dist/index.js": "export {};\n" });
+    workspace("a", { "dist/index.js": "export {};\n", LICENSE: "MIT\n" });
   });
 
   afterEach(() => {
@@ -201,6 +210,7 @@ describe("scripts/pack-check.mjs", () => {
   });
 
   it("refuses tests, certificates and secrets even when they are expected", () => {
+    workspace("a", { "README.md": "# a\n" });
     const files = {
       a: ["dist/test/a.test.js", "key.pem", ".npmrc", "README.md"],
     };
@@ -242,6 +252,21 @@ describe("scripts/pack-check.mjs", () => {
     match(
       stderr,
       /a: dist\/index\.js\.map: source "\/Users\/dev\/binden\/index\.ts" is not a relative path inside the package/u,
+    );
+  });
+
+  it("checks the links to source maps of every packed file on disk", () => {
+    workspace("a", {
+      ...mapped,
+      "index.ts": "export {};\n//# sourceMappingURL=/Users/dev/index.ts.map\n",
+    });
+    const files = { a: Object.keys(mapped) };
+    writeFileSync(join(root, "scripts/pack-files.json"), JSON.stringify(files));
+    const { status, stderr } = check(files);
+    equal(status, 1);
+    match(
+      stderr,
+      /a: index\.ts: sourceMappingURL "\/Users\/dev\/index\.ts\.map" is not a relative path to a map inside the package/u,
     );
   });
 
@@ -302,6 +327,7 @@ describe("scripts/pack-check.mjs", () => {
   });
 
   it("fails with an unexpected workspace", () => {
+    workspace("b", { x: "" });
     const { status, stderr } = check({
       a: ["LICENSE", "dist/index.js", "package.json"],
       b: ["x"],
@@ -311,6 +337,7 @@ describe("scripts/pack-check.mjs", () => {
   });
 
   it("--update writes the current files", () => {
+    workspace("a", { a: "", b: "" });
     const { status } = check({ a: ["b", "a"] }, "--update");
     equal(status, 0);
     deepEqual(

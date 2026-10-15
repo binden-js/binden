@@ -1,6 +1,7 @@
 import { deepEqual, equal } from "node:assert/strict";
 import { deniedReason, packageErrors, resolveInside } from "./pack-rules.mjs";
 import { describe, it } from "node:test";
+import { Script } from "node:vm";
 
 const map = (sources, extra = {}) =>
   JSON.stringify({ version: 3, sources, mappings: "", ...extra });
@@ -68,6 +69,73 @@ describe("scripts/pack-rules.mjs", () => {
       }
     });
 
+    it("refuses more credentials, keys, tests and mocks", () => {
+      for (const [path, reason] of [
+        ["_netrc", "a credential file"],
+        ["src/_netrc", "a credential file"],
+        [".yarnrc.yml", "a credential file"],
+        [".aws/credentials", "a credential file"],
+        ["src/.aws/credentials", "a credential file"],
+        [".pgpass", "a credential file"],
+        ["src/.htpasswd", "a credential file"],
+        ["credentials.json", "a credential file"],
+        ["src/credentials.json", "a credential file"],
+        [".docker/config.json", "a credential file"],
+        ["src/.kube/config", "a credential file"],
+        [".envrc", "an environment file"],
+        ["src/.envrc", "an environment file"],
+        ["release.asc", "a certificate or a key"],
+        ["secring.gpg", "a certificate or a key"],
+        ["client.pkcs12", "a certificate or a key"],
+        ["chain.p7b", "a certificate or a key"],
+        ["vault.kdbx", "a certificate or a key"],
+        ["client.ovpn", "a certificate or a key"],
+        ["dist/a-test.js", "a test"],
+        ["dist/a-test.d.ts", "a test"],
+        ["test.js", "a test"],
+        ["dist/test.js", "a test"],
+        ["dist/test.d.mts", "a test"],
+        ["dist/a.e2e.js", "a test"],
+        ["src/a.e2e.ts", "a test"],
+        ["dist/spec/a.js", "a file of a spec/ directory"],
+        ["dist/e2e/a.js", "a file of a e2e/ directory"],
+        ["dist/__fixtures__/a.js", "a file of a __fixtures__/ directory"],
+        ["dist/fixture/a.json", "a file of a fixture/ directory"],
+        ["dist/testdata/a.txt", "a file of a testdata/ directory"],
+        ["dist/mocks/a.js", "a file of a mocks/ directory"],
+        ["dist/a.mock.js", "a mock"],
+        ["src/server.mock.ts", "a mock"],
+      ]) {
+        equal(deniedReason(path), reason, path);
+      }
+    });
+
+    // id_rsa, id_dsa, id_ecdsa and id_ed25519, their security-key (`_sk`) and public
+    // (`.pub`) variants: other names that start with `id_` are modules
+    it("refuses the keys of SSH by their names only", () => {
+      for (const type of ["rsa", "dsa", "ecdsa", "ed25519"]) {
+        for (const name of [
+          `id_${type}`,
+          `src/id_${type}.pub`,
+          `id_${type}_sk`,
+          `src/id_${type}_sk.pub`,
+          `src/ID_${type.toUpperCase()}_SK.PUB`,
+        ]) {
+          equal(deniedReason(name), "a certificate or a key", name);
+        }
+      }
+      for (const path of [
+        "dist/id_token.js",
+        "dist/src/id_token.d.ts",
+        "src/id_card.ts",
+        "dist/id_rsa_utils.js",
+        "dist/id_ed25519.pubkey.js",
+        "id_",
+      ]) {
+        equal(deniedReason(path), null, path);
+      }
+    });
+
     // On the case-insensitive file systems of macOS and Windows, they are the same files
     it("compares the names without case", () => {
       for (const [path, reason] of [
@@ -93,8 +161,33 @@ describe("scripts/pack-rules.mjs", () => {
         [".NETRC", "a credential file"],
         [".PyPIrc", "a credential file"],
         [".Git-Credentials", "a credential file"],
+        ["src/_NETRC", "a credential file"],
+        [".YarnRC.YML", "a credential file"],
+        [".AWS/Credentials", "a credential file"],
+        [".PGPASS", "a credential file"],
+        [".HTPasswd", "a credential file"],
+        ["Credentials.JSON", "a credential file"],
+        [".Docker/Config.json", "a credential file"],
+        [".KUBE/CONFIG", "a credential file"],
         [".ENV", "an environment file"],
         [".Env.Local", "an environment file"],
+        [".ENVRC", "an environment file"],
+        ["a.ASC", "a certificate or a key"],
+        ["a.Gpg", "a certificate or a key"],
+        ["a.PKCS12", "a certificate or a key"],
+        ["a.P7B", "a certificate or a key"],
+        ["a.KDBX", "a certificate or a key"],
+        ["a.OVPN", "a certificate or a key"],
+        ["dist/a-TEST.js", "a test"],
+        ["dist/Test.js", "a test"],
+        ["dist/a.E2E.js", "a test"],
+        ["dist/a.Mock.js", "a mock"],
+        ["dist/SPEC/a.js", "a file of a spec/ directory"],
+        ["dist/E2E/a.js", "a file of a e2e/ directory"],
+        ["dist/__Fixtures__/a.js", "a file of a __fixtures__/ directory"],
+        ["dist/Fixture/a.js", "a file of a fixture/ directory"],
+        ["dist/TestData/a.js", "a file of a testdata/ directory"],
+        ["dist/Mocks/a.js", "a file of a mocks/ directory"],
         [".NPMRC", "an npm configuration file"],
         ["NPM-DEBUG.LOG", "a build artefact"],
         ["binden-1.0.0.TGZ", "a build artefact"],
@@ -127,10 +220,23 @@ describe("scripts/pack-rules.mjs", () => {
         "dist/src/latest_tests.js",
         "dist/src/contest.js",
         "dist/Testing/a.js",
-        "dist/mocks/a.js",
+        "dist/mock.js",
+        "dist/src/mockup.js",
+        "dist/specification/a.js",
+        "dist/e2e-helpers.js",
+        "dist/testdata.js",
+        "dist/src/tested.js",
+        "dist/a-test-utils.js",
+        "dist/fixtures.js",
         "src/credentials.ts",
+        "src/aws/credentials.ts",
+        "src/kube/config.ts",
+        "src/docker/config.json",
         "dist/netrc.js",
+        "src/yarnrc.ts",
+        "src/envrc.ts",
         "src/keys.ts",
+        "src/ascii.ts",
       ]) {
         equal(deniedReason(path), null, path);
       }
@@ -251,6 +357,35 @@ describe("scripts/pack-rules.mjs", () => {
       );
     });
 
+    // The path where the generated file was built is a local path too
+    it("refuses a file that is not relative to the map", () => {
+      deepEqual(
+        errors({
+          "index.ts": "",
+          "dist/a.js": "",
+          "dist/a.js.map": map(["../index.ts"], { file: "a.js" }),
+          "dist/b.js": "",
+          "dist/b.js.map": map(["../index.ts"], { file: "" }),
+          "dist/c.js": "",
+          "dist/c.js.map": map(["../index.ts"], {
+            file: "/Users/me/dist/c.js",
+          }),
+          "dist/d.js": "",
+          "dist/d.js.map": map(["../index.ts"], { file: "file:///me/d.js" }),
+          "dist/e.js": "",
+          "dist/e.js.map": map(["../index.ts"], { file: "../../e.js" }),
+          "dist/f.js": "",
+          "dist/f.js.map": map(["../index.ts"], { file: 1 }),
+        }),
+        [
+          'dist/c.js.map: file "/Users/me/dist/c.js" is not a relative path inside the package',
+          'dist/d.js.map: file "file:///me/d.js" is not a relative path inside the package',
+          'dist/e.js.map: file "../../e.js" is not a relative path inside the package',
+          "dist/f.js.map: file 1 is not a relative path inside the package",
+        ],
+      );
+    });
+
     it("refuses maps without their generated file or without sources", () => {
       deepEqual(
         errors({
@@ -303,8 +438,8 @@ describe("scripts/pack-rules.mjs", () => {
       );
     });
 
-    // Node.js and the browsers follow the last link, wherever it is (not only at the end)
-    it("checks the last link of a generated file, in both comment forms", () => {
+    // Every link is checked, not only the last one
+    it("checks every link of a file, in both comment forms", () => {
       deepEqual(
         errors({
           "dist/a.js":
@@ -324,40 +459,86 @@ describe("scripts/pack-rules.mjs", () => {
           'dist/b.js: sourceMappingURL "/abs/b.js.map" is not a relative path to a map inside the package',
           'dist/c.mjs: sourceMappingURL "/abs/c.mjs.map" is not a relative path to a map inside the package',
           'dist/d.cjs: sourceMappingURL "/abs/d.cjs.map" is not a relative path to a map inside the package',
+          "dist/e.js: sourceMappingURL dist/e.js.map is not published",
           'dist/e.js: sourceMappingURL "/abs/e.js.map" is not a relative path to a map inside the package',
+          "dist/f.d.ts: sourceMappingURL dist/f.d.ts.map is not published",
           'dist/f.d.ts: sourceMappingURL "" is not a relative path to a map inside the package',
         ],
       );
     });
 
-    it("accepts a last link to a published map, in both comment forms", () => {
+    it("accepts links to published maps, in both comment forms", () => {
       deepEqual(
         errors({
           "index.ts": "",
           "dist/a.js":
-            "//# sourceMappingURL=/abs/a.js.map\nexport {};\n//# sourceMappingURL=a.js.map\n",
+            "//# sourceMappingURL=a.js.map\nexport {};\n//# sourceMappingURL=a.js.map\n",
           "dist/a.js.map": map(["../index.ts"]),
           "dist/b.js": "export {};\n/*# sourceMappingURL=b.js.map */\n",
           "dist/b.js.map": map(["../index.ts"]),
           "dist/c.js": "export {};\n/*@ sourceMappingURL=c.js.map*/",
           "dist/c.js.map": map(["../index.ts"]),
+          "dist/d.js": "export {};\r\n//# sourceMappingURL=d.js.map\r\n",
+          "dist/d.js.map": map(["../index.ts"]),
+          "dist/e.css": "a {}\n/*# sourceMappingURL=e.css.map */\n",
+          "dist/e.css.map": map(["../index.ts"]),
         }),
         [],
       );
     });
 
-    // A string that looks like a link is checked too (the safe side): the generated files of
-    // the packages have no such string
-    it("checks a link inside a string of a generated file, not of other files", () => {
+    // V8 takes the last COMMENT: a string or a template literal after it hides it from a
+    // search of the last match, and anything after the URL in its comment makes V8 ignore
+    // that comment (so another one may be followed)
+    it("refuses an absolute link that a later match or a trailing token hides", () => {
+      const files = {
+        "index.ts": "",
+        "dist/index.js.map": map(["../index.ts"]),
+        "dist/index.js": "x\n//# sourceMappingURL=index.js.map\n",
+        "dist/m8.js":
+          'x\n//# sourceMappingURL=/abs/m8.js.map\nconst s = "//# sourceMappingURL=index.js.map";\n',
+        "dist/m9.js":
+          "x\n//# sourceMappingURL=/abs/m9.js.map\nconst s = `/*# sourceMappingURL=index.js.map */`;\n",
+        "dist/m13.js": "x\n//# sourceMappingURL=index.js.map /abs/x.map\n",
+        "dist/m14.js": "x\n/*# sourceMappingURL=index.js.map\n/abs/x.map */\n",
+        "dist/m15.js": "x\n//# sourceMappingURL=/abs/m15.js.map\u2028x\n",
+      };
+      // What V8 follows for the first two
+      for (const [path, url] of [
+        ["dist/m8.js", "/abs/m8.js.map"],
+        ["dist/m9.js", "/abs/m9.js.map"],
+      ]) {
+        equal(new Script(files[path].replace("x\n", "0;\n")).sourceMapURL, url);
+      }
+      deepEqual(errors(files), [
+        'dist/m8.js: sourceMappingURL "/abs/m8.js.map" is not a relative path to a map inside the package',
+        'dist/m8.js: sourceMappingURL "index.js.map\\";" is not a relative path to a map inside the package',
+        'dist/m9.js: sourceMappingURL "/abs/m9.js.map" is not a relative path to a map inside the package',
+        'dist/m13.js: sourceMappingURL "index.js.map /abs/x.map" is not a relative path to a map inside the package',
+        'dist/m14.js: sourceMappingURL "index.js.map\\n/abs/x.map" is not a relative path to a map inside the package',
+        'dist/m15.js: sourceMappingURL "/abs/m15.js.map" is not a relative path to a map inside the package',
+      ]);
+    });
+
+    // A string that looks like a link is checked too (the safe side), in every file: Node.js
+    // runs TypeScript sources, and bundlers or browsers read other files than JavaScript
+    it("checks the links of every file, not only of the generated ones", () => {
       deepEqual(
         errors({
           "dist/a.js":
             'const a = "//# sourceMappingURL=/abs/a.js.map";\nexport { a };\n',
           "README.md": "//# sourceMappingURL=/abs/a.js.map",
           "index.ts": "//# sourceMappingURL=/abs/index.ts.map",
+          "dist/b.jsx": "x\n//# sourceMappingURL=/abs/b.map\n",
+          "dist/c.css": "x\n/*# sourceMappingURL=/abs/c.css.map */",
+          LICENSE: "MIT",
         }),
         [
           'dist/a.js: sourceMappingURL "/abs/a.js.map\\";" is not a relative path to a map inside the package',
+          'README.md: sourceMappingURL "/abs/a.js.map" is not a relative path to a map inside the package',
+          'index.ts: sourceMappingURL "/abs/index.ts.map" is not a relative path to a map inside the package',
+          'dist/b.jsx: sourceMappingURL "/abs/b.map" is not a relative path to a map inside the package',
+          'dist/c.css: sourceMappingURL "/abs/c.css.map" is not a relative path to a map inside the package',
         ],
       );
     });
@@ -419,6 +600,77 @@ describe("scripts/pack-rules.mjs", () => {
         deepEqual(rest, [], path);
         equal(refused?.startsWith(`${path}: `), true, path);
         equal(refused.includes(error), true, refused);
+      }
+    });
+
+    // The cases of the second review (pack-sneak2): each one, added to a valid package, is
+    // refused, and the package stays valid without it
+    it("refuses every file that the second review slipped through", () => {
+      const valid = {
+        "dist/index.js": "x\n//# sourceMappingURL=index.js.map\n",
+        "dist/index.js.map": map(["../index.ts"]),
+        "index.ts": "x",
+      };
+      const base64 = (value) =>
+        Buffer.from(JSON.stringify(value)).toString("base64");
+      const candidates = {
+        "src/x.asc": "",
+        "src/x.gpg": "",
+        "src/x.kdbx": "",
+        "src/x.pkcs12": "",
+        "src/x.p7b": "",
+        "src/credentials.json": "",
+        ".aws/credentials": "",
+        "src/.pgpass": "",
+        "src/.htpasswd": "",
+        "src/.yarnrc.yml": "",
+        "src/.envrc": "",
+        "src/_netrc": "",
+        "src/.docker/config.json": "",
+        "src/.kube/config": "",
+        "src/x.ovpn": "",
+        "dist/a-test.js": "",
+        "dist/test.js": "",
+        "dist/a.e2e.js": "",
+        "dist/spec/a.js": "",
+        "dist/e2e/a.js": "",
+        "dist/__fixtures__/a.js": "",
+        "dist/fixture/a.js": "",
+        "dist/testdata/a.js": "",
+        "dist/mocks/a.js": "",
+        "dist/a.mock.js": "",
+        "dist/m1.js": "x\n//@ sourceMappingURL=/abs/m1.js.map\n",
+        "dist/m2.cjs": "x\n/*@ sourceMappingURL=/abs/m2.cjs.map */",
+        "dist/m3.d.mts": "x\n//#sourceMappingURL=/abs/m3.map",
+        "dist/m4.js": "x\n//# sourceMappingURL=file:///abs/m4.js.map",
+        "dist/m5.js": "x\n//# sourceMappingURL=//host/m5.js.map",
+        "dist/m6.js": "x\n//# sourceMappingURL=C:\\abs\\m6.js.map",
+        "dist/m7.js": `x\n//# sourceMappingURL=data:application/json;base64,${base64({ version: 3, sources: ["/Users/me/src/x.ts"] })}`,
+        "dist/m8.js":
+          'x\n//# sourceMappingURL=/abs/m8.js.map\nconst s = "//# sourceMappingURL=index.js.map";\n',
+        "dist/m9.js":
+          "x\n//# sourceMappingURL=/abs/m9.js.map\nconst s = `/*# sourceMappingURL=index.js.map */`;\n",
+        "dist/m10.jsx": "x\n//# sourceMappingURL=/abs/m10.map\n",
+        "dist/m11.ts": "x\n//# sourceMappingURL=/abs/m11.map\n",
+        "dist/m12.css": "x\n/*# sourceMappingURL=/abs/m12.css.map */",
+        "dist/m13.js": "x\n//# sourceMappingURL=index.js.map /abs/x.map\n",
+        "dist/m14.js.MAP": map(["/abs/x.ts"]),
+        "dist/m15.js.map": map(["../index.ts"], { sourceRoot: "/Users/me" }),
+        "dist/m16.js.map": map(["../index.ts"], {
+          file: "/Users/me/dist/m16.js",
+        }),
+      };
+      deepEqual(errors(valid), []);
+      for (const [path, content] of Object.entries(candidates)) {
+        const files = { ...valid, [path]: content };
+        if (/\.map$/iu.test(path)) {
+          files[path.slice(0, -".map".length)] = "x";
+        }
+        const refused = errors(files);
+        equal(refused.length > 0, true, path);
+        for (const error of refused) {
+          equal(error.startsWith(`${path}: `), true, error);
+        }
       }
     });
   });
