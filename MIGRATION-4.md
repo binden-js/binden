@@ -394,6 +394,7 @@ application a `500`.
 | A `+json` type (e.g. `application/ld+json`)               | skipped                       | parsed as JSON                                   |
 | A request destroyed before it is read, an aborted request | skipped, or a `500`           | `400` (code `aborted`)                           |
 | A parser that starts once the response has finished       | an empty body                 | `500`                                            |
+| Data after the end of a content coding                    | ignored                       | `400`                                            |
 
 - The `IBodyContentType` type is removed: the kinds of bodies are `IBodyKind` (`"json"`,
   `"text"`, `"form"` and `"raw"`).

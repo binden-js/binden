@@ -68,7 +68,9 @@ may decode to gigabytes. In production, set `limit` (and `encoded_limit`) explic
   body is read, and a body without it (chunked) is counted while it is read.
 - `limit` counts the bytes that every decoder outputs (a counter follows each of them, the
   intermediate ones too), so that a body is not decoded beyond it at any stage. Without content
-  codings, a larger `Content-Length` is refused before the body is read too.
+  codings, a larger `Content-Length` is refused before the body is read too. A coded body may be
+  much larger than what it decodes to (e.g. a `deflate` stream of empty blocks): only
+  `encoded_limit` bounds the bytes that are read, and kept for `verify_encoded`.
 - `parameter_limit` counts the parameters of a form before they are parsed.
 
 A body that exceeds a limit gets `413 Content Too Large`. A body that is refused before it has been
@@ -130,6 +132,11 @@ A body is parsed once: another `BodyParser` that selects it later skips it.
 `compress`) and an unknown charset (of a body that is not `raw`) get `415 Unsupported Media Type`,
 before the body is read; corrupt data gets `400 Bad Request`. The codings of a body that is not
 selected are not checked.
+
+Data after the end of a coding (e.g. after the end of a `deflate` or `br` stream, or zero padding
+after a `gzip` member), which the decoders of Node.js would ignore while they go on reading it, is
+corrupt data too: the reading stops there. Concatenated `gzip` members (or `zstd` frames) are one
+body.
 
 `zstd: true` decodes `zstd` too. Its API is experimental in Node.js, and a `zstd` decoder
 allocates the window that a frame declares, whatever `limit` is: the parser refuses a window larger
@@ -241,7 +248,7 @@ with an empty body.
 | Situation                                                                                                               | Reply                          |
 | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | Invalid JSON (for the default `parse`), whitespace only, not an object or an array (`strict`), `undefined` from `parse` | `400 Bad Request`              |
-| Corrupt compressed data, bytes that are not valid in the charset                                                        | `400 Bad Request`              |
+| Corrupt compressed data (also data after the end of a coding), bytes that are not valid in the charset                  | `400 Bad Request`              |
 | A client that goes away                                                                                                 | `400 Bad Request` (`aborted`)  |
 | A limit is exceeded (`limit`, `encoded_limit`, `parameter_limit`)                                                       | `413 Content Too Large`        |
 | An unknown or unsupported content coding, more than two codings, an unknown charset                                     | `415 Unsupported Media Type`   |

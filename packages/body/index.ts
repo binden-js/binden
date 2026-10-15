@@ -97,8 +97,11 @@ export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
   zstd?: boolean | undefined;
 }
 
+/** A decoding stream of Node.js, which counts the bytes that it has consumed */
+type IDecoding = Duplex & { readonly bytesWritten: number };
+
 /** A decoder of a content coding, created once every coding is known to be supported */
-type IDecoder = () => Duplex;
+type IDecoder = () => IDecoding;
 
 /** The outcome of a callback of the options that has settled */
 type IOutcome<R> =
@@ -113,6 +116,9 @@ const ZSTD_WINDOW_LOG_MAX = 23;
 
 /** The most content codings that a body may have */
 const MAX_CODINGS = 2;
+
+/** The error of the data after the end of a content coding */
+const TRAILING = "Data after the end of a content coding";
 
 /** The error of a parser that starts once the response has finished */
 const DISCARDED = "The body has been discarded once the response finished";
@@ -250,6 +256,28 @@ function counter(limit: number, kept: Buffer[] | null): Transform {
         return;
       }
       kept?.push(chunk);
+      callback(null, chunk);
+    },
+  });
+}
+
+/**
+ * Passes the bytes of a body to a decoder, and fails once the decoder has
+ * ended: the decoders of Node.js ignore (and keep reading) what follows the
+ * end of what they decode, which is an invalid body. Adds to `trailing` the
+ * check of whether the decoder has left some of the bytes that it has been
+ * given (e.g. in the chunk where its stream ends), once the body is read.
+ */
+function guard(decoder: IDecoding, trailing: (() => boolean)[]): Transform {
+  let given = 0;
+  trailing.push(() => decoder.bytesWritten < given);
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback): void {
+      if (decoder.readableEnded) {
+        callback(new Error(TRAILING));
+        return;
+      }
+      given += chunk.byteLength;
       callback(null, chunk);
     },
   });
@@ -516,7 +544,7 @@ export class BodyParser<T = unknown> extends Middleware {
     } else if (encoding === "br") {
       return createBrotliDecompress;
     } else if (encoding === "zstd" && this.#zstd) {
-      return (): Duplex =>
+      return (): IDecoding =>
         createZstdDecompress({
           params: { [constants.ZSTD_d_windowLogMax]: ZSTD_WINDOW_LOG_MAX },
         });
@@ -542,8 +570,14 @@ export class BodyParser<T = unknown> extends Middleware {
       this.#verify_encoded && decoders.length > 0 ? [] : null;
     const wire = counter(this.#encoded_limit, kept);
     const stages: Duplex[] = [wire];
+    const trailing: (() => boolean)[] = [];
     for (const create of decoders) {
-      stages.push(create(), counter(this.#limit, null));
+      const decoder = create();
+      stages.push(
+        guard(decoder, trailing),
+        decoder,
+        counter(this.#limit, null),
+      );
     }
     if (decoders.length === 0) {
       stages.push(counter(this.#limit, null));
@@ -603,6 +637,10 @@ export class BodyParser<T = unknown> extends Middleware {
           fail(error, "The body is too large");
         } else if (error) {
           const invalid = new BindenError(400, { cause: error });
+          fail(invalid, "The body cannot be decoded");
+        } else if (trailing.some((left) => left())) {
+          const cause = new Error(TRAILING);
+          const invalid = new BindenError(400, { cause });
           fail(invalid, "The body cannot be decoded");
         } else if (settle()) {
           resolve({
