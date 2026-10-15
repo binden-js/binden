@@ -35,7 +35,15 @@
   "keywords": [
     "HTTP",
     "binden",
-    "body"
+    "body",
+    "body-parser",
+    "middleware",
+    "json",
+    "urlencoded",
+    "form",
+    "text",
+    "raw",
+    "decompression"
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
   "license": "MIT",

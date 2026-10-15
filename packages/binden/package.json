@@ -40,7 +40,13 @@
     "HTTP",
     "REST",
     "web",
-    "framework"
+    "framework",
+    "server",
+    "router",
+    "routing",
+    "middleware",
+    "api",
+    "typescript"
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
   "license": "MIT",

@@ -37,9 +37,13 @@
     "compress",
     "compression",
     "br",
+    "brotli",
     "gzip",
     "deflate",
     "zstd",
+    "content-encoding",
+    "middleware",
+    "HTTP",
     "binden"
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",

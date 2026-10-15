@@ -36,6 +36,11 @@
   "keywords": [
     "multipart",
     "formdata",
+    "form-data",
+    "upload",
+    "file-upload",
+    "middleware",
+    "HTTP",
     "binden",
     "busboy"
   ],

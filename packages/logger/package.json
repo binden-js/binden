@@ -33,7 +33,12 @@
     "directory": "packages/logger"
   },
   "keywords": [
-    "logger"
+    "binden",
+    "logger",
+    "logging",
+    "pino",
+    "json",
+    "structured-logging"
   ],
   "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
   "license": "MIT",
