@@ -115,23 +115,17 @@ describe("acceptance", { skip }, () => {
     });
   });
 
-  it(
-    "a compressed reply of `send()` keeps its connection alive",
-    {
-      todo: "binden `#frame()` removes an absent `Transfer-Encoding`, which disables chunked framing",
-    },
-    () => {
-      const chunked = { encoding: "gzip", framing: "chunked" };
-      deepEqual(run("keep-alive.ts"), {
-        status: 0,
-        signal: null,
-        stderr: "",
-        output: [
-          { reused: false, ...chunked },
-          { reused: true, ...chunked },
-          { reused: true, ...chunked },
-        ],
-      });
-    },
-  );
+  it("a compressed reply of `send()` keeps its connection alive", () => {
+    const chunked = { encoding: "gzip", framing: "chunked" };
+    deepEqual(run("keep-alive.ts"), {
+      status: 0,
+      signal: null,
+      stderr: "",
+      output: [
+        { reused: false, ...chunked },
+        { reused: true, ...chunked },
+        { reused: true, ...chunked },
+      ],
+    });
+  });
 });

@@ -203,9 +203,11 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
 - `text()` sends `text/plain; charset=utf-8` (it was `plain/text`, and `ct_text` is
   `"text/plain"`), and `html()` sends `text/html; charset=utf-8`.
 - A response is framed by its final status: a body gets its exact `Content-Length` (a stale one is
-  replaced), `1xx`, `204` and `304` responses have none, and a response to `HEAD` (or with a `1xx`,
-  `204`, `205` or `304` status) sends no body. A response without a body no longer gets a default
-  `Content-Type`.
+  replaced), `1xx` and `204` responses have none, and a response to `HEAD` (or with a `1xx`, `204`,
+  `205` or `304` status) sends no body. The `304` of `send()` (with the `etag` option) and of
+  `sendFile()` keeps the `Content-Length` and the `Content-Type` of the `200` it stands for; a
+  `304` that the application sends itself has no `Content-Length`. A response without a body no
+  longer gets a default `Content-Type`.
 - The cookies of `response.cookies` are added when the headers are sent by any path (`writeHead()`,
   `write()`, `end()`, a piped stream), not only by `send()`.
 - A middleware that sets `context.done` without starting a reply gets an empty response with the
@@ -478,7 +480,7 @@ The coding is negotiated when the headers of a response are committed, once its 
 headers are known:
 
 - A request without `Accept-Encoding` (or with an empty one) gets an uncompressed response: it got
-  `br` (`DefaultCompression` is no longer a fallback). `Vary: Accept-Encoding` is added to the
+  `br`. The `DefaultCompression` constant, which named that fallback, is removed. `Vary: Accept-Encoding` is added to the
   responses whose coding depends on it.
 - A request that refuses `identity` (`identity;q=0`, or `*;q=0` without `identity`) and accepts
   none of the codings gets `406 Not Acceptable`.
@@ -487,7 +489,8 @@ headers are known:
   compressed. Nor is a response without a body, a range (`206`, `Content-Range`), an encoded
   response or one with `Cache-Control: no-transform`, even with a fixed `format`.
 - A compressed response loses its `Content-Length` and `Accept-Ranges`, and its strong `ETag`
-  becomes weak.
+  becomes weak. A request whose `If-Match` lists the strong `ETag` of the response gets that
+  representation, uncompressed (a weak tag never meets a strong `If-Match`).
 - `br` compresses with the quality 4 (it was 11, the default of `node:zlib`, which is meant for
   compression ahead of time).
 - A second compression of the same response does nothing (it added a second coding).
