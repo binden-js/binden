@@ -169,8 +169,9 @@ do nothing (a callback of `write()` or `end()` is still called), so that a late 
 replace or cut the reply of the error handler. A deadline that passes before a `send()` of a stream
 or a `sendFile()` has committed the headers cancels it (it rejects with the abort reason) and
 replies `503`, instead of closing the connection. A reply that a timed out error handler has
-ended is still sent. The `503` of a deadline and the `500` of a failed error handler close the
-connection (`Connection: close`) when the body of the request has not been read in full.
+ended is still sent. The `503` of a deadline, the `500` of a failed error handler and the
+default error reply close the connection (`Connection: close`) when the body of the request has
+not been read in full.
 
 The default error reply is sent with the cookies of the response and the `headers` of a
 `BindenError`, without the headers of the body that it replaces (`Content-Length`,

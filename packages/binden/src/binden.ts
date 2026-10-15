@@ -932,6 +932,9 @@ export class Binden<
     if (error instanceof BindenError) {
       response.set(error.headers);
     }
+    // E.g. a middleware that has read a part of the body, then failed: Node.js
+    // does not read the rest of it, which would stall the connection
+    Binden.#closeUnread(context);
 
     // Sent like any other response: with its cookies, framed by its status
     const reply = (): Promise<void> => {

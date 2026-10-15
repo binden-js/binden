@@ -2,6 +2,7 @@
 import {
   Binden,
   BindenAbortError,
+  BindenError,
   BindenResponse,
   type Context,
   Cookie,
@@ -407,6 +408,34 @@ suite("Ownership of the response once the exchange is sealed", () => {
         // Without a body, the connection is kept
         const read = await headOf(port, "GET / HTTP/1.1\r\nHost: a\r\n\r\n");
         ok(read.startsWith("HTTP/1.1 503 "), read);
+        ok(/^Connection: keep-alive$/imu.test(read), read);
+      },
+    );
+  });
+
+  test("the default error reply closes the connection of a body that has not been read in full", async () => {
+    await withApp(
+      {},
+      (app) => {
+        app.use(async (context: Context) => {
+          if (context.request.method === "POST") {
+            // A part of the body, then a failure
+            await once(context.request, "data");
+          }
+          throw new BindenError(422);
+        });
+      },
+      async ({ port }) => {
+        // The rest of the body is never sent: Node.js would wait for it
+        // before it reads the next request of the connection
+        const unread = await headOf(
+          port,
+          "POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 1000\r\n\r\npart",
+        );
+        ok(unread.startsWith("HTTP/1.1 422 "), unread);
+        ok(/^Connection: close$/imu.test(unread), unread);
+        const read = await headOf(port, "GET / HTTP/1.1\r\nHost: a\r\n\r\n");
+        ok(read.startsWith("HTTP/1.1 422 "), read);
         ok(/^Connection: keep-alive$/imu.test(read), read);
       },
     );
