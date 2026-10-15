@@ -249,6 +249,36 @@ export class StoredFile implements IStoredFile {
   }
 }
 
+/** Appends a value to the list of its name (in place: linear in the count of the values) */
+function append<T>(lists: Map<string, T[]>, name: string, value: T): void {
+  const list = lists.get(name);
+  if (list) {
+    list.push(value);
+  } else {
+    lists.set(name, [value]);
+  }
+}
+
+/**
+ * The body of the disk storage: the fields and the stored files of the
+ * parts, by name, in their order (the other parts, e.g. skipped files, are
+ * left out)
+ */
+export function storedForm(
+  parts: Iterable<{ readonly name: string; readonly value: unknown }>,
+): IStoredForm {
+  const fields = new Map<string, string[]>();
+  const files = new Map<string, IStoredFile[]>();
+  for (const { name, value } of parts) {
+    if (typeof value === "string") {
+      append(fields, name, value);
+    } else if (value instanceof StoredFile) {
+      append(files, name, value);
+    }
+  }
+  return { fields, files };
+}
+
 /**
  * The files of a request on the disk, in a private directory (`0700`) that
  * is created with the first one, and removed by the cleanup of the request

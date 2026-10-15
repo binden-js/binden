@@ -8,8 +8,7 @@ import {
   DiskStore,
   type IFileStream,
   type IStoredFile,
-  type IStoredForm,
-  StoredFile,
+  storedForm,
 } from "./disk.js";
 import {
   type IFileFilter,
@@ -498,7 +497,7 @@ class Parser {
     }
     this.#end();
     this.#context.request.body =
-      this.#mode.kind === "disk" ? this.#stored() : this.#form();
+      this.#mode.kind === "disk" ? storedForm(this.#slots) : this.#form();
     this.#deferred.resolve(null);
   }
 
@@ -511,20 +510,6 @@ class Parser {
       }
     }
     return form;
-  }
-
-  /** The fields and the stored files (skipped ones excluded) */
-  #stored(): IStoredForm {
-    const fields = new Map<string, string[]>();
-    const files = new Map<string, IStoredFile[]>();
-    for (const { name, value } of this.#slots) {
-      if (typeof value === "string") {
-        fields.set(name, [...(fields.get(name) ?? []), value]);
-      } else if (value instanceof StoredFile) {
-        files.set(name, [...(files.get(name) ?? []), value]);
-      }
-    }
-    return { fields, files };
   }
 
   #end(): void {

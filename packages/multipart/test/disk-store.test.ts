@@ -1,8 +1,13 @@
-import { DiskStore, type IFileSystem } from "../src/disk.js";
+import {
+  DiskStore,
+  type IFileSystem,
+  StoredFile,
+  storedForm,
+} from "../src/disk.js";
 import { PassThrough, Readable } from "node:stream";
 import { type TestContext, describe, it } from "node:test";
 import { deepEqual, equal, ok, rejects, throws } from "node:assert/strict";
-import { eventually, sleep, within } from "./helpers.js";
+import { eventually, never, sleep, within } from "./helpers.js";
 import fs, {
   mkdtemp,
   readFile,
@@ -342,5 +347,78 @@ describe("DiskStore", () => {
 
     await rejects(file.written, failure("ENOENT"));
     await within(store.cleanup());
+  });
+});
+
+/**
+ * The steps of the iterators of arrays while `fn` runs: a spread copies an
+ * array with them, one step for each element
+ */
+function arraySteps(fn: () => void): number {
+  const prototype = Object.getPrototypeOf([][Symbol.iterator]()) as Record<
+    "next",
+    (...args: unknown[]) => unknown
+  >;
+  const original = prototype.next;
+  let steps = 0;
+  prototype.next = function next(this: unknown, ...args: unknown[]): unknown {
+    steps += 1;
+    return original.apply(this, args);
+  };
+  try {
+    fn();
+  } finally {
+    prototype.next = original;
+  }
+  return steps;
+}
+
+describe("storedForm()", () => {
+  it("collects the fields and the stored files by name, in their order", () => {
+    const file = new StoredFile(info, system(), never(), content(""));
+    const other = new StoredFile(info, system(), never(), content(""));
+
+    const { fields, files } = storedForm([
+      { name: "a", value: "1" },
+      { name: "file", value: file },
+      { name: "skipped", value: null },
+      { name: "a", value: "2" },
+      { name: "b", value: "3" },
+      { name: "file", value: other },
+    ]);
+
+    deepEqual(
+      [[...fields], [...files.keys()], files.get("file")],
+      [
+        [
+          ["a", ["1", "2"]],
+          ["b", ["3"]],
+        ],
+        ["file"],
+        [file, other],
+      ],
+    );
+  });
+
+  it("takes a time linear in the count of the parts of a name", () => {
+    const count = 2000;
+    const file = new StoredFile(info, system(), never(), content(""));
+    const parts = Array.from({ length: count }, (_, index) => ({
+      name: index % 2 === 0 ? "field" : "file",
+      value: index % 2 === 0 ? String(index) : file,
+    }));
+
+    let form = storedForm([]);
+    const steps = arraySteps(() => {
+      form = storedForm(parts);
+    });
+
+    // One step for each part, by the loop over them: a copy of the values
+    // of a name for each value would take a million more
+    ok(steps <= 2 * count, `${steps} steps`);
+    deepEqual(
+      [form.fields.get("field")?.length, form.files.get("file")?.length],
+      [count / 2, count / 2],
+    );
   });
 });
