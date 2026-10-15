@@ -1133,12 +1133,21 @@ export class Binden<
     const { request, response } = context;
     const start = performance.now();
     let bytes = 0;
+    /**
+     * Whether Node.js accepts a write of the work that writes (whatever the
+     * backpressure): not once the response is ended (also when a compression
+     * reports it ended while its compressor writes) or destroyed, nor from the
+     * work that no longer owns the response (e.g. after its deadline), whose
+     * writes are ignored
+     */
+    const accepts = (): boolean =>
+      !Reflect.get(http.OutgoingMessage.prototype, "writableEnded", response) &&
+      !response.destroyed &&
+      response[kOperation]() !== null;
+    /** Counts the bytes of a chunk that Node.js has accepted */
     const count = (chunk: unknown, encoding: unknown): void => {
       const { statusCode } = response;
-      if (response[kOperation]() === null) {
-        // Ignored: the work that writes no longer owns the response (e.g. after its deadline)
-        return;
-      } else if (
+      if (
         request.method === "HEAD" ||
         statusCode < 200 ||
         statusCode === 204 ||
@@ -1158,12 +1167,21 @@ export class Binden<
     const write = response.write.bind(response);
     const end = response.end.bind(response);
     response.write = (...args: unknown[]): boolean => {
-      count(args[0], args[1]);
-      return Reflect.apply(write, response, args) as boolean;
+      const accepted = accepts();
+      // Counted once it has not thrown (e.g. for a chunk that is not one)
+      const result = Reflect.apply(write, response, args) as boolean;
+      if (accepted) {
+        count(args[0], args[1]);
+      }
+      return result;
     };
     response.end = (...args: unknown[]): typeof response => {
-      count(args[0], args[1]);
-      return Reflect.apply(end, response, args) as typeof response;
+      const accepted = accepts();
+      const result = Reflect.apply(end, response, args) as typeof response;
+      if (accepted) {
+        count(args[0], args[1]);
+      }
+      return result;
     };
 
     response.once("close", () => {

@@ -198,7 +198,7 @@ With the `access_log` option, every request is logged once (at `info`, or at `de
 | `path`        | The path of the request, without its query (with `{ path: "path" }` only: it may name a user or a resource)                                          |
 | `status`      | The status of the response, or `null` when it has been aborted before its headers were sent                                                          |
 | `duration_ms` | The milliseconds from the request to the close of its response                                                                                       |
-| `body_bytes`  | The bytes of the body, as written (e.g. compressed), without the headers                                                                             |
+| `body_bytes`  | The bytes of the body, as written (e.g. compressed), without the headers: the writes that Node.js accepts (not one after the end)                    |
 | `id`          | The id of the request                                                                                                                                |
 | `aborted`     | Whether the request has been aborted (see [Lifecycle](#lifecycle))                                                                                   |
 

@@ -324,6 +324,64 @@ suite("Access log", () => {
     );
   });
 
+  test("only the writes that Node.js accepts are counted", async () => {
+    const accepted: boolean[] = [];
+    const refused: unknown[] = [];
+    const large = "x".repeat(64 * 1024);
+    await withApp(
+      { access_log: true },
+      (app) => {
+        app.use((context: Context) => {
+          const { response } = context;
+          response.on("error", (error: Error) => {
+            // A write after the end is refused with an `error` event
+            refused.push((error as NodeJS.ErrnoException).code);
+          });
+          // Under backpressure (`false`), but accepted
+          response.cork();
+          accepted.push(response.write(large));
+          response.uncork();
+          response.end("OK");
+          accepted.push(
+            response.write("EXTRA", (error?: Error | null) => {
+              refused.push((error as NodeJS.ErrnoException).code);
+            }),
+          );
+          context.done = true;
+        });
+      },
+      async ({ port }, captured) => {
+        deepStrictEqual((await send(port)).body, `${large}OK`);
+        await waitFor(captured, 1);
+        deepStrictEqual(records(captured)[0]?.body_bytes, large.length + 2);
+        deepStrictEqual(accepted, [false, false]);
+        deepStrictEqual(refused, [
+          "ERR_STREAM_WRITE_AFTER_END",
+          "ERR_STREAM_WRITE_AFTER_END",
+        ]);
+      },
+    );
+    await withApp(
+      { access_log: true },
+      (app) => {
+        app.use((context: Context) => {
+          const { response } = context;
+          response.write("abc");
+          response.destroy();
+          // Refused (`ERR_STREAM_DESTROYED`)
+          response.write("def");
+          response.end("ghi");
+          context.done = true;
+        });
+      },
+      async ({ port }, captured) => {
+        await rejects(send(port));
+        await waitFor(captured, 1);
+        deepStrictEqual(records(captured)[0]?.body_bytes, 3);
+      },
+    );
+  });
+
   test("a request aborted before its headers has no status", async () => {
     const started = Promise.withResolvers<null>();
     await withApp(
