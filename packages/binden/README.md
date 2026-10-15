@@ -163,7 +163,7 @@ The default logger (see [`@binden/logger`](https://github.com/binden-js/binden/t
 - a `request` is its method and its path (without the query string and the fragment, nor the scheme, authority and userinfo of an absolute-form request-target; anything secret in the path itself, e.g. a token, is logged);
 - a `response` is its status code;
 - a `context` is its `id`, request and response (not the fields the application sets on it);
-- a `body` (e.g. the one that [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body) failed to parse) is redacted;
+- a `body` that the application logs (e.g. `context.log.debug({ body }, "Received")`) is redacted (the body parsers never log the bodies themselves);
 - an `error` is reduced to its type, a known `code` and its `status`, as in the snapshots.
 
 A value of another kind under these keys is reduced to its type. A custom logger (for example with another level or destination, or to log more details) is passed with the `logger` option: any object with the methods of `ILogger` (`fatal`, `error`, `warn`, `info`, `debug`, `trace` and `child`). The default `serializers` are exported to build on:
@@ -835,11 +835,11 @@ const api = new Binden({
 
 #### Request ids
 
-`request.id` is a new UUID for every request. With `request_id`, a request may carry its id, so that the logs of the proxies and services in front of the server can be joined with those of the application:
+`request.id` is a new UUID for every request. Without the `request_id` option, the id is not sent back. With it (even `request_id: {}`, which sends it back with the defaults), a request may carry its id, so that the logs of the proxies and services in front of the server can be joined with those of the application:
 
 - `header` (default `"x-request-id"`) - the field of the id
 - `trust_incoming` (default `false`) - whether the id of the request is used: only when the proxies in front of the server set (or check) it, since a client can send any id. The id is used when it is one field line of 1 to 128 letters, digits, `.`, `_`, `:` and `-`; otherwise the request gets a new UUID
-- `echo` (default `true`) - whether every response of a `Binden` application sends the id back (in the field `header`), also the error replies of the framework (the deadline, a closing server, a failed error handler). It is set when the request arrives: a middleware may remove it.
+- `echo` (default `true`, once `request_id` is set) - whether every response of a `Binden` application sends the id back (in the field `header`), also the error replies of the framework (the deadline, a closing server, a failed error handler). It is set when the request arrives: a middleware may remove it.
 
 ```typescript
 import { Binden } from "binden";
