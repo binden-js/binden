@@ -43,6 +43,10 @@ depends on `@binden/logger`, and the middlewares on `binden`).
   TypeScript examples of the READMEs are type checked (`npm run consumer:check`).
 - **Style.** ESLint and Prettier check the code (`npm run eslint`, `npm run prettier`); the
   pre-commit hook fixes the staged files.
+- **Published files.** `npm run pack:check` compares the files of every package with
+  [`scripts/pack-files.json`](scripts/pack-files.json) (`node scripts/pack-check.mjs --update`
+  rewrites it) and refuses tests, secrets and source maps with local paths. It copies
+  `MIGRATION-4.md` and `PRODUCTION.md` into `packages/binden` first: `binden` publishes them.
 
 Before opening a pull request, run everything that CI runs:
 

@@ -57,6 +57,8 @@ of every release are the [GitHub Releases](https://github.com/binden-js/binden/r
 ### Node.js 24.14.1
 
 Every package requires Node.js `>=24.14.1` (see the table above for the earlier requirements).
+The packages no longer declare an `npm` version in their `engines`: any npm that supports Node.js
+24 installs them.
 
 ### Entry points
 
@@ -71,7 +73,11 @@ which exports all of the public API.
 ```
 
 With TypeScript, use the `"nodenext"` (or `"bundler"`) module resolution, which reads the
-`exports` maps. The types of `pino` (used by `@binden/logger`) need `skipLibCheck` with
+`exports` maps.
+
+The packages declare `"sideEffects": false` (a bundler may drop what an application does not
+use), and they publish their TypeScript sources with source maps and declaration maps: stack
+traces and "go to definition" lead to the sources rather than to `dist`. The types of `pino` (used by `@binden/logger`) need `skipLibCheck` with
 `@types/node` 26 (see the [known issues](https://github.com/binden-js/binden#known-issues)).
 
 ### MIT license
