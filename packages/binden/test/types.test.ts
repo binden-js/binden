@@ -43,6 +43,16 @@ test("types", () => {
   is(new Binden<IUser>({}));
   // @ts-expect-error -- a factory of another state
   is(new Binden<IUser>({ state: (): { name: string } => ({ name: "alice" }) }));
+  // @ts-expect-error -- a promise is not a state
+  is(new Binden({ state: (): Promise<IUser> => Promise.resolve(state()) }));
+  // @ts-expect-error -- nor is a thenable
+  is(new Binden({ state: (): { then(): void } => ({ then: Date.now }) }));
+  // The state of a factory is inferred
+  new Binden({ state: (): { count: number } => ({ count: 0 }) }).use(
+    (context): void => {
+      is<number>(context.state.count);
+    },
+  );
   // Not with optional fields only
   is(new Binden<IOptional>());
   is(new Binden());

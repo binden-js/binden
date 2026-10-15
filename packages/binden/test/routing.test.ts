@@ -631,11 +631,23 @@ suite("Routing", () => {
         state: (): Record<string, unknown> =>
           null as unknown as Record<string, unknown>,
       }).use(echo());
-      for (const app of [failing, invalid]) {
+      // A promise (refused by the types), whose rejection is observed
+      let observed = 0;
+      const thenable = {
+        then: (_resolve: unknown, reject: (error: unknown) => void): void => {
+          observed += 1;
+          reject(new Error("A rejected state"));
+        },
+      };
+      const promise = new Binden({
+        state: (): Record<string, unknown> => thenable,
+      }).use(echo());
+      for (const app of [failing, invalid, promise]) {
         await withApp(app, async ({ port }) => {
           deepStrictEqual((await get(port, "/"))[0], 500);
         });
       }
+      deepStrictEqual(observed, 1);
     });
   });
 });

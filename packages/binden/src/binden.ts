@@ -39,8 +39,13 @@ import https from "node:https";
 import { kSeal } from "./seal.js";
 import { validateDelay } from "./delay.js";
 
-/** Creates the state of a request (see the `state` option of `Binden`) */
-export type IStateFactory<State extends object> = () => State;
+/**
+ * Creates the state of a request (see the `state` option of `Binden`),
+ * synchronously: a promise (or any thenable) is not a state
+ */
+export type IStateFactory<State extends object> = () => State & {
+  readonly then?: never;
+};
 
 /**
  * The status of the reply to an error without a valid status of its own (and
@@ -994,7 +999,7 @@ export class Binden<
 
   /**
    * The state of a request, from the `state` option: a factory that fails (or
-   * that does not return an object) fails the request
+   * that does not return an object, or returns a promise) fails the request
    */
   #createState(): { state: object; failure: { error: unknown } | null } {
     if (!this.#state) {
@@ -1002,7 +1007,11 @@ export class Binden<
     }
     try {
       const state: unknown = this.#state();
-      if (typeof state !== "object" || state === null) {
+      if (typeof property(state, "then") === "function") {
+        // E.g. of an `async` factory: its rejection is observed
+        Promise.resolve(state).catch(() => null);
+        throw new TypeError("The state of the request is a promise");
+      } else if (typeof state !== "object" || state === null) {
         throw new TypeError("The state of the request is not an object");
       }
       return { state, failure: null };
