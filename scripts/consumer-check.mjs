@@ -4,10 +4,10 @@
 // - every bare import of the modules and declarations of an archive (`dist/`) is
 //   declared by its `package.json` (`scripts/imports.mjs`);
 // - the tarballs are installed into a fresh project, which is type checked and then
-//   run as ESM against a real server. The TypeScript examples of the READMEs are
-//   type checked against the same installation, and so are the runnable examples
-//   (`examples/*.ts`), which are then compiled, run and checked over HTTP
-//   (`scripts/examples.mjs`, POSIX only);
+//   run as ESM against a real server. The TypeScript examples of the READMEs and of
+//   the guides at the root (`documents`) are type checked against the same
+//   installation, and so are the runnable examples (`examples/*.ts`), which are then
+//   compiled, run and checked over HTTP (`scripts/examples.mjs`, POSIX only);
 // - each tarball is installed alone into a project of its own, with what it declares
 //   (its dependencies and peers, from the other tarballs), then type checked and
 //   imported (its root and its `package.json`, while its deep paths are closed).
@@ -25,8 +25,10 @@
 //   node scripts/consumer-check.mjs --tarballs <dir>   the archives that
 //                                                      `scripts/release.mjs pack <dir>`
 //                                                      prepared (their integrity is checked)
+import { basename, join, resolve } from "node:path";
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -35,7 +37,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { examples, runExample } from "./examples.mjs";
-import { join, resolve } from "node:path";
 import { readRelease, readTarball } from "./tarballs.mjs";
 import { execFileSync } from "node:child_process";
 import { npm } from "./npm.mjs";
@@ -45,6 +46,9 @@ import { undeclaredImports } from "./imports.mjs";
 const root = join(import.meta.dirname, "..");
 const readJSON = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
 const { devDependencies, workspaces } = readJSON("package.json");
+// The guides at the root of the repository, whose examples are checked as those of
+// the READMEs (each one must exist and have some)
+const documents = ["MIGRATION-4.md", "PRODUCTION.md"];
 // Packages that the examples import besides the workspaces
 const exampleDependencies = {
   ajv: readJSON("packages/body/package.json").devDependencies.ajv,
@@ -151,7 +155,10 @@ const blockPattern = /^```typescript\r?\n(?<code>[\s\S]*?)^```\r?$/gmu;
 const blocksOf = (markdown) =>
   [...markdown.matchAll(blockPattern)].map(({ groups }) => groups.code);
 
-/** Writes every `typescript` block of the READMEs as a module of `snippets/` */
+/**
+ * Writes every `typescript` block of the READMEs and of the guides at the root
+ * (`documents`) as a module of `snippets/`
+ */
 function writeSnippets() {
   const target = join(dir, "snippets");
   mkdirSync(target);
@@ -169,8 +176,23 @@ function writeSnippets() {
   if (count === 0) {
     throw new Error("No TypeScript examples found in the READMEs");
   }
+  for (const document of documents) {
+    const path = join(root, document);
+    if (!existsSync(path)) {
+      throw new Error(
+        `${document} is missing: its examples are checked (\`documents\` of scripts/consumer-check.mjs)`,
+      );
+    }
+    const blocks = blocksOf(readFileSync(path, "utf8"));
+    if (blocks.length === 0) {
+      throw new Error(`No TypeScript examples found in ${document}`);
+    }
+    write(basename(document, ".md"), blocks);
+  }
   writeFileSync(join(target, "globals.d.ts"), globals);
-  process.stderr.write(`[consumer] ${count} README examples\n`);
+  process.stderr.write(
+    `[consumer] ${count} examples of the READMEs and of ${documents.join(", ")}\n`,
+  );
   return target;
 }
 
