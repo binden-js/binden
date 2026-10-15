@@ -7,7 +7,10 @@
 //   run as ESM against a real server. The TypeScript examples of the READMEs are
 //   type checked against the same installation, and so are the runnable examples
 //   (`examples/*.ts`), which are then compiled, run and checked over HTTP
-//   (`scripts/examples.mjs`, POSIX only).
+//   (`scripts/examples.mjs`, POSIX only);
+// - each tarball is installed alone into a project of its own, with what it declares
+//   (its dependencies and peers, from the other tarballs), then type checked and
+//   imported (its root and its `package.json`, while its deep paths are closed).
 //
 // The installation of all the tarballs is checked with:
 //
@@ -238,6 +241,110 @@ function pack() {
     .map((file) => join(dir, file));
 }
 
+/**
+ * Installs each tarball alone (with `--install-strategy=nested`) into a project of
+ * its own, outside of `dir` (whose `node_modules` would hide a missing
+ * dependency): npm installs its dependencies and peers, which `overrides` take
+ * from the other tarballs. The project is type checked (with the TypeScript and
+ * `@types/node` of `dir`), then the package is imported: its root, and its
+ * `package.json` (as JSON), while a module of `dist/` is not exported.
+ */
+function checkStandalone(tarballs) {
+  const packages = tarballs.map((path) => {
+    const files = readTarball(readFileSync(path));
+    const modules = [...files.keys()]
+      .filter((file) => /^dist\/.+\.js$/u.test(file))
+      .sort();
+    // A module of the package that its `exports` do not export (deep imports are closed)
+    const deep =
+      modules.find((file) => file.startsWith("dist/src/")) ?? modules[0];
+    return { name: JSON.parse(files.get("package.json")).name, path, deep };
+  });
+  for (const { name, path, deep } of packages) {
+    const project = mkdtempSync(join(tmpdir(), "binden-standalone-"));
+    try {
+      process.stderr.write(`[consumer] ${name} alone\n`);
+      const overrides = Object.fromEntries(
+        packages
+          .filter((other) => other.name !== name)
+          .map((other) => [other.name, `file:${other.path}`]),
+      );
+      writeFileSync(
+        join(project, "package.json"),
+        `${JSON.stringify({ private: true, type: "module", overrides })}\n`,
+      );
+      run(
+        "npm",
+        [
+          "install",
+          "--install-strategy=nested",
+          "--no-audit",
+          "--no-fund",
+          "--loglevel=warn",
+          path,
+        ],
+        project,
+      );
+      writeFileSync(
+        join(project, "index.ts"),
+        `import * as module from ${JSON.stringify(name)};\n\nexport const names: string[] = Object.keys(module);\n`,
+      );
+      writeFileSync(
+        join(project, "tsconfig.json"),
+        `${JSON.stringify({
+          compilerOptions: {
+            module: "nodenext",
+            target: "es2022",
+            strict: true,
+            noEmit: true,
+            types: ["node"],
+            typeRoots: [join(dir, "node_modules", "@types")],
+          },
+          files: ["index.ts"],
+        })}\n`,
+      );
+      run(
+        process.execPath,
+        [join(dir, "node_modules/typescript/bin/tsc"), "-p", project],
+        project,
+      );
+      // Its root has exports, its `package.json` is exported, its modules are not
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "--eval",
+          `const name = ${JSON.stringify(name)};
+const module = await import(name);
+if (Object.keys(module).length === 0) {
+  throw new Error(\`\${name} has no exports\`);
+}
+const { default: manifest } = await import(\`\${name}/package.json\`, {
+  with: { type: "json" },
+});
+if (manifest.name !== name) {
+  throw new Error(\`The package.json of \${name} names \${manifest.name}\`);
+}
+const deep = ${JSON.stringify(`${name}/${deep}`)};
+await import(deep).then(
+  () => {
+    throw new Error(\`\${deep} is exported\`);
+  },
+  (error) => {
+    if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") {
+      throw error;
+    }
+  },
+);`,
+        ],
+        project,
+      );
+    } finally {
+      rmSync(project, { force: true, recursive: true });
+    }
+  }
+}
+
 try {
   const tarballs = pack();
   checkImports(tarballs);
@@ -345,6 +452,7 @@ try {
           });
         }
       }
+      checkStandalone(tarballs);
     }
   }
   process.stderr.write("[consumer] OK\n");
