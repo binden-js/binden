@@ -258,6 +258,16 @@ the response (unless `echo: false`).
 Nothing limits the size of a request body by default: set the limits of every parser explicitly,
 and align the limit of the proxy (`client_max_body_size` of nginx) with the largest of them.
 
+A reply of the framework to an error (the default error reply, the `503` of a deadline, the empty
+`500` of a failed error handler) closes the connection (`Connection: close`) when the body of the
+request has not been received in full when it is sent (`request.complete` is `false`), whether a
+part of it has been read or none: binden never reads a body that nobody wants, and the rest of it
+would otherwise be read as the next request of the connection. The rule is conservative: a request
+refused before Node.js has parsed its whole body loses its connection, even for a small `POST`
+whose body came with its headers but is not parsed yet when a middleware refuses it synchronously
+(e.g. a `401`, `403` or `415`). The client (or the proxy) then opens a new connection for its next
+request. A body received in full, read or not, keeps the connection open.
+
 ### JSON, text and forms
 
 `@binden/body` reads a body into memory. `limit` counts the bytes once decoded, at every stage of
