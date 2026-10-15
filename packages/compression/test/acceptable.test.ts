@@ -363,4 +363,61 @@ suite("The representation that the request accepts", () => {
     );
     deepStrictEqual(partial.raw, gzipped.subarray(0, 10));
   });
+  test("a representation that the request refuses is never sent (the reproductions of the review)", async () => {
+    const tag = `"v1"`;
+    const file = join(tmp, "file.txt");
+    await writeFile(file, content);
+    const fixed = new Compression({ format: "gzip" });
+    const filtered = new Compression({ filter: (): boolean => false });
+    const negotiated = new Compression();
+    const served = await serve(
+      {},
+      (context: Context) => {
+        // The compression of each route
+        const { pathname } = context.url;
+        const compression =
+          pathname === "/fixed"
+            ? fixed
+            : pathname === "/filtered"
+              ? filtered
+              : negotiated;
+        compression.run(context);
+      },
+      async (context: Context) => {
+        const { pathname } = context.url;
+        await (pathname === "/small"
+          ? context.text("small")
+          : pathname === "/file"
+            ? context.response.sendFile(file, { validator: tag })
+            : context.text(content));
+      },
+    );
+    servers.push(served);
+    const cases: [
+      string,
+      Record<string, string>,
+      number,
+      string | undefined,
+    ][] = [
+      ["/fixed", { "Accept-Encoding": "gzip;q=0, identity" }, 200, none],
+      ["/small", { "Accept-Encoding": "identity;q=0" }, 406, none],
+      ["/filtered", { "Accept-Encoding": "identity;q=0" }, 406, none],
+      [
+        "/file",
+        { "Accept-Encoding": "gzip, identity;q=0", "If-Match": tag },
+        412,
+        none,
+      ],
+    ];
+    for (const [path, headers, status, coding] of cases) {
+      for (const method of methods) {
+        const received = await fetchRaw(served.url, { path, method, headers });
+        deepStrictEqual(
+          [received.status, received.headers["content-encoding"]],
+          [status, coding],
+          `${method} ${path}`,
+        );
+      }
+    }
+  });
 });
