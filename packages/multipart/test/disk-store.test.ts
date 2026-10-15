@@ -246,42 +246,47 @@ describe("DiskStore", () => {
     );
   });
 
-  it("never removes a file or a link that has replaced its target during a failed copy", async (t) => {
-    const replacements = posix ? ["file", "link"] : ["file"];
-    for (const replacement of replacements) {
-      let target = "";
-      let moved = "";
-      const { root, store } = await create(t, {
-        link: () => Promise.reject(failure("EXDEV")),
-        open: async (path, flags, mode) => {
-          if (flags === constants.O_RDONLY) {
-            // Another process replaces the file of the copy, which then fails
-            if (replacement === "file") {
-              await writeFile(moved, "Another");
-              await rename(moved, target);
-            } else {
-              await rename(target, moved);
-              await symlink(moved, target);
+  it(
+    "never removes a file or a link that has replaced its target during a failed copy",
+    // Windows refuses to rename a file that is open: the replacement cannot be staged
+    { skip: process.platform === "win32" },
+    async (t) => {
+      const replacements = posix ? ["file", "link"] : ["file"];
+      for (const replacement of replacements) {
+        let target = "";
+        let moved = "";
+        const { root, store } = await create(t, {
+          link: () => Promise.reject(failure("EXDEV")),
+          open: async (path, flags, mode) => {
+            if (flags === constants.O_RDONLY) {
+              // Another process replaces the file of the copy, which then fails
+              if (replacement === "file") {
+                await writeFile(moved, "Another");
+                await rename(moved, target);
+              } else {
+                await rename(target, moved);
+                await symlink(moved, target);
+              }
+              throw failure("EIO");
             }
-            throw failure("EIO");
-          }
-          return fs.open(path, flags, mode);
-        },
-      });
-      target = join(root, "kept.txt");
-      moved = join(root, "moved.txt");
+            return fs.open(path, flags, mode);
+          },
+        });
+        target = join(root, "kept.txt");
+        moved = join(root, "moved.txt");
 
-      const file = store.add(info, content("Hello"));
-      await rejects(file.persist(target), failure("EIO"));
+        const file = store.add(info, content("Hello"));
+        await rejects(file.persist(target), failure("EIO"));
 
-      ok(
-        replacement === "file"
-          ? (await readFile(target, "utf8")) === "Another"
-          : (await lstat(target)).isSymbolicLink(),
-        replacement,
-      );
-    }
-  });
+        ok(
+          replacement === "file"
+            ? (await readFile(target, "utf8")) === "Another"
+            : (await lstat(target)).isSymbolicLink(),
+          replacement,
+        );
+      }
+    },
+  );
 
   it("closes the descriptors of a copy, whether it succeeds or fails", async (t) => {
     const handles: FileHandle[] = [];

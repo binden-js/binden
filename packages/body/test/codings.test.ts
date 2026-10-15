@@ -187,7 +187,12 @@ suite("BodyParser (content codings)", () => {
 
   test(
     "the reading stops once a coding has ended, also with `verify_encoded`",
-    { timeout: 20_000 },
+    {
+      // Windows resets a connection closed with unread data at once: the client
+      // may lose the reply before it reads it
+      skip: process.platform === "win32",
+      timeout: 20_000,
+    },
     async () => {
       for (const coding of ["deflate", "br"]) {
         let verified = false;

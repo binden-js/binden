@@ -42,13 +42,18 @@ suite("Process safety", () => {
     });
   });
 
-  test("SIGTERM shuts the server down gracefully", () => {
-    deepStrictEqual(run("sigterm.ts"), {
-      status: 0,
-      stdout: "200 close done false\n",
-      stderr: "",
-    });
-  });
+  test(
+    "SIGTERM shuts the server down gracefully",
+    // Windows has no SIGTERM handler: `kill("SIGTERM")` ends the process at once
+    { skip: process.platform === "win32" },
+    () => {
+      deepStrictEqual(run("sigterm.ts"), {
+        status: 0,
+        stdout: "200 close done false\n",
+        stderr: "",
+      });
+    },
+  );
 
   test("a logger that rejects does not crash the process", () => {
     deepStrictEqual(run("async-logger.ts"), {
