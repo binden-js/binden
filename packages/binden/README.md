@@ -586,7 +586,7 @@ const app = new Binden().use("/items", list, create);
 
 A middleware that throws (or rejects) passes the error to the error handler. The default one:
 
-- replies with the `status` of the error when it is an integer from 400 to 599 (e.g. of a [`BindenError`](#bindenerror)), and `500 Internal Server Error` otherwise (for any thrown value, also `null`), with the `headers` of a `BindenError` and its exposed `json` or `message`. The headers set for the body that is not sent (its framing, representation and validators, e.g. `Content-Type`, `Content-Language`, `Content-Length`, `Content-Encoding` or `ETag`) are removed, so that an exposed `message` is never sent as the type of the route (e.g. as HTML), and the cookies of the response are sent. The reply closes the connection (`Connection: close`) when the body of the request has not been read in full (e.g. a middleware has read a part of it, then failed): Node.js does not read the rest of it, which the next request of the connection would wait for;
+- replies with the `status` of the error when it is an integer from 400 to 599 (e.g. of a [`BindenError`](#bindenerror)), and `500 Internal Server Error` otherwise (for any thrown value, also `null`), with the reason phrase of that status (a `statusMessage` set for the reply that it replaces is dropped), the `headers` of a `BindenError` and its exposed `json` or `message`. The headers set for the body that is not sent (its framing, representation and validators, e.g. `Content-Type`, `Content-Language`, `Content-Length`, `Content-Encoding`, `ETag` or `Trailer`) are removed, so that an exposed `message` is never sent as the type of the route (e.g. as HTML), and the cookies of the response are sent. The reply closes the connection (`Connection: close`) when the body of the request has not been read in full (e.g. a middleware has read a part of it, then failed): Node.js does not read the rest of it, which the next request of the connection would wait for;
 - logs a server error (5xx) at `error`, and a client error (4xx) at `debug` (see [Logging](#logging));
 - cuts a reply that has already started by closing the connection, and leaves a reply that has ended.
 
@@ -894,6 +894,8 @@ const server = createServer({ ServerResponse: BindenResponse });
 ```
 
 - `.started` - whether the response has been started: by `.send()` or `.sendFile()` (until they fail before sending anything, or a deadline cancels them), by a stream piped into it, or by its headers being sent
+
+- `writeHead()` checks the reason phrase that it would send and the headers that it is given before it changes the response: one that Node.js refuses throws, and the status, the reason phrase and the headers are left as they were (Node.js would have set them first). A reason phrase that Node.js refuses once it sends the headers (e.g. a `statusMessage` assigned before `.send()`, or a `Trailer` of a body that is not chunked) makes `.send()`, `.sendFile()` and `.flush()` reject before anything is sent, so that the error can still be replied (with the reason phrase of its own status).
 
 - `.cookies` - the cookies to send. They are added to the `Set-Cookie` header once, when the headers are sent by any path (`.send()`, `writeHead()` with any of its arguments (also by its alias `writeHeader()`, which Node.js 24 has, and which the response keeps on every version), `write()`, `end()`, `flushHeaders()` or a piped stream), after the `Set-Cookie` values set on the response or given to `writeHead()`
 

@@ -444,6 +444,38 @@ suite("Ownership of the response once the exchange is sealed", () => {
     );
   });
 
+  test("the error replies have the reason phrase of their status", async () => {
+    await withApp(
+      {
+        error_handler: (context: Context): void => {
+          if (context.url.pathname === "/failed-handler") {
+            // Refused by Node.js: the opaque `500` does not keep it
+            context.response.statusMessage = "a\nb";
+            throw new Error("Failed");
+          }
+        },
+      },
+      (app) => {
+        app.use((context: Context) => {
+          context.response.status(201).statusMessage = "Made";
+          throw new BindenError(422);
+        });
+      },
+      async ({ port }) => {
+        for (const [path, line] of [
+          ["/", "HTTP/1.1 422 Unprocessable Entity"],
+          ["/failed-handler", "HTTP/1.1 500 Internal Server Error"],
+        ]) {
+          const head = await headOf(
+            port,
+            `GET ${path} HTTP/1.1\r\nHost: a\r\n\r\n`,
+          );
+          deepStrictEqual(head.split("\r\n")[0], line);
+        }
+      },
+    );
+  });
+
   test("the reply of a timed out error handler closes the connection of a body that has not been read", async () => {
     await withApp(
       {

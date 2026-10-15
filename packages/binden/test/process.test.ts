@@ -42,6 +42,14 @@ suite("Process safety", () => {
     });
   });
 
+  test("a reason phrase or a header that Node.js refuses does not crash the process", () => {
+    deepStrictEqual(run("refused-head.ts"), {
+      status: 0,
+      stdout: "500 Internal Server Error (10)\n",
+      stderr: "",
+    });
+  });
+
   test(
     "SIGTERM shuts the server down gracefully",
     // Windows has no SIGTERM handler: `kill("SIGTERM")` ends the process at once

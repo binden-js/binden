@@ -15,6 +15,7 @@ import {
   kOperation,
   kRepresentation,
   kSeal,
+  kValidateHead,
   owners,
 } from "./seal.js";
 import {
@@ -28,6 +29,8 @@ import {
   type OutgoingHttpHeader,
   type OutgoingHttpHeaders,
   ServerResponse,
+  validateHeaderName,
+  validateHeaderValue,
 } from "node:http";
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
@@ -150,6 +153,9 @@ function isStrictMediaType(media_type: string): boolean {
     })
   );
 }
+
+/** A character that a reason phrase cannot have (as Node.js checks it) */
+const invalidReason = /[^\t\x20-\x7E\x80-\xFF]/u;
 
 /** Without `[kSeal]()`, nothing may mutate a sealed response */
 const never = (): boolean => false;
@@ -467,6 +473,10 @@ export class BindenResponse<
   ): this {
     if (!this.#allows()) {
       return this;
+    } else if (!this.headersSent) {
+      // Node.js would throw only once it has changed the response (its status
+      // and reason phrase, and some of the headers)
+      this[kValidateHead](statusCode, reason, headers);
     }
     // As `writeHead()` of Node.js: the headers follow a reason phrase, or are
     // the second argument
@@ -480,7 +490,7 @@ export class BindenResponse<
       return super.writeHead(statusCode, fields);
     };
     if (this.headersSent || this.cookies.size === 0) {
-      return write(given);
+      return this.#restoring(() => write(given));
     }
 
     const previous = this.getHeader("Set-Cookie");
@@ -491,7 +501,7 @@ export class BindenResponse<
       ...values,
     ]);
     try {
-      return write(rest);
+      return this.#restoring(() => write(rest));
     } catch (error: unknown) {
       // Not sent (e.g. an invalid status code): the next attempt adds them
       if (typeof previous === "undefined") {
@@ -500,6 +510,66 @@ export class BindenResponse<
         this.setHeader("Set-Cookie", previous);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Runs `writeHead()` of Node.js: when it throws (e.g. for a `Trailer` of a
+   * body that is not chunked), the status and the reason phrase of the
+   * response are those from before it
+   */
+  #restoring(fn: () => this): this {
+    const code = this.#statusCode;
+    const message = this.#statusMessage;
+    try {
+      return fn();
+    } catch (error: unknown) {
+      this.#statusCode = code;
+      this.#statusMessage = message;
+      throw error;
+    }
+  }
+
+  /**
+   * Checks the arguments of `writeHead()` as Node.js does, without changing
+   * the response (see `kValidateHead`): the reason phrase that it would send
+   * (the one given, or else the one of the response), and the names and the
+   * values of the headers given (a list must be of pairs). An invalid status
+   * code is left to `writeHead()`, which throws before it changes anything.
+   *
+   * @internal
+   */
+  public [kValidateHead](...args: unknown[]): void {
+    const [statusCode, reason, headers] = args;
+    const code = (statusCode as number) | 0;
+    if (code < 100 || code > 999) {
+      return;
+    }
+    const message = typeof reason === "string" ? reason : this.statusMessage;
+    if (typeof message === "string" && invalidReason.test(message)) {
+      throw Object.assign(new TypeError("Invalid character in statusMessage"), {
+        code: "ERR_INVALID_CHAR",
+      });
+    }
+    const given = typeof reason === "string" ? headers : (headers ?? reason);
+    const pairs: unknown[] = Array.isArray(given)
+      ? Array.isArray(given[0])
+        ? given.flat()
+        : given
+      : Object.entries(given ?? {}).flat();
+    if (pairs.length % 2 !== 0) {
+      throw Object.assign(new TypeError("The argument 'headers' is invalid"), {
+        code: "ERR_INVALID_ARG_VALUE",
+      });
+    }
+    for (let index = 0; index < pairs.length; index += 2) {
+      const name = pairs[index] as string;
+      // Node.js skips an empty name (of the headers that it sets)
+      if (name !== "") {
+        validateHeaderName(name);
+        // Also an array (of the values of the header) or a number
+        validateHeaderValue(name, pairs[index + 1] as string);
+      }
     }
   }
 
@@ -888,6 +958,21 @@ export class BindenResponse<
     data?: Buffer | Readable | bigint | number | string,
     encoding?: BufferEncoding,
   ): Promise<void> {
+    try {
+      return this.#send(data, encoding);
+    } catch (error: unknown) {
+      // E.g. a reason phrase or a `Trailer` that Node.js refuses once it sends
+      // the headers: the response is unchanged, and the error can be replied
+      const failure = error as Error;
+      return Promise.reject(failure);
+    }
+  }
+
+  /** `send()`, which may throw before it has changed the response */
+  #send(
+    data?: Buffer | Readable | bigint | number | string,
+    encoding?: BufferEncoding,
+  ): Promise<void> {
     if (this.writableEnded || !this.#allows()) {
       if (data instanceof Readable) {
         // Nothing of it will be sent: release it (e.g. its file)
@@ -919,24 +1004,17 @@ export class BindenResponse<
         BindenResponse.#discard(data);
         // The length that it declares, without a stale `Transfer-Encoding`
         this.#frame(this.#length());
-        const done = this.#finished(() => false);
-        this.end();
-        return done;
+        return this.#end();
       }
       return this.#pipe(data);
     }
-
-    // Settles once the response has finished, or rejects when it is closed
-    // before (e.g. the client went away)
-    const done = this.#finished(() => false);
 
     if (typeof data === "undefined" || this.destroyed) {
       // No body: as for `GET`, `Content-Length: 0`, but a valid length given
       // to `HEAD` (of the body that `GET` would send) is kept, without a
       // stale `Transfer-Encoding`
       this.#frame(this.req.method === "HEAD" ? (this.#length() ?? 0) : 0);
-      this.end();
-      return done;
+      return this.#end();
     }
 
     // Encoded once: the bytes give the length and the `ETag`, and are sent
@@ -959,24 +1037,21 @@ export class BindenResponse<
 
     const status = this.#conditional(body);
     if (status === 304) {
-      this.#endNotModified(body.length);
-      return done;
+      return this.#endNotModified(body.length);
     } else if (status !== null) {
       // Empty, also for `HEAD` (which would keep the length of a body), and
       // without the coding of the body (e.g. a precompressed one)
       this.statusCode = status;
       this.#remove("Content-Encoding");
       this.#frame(0);
-      this.end();
-      return done;
+      return this.#end();
     }
 
     this.#frame(body.length);
 
     if (this.#bodiless()) {
       // The headers of the body (as for `GET`), but not the body itself
-      this.end();
-      return done;
+      return this.#end();
     }
 
     // The body is written rather than passed to `end()`: a write that fails
@@ -988,9 +1063,19 @@ export class BindenResponse<
           reject(error);
         }
       });
-      this.end();
-      done.then(resolve, reject);
+      this.#end().then(resolve, reject);
     });
+  }
+
+  /**
+   * Ends the response, then settles once it has finished, or rejects when it
+   * is closed before (e.g. the client went away). Listened to once `end()` has
+   * returned: an `end()` that throws (e.g. for a reason phrase that Node.js
+   * refuses) leaves no listener, nor a promise that would reject unobserved.
+   */
+  #end(): Promise<void> {
+    this.end();
+    return this.#finished(() => false);
   }
 
   /**
@@ -1036,11 +1121,11 @@ export class BindenResponse<
    * headers of the `200`, with its `Content-Length` (RFC 9110, section 8.6),
    * but no body
    */
-  #endNotModified(length: number): void {
+  #endNotModified(length: number): Promise<void> {
     this.statusCode = 304;
     this.#remove("Transfer-Encoding");
     this.setHeader("Content-Length", length);
-    this.end();
+    return this.#end();
   }
 
   /**
@@ -1051,9 +1136,7 @@ export class BindenResponse<
     if (!this.#allows()) {
       return Promise.resolve();
     }
-    const done = this.#finished(() => false);
-    this.#endNotModified(length);
-    return done;
+    return this.#endNotModified(length);
   }
 
   /**
@@ -1177,12 +1260,14 @@ export class BindenResponse<
       return this.#finished(() => false);
     }
     return new Promise<void>((resolve, reject) => {
+      // First: when it throws (e.g. for a reason phrase that Node.js refuses),
+      // the promise rejects without a listener left
+      this.flushHeaders();
       const fail = (error?: Error): void => {
         this.off("close", fail).off("error", fail);
         reject(error ?? BindenResponse.#premature());
       };
       this.once("close", fail).once("error", fail);
-      this.flushHeaders();
       // Its callback runs once the writes before it are flushed
       this.write("", (error?: Error | null) => {
         this.off("close", fail).off("error", fail);
@@ -1333,8 +1418,14 @@ export class BindenResponse<
           return;
         } else if (declared !== null && sent < declared) {
           fail(BindenResponse.#mismatch(sent, declared));
-        } else {
+          return;
+        }
+        try {
           this.end();
+        } catch (error: unknown) {
+          // Nothing sent (e.g. an empty source, whose headers Node.js
+          // refuses): never thrown out of the events of the source
+          fail(error as Error);
         }
       };
       this.#pending.set(key, (reason: unknown) => {
@@ -1369,7 +1460,6 @@ export class BindenResponse<
                 data.destroy(BindenResponse.#mismatch(sent + size, declared));
                 return;
               }
-              sent += size;
               const accepted = this.write(chunk, (error?: Error | null) => {
                 if (error) {
                   // Not delivered: the client went away (Node.js 24 may still
@@ -1380,6 +1470,9 @@ export class BindenResponse<
                   flushed += size;
                 }
               });
+              // Once written: a first write that throws (e.g. for a reason
+              // phrase that Node.js refuses) has sent nothing
+              sent += size;
               if (!accepted) {
                 data.pause();
                 this.once("drain", () => {

@@ -28,6 +28,7 @@ export {
   kNegotiator,
   kOperation,
   kRepresentation,
+  kValidateHead,
 } from "./src/seal.js";
 export type { IRedirectOptions, IRedirectStatus } from "./src/redirect.js";
 export type { ISendFileOptions } from "./src/send-file.js";

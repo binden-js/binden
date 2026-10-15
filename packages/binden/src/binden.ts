@@ -878,6 +878,8 @@ export class Binden<
 
   /** An empty reply of the framework (a failure to send it is logged) */
   async #empty(context: Context, status: number): Promise<void> {
+    // With the reason phrase of its status (see `#defaultErrorHandler()`)
+    context.response.statusMessage = "";
     context.response.status(status);
     try {
       await context.response.send();
@@ -928,6 +930,9 @@ export class Binden<
         response.removeHeader(name);
       }
     }
+    // With the reason phrase of its status, not one set for the reply that it
+    // replaces (which may even be one that Node.js refuses)
+    response.statusMessage = "";
     response.status(status);
     if (error instanceof BindenError) {
       response.set(error.headers);
@@ -1071,6 +1076,8 @@ export class Binden<
     "ETag",
     "Last-Modified",
     "Repr-Digest",
+    // The trailers of a chunked body: Node.js refuses it for another body
+    "Trailer",
     "Transfer-Encoding",
   ];
 

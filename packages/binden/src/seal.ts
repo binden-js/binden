@@ -70,6 +70,20 @@ export interface IResponseOperation {
 }
 
 /**
+ * The key of the method of `BindenResponse` that checks the arguments of
+ * `writeHead()` as Node.js does, without changing the response:
+ * `response[kValidateHead](statusCode, reason, headers)` throws the error
+ * that `writeHead()` would throw for the reason phrase that it would send (the
+ * one given, or the one of the response) or for a header given, after it had
+ * changed the response. A library that takes a decision at the commit of the
+ * headers (e.g. `@binden/compression`) checks them first. For the packages of
+ * binden only.
+ *
+ * @internal
+ */
+export const kValidateHead: unique symbol = Symbol("binden.validate_head");
+
+/**
  * The key of the method of `BindenResponse` that chooses the representation
  * of the body of a response before the preconditions of the request are
  * evaluated: `response[kRepresentation](length)` (see `IRepresentation`),

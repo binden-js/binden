@@ -15,10 +15,10 @@ import {
 } from "node:http";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert";
+import { kSeal, kValidateHead } from "../src/seal.js";
 import { Readable } from "node:stream";
 import { Socket } from "node:net";
 import { createHash } from "node:crypto";
-import { kSeal } from "../src/seal.js";
 
 /** A response without a connection: nothing is actually sent */
 function detached(): BindenResponse {
@@ -239,6 +239,11 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
         code: "ERR_INVALID_CHAR",
       });
       deepStrictEqual(response.getHeader("Set-Cookie"), "a=1");
+      // Refused by Node.js once the cookies have been added
+      throws(() => response.writeHead(99), {
+        code: "ERR_HTTP_INVALID_STATUS_CODE",
+      });
+      deepStrictEqual(response.getHeader("Set-Cookie"), "a=1");
       ok(!response.headersSent);
       response.writeHead(200, { "Set-Cookie": "b=2" });
       throws(() => response.writeHead(200), { code: "ERR_HTTP_HEADERS_SENT" });
@@ -247,6 +252,115 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     const { headers } = await app.request();
     deepStrictEqual(await handled, null);
     deepStrictEqual(headers["set-cookie"], ["b=2", cookie1.toString()]);
+  });
+
+  test("a `writeHead()` that Node.js refuses leaves the response unchanged", () => {
+    const response = detached();
+    response.statusCode = 201;
+    response.statusMessage = "Made";
+    response.setHeader("X-Set", ["a", "b"]);
+    const state = (): unknown[] => [
+      response.statusCode,
+      response.statusMessage,
+      response.getHeaders(),
+      response.headersSent,
+    ];
+    const before = state();
+    for (const [name, refused, code] of [
+      [
+        "reason",
+        (): unknown => response.writeHead(200, "a\nb"),
+        "ERR_INVALID_CHAR",
+      ],
+      [
+        "value",
+        (): unknown => response.writeHead(200, "Fine", { "X-Set": "\r" }),
+        "ERR_INVALID_CHAR",
+      ],
+      [
+        "value of a list",
+        (): unknown => response.writeHead(200, ["X-Set", ["a", "\n"]]),
+        "ERR_INVALID_CHAR",
+      ],
+      [
+        "name",
+        (): unknown => response.writeHead(200, { "X Set": "a" }),
+        "ERR_INVALID_HTTP_TOKEN",
+      ],
+      [
+        "nested pairs",
+        (): unknown => response.writeHead(200, [["X-Set", none]] as never),
+        "ERR_HTTP_INVALID_HEADER_VALUE",
+      ],
+      [
+        "not pairs",
+        (): unknown => response.writeHead(200, ["X-Set", "a", "X-B"]),
+        "ERR_INVALID_ARG_VALUE",
+      ],
+      [
+        "the reason phrase of the response",
+        (): unknown => {
+          response.statusMessage = "a\rb";
+          try {
+            return response.writeHead(200, { "X-B": "1" });
+          } finally {
+            response.statusMessage = "Made";
+          }
+        },
+        "ERR_INVALID_CHAR",
+      ],
+      [
+        "a trailer without chunks (once Node.js has changed the status)",
+        (): unknown => {
+          response.setHeader("Trailer", "X-T").setHeader("Content-Length", 1);
+          try {
+            return response.writeHead(202, "Taken");
+          } finally {
+            response.removeHeader("Trailer");
+            response.removeHeader("Content-Length");
+          }
+        },
+        "ERR_HTTP_TRAILER_INVALID",
+      ],
+    ] as const) {
+      throws(refused, { code }, name);
+      deepStrictEqual(state(), before, name);
+    }
+    // An empty name is skipped by Node.js (of a response with headers)
+    response[kValidateHead](200, { "": "\n" });
+    // An invalid status code is left to `writeHead()`
+    response[kValidateHead](1000, "a\nb");
+    throws(() => response.writeHead(1000, "a\nb"), {
+      code: "ERR_HTTP_INVALID_STATUS_CODE",
+    });
+    deepStrictEqual(state(), before);
+    response.writeHead(200, ["X-B", "1"]);
+    deepStrictEqual(
+      [response.statusCode, response.statusMessage, response.headersSent],
+      [200, "Made", true],
+    );
+  });
+
+  test("a send or a flush whose headers Node.js refuses rejects, and leaves no listener", async () => {
+    for (const refused of [
+      (r: BindenResponse): Promise<void> => r.send(),
+      (r: BindenResponse): Promise<void> => r.send("body"),
+      (r: BindenResponse): Promise<void> => r.flush(),
+      (r: BindenResponse): Promise<void> => r.status(205).send("body"),
+    ]) {
+      const response = detached();
+      response.statusMessage = "a\nb";
+      const listeners = (): number[] =>
+        ["finish", "close", "error"].map((event) =>
+          response.listenerCount(event),
+        );
+      const before = listeners();
+      // A promise, never a synchronous throw
+      const promise = refused(response);
+      await rejects(promise, { code: "ERR_INVALID_CHAR" });
+      deepStrictEqual(listeners(), before);
+      ok(!response.headersSent && !response.writableEnded);
+    }
   });
 
   test(".flush() sends the headers and what is written", async () => {
