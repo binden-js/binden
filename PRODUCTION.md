@@ -43,6 +43,9 @@ Two layers bound the time that a request takes:
   (e.g. for [server-sent events](#server-sent-events)).
 - Pass `context.signal` to the work of a request (e.g. `fetch()`, a database query): it stops when
   the client goes away, the deadline passes or the server shuts down.
+- The error handler gets the `503` of a deadline (`error.code === "deadline"`) with
+  `context.signal` already aborted: its reply must not depend on work bound to the signal, which
+  would fail at once (the client would get an empty `500`).
 
 ```typescript
 import { Binden, type Context, Router } from "binden";
@@ -430,7 +433,9 @@ app.use(compression).use("/account", new Router().get(account));
 A stream of events (`text/event-stream`) is long-lived, so it needs:
 
 - no deadline: `context.setTimeout(0)`, and the stream ends once `context.signal` is aborted;
-- an end before the drain timeout of the shutdown: the stream checks `isClosing(server)`;
+- an end before the drain timeout of the shutdown: the stream checks `isClosing(server)`, and is
+  woken while it waits for its next event by a signal that is aborted on `SIGTERM` (it would wait
+  otherwise until the drain timeout aborts `context.signal`);
 - no buffering: nginx buffers the responses unless they have `X-Accel-Buffering: no` (or
   `proxy_buffering off`), and closes a stream that is silent for `proxy_read_timeout` (60 s),
   which an event (or a comment, `: ping`) sent now and then prevents;
@@ -439,7 +444,13 @@ A stream of events (`text/event-stream`) is long-lived, so it needs:
 
 ```typescript
 import { setTimeout as sleep } from "node:timers/promises";
-import { Binden, type ContentType, type Context, isClosing } from "binden";
+import {
+  Binden,
+  type ContentType,
+  type Context,
+  isClosing,
+  shutdown,
+} from "binden";
 import { Compression, isCompressible } from "@binden/compression";
 
 const compression = new Compression({
@@ -447,8 +458,13 @@ const compression = new Compression({
     type?.type === "text/event-stream" || isCompressible(type),
 });
 
+// Aborted on `SIGTERM`: it wakes the streams that wait for their next event
+const closing = new AbortController();
+
 const events = async (context: Context): Promise<void> => {
-  const { response, signal } = context;
+  const { response } = context;
+  // The end of the request, or of the server
+  const signal = AbortSignal.any([context.signal, closing.signal]);
   context.setTimeout(0);
   context.done = true;
   response.setHeader("Content-Type", "text/event-stream");
@@ -466,6 +482,14 @@ const events = async (context: Context): Promise<void> => {
 const app = new Binden({ timeout: 30_000 }).use(compression);
 app.use("/events", events);
 const server = app.createServer({ keepAliveTimeout: 65_000 }).listen(8080);
+
+process.once("SIGTERM", () => {
+  closing.abort();
+  shutdown(server).catch((error: unknown) => {
+    process.stderr.write(`${String(error)}\n`);
+    process.exitCode = 1;
+  });
+});
 ```
 
 ## Security headers

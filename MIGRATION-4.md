@@ -186,6 +186,10 @@ the `Content-Type` that the route had set (e.g. `text/html`, which used to be ke
 - `Binden` is a `Stack`: `app.stack` lists the layers of `use()`, `route()` and `mount()`, whose
   path is a string, a RegExp, `null`, `{ route }` or `{ mount }`. A string path of `use()` still
   matches exactly; the new `route()` and `mount()` take [patterns with parameters](https://github.com/binden-js/binden/tree/main/packages/binden#stack-and-routing).
+- A RegExp path of `use()` keeps its flags (but `g` and `y`, which make `test()` stateful): it was
+  compiled again as `new RegExp(path, "u")`, which dropped its flags and added `u`. A flag such as
+  `i` now applies, and a RegExp that needs `u` (e.g. `/^\/\p{L}+$/u`, whose `\p{L}` is a literal
+  `p{L}` without it) must have it.
 
 ### Replies
 
