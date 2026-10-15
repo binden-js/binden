@@ -59,6 +59,12 @@ describe("the manifests of the workspaces", () => {
     }
   });
 
+  it("have no side effects", () => {
+    for (const { dir, manifest } of packages) {
+      equal(manifest.sideEffects, false, dir);
+    }
+  });
+
   it("publish their sources and their maps, but not their tests", () => {
     const { compilerOptions } = readJSON("tsconfig.base.json");
     equal(compilerOptions.sourceMap, true);
