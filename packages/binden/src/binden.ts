@@ -44,6 +44,7 @@ import { validateDelay } from "./delay.js";
  * synchronously: a promise (or any thenable) is not a state
  */
 export type IStateFactory<State extends object> = () => State & {
+  /** A state is not a promise: the factory is synchronous */
   readonly then?: never;
 };
 
