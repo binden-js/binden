@@ -234,6 +234,11 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   longer gets a default `Content-Type`.
 - The cookies of `response.cookies` are added when the headers are sent by any path (`writeHead()`,
   `write()`, `end()`, a piped stream), not only by `send()`.
+- `send()` with a `1xx` status rejects with a `TypeError` (use `writeEarlyHints()`). A string sent
+  with an `encoding` is encoded once: the bytes that it decodes to are sent, with their length. A
+  `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
+  default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A
+  `Readable` that has ended is an empty body, and one that has been destroyed rejects at once.
 - A middleware that sets `context.done` without starting a reply gets an empty response with the
   status and the headers set so far (the request used to stay pending). A stack that runs out once
   a response has started lets it finish, instead of replying `404`.

@@ -784,6 +784,16 @@ export class BindenResponse<
       return Promise.reject(
         new TypeError(`Unknown encoding: ${String(encoding)}`),
       );
+    } else if (BindenResponse.#informational(this.statusCode)) {
+      // Not a final response: the client would wait for the final one
+      if (data instanceof Readable) {
+        BindenResponse.#discard(data);
+      }
+      return Promise.reject(
+        new TypeError(
+          `Status code ${this.statusCode} is informational (use writeEarlyHints())`,
+        ),
+      );
     }
 
     if (data instanceof Readable) {
@@ -802,36 +812,40 @@ export class BindenResponse<
     // before (e.g. the client went away)
     const done = this.#finished(() => false);
 
-    if (typeof data === "undefined" || data === "" || this.destroyed) {
-      // Without a body, `HEAD` keeps the length it may have been given
-      this.#frame(this.req.method === "HEAD" ? null : 0);
+    if (typeof data === "undefined" || this.destroyed) {
+      // No body: as for `GET`, `Content-Length: 0`, but a valid length given
+      // to `HEAD` (of the body that `GET` would send) is kept
+      this.#frame(
+        this.req.method === "HEAD" && this.#length() !== null ? null : 0,
+      );
       this.end();
       return done;
     }
 
+    // Encoded once: the bytes give the length and the `ETag`, and are sent
     const body =
-      data instanceof Buffer || typeof data === "string"
-        ? data
-        : data.toString();
+      typeof data === "string"
+        ? Buffer.from(data, encoding)
+        : data instanceof Buffer
+          ? data
+          : Buffer.from(data.toString());
 
-    // Also on a `304` that stands for the `200` (see below)
+    // Only for a status with a body: also on a `304` that stands for the
+    // `200` (see below)
     if (
       !this.headersSent &&
       typeof this.getHeader("Content-Type") === "undefined" &&
-      (this.req.method === "HEAD" ||
-        !BindenResponse.#noContent(this.statusCode))
+      !BindenResponse.#noContent(this.statusCode)
     ) {
       this.setHeader("Content-Type", ct_text);
     }
 
-    const length = Buffer.byteLength(body, encoding);
-
-    if (this.#notModified(body, encoding)) {
-      this.#endNotModified(length);
+    if (this.#notModified(body)) {
+      this.#endNotModified(body.length);
       return done;
     }
 
-    this.#frame(length);
+    this.#frame(body.length);
 
     if (this.#bodiless()) {
       // The headers of the body (as for `GET`), but not the body itself
@@ -843,16 +857,11 @@ export class BindenResponse<
     // (e.g. the client went away) rejects, although Node.js 24 emits `finish`
     // once the response is ended. Its length keeps it from being chunked.
     return new Promise<void>((resolve, reject) => {
-      const written = (error?: Error | null): void => {
+      this.write(body, (error?: Error | null) => {
         if (error) {
           reject(error);
         }
-      };
-      if (typeof body === "string") {
-        this.write(body, encoding ?? "utf8", written);
-      } else {
-        this.write(body, written);
-      }
+      });
       this.end();
       done.then(resolve, reject);
     });
@@ -863,7 +872,7 @@ export class BindenResponse<
    * of a `200` response to `GET` or `HEAD` (unless it has one already), and
    * tells whether `If-None-Match` matches it (by the weak comparison)
    */
-  #notModified(body: Buffer | string, encoding?: BufferEncoding): boolean {
+  #notModified(body: Buffer): boolean {
     const { method = "GET", headers } = this.req;
     if (
       this.headersSent ||
@@ -875,9 +884,7 @@ export class BindenResponse<
     }
     let etag = this.getHeader("ETag");
     if (typeof etag === "undefined") {
-      const bytes =
-        typeof body === "string" ? Buffer.from(body, encoding) : body;
-      etag = `"${createHash("sha256").update(bytes).digest("base64url")}"`;
+      etag = `"${createHash("sha256").update(body).digest("base64url")}"`;
       this.setHeader("ETag", etag);
     }
     const ifNoneMatch = headers["if-none-match"];
@@ -1060,10 +1067,15 @@ export class BindenResponse<
     );
   }
 
+  /** An informational status (1xx): not of a final response */
+  static #informational(status: number): boolean {
+    return status >= 100 && status < 200;
+  }
+
   /** A status whose responses never have a body */
   static #noContent(status: number): boolean {
     return (
-      (status >= 100 && status < 200) ||
+      BindenResponse.#informational(status) ||
       status === 204 ||
       status === 205 ||
       status === 304
@@ -1113,14 +1125,16 @@ export class BindenResponse<
    * Writes a `Readable` into the response (with backpressure) and settles like
    * `#finished()`. The client has the whole response (and may close the
    * connection) once the `Content-Length` bytes are flushed to the connection,
-   * maybe before the source ends. The header is read when it is needed:
-   * compression removes it.
+   * maybe before the source ends.
    *
-   * A source that fails, closes before its end, or does not have exactly its
-   * `Content-Length` rejects. Nothing sent yet, the error can still be replied
-   * (see `.started`); otherwise the response is destroyed, so that a truncated
-   * body does not look complete, and more bytes are not read by the client as
-   * the next response of the connection.
+   * The `Content-Length` that the body declares is read once, before anything
+   * is written (a compression removes the header): a source that fails,
+   * closes before its end, or does not have exactly that length rejects.
+   * Nothing sent yet, the error can still be replied (see `.started`);
+   * otherwise the response is destroyed, so that a truncated body does not
+   * look complete, and more bytes are not read by the client as the next
+   * response of the connection. A source that has already ended is an empty
+   * body; one that has been destroyed before rejects at once.
    *
    * Once another writer has ended the response (e.g. a compression that has
    * replaced it with `406` when its first chunk committed the headers), the
@@ -1134,7 +1148,12 @@ export class BindenResponse<
    * the reason at once, and its source is released.
    */
   #pipe(data: Readable): Promise<void> {
+    if (!data.readableEnded && data.destroyed) {
+      // Nothing more of it can be read
+      return Promise.reject(BindenResponse.#premature());
+    }
     const operation = this.#operation();
+    const declared = this.#length();
     const key = {};
     let flushed = 0;
     let sent = 0;
@@ -1169,11 +1188,10 @@ export class BindenResponse<
         settle(error);
       };
       const end = (): void => {
-        const length = this.#length();
         if (settled) {
           return;
-        } else if (length !== null && sent < length) {
-          fail(BindenResponse.#mismatch(sent, length));
+        } else if (declared !== null && sent < declared) {
+          fail(BindenResponse.#mismatch(sent, declared));
         } else {
           this.end();
         }
@@ -1206,9 +1224,8 @@ export class BindenResponse<
             }
             try {
               const size = Buffer.byteLength(chunk);
-              const length = this.#length();
-              if (length !== null && sent + size > length) {
-                data.destroy(BindenResponse.#mismatch(sent + size, length));
+              if (declared !== null && sent + size > declared) {
+                data.destroy(BindenResponse.#mismatch(sent + size, declared));
                 return;
               }
               sent += size;
@@ -1251,6 +1268,10 @@ export class BindenResponse<
             });
           }
         });
+      if (data.readableEnded) {
+        // Its end has been read already: an empty body
+        end();
+      }
       done.then(
         () => {
           settle(null);
