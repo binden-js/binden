@@ -248,6 +248,8 @@ suite("Ownership of the response once the exchange is sealed", () => {
           response.addTrailers({ "X-Trailer": "late" });
           response.flushHeaders();
           response.writeHead(200, { "X-Head": "late" });
+          // The alias of Node.js 24 as well
+          response.writeHeader(200, { "X-Header": "late" });
           accepted = response.write("late", callback("write"));
           response.write("late", "utf8", callback("write-encoding"));
           response.end("late", callback("end"));
@@ -278,6 +280,7 @@ suite("Ownership of the response once the exchange is sealed", () => {
           "x-late-map",
           "x-set",
           "x-head",
+          "x-header",
           "vary",
           "content-disposition",
           "trailer",

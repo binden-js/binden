@@ -504,6 +504,27 @@ export class BindenResponse<
   }
 
   /**
+   * `writeHead()` by its deprecated alias (DEP0063), which Node.js 24 still
+   * has: on every version, it is `writeHead()` of the response, with its
+   * cookies and its guard once the response is sealed (the alias of Node.js
+   * would send the headers past both)
+   */
+  public writeHeader(
+    statusCode: number,
+    statusMessage?: string,
+    headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
+  ): this;
+  /** `writeHead()` without a reason phrase, by its deprecated alias */
+  public writeHeader(
+    statusCode: number,
+    headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
+  ): this;
+  public writeHeader(...args: unknown[]): this {
+    // The method of the response itself (e.g. of a compression)
+    return this.writeHead(...(args as [number, string]));
+  }
+
+  /**
    * The `Set-Cookie` values of the headers given to `writeHead()` (`null`
    * without one), and the other headers. Nested pairs (`[[name, value]]`) are
    * flattened, as the headers set before are merged with them.

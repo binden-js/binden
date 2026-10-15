@@ -153,6 +153,19 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
         cookies,
         { "x-a": "1" },
       ],
+      // The alias of Node.js 24, on every version
+      [
+        "writeHeader()",
+        (r): unknown => r.writeHeader(200, "Fine", { "X-A": "1" }),
+        cookies,
+        { "x-a": "1" },
+      ],
+      [
+        "writeHeader() without a reason",
+        (r): unknown => r.writeHeader(200),
+        cookies,
+        {},
+      ],
     ];
     for (const [name, writeHead, expected, extra] of cases) {
       const handled = app.handle((_request, response) => {
