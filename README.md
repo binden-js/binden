@@ -120,6 +120,13 @@ one is accepted:
   `@binden/logger`) depends on, until `thread-stream` is updated
   ([pinojs/thread-stream#228](https://github.com/pinojs/thread-stream/issues/228)).
   `npm run consumer:check` type checks the packed packages in both setups.
+- **Node.js sends the head of a queued response before its early hints.** For a pipelined request
+  whose response waits behind the previous one, Node.js 24 and 26 put the head of the response
+  before an informational response (`writeEarlyHints()`, …) when the first chunk of its body is a
+  `Buffer`, so that the client reads the `103` as the body (not reported upstream yet). binden works
+  around it by writing that first chunk as the `latin1` string of its bytes (see the
+  [README of binden](packages/binden/README.md)); a server that writes such responses without
+  binden is affected.
 
 ## Releases
 
