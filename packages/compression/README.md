@@ -84,9 +84,12 @@ new Binden().use(compression).createServer().listen(8080);
 ## When a response is compressed
 
 The decision is taken once for each response, when its status and its representation are known:
-whatever the following middlewares set before is taken into account. A response to `HEAD` gets
-exactly the headers of the response to `GET`. It is taken when its headers are committed (by
-`writeHead()`, `flushHeaders()`, `flush()`, or the first `write()` or `end()`), or before:
+whatever the following middlewares set before is taken into account. A response to `HEAD` gets the
+decision of the response to `GET`, by the same body: the chunk of its `end()` (which Node.js does
+not send), or the `Content-Length` of a stream that `send()` does not read for `HEAD` (a stream
+without one is a body of unknown length, not an empty one). It is taken when its headers are
+committed (by `writeHead()`, `flushHeaders()`, `flush()`, or the first `write()` or `end()`), or
+before:
 
 - `sendFile()`, and `send()` with the dynamic `ETag` of binden, choose the representation of their
   body before they evaluate the preconditions of the request (`If-Match`, `If-None-Match`, …), so

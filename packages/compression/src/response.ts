@@ -544,9 +544,12 @@ export class CompressedResponse {
    * The decision at the commit of the headers: the one of the representation
    * chosen for the body, otherwise the one of the response as it is (`size`
    * is the size of the whole body when `end()` writes it, `null` otherwise).
-   * A `304` gets the decision of the `200` that it stands for: its
-   * `Content-Length`, when it has one, is the length of that `200` (binden
-   * keeps it on the `304` of its dynamic `ETag` and of `sendFile()`).
+   * A response to `HEAD` gets the decision of `GET` by the same body: the one
+   * that its `end()` writes (which Node.js does not send), or the length that
+   * a writer that does not write it chooses (e.g. `send()` of a stream, which
+   * is not read). A `304` gets the decision of the `200` that it stands for:
+   * its `Content-Length`, when it has one, is the length of that `200`
+   * (binden keeps it on the `304` of its dynamic `ETag` and of `sendFile()`).
    */
   #outcome(size: number | null): IOutcome {
     const chosen = this.#chosen;
@@ -555,11 +558,10 @@ export class CompressedResponse {
       return chosen;
     }
     const response = this.#response;
-    const head = this.#context.request.method === "HEAD";
     // The body that `end()` writes is not the one of the `200` of a `304`
     return this.#decide(
       lengthOf(response.getHeader("Content-Length")) ??
-        (response.statusCode === 304 || head ? null : size),
+        (response.statusCode === 304 ? null : size),
     );
   }
 

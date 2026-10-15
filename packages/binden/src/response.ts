@@ -1276,7 +1276,9 @@ export class BindenResponse<
       if (this.#bodiless()) {
         // Nothing of the source would be sent: it is not read at all
         BindenResponse.#discard(data);
-        // The length that it declares, without a stale `Transfer-Encoding`
+        // The representation and the framing of the length that it declares
+        // (unknown without one, not empty), without a stale `Transfer-Encoding`
+        this[kRepresentation](this.#length());
         this.#frame(this.#length());
         return this.#end();
       }
