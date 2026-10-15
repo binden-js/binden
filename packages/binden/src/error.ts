@@ -74,6 +74,15 @@ function copyHeaders(
   return Object.freeze(Object.fromEntries(copy));
 }
 
+/** Whether a value is a plain object (of `Object`, or without a prototype) */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  return prototype === Object.prototype || prototype === null;
+}
+
 /** An HTTP error: its status code (400 to 599) is the status of the reply */
 export class BindenError extends Error {
   readonly #code: string | null;
@@ -84,8 +93,9 @@ export class BindenError extends Error {
 
   /**
    * An error of an HTTP status (400 to 599, a `RangeError` otherwise) whose
-   * reply the options describe: invalid options (e.g. a forbidden header) throw
-   * a `TypeError`
+   * reply the options describe: invalid options (e.g. a forbidden header, an
+   * `expose` that is not a boolean, a `json` that is not a plain object or a
+   * `message` that is not a string) throw a `TypeError`
    */
   public constructor(
     status: number,
@@ -106,6 +116,13 @@ export class BindenError extends Error {
       throw new RangeError("Status code is less than 400");
     } else if (typeof code !== "undefined" && typeof code !== "string") {
       throw new TypeError("`code` is not a string");
+    } else if (typeof expose !== "boolean") {
+      throw new TypeError("`expose` is not a boolean");
+    } else if (typeof json !== "undefined" && !isPlainObject(json)) {
+      // E.g. an array or a string, which `json` is not sent as
+      throw new TypeError("`json` is not a plain object");
+    } else if (typeof message !== "undefined" && typeof message !== "string") {
+      throw new TypeError("`message` is not a string");
     }
     const copy = copyHeaders(headers);
 
@@ -118,7 +135,7 @@ export class BindenError extends Error {
     this.name = "BindenError";
     this.#code = code ?? null;
     this.#headers = copy;
-    this.#expose = Boolean(expose);
+    this.#expose = expose;
     this.#json = json ?? null;
     this.#status = status;
   }

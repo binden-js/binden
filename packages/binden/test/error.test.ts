@@ -1,6 +1,6 @@
+import { BindenError, type IBindenErrorOptions } from "../index.js";
 import { deepStrictEqual, ok, throws } from "node:assert";
 import { suite, test } from "node:test";
-import { BindenError } from "../index.js";
 import { STATUS_CODES } from "node:http";
 
 suite("BindenError", () => {
@@ -124,6 +124,53 @@ suite("BindenError", () => {
         new TypeError(message),
       );
     }
+  });
+
+  test("constructor (invalid `expose`, `json` and `message`)", () => {
+    const invalid: [IBindenErrorOptions, string][] = [
+      [{ expose: "false" as unknown as boolean }, "`expose` is not a boolean"],
+      [{ expose: 1 as unknown as boolean }, "`expose` is not a boolean"],
+      [
+        {
+          expose: true,
+          json: [{ field: "name" }] as unknown as Record<string, unknown>,
+        },
+        "`json` is not a plain object",
+      ],
+      [
+        { json: "abc" as unknown as Record<string, unknown> },
+        "`json` is not a plain object",
+      ],
+      [
+        { json: null as unknown as Record<string, unknown> },
+        "`json` is not a plain object",
+      ],
+      [
+        { json: new Map() as unknown as Record<string, unknown> },
+        "`json` is not a plain object",
+      ],
+      [{ message: 42 as unknown as string }, "`message` is not a string"],
+      [{ message: null as unknown as string }, "`message` is not a string"],
+    ];
+    for (const [options, message] of invalid) {
+      throws(() => new BindenError(400, options), new TypeError(message));
+    }
+    // A plain object without a prototype, and the defaults
+    const json = Object.assign(Object.create(null) as object, { a: 1 });
+    deepStrictEqual(new BindenError(400, { json, expose: true }).json, {
+      a: 1,
+    });
+    // Options that are not set
+    const unset: unknown = Reflect.get({}, "unset");
+    const defaults = new BindenError(400, {
+      expose: unset,
+      json: unset,
+      message: unset,
+    } as IBindenErrorOptions);
+    deepStrictEqual(
+      [defaults.expose, defaults.json, defaults.message],
+      [false, null, "Bad Request"],
+    );
   });
 
   test("constructor (an unregistered status code)", () => {

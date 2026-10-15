@@ -94,6 +94,10 @@ a value of the wrong type throws a `TypeError` (e.g. `new Router({ guarded: 1 })
 without the methods of `ILogger`), and a value out of its range a `RangeError`. They used to be
 coerced or ignored.
 
+So does `new BindenError()` (and `context.throw()`): an `expose` that is not a boolean, a `json`
+that is not a plain object (e.g. an array, which was sent as an object with numeric keys) or a
+`message` that is not a string throws a `TypeError`.
+
 `IBindenOptions` is a type (with a `State` parameter), no longer an interface: an interface cannot
 extend it. Extend `IBindenBaseOptions` (every option but `state`) instead, or intersect the type
 (`IBindenOptions & { port: number }`):

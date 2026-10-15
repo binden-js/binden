@@ -607,8 +607,8 @@ const app = new Binden({
 
 `BindenError` represents an HTTP error, with a status code from 400 to 599 (an integer: anything else throws a `TypeError`, and one out of this range a `RangeError`). Its options:
 
-- `expose` (default `false`) - whether the default error handler sends `json` (as `application/json`) or `message` (as `text/plain; charset=utf-8`); otherwise the reply is empty;
-- `json`, `message` (default: the reason phrase of the status) and `cause`;
+- `expose` (a boolean, `false` by default) - whether the default error handler sends `json` (as `application/json`) or `message` (as `text/plain; charset=utf-8`); otherwise the reply is empty;
+- `json` (a plain object), `message` (a string, by default the reason phrase of the status) and `cause`: another `expose`, `json` or `message` throws a `TypeError`;
 - `code` - a machine-readable reason (such as `deadline`), which is logged but not sent;
 - `headers` - headers that the default error handler sends with the error (e.g. `Allow`, `Retry-After` or `WWW-Authenticate`). They are copied (and frozen) when the error is created, and checked: an invalid name or value (e.g. with `CR` or `LF`), a duplicate name, or a header of the framing, the representation or the connection (`Content-Length`, `Transfer-Encoding`, `Content-Encoding`, `Content-Range`, `Content-Type` or `Connection`) throws a `TypeError`.
 
