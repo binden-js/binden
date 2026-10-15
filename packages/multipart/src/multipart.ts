@@ -231,7 +231,28 @@ class Parser {
     }
     // A closed connection aborts the signal (`pipe` does not tell busboy)
     request.pipe(parser);
+    this.#watch();
     return this.#deferred.promise;
+  }
+
+  /**
+   * Watches the connection: once the response has finished, `context.signal`
+   * is no longer aborted when the client goes away, and Node.js no longer
+   * tells the request, but the connection closes (before, the signal is
+   * aborted first). A body that has been received whole is still read.
+   */
+  #watch(): void {
+    const { request } = this.#context;
+    const { socket } = request;
+    const closed = (): void => {
+      if (!request.complete) {
+        this.#refuse(abortError(null));
+      }
+    };
+    socket.once("close", closed);
+    this.#detach.push(() => {
+      socket.off("close", closed);
+    });
   }
 
   #onField(

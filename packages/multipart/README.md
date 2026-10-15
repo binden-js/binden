@@ -212,4 +212,6 @@ The `filename` of a file is the name that the client has sent, without its contr
 
 After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response that has already started destroys the request.
 
+A client that goes away is seen also when the parser is still reading once the response has finished (e.g. it was not awaited): `context.signal` is no longer aborted then, but the connection closes before the body has been received whole, and `run()` rejects with a `400` of code `aborted`. The streams of the files in progress are destroyed (a body received whole is still parsed).
+
 The middleware logs with `context.log`, as `{ middleware: "Multipart" }`.

@@ -82,6 +82,13 @@ describe("acceptance", { skip }, () => {
         "multipart (disk)": aborted,
         "multipart (stream, on_file never settles)": aborted,
         uploads_left: 0,
+        // The signal is no longer aborted once the response has finished
+        "multipart after the response": {
+          status: 200,
+          outcome: "400 aborted",
+          signal: null,
+          stream: "destroyed",
+        },
         sendFile: { ...closed, encoding: null },
         compression: { ...closed, encoding: "gzip", source_closed: true },
       },

@@ -1,3 +1,4 @@
+import { Agent, type IncomingMessage, request as httpRequest } from "node:http";
 import {
   Binden,
   BindenAbortError,
@@ -5,11 +6,21 @@ import {
   type Context,
   shutdown,
 } from "binden";
-import { deepEqual, ok } from "node:assert/strict";
-import { describe, it } from "node:test";
-import { listen, part, serve, sleep, type, upload, within } from "./helpers.js";
-import { Multipart } from "../index.js";
-import { request as httpRequest } from "node:http";
+import { type IMultipartOptions, Multipart } from "../index.js";
+import { type TestContext, describe, it } from "node:test";
+import {
+  body,
+  listen,
+  part,
+  send,
+  serve,
+  sleep,
+  type,
+  upload,
+  within,
+} from "./helpers.js";
+import { deepEqual, equal, ok } from "node:assert/strict";
+import { finished } from "node:stream/promises";
 import { once } from "node:events";
 
 /**
@@ -131,5 +142,153 @@ describe("Multipart (aborted request)", () => {
     // Then every connection is closed
     await within(reply.catch(() => null));
     await within(closed);
+  });
+});
+
+/** Ignores an error (e.g. of a connection that the test closes on purpose) */
+function ignore(): void {
+  // On purpose
+}
+
+/**
+ * The client of a parse that starts before the response, which finishes
+ * while the parse goes on: it sends the head of a body, reads the response,
+ * and goes away. Settles with what `run()` has settled with.
+ */
+async function afterResponse(
+  t: TestContext,
+  storage: IMultipartOptions["storage"],
+  reached: Promise<unknown>,
+): Promise<unknown> {
+  const { promise: settled, resolve: settle } =
+    Promise.withResolvers<unknown>();
+  const parser = new Multipart({ storage });
+  const { url } = await serve(t, [
+    async (context: Context): Promise<void> => {
+      // Not awaited: the response finishes while the body is read
+      parser.run(context).then(settle, settle);
+      await context.send("early");
+    },
+  ]);
+
+  const client = httpRequest(url, {
+    method: "POST",
+    headers: { "Content-Type": type, "Content-Length": 1 << 20 },
+  });
+  client.on("error", ignore);
+  client.write(part('name="file"; filename="file.txt"', "Hello"));
+  const [response] = (await within(once(client, "response"))) as [
+    IncomingMessage,
+  ];
+  response.resume();
+  await within(once(response, "end"));
+  await within(reached);
+  client.destroy();
+  return within(settled);
+}
+
+describe("Multipart (a client that goes away once the response has finished)", () => {
+  it("rejects with a `400` (memory storage)", async (t) => {
+    const settled = await afterResponse(t, "memory", Promise.resolve());
+
+    deepEqual(outcome(settled), [400, "aborted", "object"]);
+  });
+
+  it("rejects with a `400`, and destroys the stream of the file (stream storage)", async (t) => {
+    const { promise: reached, resolve: reach } = Promise.withResolvers<null>();
+    const { promise: streamed, resolve: stream } =
+      Promise.withResolvers<unknown>();
+    const settled = await afterResponse(
+      t,
+      {
+        on_file: async ({ stream: content }): Promise<void> => {
+          reach(null);
+          content.resume();
+          await finished(content).then(
+            () => {
+              stream("ended");
+            },
+            () => {
+              stream(content.destroyed ? "destroyed" : "failed");
+            },
+          );
+        },
+      },
+      reached,
+    );
+
+    deepEqual(outcome(settled), [400, "aborted", "object"]);
+    equal(await within(streamed), "destroyed");
+  });
+
+  it("parses a body received whole, also when its connection then closes", async (t) => {
+    const { promise: settled, resolve: settle } =
+      Promise.withResolvers<unknown>();
+    const { promise: closed, resolve: close } =
+      Promise.withResolvers<Context["request"]>();
+    const parser = new Multipart();
+    const { url } = await serve(t, [
+      async (context: Context): Promise<void> => {
+        const { request } = context;
+        parser.run(context).then(settle, settle);
+        // As if the rest of the body had been received, and were still on
+        // its way to the parser when the connection closes
+        request.complete = true;
+        request.socket.once("close", () => {
+          close(request);
+        });
+        await context.send("early");
+      },
+    ]);
+    const form = body(part('name="a"', "1"));
+
+    const client = httpRequest(url, {
+      method: "POST",
+      headers: { "Content-Type": type, "Content-Length": form.length },
+    });
+    client.on("error", ignore);
+    client.write(form.slice(0, 10));
+    const [response] = (await within(once(client, "response"))) as [
+      IncomingMessage,
+    ];
+    response.resume();
+    await within(once(response, "end"));
+    client.destroy();
+    const request = await within(closed);
+    request.push(form.slice(10));
+    request.push(null);
+
+    equal(typeof (await within(settled)), "undefined");
+    deepEqual([...(request.body as FormData)], [["a", "1"]]);
+  });
+
+  it("keeps no listener on a connection that is kept alive", async (t) => {
+    const counts: number[] = [];
+    const sockets = new Set<unknown>();
+    const parser = new Multipart();
+    const { url } = await serve(t, [
+      async (context: Context): Promise<void> => {
+        await parser.run(context);
+        const { socket } = context.request;
+        sockets.add(socket);
+        counts.push(socket.listenerCount("close"));
+        await context.send();
+      },
+    ]);
+    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+    t.after(() => {
+      agent.destroy();
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      const reply = await send(url, {
+        headers: { "Content-Type": type },
+        body: body(part('name="a"', "1")),
+        agent,
+      });
+      equal(reply.status, 200);
+    }
+
+    deepEqual([sockets.size, counts.length, new Set(counts).size], [1, 3, 1]);
   });
 });

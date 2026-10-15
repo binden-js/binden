@@ -3,7 +3,9 @@
 // settles), of a file sent by `sendFile()`, and of a compressed stream. Each time,
 // the work settles (nothing stays pending), `context.signal` is aborted
 // (`client_closed`), the cleanups run, and nothing is left: no temporary file, no
-// open file, no source that is not closed.
+// open file, no source that is not closed. A multipart body that is still read
+// once the response has finished settles too when its client goes away (the
+// signal is no longer aborted then), and the stream of its file is destroyed.
 import { Binden, type Context, Router } from "binden";
 import {
   closed,
@@ -12,6 +14,7 @@ import {
   multipart,
   openFiles,
   outcome,
+  read,
   reasonOf,
   serve,
   start,
@@ -27,6 +30,7 @@ import { BodyParser } from "@binden/body";
 import { Compression } from "@binden/compression";
 import { Multipart } from "@binden/multipart";
 import { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -147,6 +151,32 @@ const app = new Binden({ timeout: 30_000 })
     ),
   )
   .use(
+    "/after-response",
+    observe("multipart after the response", (context, current) => {
+      const parsed = new Multipart({
+        limit: 10 * MiB,
+        storage: {
+          on_file: ({ stream }): Promise<void> => {
+            current.reached.resolve(null);
+            stream.resume();
+            return finished(stream).then(
+              () => {
+                current.extra.stream = "ended";
+              },
+              () => {
+                current.extra.stream = stream.destroyed
+                  ? "destroyed"
+                  : "failed";
+              },
+            );
+          },
+        },
+      }).run(context);
+      // Not awaited before the response: it finishes while the body is read
+      return Promise.all([context.send("early"), parsed]);
+    }),
+  )
+  .use(
     "/file",
     observe("sendFile", (context, current) => {
       current.reached.resolve(null);
@@ -249,6 +279,38 @@ await eventually(
   "the private directories of the requests are removed",
 );
 results.uploads_left = readdirSync(uploads).length;
+
+// The response finishes while the multipart body is read: the client reads it,
+// then goes away in the middle of its file
+{
+  const name = "multipart after the response";
+  const current = scenarios.get(name);
+  if (typeof current === "undefined") {
+    throw new Error(`No scenario ${name}`);
+  }
+  const files = openFiles();
+  const { client, response } = start(port, "/after-response", {
+    method: "POST",
+    headers: {
+      "Content-Type": upload.type,
+      "Content-Length": upload.body.length,
+    },
+  });
+  client.on("error", () => {
+    // The connection is closed on purpose
+  });
+  client.write(upload.body.subarray(0, 64 * 1024));
+  const reply = await read(await response);
+  await current.reached.promise;
+  client.destroy();
+  const observed = await current.observed.promise;
+  await eventually(
+    () => typeof current.extra.stream === "string",
+    "the stream of the file has settled",
+  );
+  await closed(files, name);
+  results[name] = { status: reply.status, ...observed, ...current.extra };
+}
 
 // The downloads: the client reads the first bytes, then goes away
 for (const [name, path, headers] of [
