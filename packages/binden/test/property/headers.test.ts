@@ -85,6 +85,18 @@ function text(minLength = 0): fc.Arbitrary<string> {
   return fc.string({ unit: fieldValueChar, minLength, maxLength: 8 });
 }
 
+/**
+ * A string of any characters: those of field values, control characters,
+ * line terminators and code points above `\xFF`
+ */
+const anyText = fc.string({
+  unit: fc.oneof(
+    fieldValueChar,
+    fc.constantFrom("\0", "\n", "\r", "\x7F", "\u0100", "\u2028", "\u{1F600}"),
+  ),
+  maxLength: 8,
+});
+
 /** A header class: how its field values are parsed and serialized */
 interface IHeader<T, F> {
   /** Every element of a field value (`[]` for none) */
@@ -406,12 +418,13 @@ suite("Headers (properties)", () => {
       boundary: text(1),
       parameters,
     }),
-    // A `boundary` of `multipart/form-data` may be missing
+    // A `boundary` of `multipart/form-data` may be missing, and a value may
+    // have characters that a field value cannot carry
     any: fc.record({
       type: mediaType,
-      charset: fc.option(text()),
-      boundary: fc.option(text()),
-      parameters,
+      charset: fc.option(anyText),
+      boundary: fc.option(anyText),
+      parameters: fc.dictionary(token, anyText, { maxKeys: 3 }),
     }),
     // The media type and the charset in lowercase
     parsed: (fields) => {

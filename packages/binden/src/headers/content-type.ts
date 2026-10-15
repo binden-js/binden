@@ -1,4 +1,4 @@
-import { split, unquote } from "./list.js";
+import { fieldValue, split, unquote } from "./list.js";
 
 /** A media type of `Content-Type` and its parameters */
 export interface IContentType {
@@ -26,10 +26,6 @@ const mediaType = new RegExp(`^${token}/${token}$`, "u");
 /** The name of a parameter */
 const parameterName = new RegExp(`^${token}$`, "u");
 
-/** A value without control characters (but tabs), which a quoted string cannot have */
-// eslint-disable-next-line no-control-regex -- control characters on purpose
-const parameterValue = /^[^\u0000-\u0008\u000A-\u001F\u007F]*$/u;
-
 /** The `Content-Type` header (RFC 9110, section 8.3) */
 export class ContentType implements IContentType {
   readonly #type: string;
@@ -39,8 +35,9 @@ export class ContentType implements IContentType {
 
   /**
    * A media type (`type/subtype`, of tokens) with its parameters: a token as
-   * name, and a value without control characters (sent as a quoted string
-   * when it is not a token). Invalid ones throw a `TypeError`.
+   * name, and a value that a field value can carry (no control characters but
+   * tabs, nothing above `\xFF`), sent as a quoted string when it is not a
+   * token. Invalid ones throw a `TypeError`.
    */
   public constructor({
     type,
@@ -82,7 +79,7 @@ export class ContentType implements IContentType {
     for (const [name, value] of all) {
       if (!parameterName.test(name)) {
         throw new TypeError(`Invalid parameter name: ${name}`);
-      } else if (!parameterValue.test(value)) {
+      } else if (!fieldValue.test(value)) {
         throw new TypeError(`Invalid value of the parameter ${name}`);
       }
     }

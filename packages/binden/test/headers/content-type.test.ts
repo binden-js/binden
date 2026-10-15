@@ -196,6 +196,33 @@ suite("ContentType", () => {
     );
   });
 
+  test("constructor (values that a field value cannot carry)", () => {
+    const type = "text/plain";
+    // Above `\xFF`: `setHeader()` would refuse the serialization
+    for (const value of ["\u0100", "a\u{1F600}", "\u2028", "\0", "\x7F"]) {
+      throws(
+        () => new ContentType({ type, parameters: { a: value } }),
+        new TypeError("Invalid value of the parameter a"),
+        JSON.stringify(value),
+      );
+      throws(
+        () => new ContentType({ type, charset: value }),
+        new TypeError("Invalid value of the parameter charset"),
+      );
+      throws(
+        () => new ContentType({ type: "multipart/form-data", boundary: value }),
+        new TypeError("Invalid value of the parameter boundary"),
+      );
+      deepStrictEqual(ContentType.fromString(`${type}; a="${value}"`), null);
+    }
+    // obs-text and tabs are field values
+    const ct = new ContentType({ type, parameters: { a: "\xE9\t\xFF" } });
+    deepStrictEqual(ct.toString(), `${type}; a="\xE9\t\xFF"`);
+    deepStrictEqual(ContentType.fromString(ct.toString())?.parameters, {
+      a: "\xE9\t\xFF",
+    });
+  });
+
   test("parameters (quoted when they are not tokens)", () => {
     // The value of `charset` cannot add a parameter
     const injected = new ContentType({
