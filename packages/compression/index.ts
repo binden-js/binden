@@ -46,9 +46,10 @@ export interface ICompressionOptions extends IMiddlewareParams {
   threshold?: number | undefined;
   /**
    * Whether a response is compressed, by its `Content-Type` (`null` without a
-   * valid one), called synchronously when its headers are committed: it must
-   * return a boolean, anything else (e.g. a promise) is a configuration error
-   * that replaces the response with `500`. `isCompressible()` by default.
+   * valid one), called synchronously once, when its representation is chosen
+   * (see the README): it must return a boolean, anything else (e.g. a
+   * promise) is a configuration error that replaces the response with `500`.
+   * `isCompressible()` by default.
    */
   filter?: ICompressionFilter | undefined;
   /** The options of the `gzip` compressor */
@@ -98,7 +99,8 @@ function checkEncodings(encodings: unknown): readonly ICompressEncodings[] {
 
 /**
  * Compresses the responses (`br`, `gzip`, `deflate` and `zstd`). The decision
- * is taken for each response when its headers are committed: see the README.
+ * is taken once for each response, before its preconditions are evaluated or
+ * when its headers are committed: see the README.
  */
 export class Compression extends Middleware {
   readonly #settings: ISettings;
@@ -183,7 +185,9 @@ export class Compression extends Middleware {
   /**
    * Installs the compression on the response, unless its headers have been
    * sent (it is then left as it is) or a compression is installed on it
-   * already: the decision is taken when its headers are committed
+   * already: the decision is taken when its representation is chosen (by
+   * `sendFile()` and the dynamic `ETag` of binden), or else when its headers
+   * are committed
    */
   public run(context: Context): void {
     CompressedResponse.install(context, this.#settings);

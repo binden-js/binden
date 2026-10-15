@@ -6,14 +6,23 @@ import {
   redirectLocation,
 } from "./redirect.js";
 import {
+  type IRepresentation,
+  type IRepresentationNegotiator,
   type IResponseOperation,
   kCancel,
   kFramework,
+  kNegotiator,
   kOperation,
+  kRepresentation,
   kSeal,
   owners,
 } from "./seal.js";
-import { type ISendFileOptions, matches, sendFileTo } from "./send-file.js";
+import {
+  type ISendFileOptions,
+  preconditionsOf,
+  sendFileTo,
+  tagOf,
+} from "./send-file.js";
 import {
   IncomingMessage,
   type OutgoingHttpHeader,
@@ -25,6 +34,7 @@ import ContentType from "./headers/content-type.js";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
+import { parseHttpDate } from "./headers/http-date.js";
 
 /** The media type of `response.json()` */
 export const ct_json = "application/json";
@@ -123,6 +133,9 @@ const strictMediaType = new RegExp(
 /** Without `[kSeal]()`, nothing may mutate a sealed response */
 const never = (): boolean => false;
 
+/** The representation of a body that is sent as it is (see `[kRepresentation]()`) */
+const identity: IRepresentation = Object.freeze({ coding: null, status: null });
+
 /** What the operations of a response need from it (see `Operation`) */
 interface IRights {
   /** Whether the work of an owner may mutate the response */
@@ -216,6 +229,8 @@ export class BindenResponse<
   /** Set while the framework mutates the response (see `[kFramework]()`) */
   #forced = 0;
   #rights?: IRights;
+  /** How a library chooses the representation of the body (see `[kNegotiator]()`) */
+  #negotiator: IRepresentationNegotiator | null = null;
   #statusCode = 200;
   #statusMessage: string | undefined;
 
@@ -783,6 +798,44 @@ export class BindenResponse<
     return true;
   }
 
+  /**
+   * Lets a library (e.g. `@binden/compression`) choose the representation of
+   * the body of the response (see `[kRepresentation]()`)
+   *
+   * @internal
+   */
+  public [kNegotiator](negotiator: IRepresentationNegotiator): void {
+    this.#negotiator = negotiator;
+  }
+
+  /**
+   * The representation of a body of `length` bytes (`null` when it is not
+   * known), chosen before the preconditions of the request are evaluated
+   * (RFC 9110, section 13.2.2): the body as it is, unless a library (see
+   * `[kNegotiator]()`) codes it or replaces the response. The choice sends no
+   * header: the commit of the headers applies it. The work that may no
+   * longer mutate the response gets the body as it is (nothing of it is sent).
+   *
+   * @internal
+   */
+  public [kRepresentation](length: number | null): IRepresentation {
+    return this.#negotiator === null || !this.#allows()
+      ? identity
+      : this.#negotiator.choose(length);
+  }
+
+  /**
+   * The body that a representation has been chosen for is not sent (e.g. its
+   * stream has failed before its first chunk): the reply that replaces it
+   * gets a representation of its own. Not by the abandoned work, whose
+   * failure must not change the reply of the new owner.
+   */
+  #forget(): void {
+    if (this.#allows()) {
+      this.#negotiator?.forget();
+    }
+  }
+
   /** Send a response */
   public send(
     data?: Buffer | Readable | bigint | number | string,
@@ -862,8 +915,15 @@ export class BindenResponse<
       this.setHeader("Content-Type", ct_text);
     }
 
-    if (this.#notModified(body)) {
+    const status = this.#conditional(body);
+    if (status === 304) {
       this.#endNotModified(body.length);
+      return done;
+    } else if (status !== null) {
+      // Empty, also for `HEAD` (which would keep the length of a body)
+      this.statusCode = status;
+      this.#frame(0);
+      this.end();
       return done;
     }
 
@@ -890,30 +950,39 @@ export class BindenResponse<
   }
 
   /**
-   * With the dynamic `ETag` (see `options`), sets the strong `ETag` of a body
-   * of a `200` response to `GET` or `HEAD` (unless it has one already), and
-   * tells whether `If-None-Match` matches it (by the weak comparison)
+   * With the dynamic `ETag` (see `options`), for a body of a `200` response
+   * to `GET` or `HEAD`: sets its strong `ETag` (unless it has one already),
+   * chooses its representation (see `[kRepresentation]()`), then evaluates the
+   * preconditions of the request against the `ETag` of that representation
+   * and the `Last-Modified` of the response (RFC 9110, section 13.2.2). The
+   * status of the empty reply instead of the body: `304`, `412`, or the
+   * status that replaces the representation (e.g. `406 Not Acceptable`,
+   * whatever the preconditions are); `null` to send the body.
    */
-  #notModified(body: Buffer): boolean {
-    const { method = "GET", headers } = this.req;
+  #conditional(body: Buffer): number | null {
+    const { method = "GET" } = this.req;
     if (
       this.headersSent ||
       !this.options.etag ||
       this.statusCode !== 200 ||
       (method !== "GET" && method !== "HEAD")
     ) {
-      return false;
+      return null;
     }
     let etag = this.getHeader("ETag");
     if (typeof etag === "undefined") {
       etag = `"${createHash("sha256").update(body).digest("base64url")}"`;
       this.setHeader("ETag", etag);
     }
-    const ifNoneMatch = headers["if-none-match"];
-    return (
-      typeof ifNoneMatch === "string" &&
-      typeof etag === "string" &&
-      matches(ifNoneMatch, etag, false)
+    const representation = this[kRepresentation](body.length);
+    if (representation.status !== null) {
+      return representation.status;
+    }
+    const modified = this.getHeader("Last-Modified");
+    return preconditionsOf(
+      this.req,
+      tagOf(etag, representation),
+      typeof modified === "string" ? parseHttpDate(modified.trim()) : null,
     );
   }
 
@@ -1195,9 +1264,11 @@ export class BindenResponse<
           this.#pending.delete(key);
           if (error === null) {
             resolve();
-          } else {
-            reject(error);
+            return;
+          } else if (!this.headersSent) {
+            this.#forget();
           }
+          reject(error);
         }
       };
       const fail = (error: Error): void => {

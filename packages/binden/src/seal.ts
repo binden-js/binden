@@ -68,3 +68,65 @@ export interface IResponseOperation {
    */
   transfer(): void;
 }
+
+/**
+ * The key of the method of `BindenResponse` that chooses the representation
+ * of the body of a response before the preconditions of the request are
+ * evaluated: `response[kRepresentation](length)` (see `IRepresentation`),
+ * called by `sendFile()` and by the dynamic `ETag` of `send()`. For the
+ * packages of binden only.
+ *
+ * @internal
+ */
+export const kRepresentation: unique symbol = Symbol("binden.representation");
+
+/**
+ * The key of the method of `BindenResponse` that lets a library (e.g.
+ * `@binden/compression`) choose the representation of the body of a
+ * response: `response[kNegotiator](negotiator)` (see
+ * `IRepresentationNegotiator`). For the packages of binden only.
+ *
+ * @internal
+ */
+export const kNegotiator: unique symbol = Symbol("binden.negotiator");
+
+/**
+ * The representation of the body of a response, as it will be sent. For the
+ * packages of binden only.
+ *
+ * @internal
+ */
+export interface IRepresentation {
+  /**
+   * The content coding that a library applies to the body as it is sent
+   * (e.g. `gzip`): its `ETag` is then weak, and it has no ranges. `null` when
+   * the body is sent as it is.
+   */
+  readonly coding: string | null;
+  /**
+   * The status of the empty response that replaces the response (e.g. `406
+   * Not Acceptable`), whatever its preconditions: `null` when it is sent
+   */
+  readonly status: number | null;
+}
+
+/**
+ * How a library chooses the representation of the body of a response (see
+ * `kNegotiator`). For the packages of binden only.
+ *
+ * @internal
+ */
+export interface IRepresentationNegotiator {
+  /**
+   * The representation of a body of `length` bytes (`null` when it is not
+   * known), chosen before the headers are committed: the choice sends no
+   * header and starts no coding, and the commit of the headers applies it
+   */
+  choose(length: number | null): IRepresentation;
+  /**
+   * The body that the representation has been chosen for is not sent (e.g.
+   * its stream has failed before its first chunk): the commit of another
+   * reply chooses by itself
+   */
+  forget(): void;
+}

@@ -416,6 +416,12 @@ not compress (e.g. compressed images, archives, event streams) are sent as they 
 the quality 4. When the proxy (or a CDN) compresses the responses, leave the compression to it:
 compressing in both places only costs time.
 
+Conditional requests and ranges apply to the representation that is sent: a compressed one has a
+weak `ETag` and no ranges. A client that updates a resource with a strong `If-Match` (e.g. the
+`validator` of `sendFile()`) or resumes a download with `Range` gets them with
+`Accept-Encoding: identity` (archives and media, which are downloaded in ranges, are not compressed
+by default anyway).
+
 Compression over TLS can leak a secret of a response that also reflects the input of the request
 (e.g. a page with a CSRF token and the query of its URL: [BREACH](https://www.breachattack.com/)).
 Do not compress such responses:

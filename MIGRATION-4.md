@@ -540,8 +540,10 @@ headers are known:
   compressed. Nor is a response without a body, a range (`206`, `Content-Range`), an encoded
   response or one with `Cache-Control: no-transform`, even with a fixed `format`.
 - A compressed response loses its `Content-Length` and `Accept-Ranges`, and its strong `ETag`
-  becomes weak. A request whose `If-Match` lists the strong `ETag` of the response gets that
-  representation, uncompressed (a weak tag never meets a strong `If-Match`).
+  becomes weak. `sendFile()` and the dynamic `ETag` choose the representation before they evaluate
+  the preconditions: once compressed, a strong `If-Match` fails with `412 Precondition Failed` (a
+  weak tag never meets it), and `Range` is ignored (the whole compressed file is sent). A client
+  that needs either sends `Accept-Encoding: identity`.
 - `br` compresses with the quality 4 (it was 11, the default of `node:zlib`, which is meant for
   compression ahead of time).
 - A second compression of the same response does nothing (it added a second coding).

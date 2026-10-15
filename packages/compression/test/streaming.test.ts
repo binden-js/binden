@@ -5,6 +5,7 @@ import {
   type IServed,
   decode,
   fetchRaw,
+  gzips,
   sameBytes,
   serve,
   sleep,
@@ -16,30 +17,6 @@ import { deepStrictEqual, ok, rejects } from "node:assert";
 import { Readable } from "node:stream";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
-import zlib from "node:zlib";
-
-/** The compressors that `createGzip()` of `node:zlib` creates while `fn` runs */
-async function spy(
-  fn: (created: zlib.Gzip[]) => Promise<void>,
-): Promise<zlib.Gzip[]> {
-  const original = Object.getOwnPropertyDescriptor(zlib, "createGzip");
-  const create = original?.value as typeof zlib.createGzip;
-  const created: zlib.Gzip[] = [];
-  Object.defineProperty(zlib, "createGzip", {
-    ...original,
-    value: (options?: zlib.ZlibOptions): zlib.Gzip => {
-      const compressor = create(options);
-      created.push(compressor);
-      return compressor;
-    },
-  });
-  try {
-    await fn(created);
-  } finally {
-    Object.defineProperty(zlib, "createGzip", original as PropertyDescriptor);
-  }
-  return created;
-}
 
 /** Sends a request, and resolves with its response (not read) */
 async function respond(url: string): Promise<IncomingMessage> {
@@ -131,7 +108,7 @@ suite("Streaming through the compressor", () => {
         context.text(context.url.pathname === "/small" ? "small" : text(2048)),
       { format: "auto" },
     );
-    const created = await spy(async () => {
+    const created = await gzips(async () => {
       const gzip = { "Accept-Encoding": "gzip" };
       await fetchRaw(url, { path: "/small", headers: gzip });
       await fetchRaw(url, { headers: { "Accept-Encoding": "identity" } });
@@ -363,7 +340,7 @@ suite("Streaming through the compressor", () => {
   );
 
   test("a failure of the compressor closes the connection", async () => {
-    await spy(async (created) => {
+    await gzips(async (created) => {
       const url = await start(async (context) => {
         context.done = true;
         context.response.write("data");

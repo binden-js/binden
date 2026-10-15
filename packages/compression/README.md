@@ -60,7 +60,8 @@ XML (also as `+json` and `+xml`, such as `image/svg+xml`), JavaScript, WebAssemb
 fonts and images (`font/ttf`, `font/otf`, `image/bmp`, …). A response without a valid `Content-Type` is
 not compressed.
 
-`filter` is called synchronously, when the headers of a response are committed. It must return a
+`filter` is called synchronously, once per response, when its representation is chosen (see
+[When a response is compressed](#when-a-response-is-compressed)). It must return a
 boolean: anything else (a promise as well) is a configuration error, which is logged (`error`) and
 replaces the response with an empty `500 Internal Server Error`, as does a filter that throws.
 
@@ -80,10 +81,17 @@ new Binden().use(compression).createServer().listen(8080);
 
 ## When a response is compressed
 
-The decision is taken for each response when its headers are committed (by `writeHead()`,
-`flushHeaders()`, `flush()`, or the first `write()` or `end()`), when its status and its
-representation are known: whatever the following middlewares set before is taken into account. A
-response to `HEAD` gets exactly the headers of the response to `GET`.
+The decision is taken once for each response, when its status and its representation are known:
+whatever the following middlewares set before is taken into account. A response to `HEAD` gets
+exactly the headers of the response to `GET`. It is taken when its headers are committed (by
+`writeHead()`, `flushHeaders()`, `flush()`, or the first `write()` or `end()`), or before:
+
+- `sendFile()`, and `send()` with the dynamic `ETag` of binden, choose the representation of their
+  body before they evaluate the preconditions of the request (`If-Match`, `If-None-Match`, …), so
+  that these apply to the representation that is sent (see
+  [A compressed response](#a-compressed-response)). The choice sends no header and creates no
+  compressor: the commit of the headers applies it. A reply that replaces that body (e.g. of the
+  error handler, once the file has failed or the deadline has passed) gets a decision of its own.
 
 A response is sent as it is when:
 
@@ -93,7 +101,6 @@ A response is sent as it is when:
 - it has `Cache-Control: no-transform`;
 - `skipCompression()` has been called for it;
 - the `filter` refuses it, or its `Content-Length` is below the `threshold`;
-- the `If-Match` of the request lists its strong `ETag` (see [A compressed response](#a-compressed-response));
 - the compression ran once its headers had been sent (the response is not changed at all).
 
 A fixed `format` does not bypass any of these, and such a response is sent whatever the request
@@ -141,11 +148,15 @@ negotiates).
   nor sends chunks to a client that does not know them;
 - a strong `ETag` becomes weak (`W/"…"`, [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8.3.3)):
   it was set for the bytes of the uncompressed body. It still validates caches (`If-None-Match`
-  compares weakly), but no longer ranges (`If-Range`) nor `If-Match`. A request whose `If-Match` lists
-  the strong `ETag` (e.g. one that `sendFile()` has evaluated against its `validator`) therefore gets
-  the representation of that tag, uncompressed, whatever it accepts: compressed, it would no longer
-  meet the precondition ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.1)
-  compares `If-Match` strongly). `If-Match: *` matches any representation;
+  compares weakly), but no longer ranges (`If-Range`) nor `If-Match`, which
+  [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.1) compares strongly.
+  `sendFile()` and the dynamic `ETag` of binden evaluate the preconditions against the compressed
+  representation: a strong `If-Match` (e.g. the `validator` of a file) fails with an empty
+  `412 Precondition Failed`, without `Content-Encoding` (nothing is compressed), while
+  `If-Match: *` matches any representation. A request that must meet a strong `If-Match` accepts
+  the uncompressed representation only (`Accept-Encoding: identity`);
+- `sendFile()` sends a compressed file whole: `Range` (and `If-Range`) is ignored, as the ranges
+  would be of the compressed bytes. The uncompressed file keeps its ranges (`206`, `416`);
 - a `304 Not Modified` (e.g. of `sendFile()`, or of the dynamic `ETag` of binden) gets the same
   decision as the `200` that it stands for: the same `ETag` and `Vary`, without `Content-Length` and
   `Accept-Ranges` when the `200` is compressed, but without `Content-Encoding` (a cache that updates

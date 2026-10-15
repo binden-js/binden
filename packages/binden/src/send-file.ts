@@ -1,4 +1,5 @@
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
+import { type IRepresentation, kRepresentation } from "./seal.js";
 import native, { type PlatformPath, join } from "node:path";
 import { BindenError } from "./error.js";
 import { BindenRequest } from "./request.js";
@@ -6,7 +7,7 @@ import type { BindenResponse } from "./response.js";
 import ContentRange from "./headers/content-range.js";
 import ContentType from "./headers/content-type.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
-import type { IncomingHttpHeaders } from "node:http";
+import type { IncomingMessage } from "node:http";
 import Range from "./headers/range.js";
 import type { Readable } from "node:stream";
 import { constants } from "node:fs";
@@ -327,32 +328,52 @@ export function matches(
 }
 
 /**
- * The status of a request whose precondition fails, in the order of RFC 9110
- * (section 13.2.2), or `null` when they pass: `If-Match` (or else
- * `If-Unmodified-Since`), then `If-None-Match` (or else `If-Modified-Since`,
- * for `GET` and `HEAD`), with the `ETag` set on the response. The dates are
- * ignored without a `Last-Modified` (`lm`).
+ * The `ETag` of a representation (`null` without one): a strong one becomes
+ * weak when a library codes the body as it is sent, as it no longer stands
+ * for the bytes that are sent (RFC 9110, section 8.8.3.3)
  */
-function preconditions(
-  headers: IncomingHttpHeaders,
+export function tagOf(
   etag: unknown,
+  { coding }: IRepresentation,
+): string | null {
+  if (typeof etag !== "string") {
+    return null;
+  }
+  return coding === null || etag.startsWith("W/") ? etag : `W/${etag}`;
+}
+
+/**
+ * The status of a request whose precondition fails for a representation, in
+ * the order of RFC 9110 (section 13.2.2), or `null` when they pass:
+ * `If-Match` (or else `If-Unmodified-Since`) fails with `412`, then
+ * `If-None-Match` (or else `If-Modified-Since`, for `GET` and `HEAD`) matches
+ * with `304` for `GET` and `HEAD`, and `412` for the other methods. The
+ * entity-tags are compared with the `ETag` of the representation (`null`
+ * without one), the dates with its `Last-Modified` (ignored when `null`).
+ */
+export function preconditionsOf(
+  request: IncomingMessage,
+  etag: string | null,
   lm: Date | null,
-  read: boolean,
-  ims: IfModifiedSince | null,
 ): 304 | 412 | null {
-  const tag = typeof etag === "string" ? etag : null;
+  const { method = "GET", headers } = request;
+  const read = method === "GET" || method === "HEAD";
+  const ims =
+    request instanceof BindenRequest
+      ? request.if_modified_since
+      : IfModifiedSince.fromString(headers["if-modified-since"]);
   const ifMatch = headers["if-match"];
   const ius = parseHttpDate(headers["if-unmodified-since"]?.trim() ?? "");
   const ifNoneMatch = headers["if-none-match"];
   if (typeof ifMatch === "string") {
-    if (!matches(ifMatch, tag, true)) {
+    if (!matches(ifMatch, etag, true)) {
       return 412;
     }
   } else if (lm !== null && ius !== null && lm > ius) {
     return 412;
   }
   if (typeof ifNoneMatch === "string") {
-    if (matches(ifNoneMatch, tag, false)) {
+    if (matches(ifNoneMatch, etag, false)) {
       return read ? 304 : 412;
     }
   } else if (read && lm !== null && ims !== null && lm <= ims.date) {
@@ -509,20 +530,20 @@ export async function sendFileTo(
 
     setHeaders(response, parsed, location.name, lm, stats);
 
+    // The representation, before the preconditions (RFC 9110, section
+    // 13.2.2): a library may code the file as it is sent (e.g. a compression:
+    // its `ETag` is then weak, and it has no ranges), or replace the response
+    // (e.g. with `406 Not Acceptable`, whatever the preconditions are)
+    const representation = response[kRepresentation](size);
+    if (representation.status !== null) {
+      await response.status(representation.status).send();
+      return;
+    }
+
     const { req } = response;
     const { method = "GET", headers } = req;
-    const ims =
-      req instanceof BindenRequest
-        ? req.if_modified_since
-        : IfModifiedSince.fromString(headers["if-modified-since"]);
-
-    const failed = preconditions(
-      headers,
-      response.getHeader("ETag"),
-      lm,
-      method === "GET" || method === "HEAD",
-      ims,
-    );
+    const etag = response.getHeader("ETag");
+    const failed = preconditionsOf(req, tagOf(etag, representation), lm);
     if (failed === 304) {
       // With the length of the whole file, as the `200` that it stands for
       await notModified(size);
@@ -537,10 +558,12 @@ export async function sendFileTo(
       return;
     }
 
-    // Ranges apply to GET only (RFC 9110, section 14.2)
+    // Ranges apply to GET only (RFC 9110, section 14.2), and to the file as
+    // it is: a coded representation is sent whole
     const ranges =
       method !== "GET" ||
-      !ifRange(headers["if-range"], response.getHeader("ETag"), lm)
+      representation.coding !== null ||
+      !ifRange(headers["if-range"], etag, lm)
         ? []
         : req instanceof BindenRequest
           ? req.range

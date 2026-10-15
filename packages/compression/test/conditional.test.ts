@@ -4,6 +4,7 @@ import {
   type IServed,
   capture,
   fetchRaw,
+  gzips,
   none,
   serve,
   text,
@@ -202,135 +203,270 @@ suite("Conditional requests of compressed responses", () => {
       deepStrictEqual(identity.headers["accept-ranges"], "bytes");
       deepStrictEqual(identity.headers["content-length"], `${content.length}`);
 
-      // A range of the file as it is, whatever the request accepts
-      const range = { ...tagged, ...accepts.gzip, Range: "bytes=0-9" };
+      // The compressed representation is sent whole: it has no ranges
+      for (const range of [
+        { Range: "bytes=0-9" },
+        { Range: "bytes=0-9", "If-Range": String(identity.headers.etag) },
+        { Range: "bytes=0-9", "If-Range": String(gzip.headers.etag) },
+        { Range: `bytes=${content.length}-` },
+      ]) {
+        const whole = await fetchRaw(url, {
+          headers: { ...tagged, ...accepts.gzip, ...range },
+        });
+        deepStrictEqual(representation(whole), representation(gzip));
+        deepStrictEqual(whole.body, content);
+      }
+
+      // The ranges of the file as it is
+      const range = { ...tagged, ...accepts.identity, Range: "bytes=0-9" };
       const partial = await fetchRaw(url, { headers: range });
       deepStrictEqual(partial.status, 206);
       ok(!("content-encoding" in partial.headers));
       deepStrictEqual(partial.raw.toString(), content.slice(0, 10));
+      const unsatisfiable = await fetchRaw(url, {
+        headers: { ...range, Range: `bytes=${content.length}-` },
+      });
+      deepStrictEqual(unsatisfiable.status, 416);
 
-      // `If-Range` matches the strong tag of the file as it is only
+      // `If-Range` matches its strong tag only
       const strong = await fetchRaw(url, {
         headers: { ...range, "If-Range": String(identity.headers.etag) },
       });
       deepStrictEqual(strong.status, validator === null ? 200 : 206);
-      const weak = await fetchRaw(url, {
-        headers: { ...range, "If-Range": String(gzip.headers.etag) },
-      });
-      deepStrictEqual(weak.status, 200);
-      deepStrictEqual(weak.headers["content-encoding"], "gzip");
-      deepStrictEqual(weak.body, content);
+      deepStrictEqual(strong.raw.length, validator === null ? 4096 : 10);
     }
   });
 
-  test("`If-Match` met by the strong tag gets the representation of that tag", async () => {
+  test("`sendFile()`: the preconditions of the chosen representation", async () => {
     const tag = `"v1"`;
     served = await serve({}, new Compression(), (context: Context) =>
       context.response.sendFile(file, { validator: tag }),
     );
     const { url } = served;
-    const conditional = async (
+    const received = async (
       headers: Record<string, string>,
       method: string,
     ): Promise<Record<string, unknown>> => {
-      const received = await fetchRaw(url, { method, headers });
-      return { ...representation(received), body: received.body };
+      const response = await fetchRaw(url, { method, headers });
+      return { ...representation(response), body: response.body };
     };
+    const modified = String((await fetchRaw(url)).headers["last-modified"]);
+    const earlier = new Date(Date.parse(modified) - 1000).toUTCString();
 
     for (const method of ["GET", "HEAD"]) {
-      const body = method === "GET" ? content : "";
-      const identity = {
+      const compressed = {
         status: 200,
-        etag: tag,
+        etag: `W/${tag}`,
         vary: "Accept-Encoding",
+        encoding: "gzip",
+        length: none,
+        ranges: none,
+        body: method === "GET" ? content : "",
+      };
+      // Empty: no compressor, and no `Content-Encoding`
+      const failed = {
+        ...compressed,
+        status: 412,
+        encoding: none,
+        length: "0",
+        body: "",
+      };
+      const notModified = { ...compressed, status: 304, encoding: none };
+      const cases: [Record<string, string>, unknown][] = [
+        [{}, compressed],
+        // The strong comparison: the tag of the compressed representation is weak
+        [{ "If-Match": tag }, failed],
+        [{ "If-Match": `"a", ${tag}` }, failed],
+        [{ "If-Match": `W/${tag}` }, failed],
+        // Any representation
+        [{ "If-Match": "*" }, compressed],
+        [{ "If-Unmodified-Since": earlier }, failed],
+        [{ "If-Unmodified-Since": modified }, compressed],
+        // The weak comparison
+        [{ "If-None-Match": tag }, { ...notModified, body: "" }],
+        [{ "If-None-Match": `W/${tag}` }, { ...notModified, body: "" }],
+        [{ "If-Modified-Since": modified }, { ...notModified, body: "" }],
+        [{ "If-Modified-Since": earlier }, compressed],
+        // `If-Match` first
+        [{ "If-Match": tag, "If-None-Match": tag }, failed],
+      ];
+      const created = await gzips(async () => {
+        for (const [headers, expected] of cases) {
+          deepStrictEqual(
+            await received({ ...accepts.gzip, ...headers }, method),
+            expected,
+            `${method} ${JSON.stringify(headers)}`,
+          );
+        }
+      });
+      // Only for the compressed bodies of `GET`
+      deepStrictEqual(created.length, method === "GET" ? 4 : 0);
+
+      // The file as it is, which the request accepts: its strong tag
+      const identity = {
+        ...compressed,
+        etag: tag,
         encoding: none,
         length: `${content.length}`,
         ranges: "bytes",
-        body,
       };
-      for (const list of [tag, `"a", ${tag}`, `"a,b",${tag}`]) {
-        deepStrictEqual(
-          await conditional({ ...accepts.gzip, "If-Match": list }, method),
-          identity,
-          `${method} ${list}`,
-        );
-      }
-      // Whatever the request accepts
       deepStrictEqual(
-        await conditional({ ...accepts.refused, "If-Match": tag }, method),
+        await received({ ...accepts.identity, "If-Match": tag }, method),
         identity,
       );
-      // `*` matches any representation, a weak tag never matches
       deepStrictEqual(
-        await conditional({ ...accepts.gzip, "If-Match": "*" }, method),
-        {
-          ...identity,
-          etag: `W/${tag}`,
-          encoding: "gzip",
-          length: none,
-          ranges: none,
-        },
-      );
-      deepStrictEqual(
-        await conditional(
-          { ...accepts.gzip, "If-Match": `"a", W/${tag}` },
-          method,
-        ),
-        { ...identity, status: 412, vary: none, length: "0", body: "" },
-      );
-      // The `304` of the `200` that it stands for
-      deepStrictEqual(
-        await conditional(
-          { ...accepts.gzip, "If-Match": tag, "If-None-Match": tag },
+        await received(
+          { ...accepts.identity, "If-Match": tag, "If-None-Match": tag },
           method,
         ),
         { ...identity, status: 304, body: "" },
       );
     }
+
+    // Another method: a matching `If-None-Match` fails
+    const other = await fetchRaw(url, {
+      method: "POST",
+      headers: { ...accepts.gzip, "If-None-Match": tag },
+    });
+    deepStrictEqual(representation(other), {
+      status: 412,
+      etag: `W/${tag}`,
+      vary: "Accept-Encoding",
+      encoding: none,
+      length: "0",
+      ranges: none,
+    });
   });
 
-  test("`If-Match` met by the strong tag: a fixed format, and the dynamic `ETag`", async () => {
-    // The dynamic `ETag` has no precondition of its own: `If-Match` is not
-    // evaluated, but the representation of its tag is still selected
+  test("the dynamic `ETag`: the preconditions of the chosen representation", async () => {
+    const modified = "Wed, 01 Jan 2020 00:00:00 GMT";
+    const earlier = "Tue, 31 Dec 2019 23:59:59 GMT";
     served = await serve(
       { etag: true },
-      new Compression({ format: "gzip" }),
+      new Compression(),
       (context: Context) => {
-        if (context.url.pathname === "/weak") {
+        const { pathname } = context.url;
+        if (pathname === "/modified") {
+          context.setHeader("Last-Modified", modified);
+        } else if (pathname === "/weak") {
           context.setHeader("ETag", `W/"weak"`);
         }
         return context.text(content);
       },
     );
     const { url } = served;
-    const sent = await fetchRaw(url);
+    const received = async (
+      path: string,
+      headers: Record<string, string>,
+      method: string,
+    ): Promise<Record<string, unknown>> => {
+      const response = await fetchRaw(url, { path, method, headers });
+      return { ...representation(response), body: response.body };
+    };
+    const sent = await fetchRaw(url, { headers: accepts.gzip });
     const weak = String(sent.headers.etag);
     const strong = weak.replace(/^W\//u, "");
-    deepStrictEqual(
-      [sent.headers["content-encoding"], sent.body],
-      ["gzip", content],
-    );
-    const cases: [string, unknown[]][] = [
-      [strong, [strong, none]],
-      [`"other"`, [weak, "gzip"]],
-      // Not by the strong comparison
-      [weak, [weak, "gzip"]],
-    ];
-    for (const [list, expected] of cases) {
-      const received = await fetchRaw(url, { headers: { "If-Match": list } });
-      deepStrictEqual(
-        [received.headers.etag, received.headers["content-encoding"]],
-        expected,
-        list,
-      );
-      deepStrictEqual(received.body, content);
+    deepStrictEqual(sent.headers["content-encoding"], "gzip");
+    ok(weak.startsWith("W/"));
+
+    for (const method of ["GET", "HEAD"]) {
+      const compressed = {
+        status: 200,
+        etag: weak,
+        vary: "Accept-Encoding",
+        encoding: "gzip",
+        length: none,
+        ranges: none,
+        body: method === "GET" ? content : "",
+      };
+      const failed = {
+        ...compressed,
+        status: 412,
+        encoding: none,
+        length: "0",
+        body: "",
+      };
+      const notModified = {
+        ...compressed,
+        status: 304,
+        encoding: none,
+        body: "",
+      };
+      const cases: [string, Record<string, string>, unknown][] = [
+        ["/", {}, compressed],
+        ["/", { "If-Match": strong }, failed],
+        ["/", { "If-Match": weak }, failed],
+        ["/", { "If-Match": `"other"` }, failed],
+        ["/", { "If-Match": "*" }, compressed],
+        ["/", { "If-None-Match": strong }, notModified],
+        ["/", { "If-None-Match": weak }, notModified],
+        ["/", { "If-Match": strong, "If-None-Match": strong }, failed],
+        // The dates of the `Last-Modified` of the response
+        ["/modified", { "If-Unmodified-Since": earlier }, failed],
+        ["/modified", { "If-Unmodified-Since": modified }, compressed],
+        ["/modified", { "If-Modified-Since": modified }, notModified],
+        ["/modified", { "If-Modified-Since": earlier }, compressed],
+        // A weak tag of the application never meets `If-Match`
+        ["/weak", { "If-Match": `W/"weak"` }, { ...failed, etag: `W/"weak"` }],
+      ];
+      const created = await gzips(async () => {
+        for (const [path, headers, expected] of cases) {
+          deepStrictEqual(
+            await received(path, { ...accepts.gzip, ...headers }, method),
+            expected,
+            `${method} ${path} ${JSON.stringify(headers)}`,
+          );
+        }
+      });
+      deepStrictEqual(created.length, method === "GET" ? 4 : 0);
     }
-    // A weak tag is never met by `If-Match`
-    const weakly = await fetchRaw(url, {
-      path: "/weak",
-      headers: { "If-Match": `W/"weak"` },
-    });
-    deepStrictEqual(weakly.headers["content-encoding"], "gzip");
+  });
+
+  test("`406` takes precedence over the preconditions", async () => {
+    served = await serve(
+      { etag: true },
+      new Compression(),
+      async (context: Context) => {
+        await (context.url.pathname === "/file"
+          ? context.response.sendFile(file, { validator: `"v1"` })
+          : context.text(content));
+      },
+    );
+    const { url } = served;
+    const modified = String(
+      (await fetchRaw(url, { path: "/file" })).headers["last-modified"],
+    );
+    for (const path of ["/file", "/"]) {
+      for (const method of ["GET", "HEAD"]) {
+        for (const headers of [
+          {},
+          { "If-None-Match": "*" },
+          { "If-None-Match": `"v1"` },
+          { "If-Match": `"other"` },
+          { "If-Modified-Since": modified },
+          { "If-Unmodified-Since": "Thu, 01 Jan 1970 00:00:00 GMT" },
+        ]) {
+          const received = await fetchRaw(url, {
+            path,
+            method,
+            headers: { ...accepts.refused, ...headers },
+          });
+          deepStrictEqual(
+            representation(received),
+            {
+              status: 406,
+              etag: none,
+              vary: "Accept-Encoding",
+              encoding: none,
+              length: "0",
+              ranges: none,
+            },
+            `${method} ${path} ${JSON.stringify(headers)}`,
+          );
+          deepStrictEqual(received.raw.length, 0);
+        }
+      }
+    }
   });
 
   test("`sendFile()`: a small file keeps its strong validator on `304`", async () => {

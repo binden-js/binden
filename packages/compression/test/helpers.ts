@@ -49,6 +49,29 @@ export function text(size: number): string {
   return "Some text to compress. ".repeat(Math.ceil(size / 23)).slice(0, size);
 }
 
+/** The compressors that `createGzip()` of `node:zlib` creates while `fn` runs */
+export async function gzips(
+  fn: (created: readonly zlib.Gzip[]) => Promise<void>,
+): Promise<zlib.Gzip[]> {
+  const original = Object.getOwnPropertyDescriptor(zlib, "createGzip");
+  const create = original?.value as typeof zlib.createGzip;
+  const created: zlib.Gzip[] = [];
+  Object.defineProperty(zlib, "createGzip", {
+    ...original,
+    value: (options?: zlib.ZlibOptions): zlib.Gzip => {
+      const compressor = create(options);
+      created.push(compressor);
+      return compressor;
+    },
+  });
+  try {
+    await fn(created);
+  } finally {
+    Object.defineProperty(zlib, "createGzip", original as PropertyDescriptor);
+  }
+  return created;
+}
+
 /** `undefined`, which the linter does not let the tests write */
 export const none = ({} as { value?: undefined }).value;
 

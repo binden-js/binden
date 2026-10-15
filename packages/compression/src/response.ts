@@ -3,7 +3,9 @@ import {
   type BindenResponse,
   ContentType,
   type Context,
+  type IRepresentation,
   type IResponseOperation,
+  kNegotiator,
   kOperation,
 } from "binden";
 import {
@@ -38,11 +40,15 @@ export interface ISettings {
 /**
  * What a response becomes once its headers are committed: sent as it is,
  * compressed, or replaced with an empty one (`406`, or `500` for a `filter`
- * that has failed)
+ * that has failed); `vary` when it depends on `Accept-Encoding`
  */
 type IOutcome =
-  | { readonly kind: "as_is" }
-  | { readonly kind: "compress"; readonly coding: ICompressEncodings }
+  | { readonly kind: "as_is"; readonly vary: boolean }
+  | {
+      readonly kind: "compress";
+      readonly coding: ICompressEncodings;
+      readonly vary: boolean;
+    }
   | { readonly kind: "replace"; readonly status: 406 | 500 };
 
 /**
@@ -56,7 +62,7 @@ type IResponse = BindenResponse<BindenRequest>;
 
 type ICallback = (error?: Error | null) => void;
 
-const AS_IS: IOutcome = { kind: "as_is" };
+const AS_IS: IOutcome = { kind: "as_is", vary: false };
 
 /** The headers of a representation, which an empty replacement does not have */
 const representation = [
@@ -72,9 +78,6 @@ const representation = [
   "Last-Modified",
   "Transfer-Encoding",
 ];
-
-/** The entity-tags of a list (RFC 9110, section 8.8.3), weak or strong */
-const entityTags = /(?:W\/)?"[^"]*"/gu;
 
 /** The responses that a compression has been installed on */
 const installed = new WeakSet<object>();
@@ -196,7 +199,8 @@ export function skip(response: object): void {
  * itself, so that every writer (the following middlewares, `sendFile()`, the
  * error handler) goes through it, and the decision is taken once, when the
  * headers are committed: by `writeHead()`, `flushHeaders()` (and `flush()`),
- * or the first `write()` or `end()`.
+ * or the first `write()` or `end()`. binden may ask for it before (see
+ * `#choose()`): the commit then applies that decision.
  */
 export class CompressedResponse {
   readonly #context: Context;
@@ -208,6 +212,12 @@ export class CompressedResponse {
   readonly #end: IResponse["end"];
   readonly #flush: IResponse["flush"];
   #sink: ISink = "pending";
+  /**
+   * The decision that the representation chosen for the body (see
+   * `#choose()`) has taken before the headers are committed, which applies
+   * it: `null` without one
+   */
+  #chosen: IOutcome | null = null;
   #compressor: ICompressor | null = null;
   /** The flush of the coding of the compressor (see `flushKind()`) */
   #kind = 0;
@@ -252,9 +262,18 @@ export class CompressedResponse {
     new CompressedResponse(context, settings).#hook();
   }
 
-  /** Replaces the methods of the response */
+  /**
+   * Replaces the methods of the response, and chooses the representation of
+   * its body for binden (see `IRepresentationNegotiator`)
+   */
   #hook(): void {
     const response = this.#response;
+    response[kNegotiator]({
+      choose: (length: number | null): IRepresentation => this.#choose(length),
+      forget: (): void => {
+        this.#chosen = null;
+      },
+    });
     response.writeHead = (...args: unknown[]): IResponse =>
       this.#onWriteHead(args);
     response.write = (...args: unknown[]): boolean => this.#onWrite(args);
@@ -324,7 +343,7 @@ export class CompressedResponse {
       return Reflect.apply(this.#writeHead, response, args) as IResponse;
     }
     response.statusCode = status;
-    this.#apply(this.#decide(null));
+    this.#apply(this.#outcome(null));
     // Decided now (the type does not see it)
     if ((this.#sink as ISink) === "discard") {
       return response;
@@ -444,20 +463,56 @@ export class CompressedResponse {
       this.#sink = "as_is";
       return;
     }
-    this.#apply(this.#decide(size));
+    this.#apply(this.#outcome(size));
     if (this.#sink === "compressor") {
       this.#writeHead(response.statusCode);
     }
   }
 
   /**
-   * The decision, by the status and the headers of the response, the same
-   * for `GET` and `HEAD`. A `304` gets the decision of the `200` that it
-   * stands for: the same validators and `Vary`, without a body. Its
+   * The representation of a body of `length` bytes (`null` when it is not
+   * known), chosen for binden before the preconditions of the request are
+   * evaluated (see `IRepresentationNegotiator`): nothing is sent nor changed,
+   * and no compressor is created. The commit of the headers applies it.
+   */
+  #choose(length: number | null): IRepresentation {
+    const outcome = this.#decide(length);
+    this.#chosen = outcome;
+    return {
+      coding: outcome.kind === "compress" ? outcome.coding : null,
+      status: outcome.kind === "replace" ? outcome.status : null,
+    };
+  }
+
+  /**
+   * The decision at the commit of the headers: the one of the representation
+   * chosen for the body, otherwise the one of the response as it is (`size`
+   * is the size of the whole body when `end()` writes it, `null` otherwise).
+   * A `304` gets the decision of the `200` that it stands for: its
    * `Content-Length`, when it has one, is the length of that `200` (binden
    * keeps it on the `304` of its dynamic `ETag` and of `sendFile()`).
    */
-  #decide(size: number | null): IOutcome {
+  #outcome(size: number | null): IOutcome {
+    const chosen = this.#chosen;
+    if (chosen !== null) {
+      this.#chosen = null;
+      return chosen;
+    }
+    const response = this.#response;
+    const head = this.#context.request.method === "HEAD";
+    // The body that `end()` writes is not the one of the `200` of a `304`
+    return this.#decide(
+      lengthOf(response.getHeader("Content-Length")) ??
+        (response.statusCode === 304 || head ? null : size),
+    );
+  }
+
+  /**
+   * The decision for a body of `length` bytes (`null` when it is not known),
+   * by the status and the headers of the response, the same for `GET` and
+   * `HEAD`: it changes nothing (see `#apply()`)
+   */
+  #decide(length: number | null): IOutcome {
     const { request } = this.#context;
     const response = this.#response;
     const status = response.statusCode;
@@ -472,28 +527,14 @@ export class CompressedResponse {
       return AS_IS;
     }
     const encoding = response.getHeader("Content-Encoding");
-    if (typeof encoding !== "undefined") {
-      if (!isIdentity(encoding)) {
-        // Encoded already (e.g. a precompressed file)
-        return AS_IS;
-      }
-      // Not a content coding (RFC 9110, section 8.4.1)
-      response.removeHeader("Content-Encoding");
-    }
     if (
+      // Encoded already (e.g. a precompressed file)
+      (typeof encoding !== "undefined" && !isIdentity(encoding)) ||
       noTransform(response.getHeader("Cache-Control")) ||
-      skipped.has(response)
-    ) {
-      return AS_IS;
-    }
-
-    const head = request.method === "HEAD";
-    // The body that `end()` writes is not the one of the `200` of a `304`
-    const length =
-      lengthOf(response.getHeader("Content-Length")) ??
-      (status === 304 || head ? null : size);
-    if (length === 0) {
+      skipped.has(response) ||
       // No body
+      length === 0
+    ) {
       return AS_IS;
     }
     const filtered = this.#filter();
@@ -507,41 +548,16 @@ export class CompressedResponse {
     }
 
     const { format, encodings } = this.#settings;
-    if (format === "auto") {
-      response.vary("Accept-Encoding");
-    }
-    if (this.#matched()) {
-      // `If-Match` has been met by the strong tag of the representation as it
-      // is: that representation is sent (whatever the request accepts), as a
-      // compressed one has a weak tag, which `If-Match` never matches
-      return AS_IS;
-    } else if (format !== "auto") {
-      return { kind: "compress", coding: format };
+    if (format !== "auto") {
+      return { kind: "compress", coding: format, vary: false };
     }
     const coding = negotiate(request.headers["accept-encoding"], encodings);
     if (coding === "identity") {
-      return AS_IS;
+      return { kind: "as_is", vary: true };
     } else if (coding === false) {
       return { kind: "replace", status: 406 };
     }
-    return { kind: "compress", coding };
-  }
-
-  /**
-   * Whether `If-Match` lists the strong `ETag` of the response, by the strong
-   * comparison (RFC 9110, section 13.1.1): the precondition holds for the
-   * representation as it is (e.g. `sendFile()` has evaluated it), and would
-   * not for a compressed one, whose tag is weak
-   */
-  #matched(): boolean {
-    const etag = this.#response.getHeader("ETag");
-    const list = this.#context.request.headers["if-match"];
-    return (
-      typeof etag === "string" &&
-      !etag.startsWith("W/") &&
-      typeof list === "string" &&
-      list.match(entityTags)?.includes(etag) === true
-    );
+    return { kind: "compress", coding, vary: true };
   }
 
   /**
@@ -575,29 +591,53 @@ export class CompressedResponse {
     if (outcome.kind === "replace") {
       this.#replace(outcome.status);
       return;
-    } else if (outcome.kind === "compress") {
-      // A `304` has no body, nor its encoding (a cache would update the
-      // stored response with it)
-      const bodiless = response.statusCode === 304;
-      this.#remove("Content-Length", "Accept-Ranges");
-      // A strong validator of the uncompressed body does not validate the
-      // compressed one (RFC 9110, section 8.8.3.3): it becomes weak
-      const etag = response.getHeader("ETag");
-      if (typeof etag === "string" && !etag.startsWith("W/")) {
-        response.setHeader("ETag", `W/${etag}`);
-      }
-      if (!bodiless) {
-        response.setHeader("Content-Encoding", outcome.coding);
-        this.#frame();
-      }
-      if (!bodiless && this.#context.request.method !== "HEAD") {
-        this.#kind = flushKind(outcome.coding);
-        this.#compressor = this.#start(outcome.coding);
-        this.#sink = "compressor";
-        return;
-      }
+    }
+    const encoding = response.getHeader("Content-Encoding");
+    if (typeof encoding !== "undefined" && isIdentity(encoding)) {
+      // Not a content coding (RFC 9110, section 8.4.1)
+      response.removeHeader("Content-Encoding");
+    }
+    if (outcome.vary) {
+      response.vary("Accept-Encoding");
+    }
+    if (outcome.kind === "compress" && this.#code(outcome.coding)) {
+      this.#kind = flushKind(outcome.coding);
+      this.#compressor = this.#start(outcome.coding);
+      this.#sink = "compressor";
+      return;
     }
     this.#sink = "as_is";
+  }
+
+  /**
+   * Sets the headers of the compressed representation: whether its body
+   * goes to a compressor. A `304` stands for the compressed `200`, whose
+   * length is not known, without its body nor its encoding (a cache would
+   * update the stored response with it); an empty body (e.g. of the `412`
+   * of a failed precondition of the compressed representation) is not
+   * compressed either. A response to `HEAD` gets the headers of `GET`.
+   */
+  #code(coding: ICompressEncodings): boolean {
+    const response = this.#response;
+    const status = response.statusCode;
+    const empty =
+      status !== 304 && lengthOf(response.getHeader("Content-Length")) === 0;
+    if (!empty) {
+      this.#remove("Content-Length");
+    }
+    this.#remove("Accept-Ranges");
+    // A strong validator of the uncompressed body does not validate the
+    // compressed one (RFC 9110, section 8.8.3.3): it becomes weak
+    const etag = response.getHeader("ETag");
+    if (typeof etag === "string" && !etag.startsWith("W/")) {
+      response.setHeader("ETag", `W/${etag}`);
+    }
+    if (status === 304 || empty) {
+      return false;
+    }
+    response.setHeader("Content-Encoding", coding);
+    this.#frame();
+    return this.#context.request.method !== "HEAD";
   }
 
   /**
@@ -638,6 +678,10 @@ export class CompressedResponse {
   #replace(status: 406 | 500): void {
     const response = this.#response;
     this.#remove(...representation);
+    if (status === 406) {
+      // The request has refused every representation
+      response.vary("Accept-Encoding");
+    }
     response.setHeader("Content-Length", 0);
     this.#sink = "discard";
     this.#writeHead(status, STATUS_CODES[status] as string);

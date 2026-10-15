@@ -21,7 +21,14 @@ export * from "./src/binden.js";
 export * from "./src/middleware.js";
 export * from "./src/request.js";
 export * from "./src/response.js";
-export { type IResponseOperation, kOperation } from "./src/seal.js";
+export {
+  type IRepresentation,
+  type IRepresentationNegotiator,
+  type IResponseOperation,
+  kNegotiator,
+  kOperation,
+  kRepresentation,
+} from "./src/seal.js";
 export type { IRedirectOptions, IRedirectStatus } from "./src/redirect.js";
 export type { ISendFileOptions } from "./src/send-file.js";
 export * from "./src/router.js";
