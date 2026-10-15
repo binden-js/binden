@@ -29,9 +29,9 @@ other.createServer().listen(8081);
 The compression replaces `writeHead()`, `write()`, `end()` and `flush()` on the response of each
 request, so that every writer (the following middlewares, `send()`, `sendFile()`, the error handler, a
 piped stream) goes through it. It is installed once per response: a second compression on the
-same response does nothing. A head that Node.js refuses (e.g. a reason phrase with a line break, or
-a `Trailer` of a body that is not chunked) throws as without a compression, and leaves nothing of the
-decision: the error is replied with a decision of its own.
+same response does nothing. A head that Node.js refuses (e.g. a reason phrase with a line break,
+or a `Trailer` of a body that is not chunked) throws as without a compression, and leaves nothing
+of the decision: the error is replied with a decision of its own.
 
 ## Options
 

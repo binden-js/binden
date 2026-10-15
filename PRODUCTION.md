@@ -434,6 +434,13 @@ weak `ETag` and no ranges. A client that updates a resource with a strong `If-Ma
 `Accept-Encoding: identity` (archives and media, which are downloaded in ranges, are not compressed
 by default anyway).
 
+The decision is taken once per response, as soon as the reply starts (`send()`, `sendFile()`, or
+a first write): set its status, its `Content-Type`, `Cache-Control: no-transform` or
+`skipCompression()` before. A compressed response loses the `Content-Digest`, `Repr-Digest` and
+`Digest` of the uncompressed body, which it no longer matches: a response that must carry a
+digest is sent with `skipCompression()` (or compressed ahead of time, with the digest of the
+compressed bytes and its `Content-Encoding`).
+
 Compression over TLS can leak a secret of a response that also reflects the input of the request
 (e.g. a page with a CSRF token and the query of its URL: [BREACH](https://www.breachattack.com/)).
 Do not compress such responses:

@@ -556,7 +556,18 @@ headers are known:
 - `br` compresses with the quality 4 (it was 11, the default of `node:zlib`, which is meant for
   compression ahead of time).
 - A second compression of the same response does nothing (it added a second coding).
-- The `IComressFormats` type is renamed `ICompressFormats`.
+- A response to `HEAD` gets the decision of `GET` by the same body: the chunk of its `end()`, or
+  the `Content-Length` of a stream that `send()` does not read (without one, a body of unknown
+  length, never an empty one).
+- What the decision reads (the status, the headers of the representation, `skipCompression()`) is
+  set before the reply starts (`send()`, `sendFile()`, or a first write), which may choose the
+  representation at once. Once the work of a request is abandoned (e.g. at its deadline),
+  `skipCompression()` and the `run()` of a compression are ignored.
+- `Content-Digest`, `Repr-Digest` and `Digest` are removed from a compressed response and from
+  the empty `406` and `500` that replace a response: they were kept for a body they no longer
+  matched.
+- A reason phrase, a header or a status that Node.js refuses throws before the decision (or leaves
+  nothing of it), and the error is replied as without a compression, without compressed bytes.
 
 ```diff
 -import type { IComressFormats } from "@binden/compression";
