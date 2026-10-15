@@ -363,7 +363,7 @@ suite("BodyParser (zstd frames)", () => {
 
       test("the decoder gets a piece once it has taken the previous one", async () => {
         // Incompressible: more than the buffers of the decoder
-        const data = randomBytes(512 * 1024);
+        const data = randomBytes(2 * 1024 * 1024);
         const half = data.length / 2;
         const parts = [
           zstdCompressSync(data.subarray(0, half)),
