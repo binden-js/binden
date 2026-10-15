@@ -47,8 +47,10 @@ Two layers bound the time that a request takes:
   `context.signal` already aborted: its reply must not depend on work bound to the signal, which
   would fail at once (the client would get an empty `500`).
 - Once the deadline has passed, the work that still runs can no longer change the response (its
-  writes, headers, status and cookies are ignored), and a stream or a file whose headers are not
-  sent yet is cancelled, so that the `503` is sent at once. An error handler that has ended its
+  writes, headers, status and cookies are ignored, also from the listeners of `context.signal` and
+  from a `catch` of the work that the signal has stopped), and a stream or a file whose headers
+  are not sent yet is cancelled, so that the `503` is sent at once. A deadline that passes while
+  the error handler runs for another error takes the reply over the same way. An error handler that has ended its
   reply when `error_handler_timeout` passes is not cut: a slow client still gets all of it.
 
 ```typescript

@@ -154,6 +154,12 @@ const UNMATCHED = "<unmatched>";
 /** The outcome of an `error_handler` that has not settled in time */
 const EXPIRED = Symbol("expired");
 
+/**
+ * The outcome of an `error_handler` that was still running once the deadline
+ * passed: the reply of the deadline has taken over (see `#deadline()`)
+ */
+const SUPERSEDED = Symbol("superseded");
+
 /** The context of a request, which a middleware may replace */
 interface IRun {
   context: Context;
@@ -442,26 +448,27 @@ export class Binden<
       // A failure once aborted is a consequence (e.g. of the client going away)
       await this.#aborted(context, exchange);
       return;
-    } else if (failure) {
-      await this.#errorHandler(context, exchange, failure.error);
     }
 
-    if (!signal.aborted) {
-      signal.addEventListener(
-        "abort",
-        () => {
-          const { reason } = signal as { reason: BindenAbortError };
-          if (reason.reason === "deadline") {
-            this.#deadline(context, exchange).catch((error: unknown) => {
-              // Unexpected (every failure is handled)
-              const message = "The request has failed";
-              context.log.error(message, this.#failure(context, error, "send"));
-              context.response[kFramework](() => context.response.destroy());
-            });
-          }
-        },
-        { once: true },
-      );
+    // From now on, also while the error handler runs, a deadline replies by
+    // itself (the error handler is then abandoned, see `#bounded()`)
+    signal.addEventListener(
+      "abort",
+      () => {
+        const { reason } = signal as { reason: BindenAbortError };
+        if (reason.reason === "deadline") {
+          this.#deadline(context, exchange).catch((error: unknown) => {
+            // Unexpected (every failure is handled)
+            const message = "The request has failed";
+            context.log.error(message, this.#failure(context, error, "send"));
+            context.response[kFramework](() => context.response.destroy());
+          });
+        }
+      },
+      { once: true },
+    );
+    if (failure) {
+      await this.#errorHandler(context, exchange, failure.error);
     }
   }
 
@@ -698,6 +705,7 @@ export class Binden<
    */
   async #deadline(context: Context, exchange: Exchange): Promise<void> {
     const { response } = context;
+    // Sealed already (see `Exchange.abort()`): only this reply is allowed
     exchange.seal();
     response[kCancel](exchange.signal.reason);
     if (!response.started) {
@@ -767,10 +775,25 @@ export class Binden<
       const message = "Passing error to the provided `error_handler`";
       context.log.trace(message, this.#failure(context, error, "middleware"));
 
-      const outcome = await this.#bounded(this.#error_handler, context, error);
+      const outcome = await this.#bounded(
+        this.#error_handler,
+        context,
+        exchange,
+        error,
+      );
 
       const { response } = context;
-      if (outcome !== null) {
+      if (outcome === SUPERSEDED) {
+        // The reply of the deadline has started: what this handler does from
+        // now on (its reply, failure or time out) changes nothing
+        const abandoned =
+          "The provided `error_handler` has been abandoned at the deadline";
+        context.log.debug(
+          abandoned,
+          this.#failure(context, error, "error_handler"),
+        );
+        return;
+      } else if (outcome !== null) {
         // The handler has failed, or has not settled in time: it may no
         // longer mutate the response, and the request gets an opaque error
         exchange.seal();
@@ -823,21 +846,24 @@ export class Binden<
 
   /**
    * Awaits the `error_handler` for `error_handler_timeout` at most: `null`
-   * once it has settled, `EXPIRED` once the time has passed (its result is
-   * then ignored, and a later failure logged) and its error once it has failed
+   * once it has settled, `EXPIRED` once the time has passed, `SUPERSEDED` once
+   * a deadline has passed while it ran (unless it replies to the deadline
+   * itself), and its error once it has failed. The result of a handler that
+   * has expired or been superseded is ignored, and a later failure logged.
    */
   async #bounded(
     handler: (context: Context, error: unknown) => Promise<void> | void,
     context: Context,
+    exchange: Exchange,
     error: unknown,
-  ): Promise<typeof EXPIRED | { error: unknown } | null> {
-    let expired = false;
+  ): Promise<typeof EXPIRED | typeof SUPERSEDED | { error: unknown } | null> {
+    let abandoned = false;
     const settled = (async (): Promise<void> => {
       await handler(context, error);
     })().then(
       () => null,
       (failure: unknown) => {
-        if (expired) {
+        if (abandoned) {
           const late = "The provided `error_handler` has failed late";
           context.log.debug(
             late,
@@ -851,9 +877,29 @@ export class Binden<
       Promise.withResolvers<typeof EXPIRED>();
     const timer = setTimeout(resolve, this.#error_handler_timeout, EXPIRED);
     timer.unref();
-    const outcome = await Promise.race([settled, timeout]);
+    const outcomes: Promise<
+      typeof EXPIRED | typeof SUPERSEDED | { error: unknown } | null
+    >[] = [settled, timeout];
+    const { signal } = exchange;
+    if (!signal.aborted) {
+      // A deadline that passes while it runs takes the reply over (but for the
+      // reply of the deadline itself, which runs once the signal is aborted)
+      outcomes.push(
+        exchange.aborted.then(
+          async (): Promise<typeof EXPIRED | typeof SUPERSEDED> => {
+            if ((signal.reason as BindenAbortError).reason === "deadline") {
+              return SUPERSEDED;
+            }
+            // Not by another reason: e.g. a client that goes away leaves it
+            // to complete, or to expire
+            return timeout;
+          },
+        ),
+      );
+    }
+    const outcome = await Promise.race(outcomes);
     clearTimeout(timer);
-    expired = outcome === EXPIRED;
+    abandoned = outcome === EXPIRED || outcome === SUPERSEDED;
     return outcome;
   }
 

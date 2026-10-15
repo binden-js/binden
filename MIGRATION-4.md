@@ -169,7 +169,8 @@ out), the work that still runs can no longer change its response: also the metho
 still called), so that a late middleware cannot replace or cut the reply of the error handler. An
 array of the values of a header is copied when it is set or read (Node.js keeps the array itself). A deadline that passes before a `send()` of a stream
 or a `sendFile()` has committed the headers cancels it (it rejects with the abort reason) and
-replies `503`, instead of closing the connection. A reply that a timed out error handler has
+replies `503`, instead of closing the connection; also while the error handler runs for another
+error, whose later reply, failure or time out then changes nothing. A reply that a timed out error handler has
 ended is still sent. The `503` of a deadline, the `500` of a failed error handler and the
 default error reply close the connection (`Connection: close`) when the body of the request has
 not been read in full.

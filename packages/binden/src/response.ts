@@ -926,6 +926,9 @@ export class BindenResponse<
    */
   public [kCancel](reason: unknown): void {
     if (!this.headersSent) {
+      // A stream piped by the work that is abandoned has written nothing,
+      // and writes nothing from now on: it no longer starts the response
+      this.#piped = false;
       const release: (() => void)[] = [];
       this[kFramework](() => {
         for (const cancel of [...this.#pending.values()]) {

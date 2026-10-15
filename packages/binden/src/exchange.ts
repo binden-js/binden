@@ -279,12 +279,20 @@ export class Exchange {
     return this.#finished;
   }
 
-  /** Aborts the signal, once: `false` when it has already been aborted */
+  /**
+   * Aborts the signal, once: `false` when it has already been aborted. The
+   * exchange is sealed before a `deadline` is dispatched (see `seal()`): the
+   * abort listeners and the continuations of the work that is abandoned (e.g.
+   * a `catch` that replies) then see a response that they may no longer change.
+   */
   public abort(reason: IAbortReason): boolean {
     if (this.#controller.signal.aborted) {
       return false;
     }
     this.#clearTimer();
+    if (reason === "deadline") {
+      this.seal();
+    }
     this.#controller.abort(new BindenAbortError(reason));
     return true;
   }
