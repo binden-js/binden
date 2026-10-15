@@ -549,6 +549,12 @@ export class CompressedResponse {
    * and no compressor is created. The commit of the headers applies it.
    */
   #choose(length: number | null): IRepresentation {
+    if (this.#response.headersSent) {
+      // Committed already (by a decision, or around the compression), e.g.
+      // for a reply that starts afterwards: nothing is decided again (nor
+      // the `filter` called), the body is sent as the headers have set
+      return { coding: null, status: null };
+    }
     const outcome = this.#decide(length);
     this.#chosen = outcome;
     return {

@@ -14,6 +14,8 @@ import {
 } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok } from "node:assert";
+import { Readable } from "node:stream";
+import { ServerResponse } from "node:http";
 
 const gzip = { "Accept-Encoding": "gzip" };
 
@@ -202,6 +204,41 @@ suite("Threshold and filter", () => {
     const no = await fetchRaw(url, { path: "/no", headers: gzip });
     ok(!("content-encoding" in no.headers));
     deepStrictEqual(seen, ["/yes", "image/bmp; x=1", "/no", "image/bmp; x=1"]);
+  });
+
+  test("the filter is called once, also for a reply that starts once the headers are committed", async () => {
+    let calls = 0;
+    const url = await start(
+      async ({ response, url: { pathname } }) => {
+        response.type("text/plain");
+        if (pathname === "/around") {
+          // Not through the compression: the response is left as it is
+          ServerResponse.prototype.writeHead.call(response, 200);
+        } else {
+          response.flushHeaders();
+        }
+        // A stream (that `HEAD` does not read) chooses its representation
+        await response.send(Readable.from([text(2048)]));
+      },
+      {
+        filter: (): boolean => {
+          calls += 1;
+          return false;
+        },
+      },
+    );
+    for (const path of ["/", "/around"]) {
+      for (const method of ["GET", "HEAD"]) {
+        calls = 0;
+        const response = await fetchRaw(url, { path, method, headers: gzip });
+        deepStrictEqual(
+          [response.status, response.headers["content-encoding"], calls],
+          [200, none, path === "/" ? 1 : 0],
+          `${method} ${path}`,
+        );
+        deepStrictEqual(response.body, method === "GET" ? text(2048) : "");
+      }
+    }
   });
 
   test("a filter that does not return a boolean replaces the response with 500", async () => {
