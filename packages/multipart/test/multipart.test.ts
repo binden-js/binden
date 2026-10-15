@@ -15,6 +15,7 @@ import {
 import { deepEqual, equal, ok } from "node:assert/strict";
 import { describe, it } from "node:test";
 import multipart, { Multipart } from "../index.js";
+import { gzipSync } from "node:zlib";
 
 /** The entries of a form: a file as its name, type and content */
 async function entries(form: unknown): Promise<unknown[]> {
@@ -248,6 +249,50 @@ describe("Multipart", () => {
       deepEqual([reply.status, reply.headers.connection], [400, "close"]);
     }
     equal(reached, false);
+  });
+
+  it("replies `415` to a body with a content coding, which it does not decode", async (t) => {
+    const files: string[] = [];
+    let reached = false;
+    const { url } = await serve(t, [
+      multipart({
+        file_filter: ({ filename }): boolean => {
+          files.push(filename);
+          return true;
+        },
+      }),
+      (): void => {
+        reached = true;
+      },
+    ]);
+    const data = body(part('name="file"; filename="a.txt"', "Hello"));
+
+    for (const [coding, sent] of [
+      ["unknown", data],
+      ["gzip", gzipSync(data)],
+      ["identity, gzip", gzipSync(data)],
+    ] as const) {
+      const reply = await post(url, sent, { "Content-Encoding": coding });
+      deepEqual([reply.status, reply.headers.connection], [415, "close"]);
+    }
+    deepEqual([files, reached], [[], false]);
+  });
+
+  it("parses a body whose content coding is `identity`", async (t) => {
+    const parsed: unknown[] = [];
+    const { url } = await serve(t, [multipart(), keep(parsed)]);
+
+    for (const coding of ["identity", "Identity, ", ""]) {
+      const reply = await post(url, body(part('name="a"', "1")), {
+        "Content-Encoding": coding,
+      });
+      equal(reply.status, 200);
+    }
+    deepEqual(parsed, [
+      ["a", "1"],
+      ["a", "1"],
+      ["a", "1"],
+    ]);
   });
 
   it("replies `415` to a field of an unsupported charset", async (t) => {

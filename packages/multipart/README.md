@@ -4,6 +4,8 @@
 
 A request of another media type is skipped, and its body is not read: another parser (e.g. [`@binden/body`](https://github.com/binden-js/binden/tree/main/packages/body)) can take it. A request that the middleware has already parsed is skipped too.
 
+The parser does not decode content codings: a `multipart/form-data` body with a `Content-Encoding` other than `identity` (e.g. `gzip`) gets `415 Unsupported Media Type`, before it is read.
+
 ## Installation
 
 ```bash
@@ -204,6 +206,7 @@ The `filename` of a file is the name that the client has sent, without its contr
 | A limit (`limit`, `config.limits` with `throw_limits`)         | `413 Content Too Large`                                                    |
 | A malformed body, a missing or invalid `boundary`              | `400 Bad Request`                                                          |
 | A file refused by `file_filter`, a field of an unknown charset | `415 Unsupported Media Type`                                               |
+| A content coding other than `identity` (`Content-Encoding`)    | `415 Unsupported Media Type`                                               |
 | A `BindenError` thrown by `file_filter` or `on_file`           | Its status                                                                 |
 | Another failure of `file_filter`, `on_file` or the storage     | `500 Internal Server Error`                                                |
 | A parse that starts once the response has finished             | `500 Internal Server Error`                                                |

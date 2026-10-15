@@ -65,6 +65,17 @@ function mediaType(header: string | undefined): string {
   return (header ?? "").split(";", 1)[0].trim().toLowerCase();
 }
 
+/**
+ * Whether a `Content-Encoding` header has no content coding but `identity`:
+ * the parser does not decode a body
+ */
+function identity(header: string | undefined): boolean {
+  return (header ?? "").split(",").every((element) => {
+    const coding = element.trim().toLowerCase();
+    return coding === "" || coding === "identity";
+  });
+}
+
 /** Busboy for a request, or the error of its configuration */
 function create(config: BusboyConfig): Busboy | Error {
   try {
@@ -166,6 +177,13 @@ class Parser {
     this.#detach.push(() => {
       signal.removeEventListener("abort", onAbort);
     });
+
+    if (!identity(request.headers["content-encoding"])) {
+      // Busboy would parse the coded bytes
+      const message = "The body has a content coding, which is not decoded";
+      this.#refuse(new BindenError(415, { message }));
+      return this.#deferred.promise;
+    }
 
     const boundary = request.content_type?.boundary ?? "";
     if (!boundaries.test(boundary)) {

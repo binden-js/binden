@@ -449,6 +449,8 @@ const values = new BodyParser({ strict: false, limit: 1024 * 1024 });
   `@binden/body` does: the framework replies `503`.
 - A parse that starts once the response has finished (Node.js has then discarded the body)
   rejects with a `500`: it was an empty or a malformed form.
+- A body with a content coding (a `Content-Encoding` other than `identity`) gets
+  `415 Unsupported Media Type`: it was parsed without being decoded.
 - The parameters of the parts (e.g. the names of the files) are decoded as UTF-8 (busboy decodes
   them as Latin-1 by default): set `config.defParamCharset` to `"latin1"` to keep the former names.
 - A file name is cleaned: its control characters are removed, it is cut to 255 bytes, and an empty
