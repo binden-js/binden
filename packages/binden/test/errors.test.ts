@@ -65,6 +65,54 @@ suite("Errors and logging", () => {
     );
   });
 
+  test("the default handler removes the headers of the body that it replaces", async () => {
+    // Its framing, representation and validators: e.g. a `Trailer` that
+    // Node.js refuses with a `Content-Length`, or a stale length
+    const headers = {
+      "Content-Digest": "sha-256=:AAAA:",
+      "Content-Disposition": "attachment",
+      "Content-Encoding": "gzip",
+      "Content-Language": "en",
+      "Content-Length": 999,
+      "Content-Location": "/page.html",
+      "Content-Range": "bytes 0-1/2",
+      "Content-Type": "text/html",
+      Digest: "SHA-256=AAAA",
+      ETag: `"x"`,
+      "Last-Modified": "Wed, 01 Jan 2020 00:00:00 GMT",
+      "Repr-Digest": "sha-256=:AAAA:",
+      Trailer: "X-T",
+      "Transfer-Encoding": "chunked",
+    };
+    for (const expose of [false, true]) {
+      await withApp(
+        {},
+        (app) => {
+          app.use(({ response }: Context) => {
+            response.set(headers);
+            throw new BindenError(409, { message: "conflict", expose });
+          });
+        },
+        async ({ port }) => {
+          const response = await send(port);
+          deepStrictEqual(response.status, 409);
+          deepStrictEqual(response.body, expose ? "conflict" : "");
+          const own: Partial<Record<string, string>> = {
+            "Content-Length": `${response.body.length}`,
+            ...(expose ? { "Content-Type": "text/plain; charset=utf-8" } : {}),
+          };
+          for (const name of Object.keys(headers)) {
+            deepStrictEqual(
+              response.headers[name.toLowerCase()],
+              own[name],
+              `${name} (expose: ${expose})`,
+            );
+          }
+        },
+      );
+    }
+  });
+
   test("the default handler replies `500` to a status that is not of an error", async () => {
     const thrown: Partial<Record<string, unknown>> = {
       "/ok": { status: 200 },
