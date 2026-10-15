@@ -56,6 +56,15 @@ suite("Options", () => {
     await current?.close();
   });
 
+  test("the exports of the package", async () => {
+    deepStrictEqual(Object.keys(await import("../index.js")).sort(), [
+      "Compression",
+      "default",
+      "isCompressible",
+      "skipCompression",
+    ]);
+  });
+
   test("invalid options throw", () => {
     const formats = new TypeError(
       "`format` is not one of auto, br, deflate, gzip and zstd",
