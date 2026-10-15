@@ -175,6 +175,8 @@ the `Content-Type` that the route had set (e.g. `text/html`, which used to be ke
   (for `GET`, with `auto_head`) and `OPTIONS`.
 - `OPTIONS` to guarded routers without `OPTIONS` middlewares gets `204 No Content` with the same
   `Allow` (it was a `405`).
+- `OPTIONS *` gets `204 No Content` with the methods of every router of the application in
+  `Allow`, without running the stack (it ran the stack with the path `/*`).
 - With `auto_head`, the `HEAD` middlewares of a router run when it has some; its `GET` middlewares
   handle `HEAD` only otherwise (they used to handle it in any case).
 - `Binden` is a `Stack`: `app.stack` lists the layers of `use()`, `route()` and `mount()`, whose

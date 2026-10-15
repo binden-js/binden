@@ -471,14 +471,20 @@ export class Binden<
   async #handle(run: IRun, exchange: Exchange): Promise<void> {
     const { pathname } = run.context.url;
     const allow: IAllow = new Set<string>();
+    const { request, response } = run.context;
 
-    if (await this.#walk(this, run, exchange, pathname, [], allow)) {
+    if (request.method === "OPTIONS" && request.url === "*") {
+      // The server as a whole (RFC 9110, section 9.3.7): the stack does not run
+      Binden.#unmatched(exchange);
+      response.status(204).setHeader("Allow", this.#methods());
+      await response.send();
+      return;
+    } else if (await this.#walk(this, run, exchange, pathname, [], allow)) {
       return;
     }
 
     // Nothing has handled the request, unless a middleware has started (or ended)
     // the response without setting `done`: it is left to finish
-    const { request, response } = run.context;
     if (response.started) {
       return;
     }
@@ -602,6 +608,35 @@ export class Binden<
     return match === null
       ? null
       : { ...match, template: pattern.source, route: "" };
+  }
+
+  /**
+   * The methods of the routers of the application, in any stack (`HEAD` with
+   * `GET` and `auto_head`), and `OPTIONS`: the `Allow` of `OPTIONS *`
+   */
+  #methods(): string {
+    const methods = new Set<string>();
+    const seen = new Set<object>();
+    const collect = (stack: object): void => {
+      seen.add(stack);
+      for (const { items } of layersOf(stack)) {
+        for (const item of items) {
+          if (item instanceof Router) {
+            for (const method of item.methods) {
+              methods.add(method);
+            }
+          } else if (item instanceof Stack && !seen.has(item)) {
+            collect(item);
+          }
+        }
+      }
+    };
+    collect(this);
+    if (methods.has("GET") && this.#auto_head) {
+      methods.add("HEAD");
+    }
+    methods.add("OPTIONS");
+    return [...methods].join(", ");
   }
 
   /**

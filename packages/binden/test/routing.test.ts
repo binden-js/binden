@@ -503,6 +503,8 @@ suite("Routing", () => {
       });
       await withApp(app, async ({ port }) => {
         deepStrictEqual((await get(port, "/a/a/a"))[0], 500);
+        // Its routers are listed once
+        deepStrictEqual((await get(port, "*", "OPTIONS"))[0], 204);
       });
     });
   });
@@ -567,6 +569,49 @@ suite("Routing", () => {
           [auto.status, auto.headers.allow],
           [204, "GET, OPTIONS"],
         );
+      });
+    });
+    test("`OPTIONS *` gets `204` with the methods of every router, without running the stack", async () => {
+      let runs = 0;
+      const disabled = new Noop();
+      disabled.disabled = true;
+      const users = new Stack()
+        .route("/:id", new Router({ guarded: true }).put(echo()))
+        .use(new Router().on("propfind", echo()).delete(disabled));
+      const app = new Binden()
+        .use(() => {
+          runs += 1;
+        })
+        .use("/a", new Router().get(echo()).post(echo()))
+        // Twice, and in itself through another stack: once
+        .mount("/users", users)
+        .mount("/again", users, new Stack().mount("/users", users));
+      const noHead = new Binden({ auto_head: false }).use(
+        new Router().get(echo()),
+      );
+      const none = new Binden().use(echo());
+      await withApp(app, async ({ port }) => {
+        const all = await send(port, { path: "*", method: "OPTIONS" });
+        deepStrictEqual(
+          [all.status, all.headers.allow, all.body],
+          [204, "GET, POST, PUT, PROPFIND, HEAD, OPTIONS", ""],
+        );
+        // Another target is routed
+        deepStrictEqual(
+          (await send(port, { path: "/a", method: "OPTIONS" })).status,
+          404,
+        );
+        deepStrictEqual(runs, 1);
+      });
+      await withApp(noHead, async ({ port }) => {
+        const all = await send(port, { path: "*", method: "OPTIONS" });
+        deepStrictEqual([all.status, all.headers.allow], [204, "GET, OPTIONS"]);
+      });
+      await withApp(none, async ({ port }) => {
+        const all = await send(port, { path: "*", method: "OPTIONS" });
+        deepStrictEqual([all.status, all.headers.allow], [204, "OPTIONS"]);
+        // `*` is the target of `OPTIONS` only
+        deepStrictEqual((await send(port, { path: "*" })).status, 400);
       });
     });
   });

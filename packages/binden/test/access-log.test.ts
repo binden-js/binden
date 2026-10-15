@@ -277,7 +277,7 @@ suite("Access log", () => {
             method: "OPTIONS",
             route: "<unmatched>",
             path: "",
-            status: 404,
+            status: 204,
             body_bytes: 0,
           },
         ]);

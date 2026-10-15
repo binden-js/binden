@@ -566,6 +566,7 @@ const app = new Binden().use("/items", router);
 - `.get()`, `.head()`, `.post()`, `.put()`, `.patch()`, `.delete()`, `.options()`, `.trace()`, and `.on()` for any other method, in any case (`.on("propfind")` is `PROPFIND`): a method must be an HTTP token, and `CONNECT` throws a `TypeError` (Node.js emits its requests as `connect` events of the server: they never reach the middlewares). `.off()` removes middlewares, and `.methods` lists the methods that have some.
 - `HEAD` is handled by the `HEAD` middlewares of a router, or else by its `GET` middlewares (unless the `auto_head` option of `Binden` is `false`). A response to `HEAD` sends no body.
 - A `guarded` router (`new Router({ guarded: true })`) that does not allow the method of a request passes it on. When nothing else handles the request, it gets `405 Method Not Allowed`, whose `Allow` lists the methods of every guarded router that has refused it (with `HEAD` for `GET` when `auto_head` is `true`, and `OPTIONS`). An `OPTIONS` request that none of them has middlewares for gets `204 No Content` with the same `Allow` instead; their own `OPTIONS` (or `HEAD`) middlewares take precedence.
+- `OPTIONS *` (the server as a whole) gets `204 No Content` without running the stack, with an `Allow` that lists the methods of every router of the application (in every stack, with `HEAD` for `GET` when `auto_head` is `true`, and `OPTIONS`).
 
 ```typescript
 import { Binden, type Context, Router } from "binden";
