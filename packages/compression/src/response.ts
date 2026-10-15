@@ -20,8 +20,8 @@ import {
   type OutgoingHttpHeaders,
   STATUS_CODES,
 } from "node:http";
+import { accepts, negotiate } from "./negotiate.js";
 import type { ICompressionFilter } from "./filter.js";
-import { negotiate } from "./negotiate.js";
 
 /** The settings of a compression, validated */
 export interface ISettings {
@@ -62,7 +62,17 @@ type IResponse = BindenResponse<BindenRequest>;
 
 type ICallback = (error?: Error | null) => void;
 
+/** A response without a body, whatever the request accepts */
 const AS_IS: IOutcome = { kind: "as_is", vary: false };
+
+/** The response as it is, which the request accepts */
+const AS_IS_VARY: IOutcome = { kind: "as_is", vary: true };
+
+/** No representation is acceptable */
+const NOT_ACCEPTABLE: IOutcome = { kind: "replace", status: 406 };
+
+/** The `filter` has failed */
+const FAILED: IOutcome = { kind: "replace", status: 500 };
 
 /** The headers of a representation, which an empty replacement does not have */
 const representation = [
@@ -510,54 +520,74 @@ export class CompressedResponse {
   /**
    * The decision for a body of `length` bytes (`null` when it is not known),
    * by the status and the headers of the response, the same for `GET` and
-   * `HEAD`: it changes nothing (see `#apply()`)
+   * `HEAD`: it changes nothing (see `#apply()`). The request accepts the
+   * content codings of `Accept-Encoding` (RFC 9110, section 12.5.3): a
+   * response that may be compressed gets the acceptable coding that it
+   * prefers, otherwise the response as it is when it is acceptable, otherwise
+   * `406`. Except for a response without a body, the decision depends on
+   * `Accept-Encoding` (`Vary`).
    */
   #decide(length: number | null): IOutcome {
-    const { request } = this.#context;
+    const header = this.#context.request.headers["accept-encoding"];
     const response = this.#response;
     const status = response.statusCode;
-    if (
-      status < 200 ||
-      status === 204 ||
-      status === 205 ||
-      // Ranges refer to the representation as it is (RFC 9110, section 14.1.2)
-      status === 206 ||
-      response.hasHeader("Content-Range")
-    ) {
+    if (status < 200 || status === 204 || status === 205 || length === 0) {
+      // No body: whatever the request accepts
       return AS_IS;
     }
     const encoding = response.getHeader("Content-Encoding");
+    if (typeof encoding !== "undefined" && !isIdentity(encoding)) {
+      // Encoded already (e.g. a precompressed file), and no other version:
+      // any coding is acceptable without `Accept-Encoding`, none with an
+      // empty one
+      const codings = listOf(encoding).filter(
+        (coding) => coding !== "identity",
+      );
+      return accepts(header, codings) ? AS_IS_VARY : NOT_ACCEPTABLE;
+    }
+    const offers = this.#offers(length);
+    if (offers === null) {
+      return FAILED;
+    }
+    // `identity` without `Accept-Encoding` (or with an empty one)
+    const coding = negotiate(header, offers);
+    if (coding === false) {
+      return NOT_ACCEPTABLE;
+    }
+    return coding === "identity"
+      ? AS_IS_VARY
+      : { kind: "compress", coding, vary: true };
+  }
+
+  /**
+   * The codings that a response of a body of `length` bytes may be
+   * compressed with (`null` once the `filter` has failed): those of `auto`,
+   * or the fixed `format`, but none for a range (RFC 9110, section 14.1.2:
+   * ranges refer to the representation as it is), `no-transform`,
+   * `skipCompression()`, a type that the `filter` refuses, or a body below
+   * the `threshold`
+   */
+  #offers(length: number | null): readonly ICompressEncodings[] | null {
+    const response = this.#response;
     if (
-      // Encoded already (e.g. a precompressed file)
-      (typeof encoding !== "undefined" && !isIdentity(encoding)) ||
+      response.statusCode === 206 ||
+      response.hasHeader("Content-Range") ||
       noTransform(response.getHeader("Cache-Control")) ||
-      skipped.has(response) ||
-      // No body
-      length === 0
+      skipped.has(response)
     ) {
-      return AS_IS;
+      return [];
     }
     const filtered = this.#filter();
     if (filtered === null) {
-      return { kind: "replace", status: 500 };
+      return null;
     } else if (
       !filtered ||
       (length !== null && length < this.#settings.threshold)
     ) {
-      return AS_IS;
+      return [];
     }
-
     const { format, encodings } = this.#settings;
-    if (format !== "auto") {
-      return { kind: "compress", coding: format, vary: false };
-    }
-    const coding = negotiate(request.headers["accept-encoding"], encodings);
-    if (coding === "identity") {
-      return { kind: "as_is", vary: true };
-    } else if (coding === false) {
-      return { kind: "replace", status: 406 };
-    }
-    return { kind: "compress", coding, vary: true };
+    return format === "auto" ? encodings : [format];
   }
 
   /**

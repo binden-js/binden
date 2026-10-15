@@ -920,8 +920,10 @@ export class BindenResponse<
       this.#endNotModified(body.length);
       return done;
     } else if (status !== null) {
-      // Empty, also for `HEAD` (which would keep the length of a body)
+      // Empty, also for `HEAD` (which would keep the length of a body), and
+      // without the coding of the body (e.g. a precompressed one)
       this.statusCode = status;
+      this.#remove("Content-Encoding");
       this.#frame(0);
       this.end();
       return done;

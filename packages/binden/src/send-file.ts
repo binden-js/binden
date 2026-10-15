@@ -549,7 +549,11 @@ export async function sendFileTo(
       await notModified(size);
       return;
     } else if (failed !== null) {
-      // Empty, also for `HEAD` (which would keep the length of a body)
+      // Empty, also for `HEAD` (which would keep the length of a body), and
+      // without the coding of the file (e.g. a precompressed one)
+      if (response.hasHeader("Content-Encoding")) {
+        response.removeHeader("Content-Encoding");
+      }
       await response.status(failed).setHeader("Content-Length", 0).send();
       return;
     } else if (method === "HEAD") {

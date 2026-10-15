@@ -1,5 +1,12 @@
 import { BindenResponse, type Context, Cookie } from "binden";
-import { type IServed, fetchRaw, serve, text } from "./helpers.js";
+import {
+  type IReceived,
+  type IRequestOptions,
+  type IServed,
+  fetchRaw,
+  serve,
+  text,
+} from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import compression, {
   Compression,
@@ -13,6 +20,14 @@ import { connect } from "node:net";
 
 const body = text(2048);
 const gzip = { "Accept-Encoding": "gzip" };
+
+/** Sends a request that accepts `gzip` (unless its headers say otherwise) */
+function fetchGzip(
+  url: string,
+  { headers = {}, ...options }: IRequestOptions = {},
+): Promise<IReceived> {
+  return fetchRaw(url, { ...options, headers: { ...gzip, ...headers } });
+}
 
 suite("The decision at the header commit", () => {
   let served: IServed | null = null;
@@ -41,7 +56,7 @@ suite("The decision at the header commit", () => {
     served = await serve({}, compression, (context: Context) =>
       context.text(body),
     );
-    const response = await fetchRaw(served.url, { headers: gzip });
+    const response = await fetchGzip(served.url, { headers: gzip });
 
     deepStrictEqual(compression.format, "auto");
     deepStrictEqual(response.headers["content-encoding"], "gzip");
@@ -57,7 +72,7 @@ suite("The decision at the header commit", () => {
     });
     for (const method of ["GET", "HEAD"]) {
       for (const path of ["/", "/weak"]) {
-        const response = await fetchRaw(url, { method, path });
+        const response = await fetchGzip(url, { method, path });
         deepStrictEqual(response.status, 200);
         deepStrictEqual(response.headers["content-encoding"], "gzip");
         deepStrictEqual(response.headers.etag, `W/"tag"`);
@@ -79,11 +94,11 @@ suite("The decision at the header commit", () => {
       return context.text(body);
     });
 
-    const whole = await fetchRaw(url);
+    const whole = await fetchGzip(url);
     deepStrictEqual(whole.headers["content-encoding"], "gzip");
 
     for (const path of ["/partial", "/range"]) {
-      const response = await fetchRaw(url, { path });
+      const response = await fetchGzip(url, { path });
       ok(!("content-encoding" in response.headers), path);
       deepStrictEqual(response.headers["content-length"], `${body.length}`);
       deepStrictEqual(response.raw.toString(), body);
@@ -109,7 +124,7 @@ suite("The decision at the header commit", () => {
     );
     for (const status of [204, 205, 304]) {
       for (const path of ["/", "/write"]) {
-        const response = await fetchRaw(url, {
+        const response = await fetchGzip(url, {
           path,
           headers: { "x-status": `${status}` },
         });
@@ -120,7 +135,7 @@ suite("The decision at the header commit", () => {
     }
 
     // An empty body is not compressed
-    const empty = await fetchRaw(url, { headers: { "x-status": "200" } });
+    const empty = await fetchGzip(url, { headers: { "x-status": "200" } });
     ok(!("content-encoding" in empty.headers));
     deepStrictEqual(empty.headers["content-length"], "0");
     deepStrictEqual(empty.headers.etag, `"tag"`);
@@ -136,21 +151,22 @@ suite("The decision at the header commit", () => {
     });
 
     // Also from a response that is not compressed
-    const small = await fetchRaw(url, {
+    const small = await fetchGzip(url, {
       path: "/small",
       headers: { "x-encoding": "identity" },
     });
     ok(!("content-encoding" in small.headers));
     deepStrictEqual(small.body, "small");
 
-    const precompressed = await fetchRaw(url, {
-      headers: { "x-encoding": "br" },
+    // When the request accepts it (see `test/acceptable.test.ts`)
+    const precompressed = await fetchGzip(url, {
+      headers: { "x-encoding": "br", "Accept-Encoding": "gzip, br" },
     });
     deepStrictEqual(precompressed.headers["content-encoding"], "br");
     deepStrictEqual(precompressed.raw.toString(), body);
 
     for (const encoding of ["identity", "IDENTITY, identity"]) {
-      const response = await fetchRaw(url, {
+      const response = await fetchGzip(url, {
         headers: { "x-encoding": encoding },
       });
       deepStrictEqual(response.headers["content-encoding"], "gzip", encoding);
@@ -158,7 +174,7 @@ suite("The decision at the header commit", () => {
     }
 
     // An empty value is not `identity`
-    const empty = await fetchRaw(url, { headers: { "x-encoding": "" } });
+    const empty = await fetchGzip(url, { headers: { "x-encoding": "" } });
     deepStrictEqual(empty.headers["content-encoding"], "");
     deepStrictEqual(empty.raw.toString(), body);
   });
@@ -174,13 +190,13 @@ suite("The decision at the header commit", () => {
       "public, No-Transform",
       "max-age=0|no-transform",
     ]) {
-      const response = await fetchRaw(url, {
+      const response = await fetchGzip(url, {
         headers: { "x-cache-control": value },
       });
       ok(!("content-encoding" in response.headers), value);
       deepStrictEqual(response.raw.toString(), body);
     }
-    const other = await fetchRaw(url, {
+    const other = await fetchGzip(url, {
       headers: { "x-cache-control": "no-store" },
     });
     deepStrictEqual(other.headers["content-encoding"], "gzip");
@@ -204,16 +220,16 @@ suite("The decision at the header commit", () => {
       await context.text(body);
     });
 
-    const skipped = await fetchRaw(url, { path: "/skip" });
+    const skipped = await fetchGzip(url, { path: "/skip" });
     ok(!("content-encoding" in skipped.headers));
     deepStrictEqual(skipped.raw.toString(), body);
 
     // Once the headers are committed, it no longer changes the response
-    const late = await fetchRaw(url, { path: "/late" });
+    const late = await fetchGzip(url, { path: "/late" });
     deepStrictEqual(late.headers["content-encoding"], "gzip");
     deepStrictEqual(late.body, body);
 
-    const other = await fetchRaw(url);
+    const other = await fetchGzip(url);
     deepStrictEqual(other.headers["content-encoding"], "gzip");
 
     throws(() => {
@@ -231,7 +247,7 @@ suite("The decision at the header commit", () => {
         : context.text(body);
     });
     for (const path of ["/small", "/no-transform"]) {
-      const response = await fetchRaw(url, { path });
+      const response = await fetchGzip(url, { path });
       ok(!("content-encoding" in response.headers), path);
     }
   });
@@ -246,7 +262,7 @@ suite("The decision at the header commit", () => {
       new Compression({ format: "br" }),
       (context: Context) => context.text(body),
     );
-    const response = await fetchRaw(served.url);
+    const response = await fetchGzip(served.url);
 
     deepStrictEqual(response.headers["content-encoding"], "gzip");
     deepStrictEqual(response.body, body);
@@ -262,7 +278,7 @@ suite("The decision at the header commit", () => {
           .send(expected),
       { format: "gzip", threshold: 0, filter: (): boolean => true },
     );
-    const response = await fetchRaw(url);
+    const response = await fetchGzip(url);
 
     deepStrictEqual(response.status, 206);
     ok(!("content-encoding" in response.headers));
@@ -286,7 +302,7 @@ suite("The decision at the header commit", () => {
         return context.send(body);
       },
     );
-    const response = await fetchRaw(served.url, { headers: gzip });
+    const response = await fetchGzip(served.url, { headers: gzip });
 
     deepStrictEqual(response.status, 200);
     ok(!("content-encoding" in response.headers));
@@ -302,7 +318,7 @@ suite("The decision at the header commit", () => {
         .send(Readable.from([body.slice(0, 1024), body.slice(1024)])),
     );
     for (const method of ["GET", "HEAD"]) {
-      const response = await fetchRaw(url, { method });
+      const response = await fetchGzip(url, { method });
       deepStrictEqual(response.headers["content-encoding"], "gzip", method);
       ok(!("content-length" in response.headers));
       deepStrictEqual(response.body, method === "GET" ? body : "");
@@ -346,7 +362,7 @@ suite("The decision at the header commit", () => {
         context.response.end(body, resolve);
       });
     });
-    const response = await fetchRaw(url);
+    const response = await fetchGzip(url);
 
     deepStrictEqual(response.headers["content-encoding"], "gzip");
     deepStrictEqual(response.body, body);
@@ -382,25 +398,25 @@ suite("The decision at the header commit", () => {
       });
     });
 
-    const object = await fetchRaw(url, { path: "/object" });
+    const object = await fetchGzip(url, { path: "/object" });
     deepStrictEqual(object.status, 200);
     deepStrictEqual(object.headers["content-encoding"], "gzip");
     ok(!("content-length" in object.headers));
     deepStrictEqual(object.body, body);
 
-    const flat = await fetchRaw(url, { path: "/flat" });
+    const flat = await fetchGzip(url, { path: "/flat" });
     deepStrictEqual(flat.status, 201);
     deepStrictEqual(flat.headers["content-encoding"], "gzip");
     deepStrictEqual(flat.body, body);
 
-    const pairs = await fetchRaw(url, { path: "/pairs" });
+    const pairs = await fetchGzip(url, { path: "/pairs" });
     deepStrictEqual(pairs.headers["content-encoding"], "gzip");
     deepStrictEqual(pairs.headers["x-before"], "2, 3");
     deepStrictEqual(pairs.body, body);
 
     // Not compressible, or no `Content-Type`
     for (const path of ["/image", "/none"]) {
-      const response = await fetchRaw(url, { path });
+      const response = await fetchGzip(url, { path });
       ok(!("content-encoding" in response.headers), path);
       deepStrictEqual(response.raw.toString(), body);
     }
@@ -424,7 +440,7 @@ suite("The decision at the header commit", () => {
       }
       return context.text(body);
     });
-    const response = await fetchRaw(url);
+    const response = await fetchGzip(url);
 
     deepStrictEqual(errors, [
       "ERR_HTTP_INVALID_STATUS_CODE",
@@ -448,7 +464,7 @@ suite("The decision at the header commit", () => {
         response.end(body, resolve);
       });
     });
-    const response = await fetchRaw(url);
+    const response = await fetchGzip(url);
 
     ok(!("content-encoding" in response.headers));
     deepStrictEqual(response.raw.toString(), body);
@@ -460,7 +476,7 @@ suite("The decision at the header commit", () => {
       context.response.cookies.add(cookie);
       return context.text(body);
     });
-    const response = await fetchRaw(url);
+    const response = await fetchGzip(url);
 
     deepStrictEqual(response.headers["content-encoding"], "gzip");
     deepStrictEqual(response.headers["set-cookie"], [cookie.toString()]);
@@ -470,7 +486,7 @@ suite("The decision at the header commit", () => {
     const url = await start(() => {
       throw Object.assign(new Error(body), { status: 400, expose: true });
     });
-    const response = await fetchRaw(url);
+    const response = await fetchGzip(url);
 
     deepStrictEqual(response.status, 400);
     deepStrictEqual(response.headers["content-encoding"], "gzip");

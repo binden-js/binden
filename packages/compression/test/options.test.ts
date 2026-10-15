@@ -204,7 +204,9 @@ suite("Options", () => {
     );
     const { url } = served;
     const given = await optionsOf("createBrotliCompress", async () => {
-      const response = await fetchRaw(url);
+      const response = await fetchRaw(url, {
+        headers: { "Accept-Encoding": "br" },
+      });
       deepStrictEqual(response.headers["content-encoding"], "br");
       deepStrictEqual(response.body, body);
     });

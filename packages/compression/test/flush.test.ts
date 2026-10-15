@@ -195,7 +195,8 @@ suite("flush()", () => {
     });
 
     ok(!("content-encoding" in response.headers));
-    ok(!("vary" in response.headers));
+    // Sent as it is, which the request accepts
+    deepStrictEqual(response.headers.vary, "Accept-Encoding");
     deepStrictEqual(response.body, "data: 1\n\n");
   });
 
@@ -268,9 +269,15 @@ suite("flush()", () => {
       },
     );
 
-    const head = await fetchRaw(served.url, { method: "HEAD" });
+    const head = await fetchRaw(served.url, {
+      method: "HEAD",
+      headers: { "Accept-Encoding": "gzip" },
+    });
     deepStrictEqual(head.headers["content-encoding"], "gzip");
-    const ended = await fetchRaw(served.url, { path: "/ended" });
+    const ended = await fetchRaw(served.url, {
+      path: "/ended",
+      headers: { "Accept-Encoding": "gzip" },
+    });
     deepStrictEqual(ended.body, "data: 1\n\n");
     deepStrictEqual(results, ["HEAD /", "GET /ended"]);
   });
@@ -328,7 +335,9 @@ suite("flush()", () => {
       },
     );
 
-    const response = await fetchRaw(served.url);
+    const response = await fetchRaw(served.url, {
+      headers: { "Accept-Encoding": "gzip" },
+    });
     const compressed = await within(outcome);
 
     // Everything written before `flush()`, as the client can decompress it
@@ -363,7 +372,7 @@ suite("flush()", () => {
         },
       );
 
-      const response = await respond(served.url, {});
+      const response = await respond(served.url, { "Accept-Encoding": "gzip" });
       response.pause();
       await within(pending);
       response.destroy();
@@ -389,7 +398,7 @@ suite("flush()", () => {
         resolve("rejected");
       },
     );
-    const response = await respond(served.url, {});
+    const response = await respond(served.url, { "Accept-Encoding": "gzip" });
     const read = reader(response.pipe(zlib.createGunzip()));
     await read.until("data: 1\n\n");
     response.destroy();

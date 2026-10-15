@@ -59,6 +59,9 @@ function summary({ status, headers, body }: IReply): unknown[] {
   return [status, headers.etag, headers["content-length"], body.toString()];
 }
 
+/** `undefined`, which the linter does not let the tests write */
+const none = ({} as { value?: undefined }).value;
+
 /** The strong `ETag` of a body */
 function etagOf(body: string): string {
   return `"${createHash("sha256").update(body).digest("base64url")}"`;
@@ -353,6 +356,46 @@ suite("The representation chosen before the preconditions", () => {
         );
       }
     }
+  });
+
+  test("the `412` of a failed precondition has no `Content-Encoding`, the `304` keeps it", async () => {
+    /** The status and the coding of a precompressed body, as it is */
+    const check = async (
+      Response: new (request: IncomingMessage) => BindenResponse,
+      tag: string,
+      reply: (response: BindenResponse) => Promise<void>,
+    ): Promise<void> => {
+      const app = await listen({ Response });
+      try {
+        for (const method of ["GET", "HEAD"]) {
+          for (const [headers, status, coding] of [
+            [{ "If-Match": `"other"` }, 412, none],
+            [{ "If-None-Match": tag }, 304, "gzip"],
+            [{}, 200, "gzip"],
+          ] as const) {
+            const handled = app.handle(async (_request, response) => {
+              response.setHeader("Content-Encoding", "gzip");
+              await reply(response);
+            });
+            const received = await app.request({ method, headers });
+            deepStrictEqual(await handled, null);
+            deepStrictEqual(
+              [received.status, received.headers["content-encoding"]],
+              [status, coding],
+              `${method} ${JSON.stringify(headers)}`,
+            );
+          }
+        }
+      } finally {
+        await app.close();
+      }
+    };
+    await check(BindenResponse, validator, async (response) => {
+      await response.sendFile(file, { validator });
+    });
+    await check(EtagResponse, etagOf(content), async (response) => {
+      await response.send(content);
+    });
   });
 
   test("the choice is forgotten when its stream fails before its first chunk", async () => {

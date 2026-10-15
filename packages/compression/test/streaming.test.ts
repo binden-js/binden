@@ -18,10 +18,13 @@ import { Readable } from "node:stream";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
 
-/** Sends a request, and resolves with its response (not read) */
+const gzip = { "Accept-Encoding": "gzip" };
+
+/** Sends a request that accepts `gzip`, and resolves with its response (not read) */
 async function respond(url: string): Promise<IncomingMessage> {
   const sent = request(url, {
     agent: false,
+    headers: gzip,
     signal: AbortSignal.timeout(5000),
   }).end();
   const [response] = (await within(once(sent, "response"))) as [
@@ -69,6 +72,7 @@ suite("Streaming through the compressor", () => {
       for (const path of ["/send", "/json", "/error", "/send"]) {
         const sent = request(new URL(path, url), {
           agent,
+          headers: gzip,
           signal: AbortSignal.timeout(5000),
         }).end();
         const [response] = (await within(once(sent, "response"))) as [
@@ -109,7 +113,6 @@ suite("Streaming through the compressor", () => {
       { format: "auto" },
     );
     const created = await gzips(async () => {
-      const gzip = { "Accept-Encoding": "gzip" };
       await fetchRaw(url, { path: "/small", headers: gzip });
       await fetchRaw(url, { headers: { "Accept-Encoding": "identity" } });
       await fetchRaw(url, { method: "HEAD", headers: gzip });
@@ -141,7 +144,7 @@ suite("Streaming through the compressor", () => {
       });
     });
 
-    const response = await fetchRaw(url);
+    const response = await fetchRaw(url, { headers: gzip });
     sameBytes(decode("gzip", response.raw), expected);
     ok(results.includes(false));
   };
@@ -198,7 +201,7 @@ suite("Streaming through the compressor", () => {
       events.push("resolved");
       throw new BindenError(400, { expose: true, message: "late error" });
     });
-    const response = await fetchRaw(url);
+    const response = await fetchRaw(url, { headers: gzip });
 
     deepStrictEqual(response.status, 200);
     deepStrictEqual(response.body, text(2048));
@@ -229,7 +232,7 @@ suite("Streaming through the compressor", () => {
         resolve(error?.code);
       });
     });
-    const response = await fetchRaw(url);
+    const response = await fetchRaw(url, { headers: gzip });
 
     deepStrictEqual(response.body, `first ${text(2048)}`);
     deepStrictEqual(states, [false, true, true]);
@@ -246,7 +249,7 @@ suite("Streaming through the compressor", () => {
         response.end(resolve);
       });
     });
-    const response = await fetchRaw(url);
+    const response = await fetchRaw(url, { headers: gzip });
 
     deepStrictEqual(response.body, text(2048));
   });
@@ -260,7 +263,7 @@ suite("Streaming through the compressor", () => {
         context.response.end("y");
       }, 50);
     });
-    const response = await fetchRaw(url);
+    const response = await fetchRaw(url, { headers: gzip });
 
     deepStrictEqual(response.body, "xy");
   });
@@ -272,7 +275,7 @@ suite("Streaming through the compressor", () => {
     });
 
     // A truncated body must not look complete
-    await rejects(fetchRaw(url));
+    await rejects(fetchRaw(url, { headers: gzip }));
   });
 
   test(
@@ -312,7 +315,7 @@ suite("Streaming through the compressor", () => {
       deepStrictEqual(written, false);
       context.done = true;
     });
-    const response = await fetchRaw(url);
+    const response = await fetchRaw(url, { headers: gzip });
 
     deepStrictEqual(response.body, text(2048));
     deepStrictEqual(await within(code), "ERR_STREAM_WRITE_AFTER_END");
@@ -349,7 +352,7 @@ suite("Streaming through the compressor", () => {
         created.at(-1)?.destroy(new Error("The compressor has failed"));
       });
       // At once (not the timeout of the request)
-      await rejects(fetchRaw(url), { code: "ECONNRESET" });
+      await rejects(fetchRaw(url, { headers: gzip }), { code: "ECONNRESET" });
     });
   });
 });

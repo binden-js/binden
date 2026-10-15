@@ -50,3 +50,27 @@ export function negotiate(
   }
   return identity === 0 ? false : "identity";
 }
+
+/**
+ * Whether the request accepts a representation of these content codings (RFC
+ * 9110, section 12.5.3): any without `Accept-Encoding`, otherwise each one
+ * that the header names (`x-gzip` is `gzip`, unknown codings count too), or
+ * `*`, with a weight above 0. None with an empty header, nor an invalid
+ * coding (e.g. `*`).
+ */
+export function accepts(
+  header: string | undefined,
+  codings: readonly string[],
+): boolean {
+  return (
+    typeof header === "undefined" ||
+    codings.every((coding) => {
+      try {
+        return AcceptEncoding.negotiate([coding], header) !== false;
+      } catch {
+        // Not a content coding
+        return false;
+      }
+    })
+  );
+}

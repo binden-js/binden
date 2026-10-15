@@ -145,14 +145,15 @@ suite("Conditional requests of compressed responses", () => {
     deepStrictEqual(cross.status, 304);
     deepStrictEqual(cross.headers.etag, gzip.headers.etag);
 
-    // Too small to be compressed, with whatever the request accepts
-    const small = await fetchRaw(url, {
+    // Too small to be compressed: as it is, when the request accepts it
+    const small = await fetchRaw(url, { path: "/small" });
+    deepStrictEqual(small.body, "small");
+    deepStrictEqual(small.headers.vary, "Accept-Encoding");
+    const unacceptable = await fetchRaw(url, {
       path: "/small",
       headers: accepts.refused,
     });
-    deepStrictEqual(small.status, 200);
-    deepStrictEqual(small.body, "small");
-    ok(!("vary" in small.headers));
+    deepStrictEqual(unacceptable.status, 406);
 
     const refused = await fetchRaw(url, { headers: accepts.refused });
     deepStrictEqual(refused.status, 406);
@@ -482,7 +483,7 @@ suite("Conditional requests of compressed responses", () => {
         deepStrictEqual(representation(get), {
           status: 200,
           etag: `"v1"`,
-          vary: none,
+          vary: "Accept-Encoding",
           encoding: none,
           length: "100",
           ranges: "bytes",

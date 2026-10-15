@@ -35,9 +35,9 @@ same response does nothing.
 
 | Option                      | Default                     | Description                                                                                                                |
 | --------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `format`                    | `"auto"`                    | `"auto"` negotiates the coding with `Accept-Encoding`; `"br"`, `"gzip"`, `"deflate"` or `"zstd"` always uses that coding   |
+| `format`                    | `"auto"`                    | `"auto"` negotiates the coding with `Accept-Encoding`; `"br"`, `"gzip"`, `"deflate"` or `"zstd"` is the only one offered   |
 | `encodings`                 | `["br", "gzip", "deflate"]` | The codings that `"auto"` offers, the preferred first (only with `"auto"`). `zstd` is offered only when listed             |
-| `threshold`                 | `1024`                      | A response whose `Content-Length` is smaller (in bytes) is not compressed; a response without a length is                  |
+| `threshold`                 | `1024`                      | A response whose `Content-Length` is smaller (in bytes) is not compressed; a response without a length may be              |
 | `filter`                    | `isCompressible`            | `(context, content_type) => boolean`: whether a response is compressed, by its `Content-Type` (`null` without a valid one) |
 | `gzip`, `deflate`           | `{}`                        | The [options](https://nodejs.org/api/zlib.html#class-options) of the compressors                                           |
 | `brotli`                    | `BROTLI_PARAM_QUALITY` `4`  | The [options](https://nodejs.org/api/zlib.html#class-brotlioptions) of the `br` compressor                                 |
@@ -93,18 +93,20 @@ exactly the headers of the response to `GET`. It is taken when its headers are c
   compressor: the commit of the headers applies it. A reply that replaces that body (e.g. of the
   error handler, once the file has failed or the deadline has passed) gets a decision of its own.
 
-A response is sent as it is when:
+A response without a body is sent as it is, whatever the request accepts: a `1xx`, `204` or `205`
+status, or an empty body (`Content-Length: 0`, e.g. of a `304` that stands for an empty `200`). Any
+other response depends on the `Accept-Encoding` of the request (`Vary: Accept-Encoding`, see
+[Content negotiation](#content-negotiation)), and may be compressed unless:
 
-- it has no body: a `1xx`, `204`, `205` or `304` status, or an empty body (`Content-Length: 0`);
 - it is a range (`206`, or any `Content-Range`): ranges refer to the representation as it is;
 - it is encoded already (`Content-Encoding` other than `identity`; an `identity` is removed);
 - it has `Cache-Control: no-transform`;
 - `skipCompression()` has been called for it;
-- the `filter` refuses it, or its `Content-Length` is below the `threshold`;
-- the compression ran once its headers had been sent (the response is not changed at all).
+- the `filter` refuses it, or its `Content-Length` is below the `threshold`.
 
-A fixed `format` does not bypass any of these, and such a response is sent whatever the request
-accepts (also with `identity;q=0`).
+A response that may not be compressed is sent as it is when the request accepts it, and replaced
+with `406 Not Acceptable` otherwise (also with a fixed `format`). The compression leaves a response
+alone only when it ran once its headers had been sent.
 
 ```typescript
 import { Binden, type Context } from "binden";
@@ -121,22 +123,30 @@ new Binden().use(compression).use("/raw", handler).createServer().listen(8080);
 
 ### Content negotiation
 
-With `format: "auto"`, the coding is chosen with the `Accept-Encoding` of the request
+The representation is chosen with the `Accept-Encoding` of the request
 ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3)), and `Vary: Accept-Encoding`
-is added to the response:
+is added to every response with a body:
 
-- without `Accept-Encoding`, or with an empty one, the response is not compressed;
-- otherwise, the coding of `encodings` with the greatest weight (its own `q`, or the one of `*`; `x-gzip`
-  is `gzip`) wins, the earlier one of `encodings` on a tie, unless `identity` weighs more. Browsers
-  (`gzip, deflate, br, zstd`) get `br`;
-- when `identity` is refused (`identity;q=0`, or `*;q=0` without `identity`) and no coding of
-  `encodings` is acceptable, the response is replaced with `406 Not Acceptable`: an empty body
-  (`Content-Length: 0`) without the headers of the representation. What the application writes
-  afterwards is discarded (the callbacks of its writes still run).
+- the response is compressed with the coding of `encodings` (with `format: "auto"`), or the fixed
+  `format` (the only one offered then), of the greatest weight (its own `q`, or the one of `*`;
+  `x-gzip` is `gzip`), the earlier one of `encodings` on a tie, unless `identity` weighs more.
+  Browsers (`gzip, deflate, br, zstd`) get `br`. A coding with `q=0`, or that the header does not
+  name (without `*`), is not acceptable;
+- without `Accept-Encoding`, or with an empty one, the response is not compressed (any coding is
+  acceptable without the header, but the response as it is suits a client that does not ask for
+  one);
+- `identity` (the response as it is) is acceptable unless refused (`identity;q=0`, or `*;q=0`
+  without `identity`). When nothing is acceptable, the response is replaced with
+  `406 Not Acceptable`: an empty body (`Content-Length: 0`) without the headers of the
+  representation. What the application writes afterwards is discarded (the callbacks of its writes
+  still run);
+- an encoded response (e.g. a precompressed file, with the `Content-Encoding` that the application
+  has set) has no other version: it is sent as it is when the request accepts its coding (any
+  coding without `Accept-Encoding`, none with an empty one), and replaced with `406` otherwise.
 
-A fixed `format` compresses every response that may be compressed, whatever the request accepts (and
-without `Vary`): use it when every client is known to support it (e.g. behind a proxy that
-negotiates).
+A fixed `format` offers one coding, so that a proxy that negotiates can ask for it (e.g. `zstd`,
+which `auto` does not offer by default): a request that does not accept it gets the response as it
+is (or `406`).
 
 ### A compressed response
 
@@ -158,7 +168,8 @@ negotiates).
 - `sendFile()` sends a compressed file whole: `Range` (and `If-Range`) is ignored, as the ranges
   would be of the compressed bytes. The uncompressed file keeps its ranges (`206`, `416`);
 - a `304 Not Modified` (e.g. of `sendFile()`, or of the dynamic `ETag` of binden) gets the same
-  decision as the `200` that it stands for: the same `ETag` and `Vary`, without `Content-Length` and
+  decision as the `200` that it stands for (as does a response to `HEAD` the one of `GET`): the same
+  `ETag` and `Vary`, without `Content-Length` and
   `Accept-Ranges` when the `200` is compressed, but without `Content-Encoding` (a cache that updates
   its stored response with it could mislabel an uncompressed one). The `threshold` applies to it by
   its `Content-Length`, the length of that `200` (binden keeps it on the `304` of `sendFile()` and of

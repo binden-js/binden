@@ -1,9 +1,9 @@
 import { Compression, type ICompressionOptions } from "../index.js";
 import { type IServed, fetchRaw, none, serve, text } from "./helpers.js";
+import { accepts, negotiate } from "../src/negotiate.js";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok } from "node:assert";
 import type { Context } from "binden";
-import { negotiate } from "../src/negotiate.js";
 
 const body = text(2048);
 
@@ -66,6 +66,40 @@ suite("Content negotiation", () => {
     deepStrictEqual(negotiate("gzip, br", ["gzip", "br"]), "gzip");
     deepStrictEqual(negotiate("zstd", offers), "identity");
     deepStrictEqual(negotiate("zstd, br", ["zstd", "br"]), "zstd");
+  });
+
+  test("accepts()", () => {
+    const cases: [string | undefined, string[], boolean][] = [
+      // Any coding without the header, none with an empty one
+      [none, ["gzip"], true],
+      [none, ["*"], true],
+      ["", ["gzip"], false],
+      ["gzip", ["gzip"], true],
+      ["x-gzip", ["gzip"], true],
+      ["GZIP", ["x-gzip"], true],
+      ["*", ["aes128gcm"], true],
+      ["aes128gcm", ["aes128gcm"], true],
+      ["br, gzip;q=0.1", ["gzip"], true],
+      // Not named, or refused
+      ["br", ["gzip"], false],
+      ["identity", ["gzip"], false],
+      ["gzip;q=0", ["gzip"], false],
+      ["*;q=0", ["gzip"], false],
+      ["*, gzip;q=0", ["gzip"], false],
+      // Every coding of the representation
+      ["gzip, br", ["gzip", "br"], true],
+      ["gzip", ["gzip", "br"], false],
+      // Not a content coding
+      ["*", ["*"], false],
+      ["*", ["gzip;q=1"], false],
+    ];
+    for (const [header, codings, expected] of cases) {
+      deepStrictEqual(
+        accepts(header, codings),
+        expected,
+        `${String(header)} ${codings.join()}`,
+      );
+    }
   });
 
   test("no `Accept-Encoding` gets no coding (and `Vary`)", async () => {
@@ -176,16 +210,46 @@ suite("Content negotiation", () => {
     deepStrictEqual(callbacks.toSorted(), ["end", "end", "write", "write"]);
   });
 
-  test("a fixed format compresses whatever the request accepts, without `Vary`", async () => {
+  test("a fixed format is the only coding besides `identity`", async () => {
     const url = await start({ format: "deflate" });
-    for (const header of [null, "gzip", "identity;q=0"]) {
-      const response = await fetchRaw(url, {
-        headers: header === null ? {} : { "Accept-Encoding": header },
-      });
-      deepStrictEqual(response.status, 200);
-      deepStrictEqual(response.headers["content-encoding"], "deflate");
-      ok(!("vary" in response.headers));
-      deepStrictEqual(response.body, body);
+    const cases: [string | null, number, string | undefined][] = [
+      // `identity` is preferred without the header, or with an empty one
+      [null, 200, none],
+      ["", 200, none],
+      ["deflate", 200, "deflate"],
+      ["gzip, deflate;q=0.5", 200, "deflate"],
+      ["*", 200, "deflate"],
+      ["identity;q=0, *", 200, "deflate"],
+      // Not acceptable: `identity` then
+      ["gzip", 200, none],
+      ["deflate;q=0, identity", 200, none],
+      ["deflate;q=0.5, identity", 200, none],
+      // Neither
+      ["identity;q=0", 406, none],
+      ["gzip, identity;q=0", 406, none],
+      ["deflate;q=0, identity;q=0", 406, none],
+      ["*;q=0", 406, none],
+    ];
+    for (const [header, status, coding] of cases) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await fetchRaw(url, {
+          method,
+          headers: header === null ? {} : { "Accept-Encoding": header },
+        });
+        deepStrictEqual(
+          [
+            response.status,
+            response.headers["content-encoding"],
+            response.headers.vary,
+          ],
+          [status, coding, "Accept-Encoding"],
+          `${method} ${String(header)}`,
+        );
+        deepStrictEqual(
+          response.body,
+          status === 200 && method === "GET" ? body : "",
+        );
+      }
     }
   });
 

@@ -60,10 +60,17 @@ suite("Threshold and filter", () => {
       deepStrictEqual(response.body, text(size));
     }
 
-    // Not compressed for its size: the request does not matter
+    // Not compressed for its size: sent as it is when the request accepts it
     const small = await fetchRaw(url, { headers: { ...gzip, "x-size": "10" } });
     deepStrictEqual(small.headers["content-length"], "10");
-    ok(!("vary" in small.headers));
+    deepStrictEqual(small.headers.vary, "Accept-Encoding");
+    const refused = await fetchRaw(url, {
+      headers: { "Accept-Encoding": "gzip, identity;q=0", "x-size": "10" },
+    });
+    deepStrictEqual(
+      [refused.status, refused.headers.vary, refused.raw.length],
+      [406, "Accept-Encoding", 0],
+    );
   });
 
   test("`threshold` is set by the option", async () => {

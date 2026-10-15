@@ -30,8 +30,8 @@ export type ICompressFormats = ICompressEncodings | "auto";
 export interface ICompressionOptions extends IMiddlewareParams {
   /**
    * The content coding: `auto` (the default) negotiates it with
-   * `Accept-Encoding` among `encodings`; a fixed one compresses every response
-   * that may be compressed, whatever the request accepts
+   * `Accept-Encoding` among `encodings`; a fixed one is the only coding
+   * offered (the request must accept it)
    */
   format?: ICompressFormats | undefined;
   /**

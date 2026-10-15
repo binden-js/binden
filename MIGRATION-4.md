@@ -531,10 +531,15 @@ The coding is negotiated when the headers of a response are committed, once its 
 headers are known:
 
 - A request without `Accept-Encoding` (or with an empty one) gets an uncompressed response: it got
-  `br`. The `DefaultCompression` constant, which named that fallback, is removed. `Vary: Accept-Encoding` is added to the
-  responses whose coding depends on it.
+  `br`. The `DefaultCompression` constant, which named that fallback, is removed.
+  `Vary: Accept-Encoding` is added to every response with a body.
+- A fixed `format` is no longer sent whatever the request accepts: it is the only coding offered,
+  and a request that does not accept it (or sends no `Accept-Encoding`) gets the response as it is.
 - A request that refuses `identity` (`identity;q=0`, or `*;q=0` without `identity`) and accepts
-  none of the codings gets `406 Not Acceptable`.
+  none of the codings gets `406 Not Acceptable`, also for a response that is not compressed (see
+  below). An encoded response (a `Content-Encoding` set by the application, e.g. of a
+  precompressed file) gets `406` when the request does not accept its coding (also with an empty
+  `Accept-Encoding`). A response without a body never does.
 - A response smaller than `threshold` (`1024` bytes), or of a type that the `filter` refuses
   (`isCompressible()` by default: e.g. images, `text/event-stream`, or no `Content-Type`), is not
   compressed. Nor is a response without a body, a range (`206`, `Content-Range`), an encoded
