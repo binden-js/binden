@@ -126,13 +126,18 @@ suite("The decision at the header commit", () => {
           headers: { "Accept-Encoding": accept },
         });
         deepStrictEqual(response.status, status, name);
-        // Kept for the uncompressed body only
+        // Kept for the uncompressed body only (`HEAD` sends no content: only
+        // the digests of its representation)
         deepStrictEqual(
           ["content-digest", "digest", "repr-digest"].map(
             (header) => response.headers[header],
           ),
           path === "/small" || accept === "identity"
-            ? Object.values(digests)
+            ? [
+                method === "HEAD" ? none : digests["Content-Digest"],
+                digests.Digest,
+                digests["Repr-Digest"],
+              ]
             : [none, none, none],
           name,
         );

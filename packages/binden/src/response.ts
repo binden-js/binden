@@ -32,6 +32,7 @@ import {
   validateHeaderName,
   validateHeaderValue,
 } from "node:http";
+import { contentDigests, representationDigests } from "./digests.js";
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
@@ -1364,6 +1365,7 @@ export class BindenResponse<
         // (unknown without one, not empty), without a stale `Transfer-Encoding`
         this[kRepresentation](this.#length());
         this.#frame(this.#length());
+        this.#remove(...contentDigests);
         return this.#end();
       }
       return this.#pipe(data);
@@ -1374,6 +1376,10 @@ export class BindenResponse<
       // to `HEAD` (of the body that `GET` would send) is kept, without a
       // stale `Transfer-Encoding`
       this.#frame(this.req.method === "HEAD" ? (this.#length() ?? 0) : 0);
+      if (this.#bodiless()) {
+        // Of the body of `GET` (e.g. of `sendFile()`), which is not sent
+        this.#remove(...contentDigests);
+      }
       return this.#end();
     }
 
@@ -1400,9 +1406,14 @@ export class BindenResponse<
       return this.#endNotModified(body.length);
     } else if (status !== null) {
       // Empty, also for `HEAD` (which would keep the length of a body), and
-      // without the coding of the body (e.g. a precompressed one)
+      // without the coding nor the digests of the body (e.g. a precompressed
+      // one), whose representation it replaces
       this.statusCode = status;
-      this.#remove("Content-Encoding");
+      this.#remove(
+        "Content-Encoding",
+        ...contentDigests,
+        ...representationDigests,
+      );
       this.#frame(0);
       return this.#end();
     }
@@ -1410,7 +1421,9 @@ export class BindenResponse<
     this.#frame(body.length);
 
     if (this.#bodiless()) {
-      // The headers of the body (as for `GET`), but not the body itself
+      // The headers of the body (as for `GET`), but not the body itself, nor
+      // the digest of its content (only of its representation)
+      this.#remove(...contentDigests);
       return this.#end();
     }
 
@@ -1478,12 +1491,13 @@ export class BindenResponse<
   /**
    * Ends the response (whose headers are not sent yet) as `304 Not Modified`
    * for a `200` whose body has `length` bytes: the validators and the other
-   * headers of the `200`, with its `Content-Length` (RFC 9110, section 8.6),
-   * but no body
+   * headers of the `200`, with its `Content-Length` (RFC 9110, section 8.6)
+   * and the digests of its representation, but no body (nor the digest of
+   * its content)
    */
   #endNotModified(length: number): Promise<void> {
     this.statusCode = 304;
-    this.#remove("Transfer-Encoding");
+    this.#remove("Transfer-Encoding", ...contentDigests);
     this.setHeader("Content-Length", length);
     return this.#end();
   }

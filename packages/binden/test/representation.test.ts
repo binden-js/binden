@@ -461,4 +461,185 @@ suite("The representation chosen before the preconditions", () => {
     deepStrictEqual(negotiator.forgotten, 0);
     deepStrictEqual(abandoned, "Failed");
   });
+
+  test("the digests: of the content that is sent, and of the representation unless it is replaced (RFC 9530)", async () => {
+    const digests = {
+      "Content-Digest": "sha-256=:content:",
+      "Repr-Digest": "sha-256=:representation:",
+      Digest: "SHA-256=legacy",
+    };
+    type IReplier = (response: BindenResponse) => Promise<void>;
+    type IResponseClass = new (request: IncomingMessage) => BindenResponse;
+    /** Whether a reply keeps the digest of the content, and those of the representation */
+    type IKept = readonly [boolean, boolean];
+    /** Asserts which digests of the application a reply keeps, field by field */
+    const check = async (
+      name: string,
+      Response: IResponseClass,
+      { method = "GET", headers = {} }: IRequest,
+      reply: IReplier,
+      status: number,
+      [ofContent, ofRepresentation]: IKept,
+    ): Promise<void> => {
+      const app = await listen({ Response });
+      try {
+        const handled = app.handle(async (_request, response) => {
+          response.set(digests);
+          await reply(response);
+        });
+        const received = await app.request({ method, headers });
+        deepStrictEqual(await handled, null, name);
+        deepStrictEqual(received.status, status, name);
+        deepStrictEqual(
+          received.headers["content-digest"],
+          ofContent ? digests["Content-Digest"] : none,
+          `${name}: Content-Digest`,
+        );
+        deepStrictEqual(
+          received.headers["repr-digest"],
+          ofRepresentation ? digests["Repr-Digest"] : none,
+          `${name}: Repr-Digest`,
+        );
+        deepStrictEqual(
+          received.headers.digest,
+          ofRepresentation ? digests.Digest : none,
+          `${name}: Digest`,
+        );
+      } finally {
+        await app.close();
+      }
+    };
+    interface IRequest {
+      readonly method?: string;
+      readonly headers?: OutgoingHttpHeaders;
+    }
+    const all: IKept = [true, true];
+    // The content is not sent (or only a part of it): the representation stays
+    const kept: IKept = [false, true];
+    // Another response replaces the representation
+    const replaced: IKept = [false, false];
+    const head = { method: "HEAD" };
+    const tag = etagOf(content);
+    const sendIt: IReplier = async (response) => {
+      await response.send(content);
+    };
+    const stream: IReplier = (response) =>
+      response
+        .setHeader("Content-Length", content.length)
+        .send(PassThrough.from([content]));
+    const fileIt: IReplier = async (response) => {
+      await response.sendFile(file, { validator });
+    };
+    const refuse =
+      (reply: IReplier): IReplier =>
+      async (response): Promise<void> => {
+        response[kNegotiator](new Negotiator(refused));
+        await reply(response);
+      };
+
+    await check("send(): GET", BindenResponse, {}, sendIt, 200, all);
+    await check("send(): HEAD", BindenResponse, head, sendIt, 200, kept);
+    const empty: IReplier = async (response) => {
+      await response.send();
+    };
+    await check(
+      "send() of nothing: HEAD",
+      BindenResponse,
+      head,
+      empty,
+      200,
+      kept,
+    );
+    await check("send(stream): GET", BindenResponse, {}, stream, 200, all);
+    await check("send(stream): HEAD", BindenResponse, head, stream, 200, kept);
+    for (const code of [204, 205, 304]) {
+      const withStatus =
+        (reply: IReplier): IReplier =>
+        (response) =>
+          reply(response.status(code));
+      await check(
+        `send(): ${code}`,
+        BindenResponse,
+        {},
+        withStatus(sendIt),
+        code,
+        kept,
+      );
+      await check(
+        `send(stream): ${code}`,
+        BindenResponse,
+        {},
+        withStatus(stream),
+        code,
+        kept,
+      );
+    }
+    await check("dynamic ETag: GET", EtagResponse, {}, sendIt, 200, all);
+    await check("sendFile(): GET", BindenResponse, {}, fileIt, 200, all);
+    await check("sendFile(): HEAD", BindenResponse, head, fileIt, 200, kept);
+    for (const method of ["GET", "HEAD"]) {
+      const match = { method, headers: { "If-None-Match": tag } };
+      const fail = { method, headers: { "If-Match": `"other"` } };
+      await check(
+        `dynamic ETag: ${method} 304`,
+        EtagResponse,
+        match,
+        sendIt,
+        304,
+        kept,
+      );
+      await check(
+        `dynamic ETag: ${method} 412`,
+        EtagResponse,
+        fail,
+        sendIt,
+        412,
+        replaced,
+      );
+      await check(
+        `dynamic ETag: ${method} 406`,
+        EtagResponse,
+        { method },
+        refuse(sendIt),
+        406,
+        replaced,
+      );
+      const fileMatch = { method, headers: { "If-None-Match": validator } };
+      await check(
+        `sendFile(): ${method} 304`,
+        BindenResponse,
+        fileMatch,
+        fileIt,
+        304,
+        kept,
+      );
+      await check(
+        `sendFile(): ${method} 412`,
+        BindenResponse,
+        fail,
+        fileIt,
+        412,
+        replaced,
+      );
+      await check(
+        `sendFile(): ${method} 406`,
+        BindenResponse,
+        { method },
+        refuse(fileIt),
+        406,
+        replaced,
+      );
+    }
+    const part = { headers: { Range: "bytes=0-1" } };
+    await check("sendFile(): 206", BindenResponse, part, fileIt, 206, kept);
+    const beyond = { headers: { Range: "bytes=100-" } };
+    await check(
+      "sendFile(): 416",
+      BindenResponse,
+      beyond,
+      fileIt,
+      416,
+      replaced,
+    );
+  });
 });

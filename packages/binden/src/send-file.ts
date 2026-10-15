@@ -1,5 +1,6 @@
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { type IRepresentation, kRepresentation } from "./seal.js";
+import { contentDigests, representationDigests } from "./digests.js";
 import native, { type PlatformPath, join } from "node:path";
 import { BindenError } from "./error.js";
 import { BindenRequest } from "./request.js";
@@ -468,6 +469,15 @@ function byteRange(
   return start === 0 && end === size - 1 ? null : { start, end };
 }
 
+/** Removes the headers of a response that are set */
+function remove(response: BindenResponse, names: readonly string[]): void {
+  for (const name of names) {
+    if (response.hasHeader(name)) {
+      response.removeHeader(name);
+    }
+  }
+}
+
 /** The validators, caching and representation headers of a file */
 function setHeaders(
   response: BindenResponse,
@@ -556,6 +566,8 @@ export async function sendFileTo(
     // (e.g. with `406 Not Acceptable`, whatever the preconditions are)
     const representation = response[kRepresentation](size);
     if (representation.status !== null) {
+      // Without the digests of the representation that it replaces
+      remove(response, [...contentDigests, ...representationDigests]);
       await response.status(representation.status).send();
       return;
     }
@@ -575,10 +587,13 @@ export async function sendFileTo(
       return;
     } else if (failed !== null) {
       // Empty, also for `HEAD` (which would keep the length of a body), and
-      // without the coding of the file (e.g. a precompressed one)
-      if (response.hasHeader("Content-Encoding")) {
-        response.removeHeader("Content-Encoding");
-      }
+      // without the coding nor the digests of the file (e.g. a precompressed
+      // one), whose representation it replaces
+      remove(response, [
+        "Content-Encoding",
+        ...contentDigests,
+        ...representationDigests,
+      ]);
       await response.status(failed).setHeader("Content-Length", 0).send();
       return;
     } else if (method === "HEAD") {
@@ -602,6 +617,7 @@ export async function sendFileTo(
     const range = byteRange(ranges, size);
 
     if (range === "unsatisfiable") {
+      remove(response, [...contentDigests, ...representationDigests]);
       const cr = new ContentRange({ size }).toString();
       await response.setHeader("Content-Range", cr).status(416).send();
       return;
@@ -619,6 +635,9 @@ export async function sendFileTo(
       await response.setHeader("Content-Length", size).send(stream);
       return;
     }
+    // A part of the file: the digests of its representation, but not the
+    // digest of the whole content
+    remove(response, contentDigests);
     const cr = new ContentRange({ size, start, end }).toString();
     await response
       .set({ "Content-Length": end - start + 1, "Content-Range": cr })
