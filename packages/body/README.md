@@ -146,12 +146,20 @@ than 8 MiB (`400 Bad Request`, as RFC 9659 allows), so a `zstd` body may still t
 memory per decoder.
 
 Concatenated `gzip` members are one body, and so are concatenated `zstd` frames (RFC 8878), on
-every supported version of Node.js: the parser finds the frames itself, and passes them one at a
-time to a single decoder (the decoder of Node.js 24 stops after the first frame of what it gets,
-and accepts a truncated one). Skippable frames are ignored, and a truncated frame is a `400`.
-`limit` counts the content of all the frames, `encoded_limit` and `verify_encoded` the body as
-received, skippable frames included. Each frame is a step of its own: a body of many tiny frames
-takes more time to decode than one frame of the same content, within `encoded_limit`.
+every supported version of Node.js: the parser finds the frames itself, and a single decoder gets
+them only once they have been read. It gets whole chunks when the decoder of Node.js decodes
+concatenated frames (Node.js 26), and one frame at a time otherwise (the decoder of Node.js 24
+stops after the first frame of what it gets, and accepts a truncated one). Skippable frames are
+ignored, and a truncated frame is a `400`. `limit` counts the content of all the frames,
+`encoded_limit` and `verify_encoded` the body as received, skippable frames included.
+
+A request has at most **1024 `zstd` frames**, on every supported version of Node.js: its data,
+empty and skippable frames, over all its `zstd` codings (e.g. both codings of
+`Content-Encoding: zstd, zstd`). Each frame is a step of the decoding, so that a body of many tiny
+frames would cost much more than its size: the next frame gets `413 Content Too Large` (a
+`BindenError` of code `zstd_frames`), before the decoder gets any byte of the chunk where it
+starts. A compressed body is usually one frame; a client that compresses a stream may write a
+frame per flush, which must stay within the limit.
 
 ## Custom `parse`
 
@@ -262,6 +270,7 @@ with an empty body.
 | Corrupt compressed data (also data after the end of a coding, or no byte at all), bytes that are not valid in the charset | `400 Bad Request`              |
 | A client that goes away                                                                                                   | `400 Bad Request` (`aborted`)  |
 | A limit is exceeded (`limit`, `encoded_limit`, `parameter_limit`)                                                         | `413 Content Too Large`        |
+| More than 1024 `zstd` frames in a request                                                                                 | `413` (`zstd_frames`)          |
 | An unknown or unsupported content coding, more than two codings, an unknown charset                                       | `415 Unsupported Media Type`   |
 | A content type that is not selected                                                                                       | skipped (the body is not read) |
 | A `BindenError` of `parse` or `verify`                                                                                    | that error                     |

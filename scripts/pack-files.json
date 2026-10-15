@@ -198,8 +198,13 @@
     "dist/index.d.ts.map",
     "dist/index.js",
     "dist/index.js.map",
+    "dist/src/zstd.d.ts",
+    "dist/src/zstd.d.ts.map",
+    "dist/src/zstd.js",
+    "dist/src/zstd.js.map",
     "index.ts",
-    "package.json"
+    "package.json",
+    "src/zstd.ts"
   ],
   "@binden/compression": [
     "LICENSE",

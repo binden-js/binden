@@ -9,13 +9,8 @@ import {
   serializers,
 } from "binden";
 import { Duplex, Transform, Writable, finished, pipeline } from "node:stream";
-import {
-  constants,
-  createBrotliDecompress,
-  createGunzip,
-  createInflate,
-  createZstdDecompress,
-} from "node:zlib";
+import { type IZstdFrameCount, ZstdDecoding } from "./src/zstd.js";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { addAbortListener } from "node:events";
 
 /** How a selected body is parsed: JSON (with `parse`), text, a form or raw bytes */
@@ -88,7 +83,11 @@ export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
   verify?: IVerify | undefined;
   /** Whether `verify` gets the body as received too (`false`) */
   verify_encoded?: boolean | undefined;
-  /** Whether the `zstd` content coding is decoded (`false`): the API of Node.js is experimental */
+  /**
+   * Whether the `zstd` content coding is decoded (`false`): the API of
+   * Node.js is experimental. A request has at most 1024 `zstd` frames (more
+   * get a `413 Content Too Large` of code `zstd_frames`).
+   */
   zstd?: boolean | undefined;
 }
 
@@ -96,23 +95,10 @@ export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
 type IDecoding = Duplex & { readonly bytesWritten: number };
 
 /**
- * A part of `zstd` data (RFC 8878, section 3.1): the magic number of a frame,
- * the descriptor and the rest of the `header` of a frame, the header
- * (`block`) and the `content` of a block, the `checksum` of a frame, or the
- * `size` and the data (`skip`) of a skippable frame
+ * A decoder of a content coding, created once every coding is known to be
+ * supported: the `zstd` frames of a request count in one `count`
  */
-type IZstdPart =
-  | "block"
-  | "checksum"
-  | "content"
-  | "descriptor"
-  | "header"
-  | "magic"
-  | "size"
-  | "skip";
-
-/** A decoder of a content coding, created once every coding is known to be supported */
-type IDecoder = () => IDecoding;
+type IDecoder = (count: IZstdFrameCount) => IDecoding;
 
 /** The outcome of a callback of the options that has settled */
 type IOutcome<R> =
@@ -121,21 +107,6 @@ type IOutcome<R> =
 
 /** The logger of the parser (`context.log`, whose calls never fail) */
 type ILog = Context["log"];
-
-/** The largest window of a `zstd` frame (8 MiB, RFC 9659) */
-const ZSTD_WINDOW_LOG_MAX = 23;
-
-/** The magic number of a `zstd` frame (RFC 8878, section 3.1.1) */
-const ZSTD_MAGIC = 0xfd2fb528;
-
-/** The magic numbers of the skippable frames, without their last 4 bits (RFC 8878, section 3.1.2) */
-const ZSTD_SKIPPABLE = 0x184d2a5;
-
-/** The error of `zstd` data that is not a frame (e.g. after the end of the last one) */
-const ZSTD_INVALID = "Invalid zstd frame";
-
-/** The error of `zstd` data that has no frame, or ends within one */
-const ZSTD_TRUNCATED = "Unexpected end of zstd data";
 
 /** The most content codings that a body may have */
 const MAX_CODINGS = 2;
@@ -147,14 +118,6 @@ const TRAILING = "Data after the end of a content coding";
 const DISCARDED = "The body has been discarded once the response finished";
 
 const kinds: ReadonlySet<string> = new Set(["form", "json", "raw", "text"]);
-
-/** The parts of `zstd` data that are read (the others are only counted) */
-const zstdFields: ReadonlySet<IZstdPart> = new Set([
-  "block",
-  "descriptor",
-  "magic",
-  "size",
-]);
 
 const token = "[!#$%&'*+.^_`|~\\w-]+";
 
@@ -323,209 +286,6 @@ function guard(decoder: IDecoding, trailing: (() => boolean)[]): Transform {
       callback(null, chunk);
     },
   });
-}
-
-/**
- * Splits `zstd` data at the ends of its frames (RFC 8878, section 3.1), found
- * by their headers and the headers of their blocks: the bytes of two frames
- * are never in one piece. What is not a frame throws.
- */
-class ZstdFrames {
-  /** The bytes of the part being read, when it is a field (4 bytes at most) */
-  readonly #field = Buffer.alloc(4);
-  #part: IZstdPart = "magic";
-  /** The size of the part, and how much of it has been read */
-  #need = 4;
-  #have = 0;
-  /** Whether the frame has a checksum, and the block is its last one */
-  #checksum = false;
-  #last = false;
-
-  /** Whether the data ends between two frames (or before the first one) */
-  public get complete(): boolean {
-    return this.#part === "magic" && this.#have === 0;
-  }
-
-  /** The bytes of a chunk, in a piece for each frame (or part of one) */
-  public split(chunk: Buffer): Buffer[] {
-    const pieces: Buffer[] = [];
-    let start = 0;
-    let offset = 0;
-    while (offset < chunk.byteLength) {
-      const take = Math.min(this.#need - this.#have, chunk.byteLength - offset);
-      if (zstdFields.has(this.#part)) {
-        chunk.copy(this.#field, this.#have, offset, offset + take);
-      }
-      this.#have += take;
-      offset += take;
-      if (this.#have === this.#need) {
-        do {
-          this.#next();
-        } while (this.#need === 0);
-        if (this.#part === "magic") {
-          // The end of a frame
-          pieces.push(chunk.subarray(start, offset));
-          start = offset;
-        }
-      }
-    }
-    if (start < offset) {
-      pieces.push(chunk.subarray(start));
-    }
-    return pieces;
-  }
-
-  /** Moves to the part after the one that has been read */
-  #next(): void {
-    const part = this.#part;
-    if (part === "magic") {
-      this.#magic();
-    } else if (part === "descriptor") {
-      this.#descriptor();
-    } else if (part === "header" || (part === "content" && !this.#last)) {
-      this.#to("block", 3);
-    } else if (part === "block") {
-      this.#block();
-    } else if (part === "content") {
-      this.#to("checksum", this.#checksum ? 4 : 0);
-    } else if (part === "size") {
-      this.#to("skip", this.#field.readUInt32LE(0));
-    } else {
-      // The end of a frame (its `checksum`, or the data of a skippable one)
-      this.#to("magic", 4);
-    }
-  }
-
-  /**
-   * A regular frame, or a skippable one (which the decoder skips): anything
-   * else is invalid (e.g. data after the last frame)
-   */
-  #magic(): void {
-    const magic = this.#field.readUInt32LE(0);
-    if (magic === ZSTD_MAGIC) {
-      this.#to("descriptor", 1);
-    } else if (magic >>> 4 === ZSTD_SKIPPABLE) {
-      this.#to("size", 4);
-    } else {
-      throw new Error(ZSTD_INVALID);
-    }
-  }
-
-  /**
-   * The rest of the header of a frame: `Window_Descriptor` (unless it is a
-   * single segment), `Dictionary_ID` and `Frame_Content_Size` (one byte for a
-   * single segment of flag `0`)
-   */
-  #descriptor(): void {
-    const descriptor = this.#field.readUInt8(0);
-    const single = (descriptor & 0x20) !== 0;
-    const dictionary = descriptor & 0x03;
-    const content = descriptor >>> 6;
-    this.#checksum = (descriptor & 0x04) !== 0;
-    this.#to(
-      "header",
-      (single ? 0 : 1) +
-        (dictionary === 3 ? 4 : dictionary) +
-        (content === 0 ? Number(single) : 1 << content),
-    );
-  }
-
-  /**
-   * The content of a block: the byte that an RLE block repeats (the decoder
-   * refuses a block of the reserved type)
-   */
-  #block(): void {
-    const header = this.#field.readUIntLE(0, 3);
-    const rle = ((header >>> 1) & 0x03) === 1;
-    this.#last = (header & 0x01) === 1;
-    this.#to("content", rle ? 1 : header >>> 3);
-  }
-
-  #to(part: IZstdPart, need: number): void {
-    this.#part = part;
-    this.#need = need;
-    this.#have = 0;
-  }
-}
-
-/**
- * Decodes `zstd` data through one decoder of Node.js, given the bytes of one
- * frame at a time: the decoder of Node.js 24 stops at the end of the first
- * frame of what it gets, and accepts a truncated one. Concatenated frames are
- * one content (skippable frames are skipped); no data at all, what is not a
- * frame and what ends within one fail it.
- */
-class ZstdDecoding extends Duplex {
-  readonly #frames = new ZstdFrames();
-  readonly #decoder = createZstdDecompress({
-    params: { [constants.ZSTD_d_windowLogMax]: ZSTD_WINDOW_LOG_MAX },
-  });
-  #consumed = 0;
-
-  public constructor() {
-    super({
-      write: (chunk: Buffer, _encoding, callback): void => {
-        this.#write(chunk, callback);
-      },
-      final: (callback): void => {
-        this.#final(callback);
-      },
-      read: (): void => {
-        this.#decoder.resume();
-      },
-      destroy: (error, callback): void => {
-        this.#decoder.destroy();
-        callback(error);
-      },
-    });
-    this.#decoder
-      .on("data", (chunk: Buffer) => {
-        if (!this.push(chunk)) {
-          this.#decoder.pause();
-        }
-      })
-      .once("end", () => {
-        this.push(null);
-      })
-      .once("error", (error: Error) => {
-        this.destroy(error);
-      });
-  }
-
-  /** The bytes that it has consumed: all of those that it has got */
-  public get bytesWritten(): number {
-    return this.#consumed;
-  }
-
-  #write(chunk: Buffer, callback: (error?: Error | null) => void): void {
-    this.#consumed += chunk.byteLength;
-    const outcome = attempt(() => this.#frames.split(chunk));
-    if (!outcome.ok) {
-      callback(outcome.error as Error);
-      return;
-    }
-    // Each piece is a write of its own
-    let flowing = true;
-    for (const piece of outcome.value) {
-      flowing = this.#decoder.write(piece);
-    }
-    if (flowing) {
-      callback();
-    } else {
-      this.#decoder.once("drain", () => {
-        callback();
-      });
-    }
-  }
-
-  #final(callback: (error?: Error | null) => void): void {
-    if (this.#consumed === 0 || !this.#frames.complete) {
-      callback(new Error(ZSTD_TRUNCATED));
-      return;
-    }
-    this.#decoder.end();
-    callback();
-  }
 }
 
 /**
@@ -783,13 +543,13 @@ export class BodyParser<T = unknown> extends Middleware {
   /** The decoder of a content coding, `null` when it is not supported */
   #decoder(encoding: string): IDecoder | null {
     if (encoding === "gzip" || encoding === "x-gzip") {
-      return createGunzip;
+      return (): IDecoding => createGunzip();
     } else if (encoding === "deflate") {
-      return createInflate;
+      return (): IDecoding => createInflate();
     } else if (encoding === "br") {
-      return createBrotliDecompress;
+      return (): IDecoding => createBrotliDecompress();
     } else if (encoding === "zstd" && this.#zstd) {
-      return (): IDecoding => new ZstdDecoding();
+      return (count): IDecoding => new ZstdDecoding(count);
     }
     return null;
   }
@@ -813,8 +573,10 @@ export class BodyParser<T = unknown> extends Middleware {
     const wire = counter(this.#encoded_limit, kept);
     const stages: Duplex[] = [wire];
     const trailing: (() => boolean)[] = [];
+    // Over every `zstd` coding of the body
+    const count: IZstdFrameCount = { frames: 0 };
     for (const create of decoders) {
-      const decoder = create();
+      const decoder = create(count);
       stages.push(
         guard(decoder, trailing),
         decoder,

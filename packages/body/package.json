@@ -16,7 +16,8 @@
   "files": [
     "dist",
     "!dist/test",
-    "index.ts"
+    "index.ts",
+    "src"
   ],
   "engines": {
     "node": ">=24.14.1"

@@ -263,7 +263,10 @@ and align the limit of the proxy (`client_max_body_size` of nginx) with the larg
 `@binden/body` reads a body into memory. `limit` counts the bytes once decoded, at every stage of
 the decoding (a small compressed body may decode to gigabytes), and `encoded_limit` the bytes as
 received (a larger `Content-Length` is refused before the body is read). A body over a limit gets
-`413 Content Too Large`, and a form with more than `parameter_limit` (1000) parameters too.
+`413 Content Too Large`, and a form with more than `parameter_limit` (1000) parameters too. With
+`zstd: true`, a request has at most 1024 `zstd` frames (data, empty and skippable ones, over all its
+`zstd` codings), whatever its size and the version of Node.js: each frame is a step of the decoding,
+and the next one gets `413` with the code `zstd_frames`.
 
 ```typescript
 import { BodyParser } from "@binden/body";
