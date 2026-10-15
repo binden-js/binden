@@ -243,12 +243,12 @@ const app = new Binden({ timeout: 30_000 }).use(async (context: Context) => {
 
 `shutdown(server, { timeout = 10000, cleanup_timeout = 1000 })` closes a server gracefully (a server created by `createServer()`, `createSecureServer()` or registered by `callback()`):
 
-1. at once, `isClosing(server)` becomes `true`, the server stops accepting connections, the idle connections are closed (and every other one as soon as it is idle), and the responses in progress get `Connection: close` when their headers have not been sent yet. A request that still arrives on an open connection gets `503 Service Unavailable` with `Connection: close`, without running the stack;
+1. at once, `isClosing(server)` becomes `true`, the server stops accepting connections, and the idle connections are closed (and every other one as soon as it is idle). The newest response of every connection gets `Connection: close` when its headers are sent (the pipelined requests before it get their responses first). A request that still arrives on an open connection gets `503 Service Unavailable` with `Connection: close`, without running the stack (and the responses before it keep the connection open for it);
 2. the requests in progress have `timeout` milliseconds to complete;
 3. then, at once, their signal is aborted (`shutdown`), and every connection is closed, including those that have been upgraded (e.g. WebSocket) or tunnelled (`CONNECT`);
 4. the promise resolves once the server has closed and the cleanups of the requests (see `context.onCleanup()`) have run. Cleanups that take longer than `cleanup_timeout` milliseconds once the server has closed reject it (and are logged).
 
-Another call returns the same promise. A server that is not listening (before `listen()`, or once closed) only waits for the cleanups of its requests.
+Another call returns the same promise. A server that is not listening (before `listen()`, or once closed) only waits for the cleanups of its requests. A server whose `listen()` has not completed yet (e.g. while the address of a host name is looked up) is closed once it listens; when its `listen()` fails, the promise rejects with that error (and logs it).
 
 ```typescript
 import { Binden, shutdown } from "binden";

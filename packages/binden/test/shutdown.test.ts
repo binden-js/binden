@@ -161,6 +161,89 @@ suite("shutdown()", () => {
     deepStrictEqual(paths, ["/a"]);
   });
 
+  test("answers the pipelined requests in progress, and closes the connection after the last one", async () => {
+    const gates = { "/a": gate(), "/b": gate() };
+    const started: string[] = [];
+    const app = new Binden().use(async (context: Context) => {
+      const { pathname } = context.url;
+      started.push(pathname);
+      await gates[pathname as keyof typeof gates].promise;
+      await context.send(pathname);
+    });
+    const { server, port } = await listen(app);
+    const client = await connection(port);
+    client.socket.write(
+      "GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
+    while (started.length < 2) {
+      await sleep(5);
+    }
+
+    const closing = shutdown(server);
+    gates["/b"].open();
+    await sleep(20);
+    gates["/a"].open();
+    await within(closing);
+    await within(client.closed);
+    const [first = "", second = ""] = client
+      .received()
+      .split(/(?=HTTP\/1\.1 )/u);
+    // The first response keeps the connection open for the second one
+    ok(first.startsWith("HTTP/1.1 200 OK"), first);
+    ok(/\r\nConnection: keep-alive\r\n/iu.test(first), first);
+    ok(first.endsWith("/a"), first);
+    ok(second.startsWith("HTTP/1.1 200 OK"), second);
+    ok(/\r\nConnection: close\r\n/iu.test(second), second);
+    ok(second.endsWith("/b"), second);
+  });
+
+  test("a request that arrives once closing keeps the connection open for its `503`", async () => {
+    const gates = { "/a": gate(), "/b": gate() };
+    const started: string[] = [];
+    const app = new Binden().use(async (context: Context) => {
+      const { pathname } = context.url;
+      started.push(pathname);
+      await gates[pathname as keyof typeof gates].promise;
+      await context.send(pathname);
+    });
+    const { server, port } = await listen(app);
+    const requests: string[] = [];
+    server.on("request", (request: BindenRequest) => {
+      requests.push(request.url ?? "");
+    });
+    const client = await connection(port);
+    client.socket.write(
+      "GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
+    while (started.length < 2) {
+      await sleep(5);
+    }
+
+    const closing = shutdown(server);
+    // The newest request of the connection once the server is closing
+    client.socket.write("GET /c HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    while (requests.length < 3) {
+      await sleep(5);
+    }
+    gates["/a"].open();
+    gates["/b"].open();
+    await within(closing);
+    await within(client.closed);
+    const replies = client.received().split(/(?=HTTP\/1\.1 )/u);
+    deepStrictEqual(
+      replies.map((reply) => [
+        reply.split("\r\n", 1)[0],
+        /\r\nConnection: (?<value>[\w-]+)\r\n/iu.exec(reply)?.groups?.value,
+      ]),
+      [
+        ["HTTP/1.1 200 OK", "keep-alive"],
+        ["HTTP/1.1 200 OK", "keep-alive"],
+        ["HTTP/1.1 503 Service Unavailable", "close"],
+      ],
+    );
+    deepStrictEqual(started, ["/a", "/b"]);
+  });
+
   test("closes a connection that is kept alive once its response is complete", async () => {
     const release = gate();
     const app = new Binden().use(async (context: Context) => {
@@ -278,6 +361,98 @@ suite("shutdown()", () => {
     await within(client.closed);
     ok(client.received().endsWith("done"));
     ok(/\r\nConnection: close\r\n/iu.test(client.received()));
+  });
+
+  test("a server that is about to listen is closed once it listens", async () => {
+    const app = new Binden().use((context: Context) => context.send("ok"));
+    const server = app.createServer();
+    const listeners = ["listening", "close", "error"].map((name) =>
+      server.listenerCount(name),
+    );
+    // Bound once the address has been looked up (on the next tick)
+    server.listen(0, "127.0.0.1");
+    ok(!server.listening);
+    const bound = once(server, "listening");
+    try {
+      await within(shutdown(server));
+      await bound;
+      ok(!server.listening);
+      deepStrictEqual(
+        ["listening", "close", "error"].map((name) =>
+          server.listenerCount(name),
+        ),
+        listeners,
+      );
+    } finally {
+      // Not left listening by a failure
+      server.close();
+    }
+  });
+
+  test("a server whose `listen()` fails rejects the shutdown with its error", async () => {
+    const busy = createServer();
+    busy.listen(0, "127.0.0.1");
+    await once(busy, "listening");
+    const { port } = busy.address() as { port: number };
+    const captured = capture();
+    const app = new Binden({ logger: captured.logger });
+    const server = app.createServer();
+    const listeners = ["listening", "close", "error"].map((name) =>
+      server.listenerCount(name),
+    );
+    try {
+      server.listen(port, "127.0.0.1");
+      // Without an `error` listener of the application: the shutdown has it
+      await rejects(within(shutdown(server)), { code: "EADDRINUSE" });
+      ok(isClosing(server) && !server.listening);
+      deepStrictEqual(
+        ["listening", "close", "error"].map((name) =>
+          server.listenerCount(name),
+        ),
+        listeners,
+      );
+      const record = await captured.waitFor("The shutdown has failed");
+      deepStrictEqual(record.failure, {
+        type: "Error",
+        code: "EADDRINUSE",
+        location: "shutdown",
+      });
+    } finally {
+      busy.close();
+    }
+  });
+
+  test("a `listen()` that has failed, thrown or been cancelled is not waited for", async () => {
+    const busy = createServer();
+    busy.listen(0, "127.0.0.1");
+    await once(busy, "listening");
+    const { port } = busy.address() as { port: number };
+    const app = new Binden();
+    try {
+      const failed = app.createServer();
+      failed.listen(port, "127.0.0.1");
+      await once(failed, "error");
+      await within(shutdown(failed));
+
+      const thrown = app.createServer();
+      throws(() => thrown.listen(-1), { code: "ERR_SOCKET_BAD_PORT" });
+      await within(shutdown(thrown));
+
+      const cancelled = app.createServer();
+      cancelled.listen(0, "127.0.0.1");
+      cancelled.close();
+      await once(cancelled, "close");
+      await within(shutdown(cancelled));
+      ok(!cancelled.listening);
+    } finally {
+      busy.close();
+    }
+  });
+
+  test("an `error` of a server without a listener of its own still throws", () => {
+    const server = new Binden().createServer();
+    const error = new Error("An error of the server");
+    throws(() => server.emit("error", error), error);
   });
 
   test("closes one server of an application, not the others", async () => {

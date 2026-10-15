@@ -1,3 +1,4 @@
+import { type EventEmitter, errorMonitor } from "node:events";
 import type { Server as HttpServer, ServerResponse } from "node:http";
 import type { Exchange } from "./exchange.js";
 import type { Server as HttpsServer } from "node:https";
@@ -29,9 +30,21 @@ interface IRegistration {
   closing: boolean;
   promise: Promise<void> | null;
   report: IShutdownReport | null;
+  /**
+   * Whether a `listen()` has not completed yet (e.g. while the address of a
+   * host name is looked up)
+   */
+  pending: boolean;
   readonly sockets: Set<Socket>;
   /** The requests in progress, with their response */
   readonly exchanges: Map<Exchange, ServerResponse>;
+  /** The newest response of every connection (with the latest request) */
+  readonly newest: WeakMap<Socket, ServerResponse>;
+  /**
+   * The responses that close their connection because the server is closing,
+   * with their own `shouldKeepAlive`
+   */
+  readonly kept: WeakMap<ServerResponse, boolean>;
   /** Called once no connection is left */
   readonly drained: (() => void)[];
 }
@@ -55,11 +68,29 @@ export function register(
     closing: false,
     promise: null,
     report,
+    pending: false,
     sockets: new Set<Socket>(),
     exchanges: new Map<Exchange, ServerResponse>(),
+    newest: new WeakMap<Socket, ServerResponse>(),
+    kept: new WeakMap<ServerResponse, boolean>(),
     drained: [],
   };
   registrations.set(server, registration);
+  const listen = server.listen.bind(server);
+  server.listen = ((...args: unknown[]): IServer => {
+    Reflect.apply(listen, server, args);
+    // Bound later, e.g. once the address of a host name has been looked up
+    // (a `listen()` that throws is not pending)
+    registration.pending = !server.listening;
+    return server;
+  }) as typeof server.listen;
+  const settled = (): void => {
+    registration.pending = false;
+  };
+  // `errorMonitor`: an `error` without a listener of the application still
+  // throws, as it would without this one
+  server.on("listening", settled).on("close", settled);
+  (server as EventEmitter).on(errorMonitor, settled);
   server.on("connection", (socket: Socket) => {
     registration.sockets.add(socket);
     socket.once("close", () => {
@@ -75,6 +106,21 @@ export function register(
 }
 
 /**
+ * Makes a response close its connection once it is complete (`Connection:
+ * close`), unless its headers have been sent: decided by Node.js when they
+ * are, so that it applies to the newest response of the connection then
+ */
+function closesConnection(
+  registration: IRegistration,
+  response: ServerResponse,
+): void {
+  if (!response.headersSent && !registration.kept.has(response)) {
+    registration.kept.set(response, response.shouldKeepAlive);
+    response.shouldKeepAlive = false;
+  }
+}
+
+/**
  * Tracks a request of a server until its cleanups have run: once the server
  * is closing, its connection is closed as soon as it is idle
  */
@@ -85,6 +131,23 @@ export function track(
 ): void {
   const registration = register(server);
   registration.exchanges.set(exchange, response);
+  // The requests of a connection are emitted in their order: once the server
+  // is closing, its newest one closes it, so that the pipelined requests
+  // before it get their responses
+  const { socket } = response.req;
+  const previous = registration.newest.get(socket);
+  registration.newest.set(socket, response);
+  if (
+    typeof previous !== "undefined" &&
+    registration.kept.has(previous) &&
+    !previous.headersSent
+  ) {
+    // A request that arrives once closing (its `503` closes the connection):
+    // the response before it, unless its headers have been sent, keeps the
+    // connection open for it
+    previous.shouldKeepAlive = registration.kept.get(previous) as boolean;
+    registration.kept.delete(previous);
+  }
   response.once("close", () => {
     if (registration.closing) {
       // Once the connection is idle (e.g. kept alive after its response)
@@ -105,21 +168,41 @@ export function isClosing(server: IServer): boolean {
   return registrations.get(server)?.closing ?? false;
 }
 
-/** The shutdown of a server */
-async function close(
+/**
+ * Settles once a pending `listen()` has completed: `null` once the server is
+ * listening (or closed), or the error of a `listen()` that has failed (which
+ * the shutdown reports). Its listeners are removed then.
+ */
+async function bound(server: IServer): Promise<{ error: unknown } | null> {
+  const { promise, resolve } = Promise.withResolvers<{
+    error: unknown;
+  } | null>();
+  const settled = (): void => {
+    resolve(null);
+  };
+  const failed = (error: unknown): void => {
+    resolve({ error });
+  };
+  server
+    .once("listening", settled)
+    .once("close", settled)
+    .once("error", failed);
+  try {
+    return await promise;
+  } finally {
+    server.off("listening", settled).off("close", settled).off("error", failed);
+  }
+}
+
+/**
+ * Closes the server and its connections: those that are idle at once, the
+ * others once their responses are complete or `timeout` has passed
+ */
+async function drain(
   server: IServer,
   registration: IRegistration,
   timeout: number,
-  cleanup_timeout: number,
 ): Promise<void> {
-  registration.closing = true;
-  for (const response of registration.exchanges.values()) {
-    if (!response.headersSent) {
-      // The connection closes once the response is complete
-      response.setHeader("Connection", "close");
-    }
-  }
-
   // Before `listen()` (or once closed), there is nothing to close but the
   // connections that are left
   const closed = server.listening
@@ -152,6 +235,27 @@ async function close(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** The shutdown of a server */
+async function close(
+  server: IServer,
+  registration: IRegistration,
+  timeout: number,
+  cleanup_timeout: number,
+): Promise<void> {
+  registration.closing = true;
+  for (const response of registration.exchanges.values()) {
+    if (registration.newest.get(response.req.socket) === response) {
+      closesConnection(registration, response);
+    }
+  }
+  // A server that is about to listen is closed once it listens, but not
+  // waited for when its `listen()` fails: its error rejects the shutdown
+  const failure = registration.pending ? await bound(server) : null;
+  if (failure === null) {
+    await drain(server, registration, timeout);
+  }
 
   // The cleanups run once the responses are closed: they must not take long
   const { promise: expired, resolve } = Promise.withResolvers<boolean>();
@@ -165,13 +269,17 @@ async function close(
     expired,
   ]);
   clearTimeout(cleanup);
-  if (!done) {
-    const error = new Error(
-      `The cleanup of the requests has not completed within ${cleanup_timeout} ms`,
-    );
+  const failed = done
+    ? failure
+    : {
+        error: new Error(
+          `The cleanup of the requests has not completed within ${cleanup_timeout} ms`,
+        ),
+      };
+  if (failed !== null) {
     // The report of an application does not throw
-    registration.report?.("The shutdown has failed", error);
-    throw error;
+    registration.report?.("The shutdown has failed", failed.error);
+    throw failed.error;
   }
 }
 
