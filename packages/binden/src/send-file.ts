@@ -1,4 +1,4 @@
-import { type FileHandle, open, realpath } from "node:fs/promises";
+import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import native, { type PlatformPath, join } from "node:path";
 import { BindenError } from "./error.js";
 import { BindenRequest } from "./request.js";
@@ -72,13 +72,19 @@ const strongTag = /^"[\x21\x23-\x7E]*"$/u;
 /** A field value of visible ASCII characters, spaces and tabs */
 const fieldValue = /^[\t\x20-\x7E]+$/u;
 
-/** The errors of a path that does not lead to a file */
+/**
+ * The errors of a path that does not lead to a regular file (e.g. a socket,
+ * which cannot be opened: `ENXIO`, or `EOPNOTSUPP` on macOS)
+ */
 const missing: ReadonlySet<unknown> = new Set([
   "EISDIR",
   "ELOOP",
   "ENAMETOOLONG",
+  "ENODEV",
   "ENOENT",
   "ENOTDIR",
+  "ENXIO",
+  "EOPNOTSUPP",
 ]);
 
 const windows = process.platform === "win32";
@@ -230,7 +236,8 @@ export function within(
 /**
  * The file of `path`: as it is without `root` (a trusted path, or a `file:`
  * URL), otherwise the real path of a relative path that stays inside the real
- * path of `root` (404 outside of it, or for a symbolic link that leads out)
+ * path of `root` (404 outside of it, for a symbolic link that leads out, or
+ * for anything but a regular file: a socket, a device or a FIFO is not opened)
  */
 async function locate(
   path: URL | string,
@@ -272,6 +279,12 @@ async function locate(
   }
   // Also the real names (e.g. of a symbolic link to a dotfile)
   checkDotfiles(parts, dotfiles);
+  const stats = await lstat(file).catch((error: unknown) => {
+    throw notFound(error);
+  });
+  if (!stats.isFile()) {
+    throw new BindenError(404);
+  }
   return { file, name: path, contained: true };
 }
 

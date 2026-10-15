@@ -397,8 +397,9 @@ const app = new Binden().route("/assets/*path", (context) =>
 ```
 
 - With `root`, the path must be a relative path that stays inside the root, once every symbolic
-  link is resolved: an absolute path, an empty, `.` or `..` segment, a missing file or a file that is
-  not inside the root gets `404 Not Found`. A dotfile (e.g. `.env`, `.git/config`) gets `404`
+  link is resolved: an absolute path, an empty, `.` or `..` segment, a missing file, a file that is
+  not inside the root, or anything but a regular file (a socket, a device or a FIFO, which is not
+  opened) gets `404 Not Found`. A dotfile (e.g. `.env`, `.git/config`) gets `404`
   (`dotfiles: "ignore"`, the default) or `403` (`"deny"`).
 - The guarantee has limits: the root directory and the directories above it must be trusted (not
   writable by someone who should not choose what is served), and a race in which an attacker who
