@@ -12,7 +12,6 @@ import { deepStrictEqual, ok } from "node:assert/strict";
 import { Compression } from "../index.js";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
 import zlib from "node:zlib";
 
 const body = text(4096);
@@ -211,11 +210,8 @@ suite("A head that Node.js refuses", () => {
         "ERR_INVALID_CHAR",
         200,
         false,
-        {
-          "accept-ranges": "bytes",
-          "content-length": statSync(import.meta.filename).size,
-          etag: '"f"',
-        },
+        // Without the framing of the send that has failed
+        { "accept-ranges": "bytes", etag: '"f"' },
         [],
       ],
       // Created, then destroyed

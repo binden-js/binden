@@ -1,3 +1,4 @@
+import { type AddressInfo, connect } from "node:net";
 import {
   Binden,
   BindenAbortError,
@@ -15,10 +16,10 @@ import {
   sleep,
   within,
 } from "./helpers.js";
+import { type IncomingMessage, createServer, get } from "node:http";
+import { PassThrough, Readable } from "node:stream";
 import { deepStrictEqual, ok, rejects } from "node:assert/strict";
 import { suite, test } from "node:test";
-import { Readable } from "node:stream";
-import { connect } from "node:net";
 import { once } from "node:events";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as wait } from "node:timers/promises";
@@ -109,6 +110,53 @@ function silent(): Readable {
       // Nothing
     },
   });
+}
+
+/**
+ * Writes requests on one connection (the last one with `Connection: close`)
+ * and reads everything until the server closes it: the responses, each
+ * framed exactly by its `Content-Length` or its chunks
+ */
+async function converse(
+  port: number,
+  requests: string,
+): Promise<{ head: string; body: string }[]> {
+  const socket = connect(port, "localhost");
+  await once(socket, "connect");
+  let data = "";
+  socket.setEncoding("latin1").on("data", (chunk: string) => {
+    data += chunk;
+  });
+  socket.write(requests);
+  await within(once(socket, "close"), 5000);
+  const responses: { head: string; body: string }[] = [];
+  while (data !== "") {
+    const end = data.indexOf("\r\n\r\n");
+    const head = data.slice(0, end);
+    let rest = data.slice(end + 4);
+    const length = /^Content-Length: (?<length>\d+)$/imu.exec(head)?.groups
+      ?.length;
+    let body = "";
+    if (/^Transfer-Encoding: chunked$/imu.test(head)) {
+      for (;;) {
+        const line = rest.indexOf("\r\n");
+        const size = Number.parseInt(rest.slice(0, line), 16);
+        ok(line > 0 && Number.isSafeInteger(size), `Not chunked: ${data}`);
+        body += rest.slice(line + 2, line + 2 + size);
+        rest = rest.slice(line + 2 + size + 2);
+        if (size === 0) {
+          break;
+        }
+      }
+    } else {
+      ok(typeof length !== "undefined", `Not framed: ${data}`);
+      body = rest.slice(0, Number(length));
+      rest = rest.slice(Number(length));
+    }
+    responses.push({ head, body });
+    data = rest;
+  }
+  return responses;
 }
 
 suite("The deadline", () => {
@@ -330,6 +378,184 @@ suite("The deadline", () => {
         } finally {
           cut.close();
         }
+      },
+    );
+  });
+
+  test("a send that its source ends at the deadline leaves no framing to the reply that follows", async () => {
+    const upstream = createServer((_request, response) => {
+      // The head of a body that never comes
+      response.writeHead(200, { "Content-Length": 100_000 }).flushHeaders();
+    });
+    upstream.listen(0, "localhost");
+    await once(upstream, "listening");
+    const { port: up } = upstream.address() as AddressInfo;
+    const rejected: unknown[] = [];
+    try {
+      await withApp(
+        {
+          timeout: 50,
+          error_handler: async (context: Context, error: unknown) => {
+            if (!isDeadline(error)) {
+              throw error;
+            } else if (context.url.pathname.endsWith("/native")) {
+              context.response
+                .writeHead(503, { "Content-Type": "text/plain" })
+                .end("busy\n");
+              return;
+            }
+            context.response
+              .status(503)
+              .setHeader("Content-Type", "text/plain");
+            // Of an unknown length: chunked, unless a length is left over
+            await context.send(Readable.from(["busy\n"]));
+          },
+        },
+        (app) => {
+          app.use(async (context: Context) => {
+            const { response, signal, url } = context;
+            if (url.pathname === "/next") {
+              await context.send("next");
+              return;
+            }
+            let source: Readable = new PassThrough();
+            if (url.pathname.startsWith("/proxy")) {
+              // A proxy of the upstream, which forwards its length
+              source = await new Promise<IncomingMessage>((resolve, reject) => {
+                get({ host: "localhost", port: up, signal }, resolve).once(
+                  "error",
+                  reject,
+                );
+              });
+              response.setHeader(
+                "Content-Length",
+                `${(source as IncomingMessage).headers["content-length"]}`,
+              );
+            } else {
+              response.setHeader("Content-Length", 123_456);
+            }
+            // Its source is destroyed at once by the abort of the deadline,
+            // before the deadline cancels the send
+            signal.addEventListener("abort", () => {
+              source.destroy();
+            });
+            await context.send(source).catch((error: unknown) => {
+              rejected.push(error);
+            });
+          });
+        },
+        async ({ port }) => {
+          for (const path of [
+            "/stream",
+            "/native",
+            "/proxy",
+            "/proxy/native",
+          ]) {
+            rejected.length = 0;
+            const responses = await converse(
+              port,
+              `GET ${path} HTTP/1.1\r\nHost: a\r\n\r\n` +
+                "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+            );
+            deepStrictEqual(
+              responses.map(({ head, body }) => [head.split("\r\n")[0], body]),
+              [
+                ["HTTP/1.1 503 Service Unavailable", "busy\n"],
+                ["HTTP/1.1 200 OK", "next"],
+              ],
+              path,
+            );
+            ok(!/^Content-Length/imu.test(responses[0]?.head ?? ""), path);
+            // As a send that the deadline cancels
+            ok(rejected[0] instanceof BindenAbortError, path);
+            deepStrictEqual(rejected[0].reason, "deadline", path);
+          }
+        },
+      );
+    } finally {
+      upstream.closeAllConnections();
+      upstream.close();
+    }
+  });
+
+  test("a send that the client leaves rejects with its own error (its owner may still reply)", async () => {
+    const rejected: unknown[] = [];
+    const sending = Promise.withResolvers<null>();
+    await withApp(
+      {},
+      (app) => {
+        app.use(async (context: Context) => {
+          context.response.setHeader("Content-Length", 10);
+          const sent = context.send(silent());
+          sending.resolve(null);
+          await sent.catch((error: unknown) => {
+            rejected.push(error);
+          });
+        });
+      },
+      async ({ port }) => {
+        const socket = connect(port, "localhost");
+        await once(socket, "connect");
+        socket.write("GET / HTTP/1.1\r\nHost: a\r\n\r\n");
+        await within(sending.promise);
+        socket.destroy();
+        const deadline = Date.now() + 5000;
+        while (rejected.length === 0 && Date.now() < deadline) {
+          await sleep(5);
+        }
+        deepStrictEqual(
+          (rejected[0] as { code?: unknown }).code,
+          "ERR_STREAM_PREMATURE_CLOSE",
+        );
+      },
+    );
+  });
+
+  test("a send that fails late leaves the framing of the reply that has replaced it", async () => {
+    const outcomes: unknown[] = [];
+    await withApp(
+      {
+        error_handler: async (context: Context) => {
+          // The framing of this reply, while the failed send still runs
+          context.response.statusMessage = "";
+          context.response.status(500).setHeader("Content-Length", 4);
+          await sleep(60);
+          context.response.write("bu");
+          context.response.end("sy");
+        },
+      },
+      (app) => {
+        app.use(async (context: Context) => {
+          if (context.url.pathname === "/next") {
+            await context.send("next");
+            return;
+          }
+          const source = new PassThrough();
+          context.response.setHeader("Content-Length", 50);
+          context.send(source).then(
+            () => outcomes.push("sent"),
+            (error: unknown) => outcomes.push((error as Error).message),
+          );
+          setTimeout(() => {
+            source.destroy(new Error("Late"));
+          }, 20);
+          throw new Error("A failure");
+        });
+      },
+      async ({ port }) => {
+        const responses = await converse(
+          port,
+          "GET /late HTTP/1.1\r\nHost: a\r\n\r\nGET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        );
+        deepStrictEqual(outcomes, ["Late"]);
+        const [replaced, next] = responses as [
+          { head: string; body: string },
+          { head: string; body: string },
+        ];
+        ok(/^Content-Length: 4$/imu.test(replaced.head), replaced.head);
+        ok(!/^Transfer-Encoding/imu.test(replaced.head));
+        deepStrictEqual(replaced.body, "busy");
+        deepStrictEqual(next.body, "next");
       },
     );
   });

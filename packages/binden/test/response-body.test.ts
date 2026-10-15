@@ -5,10 +5,10 @@ import {
 } from "../index.js";
 import { type IReply, type ITestServer, listen } from "./http.js";
 import { IncomingMessage, type OutgoingHttpHeaders } from "node:http";
+import { PassThrough, Readable } from "node:stream";
 import { Socket, connect } from "node:net";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
-import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { within } from "./helpers.js";
@@ -25,6 +25,9 @@ class EtagResponse extends BindenResponse {
 function etagOf(body: Buffer): string {
   return `"${createHash("sha256").update(body).digest("base64url")}"`;
 }
+
+/** `undefined`, which the linter does not let the tests write */
+const none = ({} as { value?: undefined }).value;
 
 /** The settled value of a promise: `null` once resolved, or its error */
 function settle(promise: Promise<unknown>): Promise<unknown> {
@@ -271,6 +274,83 @@ suite("BindenResponse (bodies)", () => {
       (error as { code?: unknown }).code,
       "ERR_STREAM_PREMATURE_CLOSE",
     );
+  });
+
+  test("a stream that fails before its first chunk leaves no framing, unless the response is framed since", async () => {
+    const range = "bytes 0-9/20";
+    const changes: [string, (response: BindenResponse) => void, unknown[]][] = [
+      [
+        "nothing",
+        (): void => {
+          // The framing of the send stays
+        },
+        [none, none],
+      ],
+      // Of another header: the framing is still the one of the send
+      [
+        "another header",
+        (response): void => {
+          response.setHeader("X-Other", "1");
+        },
+        [none, none],
+      ],
+      [
+        "a length set",
+        (response): void => {
+          response.setHeader("Content-Length", 4);
+        },
+        [4, range],
+      ],
+      [
+        "a range removed",
+        (response): void => {
+          response.removeHeader("Content-Range");
+        },
+        [10, none],
+      ],
+      [
+        "a transfer coding set",
+        (response): void => {
+          response.setHeader("Transfer-Encoding", "chunked");
+        },
+        [10, range],
+      ],
+      [
+        "a range appended",
+        (response): void => {
+          response.appendHeader("Content-Range", range);
+        },
+        [10, [range, range]],
+      ],
+    ];
+    for (const [name, change, expected] of changes) {
+      let framing: unknown[] = [];
+      let error: unknown = null;
+      const received = await reply(async (response) => {
+        const source = new PassThrough();
+        response
+          .set({ "Content-Length": 10, "Content-Range": range })
+          .status(206);
+        const sent = settle(response.send(source));
+        change(response);
+        source.destroy(new Error("Failed"));
+        error = await within(sent, 1000);
+        framing = [
+          response.getHeader("Content-Length"),
+          response.getHeader("Content-Range"),
+        ];
+        response.removeHeader("Content-Length");
+        response.removeHeader("Content-Range");
+        await response.status(500).send("failed");
+      });
+      deepStrictEqual(framing, expected, name);
+      deepStrictEqual((error as Error).message, "Failed", name);
+      deepStrictEqual(
+        [received.status, received.body.toString()],
+        [500, "failed"],
+        name,
+      );
+    }
   });
 
   test("a 1xx status is not sent as the final response", async () => {

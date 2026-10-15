@@ -37,6 +37,7 @@ import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
 import { EventEmitter } from "node:events";
+import { Exchange } from "./exchange.js";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
@@ -187,6 +188,13 @@ const connections = new WeakMap<object, IConnection>();
 /** Whether a value is truthy, as Node.js tests a chunk or an encoding (e.g. `""` is none) */
 const truthy = (value: unknown): boolean => Boolean(value);
 
+/** The headers that frame a body (see `BindenResponse.#framing`) */
+const framing: ReadonlySet<string> = new Set([
+  "content-length",
+  "content-range",
+  "transfer-encoding",
+]);
+
 /** Without `[kSeal]()`, nothing may mutate a sealed response */
 const never = (): boolean => false;
 
@@ -293,6 +301,12 @@ export class BindenResponse<
   #negotiator: IRepresentationNegotiator | null = null;
   #statusCode = 200;
   #statusMessage: string | undefined;
+  /**
+   * The generation of the framing headers of the response, advanced by every
+   * change of them: a send that fails removes its framing only while it is the
+   * latest (see `#pipe()`)
+   */
+  #framing = 0;
 
   static {
     // The status of a sealed response is not changed by the abandoned work
@@ -1000,9 +1014,18 @@ export class BindenResponse<
     name: string,
     value: number | string | readonly string[],
   ): this {
-    return this.#allows()
-      ? super.setHeader(name, BindenResponse.#copy(value))
-      : this;
+    if (!this.#allows()) {
+      return this;
+    }
+    this.#reframed(name);
+    return super.setHeader(name, BindenResponse.#copy(value));
+  }
+
+  /** Advances the generation of the framing (see `#framing`) when a header changes it */
+  #reframed(name: string): void {
+    if (framing.has(String(name).toLowerCase())) {
+      this.#framing += 1;
+    }
   }
 
   /**
@@ -1037,7 +1060,11 @@ export class BindenResponse<
     name: string,
     value: string | readonly string[],
   ): this {
-    return this.#allows() ? super.appendHeader(name, value) : this;
+    if (!this.#allows()) {
+      return this;
+    }
+    this.#reframed(name);
+    return super.appendHeader(name, value);
   }
 
   /** Sets headers (see `setHeaders()` of Node.js), unless the response is sealed */
@@ -1059,6 +1086,7 @@ export class BindenResponse<
   /** Removes a header (see `removeHeader()` of Node.js), unless the response is sealed */
   public override removeHeader(name: string): void {
     if (this.#allows()) {
+      this.#reframed(name);
       super.removeHeader(name);
     }
   }
@@ -1752,6 +1780,8 @@ export class BindenResponse<
     // `Transfer-Encoding` would frame it by chunks as well (RFC 9112,
     // section 6.1), which a client or a proxy may read either way
     this.#frame(declared);
+    // The framing of this send (see `#unframe()`)
+    const framed = this.#framing;
     const key = {};
     let flushed = 0;
     let sent = 0;
@@ -1774,8 +1804,12 @@ export class BindenResponse<
             return;
           } else if (!this.headersSent) {
             this.#forget();
+            this.#unframe(framed);
           }
-          reject(error);
+          // Abandoned at the deadline (e.g. its source destroyed by a
+          // listener of `signal`, before the deadline cancels it), it fails
+          // as a cancelled send
+          reject(operation.active ? error : this.#abandoned(error));
         }
       };
       const fail = (error: Error): void => {
@@ -1892,6 +1926,32 @@ export class BindenResponse<
         },
       );
     });
+  }
+
+  /**
+   * Removes the framing of a send that has failed before the headers are
+   * committed (whatever has ended it), so that the reply that follows does
+   * not inherit it: with the rights of the framework (its owner may have been
+   * abandoned), but only while the framing is still the one of that send
+   * (`generation`): the headers of another reply that has framed the
+   * response since stay.
+   */
+  #unframe(generation: number): void {
+    if (generation === this.#framing) {
+      this[kFramework](() => {
+        this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
+      });
+    }
+  }
+
+  /**
+   * The reason of a send whose owner has been abandoned: the reason of the
+   * signal of the request once it is aborted (as `[kCancel]()` would), its
+   * own error otherwise
+   */
+  #abandoned(error: Error): Error {
+    const signal = Exchange.find(this.req)?.signal;
+    return signal?.aborted === true ? (signal.reason as Error) : error;
   }
 
   /** The `Content-Length` of the response, `null` without a valid one */
