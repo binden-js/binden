@@ -15,7 +15,7 @@ import {
   sleep,
   within,
 } from "./helpers.js";
-import { deepStrictEqual, ok } from "node:assert/strict";
+import { deepStrictEqual, ok, rejects } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
 import { connect } from "node:net";
@@ -95,6 +95,11 @@ async function client(port: number): Promise<IClient> {
       socket.destroy();
     },
   };
+}
+
+/** Whether the error is the `503` of a deadline */
+function isDeadline(error: unknown): boolean {
+  return error instanceof BindenError && error.code === "deadline";
 }
 
 /** A source that never ends (nor pushes anything by itself) */
@@ -278,6 +283,53 @@ suite("The deadline", () => {
         await within(
           captured.waitFor("The provided `error_handler` has failed late"),
         );
+      },
+    );
+  });
+
+  test("cancels a send that has not committed its headers, which the time out of an error handler cuts", async () => {
+    await withApp(
+      {
+        timeout: 60,
+        error_handler_timeout: 30,
+        error_handler: async (
+          context: Context,
+          error: unknown,
+        ): Promise<void> => {
+          if (context.url.pathname === "/handler" && !isDeadline(error)) {
+            // Started (see `response.started`): its time out cuts it
+            await context.send(silent());
+            return;
+          }
+          await context.status(isDeadline(error) ? 503 : 500).send("reply");
+        },
+      },
+      (app) => {
+        app.use(async (context: Context) => {
+          if (context.url.pathname === "/handler") {
+            context.setTimeout(0);
+            throw new Error("A failure");
+          }
+          // The deadline cancels it, and replies
+          await context.send(silent());
+        });
+      },
+      async ({ port }) => {
+        const connection = await client(port);
+        try {
+          const { head, body } = await connection.request("/middleware");
+          ok(head.startsWith("HTTP/1.1 503 "), head);
+          deepStrictEqual(body, "reply");
+        } finally {
+          connection.close();
+        }
+        const cut = await client(port);
+        try {
+          await rejects(cut.request("/handler"), /No complete response: ""/u);
+          ok(cut.closed);
+        } finally {
+          cut.close();
+        }
       },
     );
   });

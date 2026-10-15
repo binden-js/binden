@@ -50,7 +50,9 @@ Two layers bound the time that a request takes:
   writes, headers, status and cookies are ignored, also from the listeners of `context.signal` and
   from a `catch` of the work that the signal has stopped), and a stream or a file whose headers
   are not sent yet is cancelled, so that the `503` is sent at once. A deadline that passes while
-  the error handler runs for another error takes the reply over the same way. An error handler that has ended its
+  the error handler runs for another error takes the reply over the same way. The time out of an
+  error handler (`error_handler_timeout`) does not cancel its sends: once one has started (also a
+  stream whose first chunk has not come), the connection is closed without a reply. An error handler that has ended its
   reply when `error_handler_timeout` passes is not cut: a slow client still gets all of it.
 
 ```typescript
