@@ -44,6 +44,38 @@ export function split(input: string, separator: string): string[] {
   return parts;
 }
 
+/**
+ * Splits a field value on the separators that are not in a quoted string, as
+ * `split()` does, but read from its end: a quoted string that is not
+ * terminated swallows what is before it, not what is after it (e.g. the
+ * elements that proxies append after the one of a client). The parts are in
+ * their order.
+ */
+export function splitFromEnd(input: string, separator: string): string[] {
+  const parts: string[] = [];
+  let end = input.length;
+  let quoted = false;
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    const char = input.charAt(index);
+    if (char === `"` && quoted) {
+      // The start of the quoted string, unless it is escaped (by an odd
+      // number of backslashes before it)
+      let backslashes = 0;
+      while (input.charAt(index - backslashes - 1) === "\\") {
+        backslashes += 1;
+      }
+      quoted = backslashes % 2 === 1;
+    } else if (char === `"`) {
+      quoted = true;
+    } else if (char === separator && !quoted) {
+      parts.push(input.slice(index + 1, end));
+      end = index;
+    }
+  }
+  parts.push(input.slice(0, end));
+  return parts.toReversed();
+}
+
 /** The value of a quoted string (RFC 9110, section 5.6.4), or the value itself */
 export function unquote(value: string): string {
   return value.length >= 2 && value.startsWith(`"`) && value.endsWith(`"`)

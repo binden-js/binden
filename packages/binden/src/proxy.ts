@@ -169,9 +169,12 @@ function trusting(trust: ITrustFn | boolean | number): ITrustFn {
   return () => trust;
 }
 
-/** The elements of `Forwarded` as hops, `null` for an invalid one */
-function forwardedHops(header?: string): (IHop | null)[] {
-  return Forwarded.parse(header).map((element) => {
+/**
+ * The elements of `Forwarded` (its field lines, each read from its end) as
+ * hops, `null` for an invalid one
+ */
+function forwardedHops(lines?: readonly string[]): (IHop | null)[] {
+  return Forwarded.parse(lines).map((element) => {
     const found = element === null ? null : parseNode(element.for);
     if (
       element === null ||
@@ -261,7 +264,7 @@ export function resolveProxy(
 
   const forwarded = headers === "forwarded";
   const hops = forwarded
-    ? forwardedHops(fields.forwarded)
+    ? forwardedHops(distinct.forwarded)
     : xForwardedHops(fields["x-forwarded-for"]);
   let origin = forwarded
     ? { protocol: null, host: null }

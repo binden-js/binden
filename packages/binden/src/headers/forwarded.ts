@@ -1,4 +1,4 @@
-import { fieldValue, quote, split, unquote } from "./list.js";
+import { fieldValue, quote, split, splitFromEnd, unquote } from "./list.js";
 
 /** The parameters of a `Forwarded` element */
 export interface IForwarded {
@@ -87,27 +87,32 @@ export class Forwarded implements IForwarded {
   }
 
   /** The valid elements of the header (see `.parse()`) */
-  public static fromString(input?: string): Forwarded[] {
+  public static fromString(input?: readonly string[] | string): Forwarded[] {
     return Forwarded.parse(input).filter(
       (element): element is Forwarded => element !== null,
     );
   }
 
   /**
-   * The elements of the header in their order, `null` for an invalid one
-   * (RFC 7239, section 4): a parameter that is not `name=value` (a quoted
-   * string, or a value without spaces and separators, also the unquoted IPv6
-   * addresses and ports that some proxies send), or that occurs more than
-   * once. Empty elements are ignored (RFC 9110, section 5.6.1). Their position
-   * tells which proxy has added them: every proxy appends its own.
+   * The elements of the header (a field value, or its field lines) in their
+   * order, `null` for an invalid one (RFC 7239, section 4): a parameter that
+   * is not `name=value` (a quoted string, or a value without spaces and
+   * separators, also the unquoted IPv6 addresses and ports that some proxies
+   * send), or that occurs more than once. Empty elements are ignored (RFC
+   * 9110, section 5.6.1). Their position tells which proxy has added them:
+   * every proxy appends its own, so a field line is read from its end, where a
+   * quoted string that is not terminated (e.g. sent by a client) invalidates
+   * the element that has it and those before it only.
    */
-  public static parse(input?: string): (Forwarded | null)[] {
-    if (typeof input === "undefined") {
-      return [];
-    }
-    return split(input, ",")
-      .filter((element) => !/^[\s;]*$/u.test(element))
-      .map((element) => Forwarded.#parseElement(element));
+  public static parse(
+    input?: readonly string[] | string,
+  ): (Forwarded | null)[] {
+    const lines = typeof input === "string" ? [input] : (input ?? []);
+    return lines.flatMap((line) =>
+      splitFromEnd(line, ",")
+        .filter((element) => !/^[\s;]*$/u.test(element))
+        .map((element) => Forwarded.#parseElement(element)),
+    );
   }
 
   static #parseElement(input: string): Forwarded | null {

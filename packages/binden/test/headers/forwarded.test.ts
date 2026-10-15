@@ -62,7 +62,7 @@ suite("Forwarded", () => {
   });
 
   test(".fromString()", () => {
-    const input = ` For="[2001:db8:cafe::17]:4711";proto=https , for = 192.0.2.60 ; PROTO = http ; By = 203.0.113.43; secRet = SECRET; hoSt = localhost, ignored=1, ignored; k=v, for="", for="`;
+    const input = `for=", For="[2001:db8:cafe::17]:4711";proto=https , for = 192.0.2.60 ; PROTO = http ; By = 203.0.113.43; secRet = SECRET; hoSt = localhost, ignored=1, ignored; k=v, for=""`;
 
     const forwarded1 = new Forwarded({
       for: "[2001:db8:cafe::17]:4711",
@@ -79,7 +79,8 @@ suite("Forwarded", () => {
     const parsed = Forwarded.fromString(input);
 
     // `ignored=1` and `for=""` are valid elements, while `ignored` (not a
-    // parameter) and `for="` (an unterminated quoted string) are not
+    // parameter) and `for="` (an unterminated quoted string, which swallows
+    // what is before it only) are not
     deepStrictEqual(parsed.length, 4);
 
     const [one, two, extension, empty] = parsed;
@@ -123,6 +124,34 @@ suite("Forwarded", () => {
     ]);
     // A repeated parameter, also in another case, is ambiguous
     deepStrictEqual(parse("proto=http;PROTO=https"), [null]);
+  });
+
+  test(".parse() (a field line is read from its end)", () => {
+    const parse = (input?: readonly string[] | string): (string | null)[] =>
+      Forwarded.parse(input).map((element) => element?.toString() ?? null);
+
+    // An unterminated quoted string (e.g. of a client) swallows the elements
+    // before it, never those that the proxies append after it
+    deepStrictEqual(parse(`for=a, for="b, for=c;proto=https, for=d`), [
+      null,
+      "for=c;proto=https",
+      "for=d",
+    ]);
+    deepStrictEqual(parse(`for=a, for=b"`), [null]);
+    // Escaped backslashes, quotes and separators in a quoted string
+    deepStrictEqual(parse(`for=a, for="b\\\\", for=c`), [
+      "for=a",
+      `for="b\\\\"`,
+      "for=c",
+    ]);
+    deepStrictEqual(parse(`for="a\\",b", for=c`), [`for="a\\",b"`, "for=c"]);
+    // Every field line apart, in their order
+    deepStrictEqual(parse([`for="x`, "for=192.0.2.1", `for=a, for="y`]), [
+      null,
+      "for=192.0.2.1",
+      null,
+    ]);
+    deepStrictEqual(parse([]), []);
   });
 
   test(".fromString() (no `for` directive)", () => {

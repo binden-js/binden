@@ -5,11 +5,11 @@ import {
   type ITrustProxy,
   validateRequestOptions,
 } from "../../index.js";
+import { anyString, check } from "./check.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import type { IncomingHttpHeaders } from "node:http";
 import { Socket } from "node:net";
-import { check } from "./check.js";
 import fc from "fast-check";
 
 /** What an element of a proxy header is */
@@ -238,6 +238,32 @@ function client(
   }
 }
 
+/**
+ * The client that a request with these field lines of `Forwarded` tells about,
+ * when only its peer is trusted
+ */
+function forwardedBy(lines: readonly string[]): IClient {
+  class Trusting extends BindenRequest {
+    // eslint-disable-next-line class-methods-use-this -- a fixture
+    protected override get options(): IRequestOptions {
+      return { ...validateRequestOptions(), trust_proxy: 1 };
+    }
+  }
+  const socket = new Socket();
+  Object.defineProperty(socket, "remoteAddress", { value: peer });
+  try {
+    const request = new Trusting(socket);
+    request.url = "/";
+    request.method = "GET";
+    request.headers = { host: origin, forwarded: lines.join(", ") };
+    request.headersDistinct = { host: [origin], forwarded: [...lines] };
+    const { ip, ips, protocol, host } = request;
+    return { ip, ips, protocol, host };
+  } finally {
+    socket.destroy();
+  }
+}
+
 /** What the trusted proxies tell (RFC 7239 and the contract of `trust_proxy`) */
 function model(
   header: IProxyHeaders,
@@ -319,6 +345,40 @@ suite("Trusted proxies (properties)", () => {
             // The function sees every hop on the way once, from the peer
             deepStrictEqual(calls, expectedCalls);
           }
+        },
+      ),
+      1000,
+    );
+  });
+
+  test("a prefix of the client never hides the element of the trusted peer (`Forwarded`)", () => {
+    const elements = fc.record({
+      n: fc.integer({ min: 1, max: 254 }),
+      node: fc.constantFrom("{v4}", `"{v4}:8080"`, `"[2001:db8::{n}]"`),
+      host: fc.constantFrom("h.test", `"h.test:8443"`),
+    });
+    check(
+      fc.property(
+        anyString([`"`, "\\", ",", ";", "=", " ", "f", "o", "r", "1", "."]),
+        elements,
+        fc.boolean(),
+        (prefix, { n, node, host }, joined) => {
+          const value = node
+            .replace("{v4}", `192.0.2.${n}`)
+            .replace("{n}", n.toString(16));
+          const appended = `for=${value};proto=https;host=${host}`;
+          // A new field line, or appended to the line of the client
+          const lines = joined
+            ? [`${prefix}, ${appended}`]
+            : [prefix, appended];
+          const { ip, protocol, host: effective } = forwardedBy(lines);
+          const address = value.includes("[")
+            ? `2001:db8::${n.toString(16)}`
+            : `192.0.2.${n}`;
+          deepStrictEqual(
+            { ip, protocol, host: effective },
+            { ip: address, protocol: "https:", host: host.replaceAll(`"`, "") },
+          );
         },
       ),
       1000,

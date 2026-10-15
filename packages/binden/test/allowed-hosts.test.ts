@@ -32,6 +32,10 @@ function create(
   const request = new Hosted(socket);
   request.url = url;
   request.headers = headers;
+  // As Node.js does: one field line of each
+  request.headersDistinct = Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [name, [value]]),
+  );
   return request;
 }
 
