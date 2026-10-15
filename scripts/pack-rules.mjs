@@ -6,7 +6,7 @@
 // package with relative paths (never to the absolute paths of the machine that built it).
 // Names are compared without case: on the file systems of macOS and Windows, `Test/` or
 // `.NPMRC` are the same as `test/` and `.npmrc`.
-import { posix } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const deniedDirectories = new Set([
   ".git",
@@ -55,6 +55,14 @@ const deniedFiles = [
 // A URL scheme, or a Windows drive (`C:`)
 const scheme = /^[A-Za-z][\d+.A-Za-z-]*:/u;
 
+// The root of a package, as a URL: the links of source maps are URLs (ECMA-426), resolved
+// against the URL of the file that has them
+const root = "/package/";
+
+// The encodings that a URL parser reads as a dot of a `.` or `..` segment, as a slash or a
+// backslash (a slash in a `file:` URL), or that decode to a control character
+const ambiguousEncoding = /%(?:2e|2f|5c|[01][\da-f]|7f)/iu;
+
 // The links to a source map, in both comment forms: `//# sourceMappingURL=<url>` (to the end
 // of the line) and `/*# sourceMappingURL=<url> */` (to the end of the comment), or `@`
 // instead of `#`. V8 (Node.js) and the browsers follow the last COMMENT, wherever it is,
@@ -81,22 +89,49 @@ export function deniedReason(path) {
   return deniedFiles.find(([pattern]) => pattern.test(path))?.[1] ?? null;
 }
 
+// Whether a URL parser reads `target` otherwise than a path: with a control character
+// (it drops tabs and newlines) or a space at either end (it trims them), a backslash, a
+// query or a fragment, or an ambiguous encoding (e.g. `%2e%2e`, a `..` segment)
+function ambiguous(target) {
+  return (
+    target.trim() !== target ||
+    [...target].some(
+      (char) => char < " " || char === "\x7f" || "\\?#".includes(char),
+    ) ||
+    ambiguousEncoding.test(target)
+  );
+}
+
+// The path of a `file:` URL, decoded, or null (e.g. for an invalid percent-encoding)
+function decodedPath(url) {
+  try {
+    return fileURLToPath(url, { windows: false });
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The path that `target`, relative to the file `from`, points to inside the package,
- * or null when it is not a relative path (absolute, a URL, a Windows path) or when it
- * points outside of the package
+ * The path that `target`, a URL relative to the file `from`, points to inside the
+ * package, or null when it is not a relative URL (absolute, with a scheme or an
+ * authority, a Windows path), when it is ambiguous (see `ambiguous()`), or when it
+ * points outside of the package. It is resolved as a URL against `from` (as
+ * `file:///package/<from>`), then decoded into a path (`fileURLToPath()`), which is
+ * the one that is checked.
  */
 export function resolveInside(from, target) {
   if (
     target === "" ||
     target.startsWith("/") ||
-    target.includes("\\") ||
-    scheme.test(target)
+    scheme.test(target) ||
+    ambiguous(target)
   ) {
     return null;
   }
-  const path = posix.normalize(posix.join(posix.dirname(from), target));
-  return path === "." || path === ".." || path.startsWith("../") ? null : path;
+  const base = `file://${root}${from.split("/").map(encodeURIComponent).join("/")}`;
+  const path = decodedPath(URL.parse(target, base));
+  const inside = path?.startsWith(root) ? path.slice(root.length) : "";
+  return inside === "" ? null : inside;
 }
 
 function parseJSON(content) {

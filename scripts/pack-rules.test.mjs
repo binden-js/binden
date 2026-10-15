@@ -254,6 +254,59 @@ describe("scripts/pack-rules.mjs", () => {
       equal(resolveInside("dist/a.js", "./a.js.map"), "dist/a.js.map");
     });
 
+    // A link is a URL (ECMA-426): it is resolved against the URL of its file, then decoded
+    it("resolves the links as URLs, into decoded paths", () => {
+      for (const [from, target, path] of [
+        ["dist/index.js.map", "a%20b.ts", "dist/a b.ts"],
+        ["dist/index.js.map", "a b.ts", "dist/a b.ts"],
+        ["dist/index.js.map", "%C3%A9.ts", "dist/é.ts"],
+        ["dist/index.js.map", "é.ts", "dist/é.ts"],
+        ["dist/index.js.map", "a%25.ts", "dist/a%.ts"],
+        ["dist/index.js.map", "./a/../b/./c.ts", "dist/b/c.ts"],
+        ["dist/a b/%.js.map", "../%23.ts", "dist/#.ts"],
+        [
+          "dist/a?#.js",
+          "./a?#.js.map".replace("?#", "%3F%23"),
+          "dist/a?#.js.map",
+        ],
+      ]) {
+        equal(resolveInside(from, target), path, target);
+      }
+    });
+
+    // A URL parser decodes `%2e` into a dot (`%2e%2e` is a `..` segment) and reads a
+    // backslash as a slash, drops tabs and newlines and trims spaces: these are refused
+    it("refuses the links that a URL parser reads otherwise than a path", () => {
+      for (const target of [
+        "%2e%2e/%2e%2e/escape.js.map",
+        "%2E%2E/%2E%2E/escape.js.map",
+        ".%2E/.%2e/escape.js.map",
+        "%2e./index.ts",
+        "%2e/index.ts",
+        "a/%2e%2e/b.ts",
+        "..%2f..%2fescape.js.map",
+        "..%2F..%2Fescape.js.map",
+        "..%5c..%5cescape.js.map",
+        "..%5C..%5Cescape.js.map",
+        "a\\b.ts",
+        "index.js.map?raw",
+        "index.js.map#x",
+        "a\u0000b.ts",
+        "a%00b.ts",
+        "a%09b.ts",
+        "a%7Fb.ts",
+        ".\t./.\n./escape.js.map",
+        "a\u007fb.ts",
+        " ../index.ts",
+        "../index.ts ",
+        "//host/index.ts",
+        "a%zz.ts",
+        "%E9.ts",
+      ]) {
+        equal(resolveInside("dist/index.js.map", target), null, target);
+      }
+    });
+
     it("refuses absolute paths, URLs and paths outside the package", () => {
       for (const target of [
         "",
@@ -414,6 +467,33 @@ describe("scripts/pack-rules.mjs", () => {
           content,
         );
       }
+    });
+
+    // The paths of the encoded dot segments exist as files: as URLs, they point elsewhere
+    it("refuses encoded dot segments in links and in maps", () => {
+      const dots = "%2e%2e/%2e%2e";
+      deepEqual(
+        errors({
+          "index.ts": "",
+          [`dist/${dots}/index.ts`]: "",
+          // Literal names, which their own links reach
+          [`dist/${dots}/a.js.map`]: map(["index.ts"]),
+          [`dist/${dots}/a.js`]: "",
+          "dist/a.js": `//# sourceMappingURL=${dots}/a.js.map\n`,
+          "dist/b.js": "",
+          "dist/b.js.map": map([`${dots}/index.ts`]),
+          "dist/c.js": "",
+          "dist/c.js.map": map(["../index.ts"], { file: `${dots}/c.js` }),
+          "dist/d.js": "",
+          "dist/d.js.map": map(["../index.ts"], { file: ".%2E/d.js" }),
+        }),
+        [
+          `dist/a.js: sourceMappingURL "${dots}/a.js.map" is not a relative path to a map inside the package`,
+          `dist/b.js.map: source "${dots}/index.ts" is not a relative path inside the package`,
+          `dist/c.js.map: file "${dots}/c.js" is not a relative path inside the package`,
+          'dist/d.js.map: file ".%2E/d.js" is not a relative path inside the package',
+        ],
+      );
     });
 
     it("refuses links to maps that are not published or not relative", () => {
