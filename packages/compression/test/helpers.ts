@@ -276,3 +276,59 @@ export async function exchange(
     body: received.subarray(index + 4),
   };
 }
+
+/** A response read from a connection: its head (lowercase names) and its body as sent */
+export interface IRaw {
+  readonly head: string;
+  readonly body: Buffer;
+}
+
+/**
+ * Writes requests on one connection and reads everything until the server
+ * closes it (within 5 s): the responses, split by their head
+ */
+export async function converse(url: string, requests: string): Promise<IRaw[]> {
+  const socket = connect(Number(new URL(url).port), "localhost");
+  const chunks: Buffer[] = [];
+  socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const closed = once(socket, "close");
+  socket.write(requests);
+  try {
+    await within(closed);
+  } finally {
+    socket.destroy();
+  }
+  const received = Buffer.concat(chunks);
+  const responses: IRaw[] = [];
+  let start = received.indexOf("HTTP/1.1 ");
+  while (start !== -1) {
+    const end = received.indexOf("\r\n\r\n", start);
+    const next = received.indexOf("HTTP/1.1 ", end);
+    responses.push({
+      head: received.subarray(start, end).toString().toLowerCase(),
+      body: received.subarray(end + 4, next === -1 ? received.length : next),
+    });
+    start = next;
+  }
+  return responses;
+}
+
+/**
+ * The body of a response read from a connection (see `converse()`) by its
+ * framing, which must be exact: its `Content-Length`, its chunks (with
+ * nothing after the last one), or else all until the connection closed
+ */
+export function framed({ head, body }: IRaw): Buffer {
+  const length = /\r\ncontent-length: (?<length>\d+)/u.exec(head)?.groups
+    ?.length;
+  if (head.includes("\r\ntransfer-encoding: chunked")) {
+    const { body: data, complete } = dechunk(body);
+    if (!complete || body.subarray(-5).toString() !== "0\r\n\r\n") {
+      throw new Error(`Not framed by its chunks: ${body.toString("latin1")}`);
+    }
+    return data;
+  } else if (typeof length !== "undefined" && Number(length) !== body.length) {
+    throw new Error(`${body.length} bytes instead of ${length}`);
+  }
+  return body;
+}

@@ -25,4 +25,12 @@ suite("Process safety", () => {
       stderr: "",
     });
   });
+
+  test("a head that Node.js refuses under a decision does not crash the process", () => {
+    deepStrictEqual(run("refused-head.ts"), {
+      status: 0,
+      stdout: "HTTP/1.1 500 Internal Server Error (0 bytes) (19)\n",
+      stderr: "",
+    });
+  });
 });

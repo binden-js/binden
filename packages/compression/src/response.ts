@@ -7,6 +7,7 @@ import {
   type IResponseOperation,
   kNegotiator,
   kOperation,
+  kValidateHead,
 } from "binden";
 import {
   type ICompressEncodings,
@@ -137,18 +138,15 @@ function sizeOf(chunk: unknown, encoding: string): number {
 /**
  * Sets the headers given to `writeHead()` as Node.js does once headers have
  * been set: an object sets them, a list (flat, or of pairs) replaces each of
- * its names with its values. `false` for a list that is not of pairs (which
- * Node.js rejects).
+ * its names with its values. They have been checked (see `kValidateHead`):
+ * a list is of pairs.
  */
 function setGiven(
   response: IResponse,
   given: OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined,
-): boolean {
+): void {
   if (Array.isArray(given)) {
     const flat: unknown[] = Array.isArray(given[0]) ? given.flat() : given;
-    if (flat.length % 2 !== 0) {
-      return false;
-    }
     const pairs: [string, OutgoingHttpHeader][] = [];
     for (let index = 0; index < flat.length; index += 2) {
       pairs.push(flat.slice(index, index + 2) as [string, OutgoingHttpHeader]);
@@ -168,7 +166,6 @@ function setGiven(
       }
     }
   }
-  return true;
 }
 
 /** The result of a function, or `ok: false` once it throws */
@@ -328,8 +325,9 @@ export class CompressedResponse {
   }
 
   /**
-   * `writeHead()`: the headers it is given are set first (as Node.js does),
-   * then the decision is taken, and the headers are committed
+   * `writeHead()`: its arguments are checked as Node.js does, the headers it
+   * is given are set (as Node.js does), then the decision is taken, and the
+   * headers are committed
    */
   #onWriteHead(args: unknown[]): IResponse {
     const response = this.#response;
@@ -339,28 +337,34 @@ export class CompressedResponse {
     const [code, reason, headers] = args;
     // As Node.js reads it
     const status = Number(code) | 0;
-    const given = (
-      typeof reason === "string" ? headers : (headers ?? reason)
-    ) as OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined;
     if (
       this.#sink !== "pending" ||
       response.headersSent ||
       status < 100 ||
-      status > 999 ||
-      !setGiven(response, given)
+      status > 999
     ) {
-      // Decided already, or rejected by Node.js
+      // Decided already, or rejected by Node.js before it changes anything
       return Reflect.apply(this.#writeHead, response, args) as IResponse;
     }
-    response.statusCode = status;
-    this.#apply(this.#outcome(null));
-    // Decided now (the type does not see it)
-    if ((this.#sink as ISink) === "discard") {
-      return response;
-    }
-    return typeof reason === "string"
-      ? this.#writeHead(status, reason)
-      : this.#writeHead(status);
+    const given = (
+      typeof reason === "string" ? headers : (headers ?? reason)
+    ) as OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined;
+    this.#commit(() => {
+      // What Node.js would refuse (e.g. a reason phrase), before anything is
+      // changed: no compressor is created
+      response[kValidateHead](...args);
+      setGiven(response, given);
+      response.statusCode = status;
+      this.#apply(this.#outcome(null));
+      if (this.#sink === "discard") {
+        return;
+      } else if (typeof reason === "string") {
+        this.#writeHead(status, reason);
+      } else {
+        this.#writeHead(status);
+      }
+    });
+    return response;
   }
 
   /** `write()`: the decision is taken first, unless it has been */
@@ -473,9 +477,51 @@ export class CompressedResponse {
       this.#sink = "as_is";
       return;
     }
-    this.#apply(this.#outcome(size));
-    if (this.#sink === "compressor") {
-      this.#writeHead(response.statusCode);
+    this.#commit(() => {
+      // What Node.js would refuse (e.g. a reason phrase), before anything is
+      // changed: no compressor is created
+      response[kValidateHead](response.statusCode);
+      this.#apply(this.#outcome(size));
+      if (this.#sink === "compressor") {
+        this.#writeHead(response.statusCode);
+      }
+    });
+  }
+
+  /**
+   * Takes the decision and commits the headers (`commit`). Node.js may still
+   * refuse them once the decision is taken (e.g. a status code out of range,
+   * or a `Trailer` of a body that is not chunked): nothing of the decision is
+   * then left (the compressor is destroyed, the status and the headers are
+   * those from before), and the representation chosen for the body, which is
+   * not sent, is forgotten. The error is replied with a decision of its own,
+   * rather than followed by compressed bytes.
+   */
+  #commit(commit: () => void): void {
+    const response = this.#response;
+    const status = response.statusCode;
+    const headers = new Map(
+      response.getHeaderNames().map((name) => [name, response.getHeader(name)]),
+    );
+    try {
+      commit();
+    } catch (error: unknown) {
+      this.#compressor?.destroy();
+      this.#compressor = null;
+      this.#chosen = null;
+      this.#sink = "pending";
+      response.statusCode = status;
+      for (const name of response.getHeaderNames()) {
+        if (!headers.has(name)) {
+          response.removeHeader(name);
+        }
+      }
+      for (const [name, value] of headers) {
+        if (response.getHeader(name) !== value) {
+          response.setHeader(name, value as OutgoingHttpHeader);
+        }
+      }
+      throw error;
     }
   }
 

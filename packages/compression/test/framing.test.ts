@@ -1,49 +1,11 @@
-import { type IServed, dechunk, serve, text, within } from "./helpers.js";
+import { type IServed, converse, dechunk, serve, text } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { Compression } from "../index.js";
 import type { Context } from "binden";
-import { connect } from "node:net";
-import { once } from "node:events";
 import zlib from "node:zlib";
 
 const body = text(2048);
-
-/** A response read from a connection: its head (lowercase names) and its body as sent */
-interface IRaw {
-  readonly head: string;
-  readonly body: Buffer;
-}
-
-/**
- * Writes requests on one connection and reads everything until the server
- * closes it (within 5 s): the responses, split by their head
- */
-async function converse(url: string, requests: string): Promise<IRaw[]> {
-  const socket = connect(Number(new URL(url).port), "localhost");
-  const chunks: Buffer[] = [];
-  socket.on("data", (chunk: Buffer) => chunks.push(chunk));
-  const closed = once(socket, "close");
-  socket.write(requests);
-  try {
-    await within(closed);
-  } finally {
-    socket.destroy();
-  }
-  const received = Buffer.concat(chunks);
-  const responses: IRaw[] = [];
-  let start = received.indexOf("HTTP/1.1 ");
-  while (start !== -1) {
-    const end = received.indexOf("\r\n\r\n", start);
-    const next = received.indexOf("HTTP/1.1 ", end);
-    responses.push({
-      head: received.subarray(start, end).toString().toLowerCase(),
-      body: received.subarray(end + 4, next === -1 ? received.length : next),
-    });
-    start = next;
-  }
-  return responses;
-}
 
 suite("The framing of a compressed body", () => {
   const servers: IServed[] = [];
