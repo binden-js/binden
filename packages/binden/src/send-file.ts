@@ -343,6 +343,16 @@ export function tagOf(
 }
 
 /**
+ * The methods that neither select nor modify a representation, whose
+ * conditional header fields are ignored (RFC 9110, section 13.2.1)
+ */
+const unconditional: ReadonlySet<string> = new Set([
+  "CONNECT",
+  "OPTIONS",
+  "TRACE",
+]);
+
+/**
  * The status of a request whose precondition fails for a representation, in
  * the order of RFC 9110 (section 13.2.2), or `null` when they pass:
  * `If-Match` (or else `If-Unmodified-Since`) fails with `412`, then
@@ -350,6 +360,8 @@ export function tagOf(
  * with `304` for `GET` and `HEAD`, and `412` for the other methods. The
  * entity-tags are compared with the `ETag` of the representation (`null`
  * without one), the dates with its `Last-Modified` (ignored when `null`).
+ * They are ignored for `CONNECT`, `OPTIONS` and `TRACE` (section 13.2.1).
+ * Shared by `sendFile()` and the dynamic `ETag` of the responses.
  */
 export function preconditionsOf(
   request: IncomingMessage,
@@ -357,6 +369,9 @@ export function preconditionsOf(
   lm: Date | null,
 ): 304 | 412 | null {
   const { method = "GET", headers } = request;
+  if (unconditional.has(method)) {
+    return null;
+  }
   const read = method === "GET" || method === "HEAD";
   const ims =
     request instanceof BindenRequest

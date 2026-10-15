@@ -23,7 +23,8 @@ import fsp, {
   writeFile,
 } from "node:fs/promises";
 import { join, posix, relative, win32 } from "node:path";
-import { relativeSegments, within } from "../src/send-file.js";
+import { preconditionsOf, relativeSegments, within } from "../src/send-file.js";
+import type { IncomingMessage } from "node:http";
 import { contentTypeOf } from "../src/mime.js";
 import { kSeal } from "../src/seal.js";
 import { pathToFileURL } from "node:url";
@@ -666,6 +667,22 @@ suite("sendFile", () => {
         "0",
       ]);
     }
+    // Neither selected nor modified by `OPTIONS` and `TRACE`: their
+    // preconditions are ignored (RFC 9110, section 13.2.1)
+    for (const method of ["OPTIONS", "TRACE"]) {
+      for (const headers of conditions) {
+        deepStrictEqual(
+          await check(200, method, headers),
+          [200, html, size],
+          `${method} ${JSON.stringify(headers)}`,
+        );
+      }
+      deepStrictEqual(await check(201, method, { "If-Match": `"x"` }), [
+        201,
+        html,
+        size,
+      ]);
+    }
     // A 2xx of `GET` other than 200 keeps its preconditions, without ranges
     deepStrictEqual(await check(203, "GET", { Range: "bytes=0-2" }), [
       203,
@@ -806,5 +823,27 @@ suite("sendFile", () => {
       await type("index.html", { content_type: "text/x-option" }, "text/x-app"),
       "text/x-option",
     );
+  });
+});
+
+suite("preconditionsOf", () => {
+  test("CONNECT, OPTIONS and TRACE ignore the conditional fields (RFC 9110, 13.2.1)", () => {
+    const conditions: Record<string, string>[] = [
+      { "if-none-match": "*" },
+      { "if-match": `"x"` },
+      { "if-unmodified-since": "Thu, 01 Jan 1970 00:00:00 GMT" },
+    ];
+    const lm = new Date("2020-01-01T00:00:00Z");
+    for (const headers of conditions) {
+      for (const method of ["CONNECT", "OPTIONS", "TRACE"]) {
+        const request = { method, headers } as unknown as IncomingMessage;
+        deepStrictEqual(preconditionsOf(request, `"e"`, lm), null, method);
+      }
+      // The other methods evaluate them
+      for (const method of ["POST", "DELETE"]) {
+        const request = { method, headers } as unknown as IncomingMessage;
+        deepStrictEqual(preconditionsOf(request, `"e"`, lm), 412, method);
+      }
+    }
   });
 });
