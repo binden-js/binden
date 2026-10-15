@@ -842,7 +842,33 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return true;
     }
-    return super.write(...(this.#callbacks(args) as [unknown]));
+    return super.write(...(this.#callbacks(this.#ordered(args)) as [unknown]));
+  }
+
+  /**
+   * The arguments of a write (or an end) whose chunk would commit the head of
+   * the response while output is queued before it (e.g. a `103 Early Hints` of
+   * a pipelined request, which waits for the response before it): Node.js
+   * puts the head before what is queued when the chunk is bytes (but after it
+   * for a string), so that the client would read the informational response
+   * as the body. The bytes are then written as a `latin1` string, which they
+   * are byte for byte, and which keeps the order.
+   */
+  #ordered(args: readonly unknown[]): readonly unknown[] {
+    const [chunk, ...rest] = args;
+    // The state of the send queue of Node.js: the head has not been queued,
+    // and output has
+    if (
+      !(chunk instanceof Uint8Array) ||
+      Reflect.get(this, "_headerSent") === true ||
+      Reflect.get(this, "outputSize") === 0
+    ) {
+      return args;
+    }
+    const bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    // The encoding of a chunk of bytes is ignored
+    const callbacks = typeof rest[0] === "string" ? rest.slice(1) : rest;
+    return [bytes.toString("latin1"), "latin1", ...callbacks];
   }
 
   /**
@@ -882,7 +908,7 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return this;
     }
-    return super.end(...(this.#callbacks(args) as []));
+    return super.end(...(this.#callbacks(this.#ordered(args)) as []));
   }
 
   /** Sends the headers (see `flushHeaders()` of Node.js), unless the response is sealed */
