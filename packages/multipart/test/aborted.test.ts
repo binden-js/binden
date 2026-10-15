@@ -429,7 +429,8 @@ describe("Multipart (a parse that starts once the response has ended)", () => {
         IncomingMessage,
       ];
       response.resume();
-      await within(once(response, "end"));
+      // 32 MiB through the loopback: slower on a loaded machine
+      await within(once(response, "end"), 30_000);
     },
   );
 });

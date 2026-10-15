@@ -228,8 +228,14 @@ suite("BodyParser (content codings)", () => {
           agent: false,
           headers: text(coding),
         });
-        client.on("error", () => {
-          // The server closes the connection after its reply
+        // The server closes the connection after its reply: a client that is
+        // still writing may get the reset before it reads the reply (TCP)
+        let reset = false;
+        const closed = new Promise<null>((resolve) => {
+          client.once("error", () => {
+            reset = true;
+            resolve(null);
+          });
         });
         let replied = false;
         const response = new Promise<IncomingMessage>((resolve) => {
@@ -238,7 +244,7 @@ suite("BodyParser (content codings)", () => {
             resolve(reply);
           });
         });
-        const writing = (): boolean => !replied;
+        const writing = (): boolean => !replied && !reset;
         try {
           client.write(
             coding === "br" ? brotliCompressSync(hello) : deflateSync(hello),
@@ -247,17 +253,22 @@ suite("BodyParser (content codings)", () => {
           while (writing() && sent < cap) {
             sent += chunk.byteLength;
             if (!client.write(chunk)) {
-              await Promise.race([once(client, "drain"), response]);
+              await Promise.race([once(client, "drain"), response, closed]);
             }
           }
-          const reply = await within(response);
-          reply.resume();
-          deepStrictEqual(
-            [reply.statusCode, reply.headers.connection, verified],
-            [400, "close", false],
-            coding,
-          );
+          const reply = await within(Promise.race([response, closed]));
+          // The reading has stopped, without the verification, whether the
+          // reply has reached the client or the connection has been reset
           ok(sent < cap, `${sent} bytes sent`);
+          deepStrictEqual(verified, false, coding);
+          if (reply !== null) {
+            reply.resume();
+            deepStrictEqual(
+              [reply.statusCode, reply.headers.connection],
+              [400, "close"],
+              coding,
+            );
+          }
         } finally {
           client.destroy();
           await server.close();
