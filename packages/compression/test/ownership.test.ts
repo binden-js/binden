@@ -1,3 +1,4 @@
+import { Compression, skipCompression } from "../index.js";
 import { type Context, type IBindenOptions, type IMiddleware } from "binden";
 import {
   type IServed,
@@ -12,7 +13,6 @@ import {
 } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok } from "node:assert/strict";
-import { Compression } from "../index.js";
 import { randomBytes } from "node:crypto";
 import zlib from "node:zlib";
 
@@ -127,5 +127,51 @@ suite("Compression of a response whose owner is abandoned", () => {
     deepStrictEqual(synchronous, 0);
     deepStrictEqual(returned, [true, true, true, true]);
     deepStrictEqual(calls.toSorted(), ["end", "write", "write-encoding"]);
+  });
+
+  test("`skipCompression()` and `run()` of the abandoned work do not change the reply of the error handler", async () => {
+    const reply = text(4096);
+    const late = new Compression({ format: "gzip", threshold: 0 });
+    for (const [path, accept, coding] of [
+      // The reply would be refused as it is
+      ["/skip", "gzip, identity;q=0", "gzip"],
+      // The reply would be compressed
+      ["/run", "gzip", null],
+    ] as const) {
+      const abandoned = gate();
+      const { url } = await start(
+        {
+          timeout: 20,
+          error_handler: async (context: Context): Promise<void> => {
+            context.response.status(503).type("text/plain");
+            await abandoned.promise;
+            await context.send(reply);
+          },
+        },
+        ...(path === "/skip" ? [new Compression({ format: "gzip" })] : []),
+        async (context: Context) => {
+          await sleep(60);
+          if (path === "/skip") {
+            skipCompression(context.response);
+          } else {
+            late.run(context);
+          }
+          abandoned.open();
+          await sleep(10);
+        },
+      );
+      const received = await fetchRaw(url, {
+        headers: { "Accept-Encoding": accept },
+      });
+      deepStrictEqual(
+        [
+          received.status,
+          received.headers["content-encoding"] ?? null,
+          received.body,
+        ],
+        [503, coding, reply],
+        path,
+      );
+    }
   });
 });

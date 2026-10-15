@@ -194,11 +194,14 @@ function writeAfterEnd(): Error {
 }
 
 /**
- * Leaves one response uncompressed: called before its headers are committed
- * (afterwards, it has no effect)
+ * Leaves one response uncompressed: called before its reply starts
+ * (afterwards, it may have no effect), and ignored for the work that may no
+ * longer mutate the response (e.g. abandoned at its deadline)
  */
-export function skip(response: object): void {
-  skipped.add(response);
+export function skip(response: BindenResponse): void {
+  if (response[kOperation]() !== null) {
+    skipped.add(response);
+  }
 }
 
 /**
@@ -257,12 +260,17 @@ export class CompressedResponse {
 
   /**
    * Installs the compression on the response of a context, unless its headers
-   * have been sent (it is then left as it is), or a compression is installed
-   * on it already
+   * have been sent (it is then left as it is), a compression is installed on
+   * it already, or the current work may no longer mutate it (e.g. abandoned
+   * at its deadline, whose compression would change the reply of another)
    */
   public static install(context: Context, settings: ISettings): void {
     const { response } = context;
-    if (response.headersSent || installed.has(response)) {
+    if (
+      response.headersSent ||
+      installed.has(response) ||
+      response[kOperation]() === null
+    ) {
       return;
     }
     installed.add(response);

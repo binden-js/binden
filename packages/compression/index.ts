@@ -184,9 +184,11 @@ export class Compression extends Middleware {
 
   /**
    * Installs the compression on the response, unless its headers have been
-   * sent (it is then left as it is) or a compression is installed on it
-   * already: the decision is taken when its representation is chosen (by
-   * `sendFile()` and the dynamic `ETag` of binden), or else when its headers
+   * sent (it is then left as it is), a compression is installed on it
+   * already, or the work that runs it may no longer mutate the response
+   * (e.g. once its deadline has passed): the decision is taken when its
+   * representation is chosen (by `sendFile()`, the dynamic `ETag` of binden
+   * and a `send()` that does not read its stream), or else when its headers
    * are committed
    */
   public run(context: Context): void {
@@ -196,7 +198,9 @@ export class Compression extends Middleware {
 
 /**
  * Leaves one response uncompressed (e.g. a stream that must not wait in a
- * compressor): call it before its headers are committed
+ * compressor): call it before its reply starts (`send()`, `sendFile()`, or a
+ * first write), which may choose its representation at once. Ignored once the
+ * work that calls it may no longer mutate the response.
  */
 export function skipCompression(response: BindenResponse): void {
   if (!(response instanceof BindenResponse)) {

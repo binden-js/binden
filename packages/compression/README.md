@@ -97,6 +97,14 @@ before:
   [A compressed response](#a-compressed-response)). The choice sends no header and creates no
   compressor: the commit of the headers applies it. A reply that replaces that body (e.g. of the
   error handler, once the file has failed or the deadline has passed) gets a decision of its own.
+- `send()` of a stream that it does not read (for `HEAD`, or a status without a body) chooses the
+  representation of the `Content-Length` of the response (of an unknown length without one).
+
+So what the decision reads (the status, `Content-Type`, `Content-Encoding`, `Content-Length`,
+`Cache-Control` and `skipCompression()`) must be set before the reply starts (`send()`,
+`sendFile()`, or a first write): a later change may not be taken into account. Once the work of a
+request may no longer change its response (e.g. abandoned at its deadline), `skipCompression()`
+and the `run()` of a compression are ignored, as its other changes are.
 
 A response without a body is sent as it is, whatever the request accepts: a `1xx`, `204` or `205`
 status, or an empty body (`Content-Length: 0`, e.g. of a `304` that stands for an empty `200`). Any
@@ -117,7 +125,7 @@ alone only when it ran once its headers had been sent.
 import { Binden, type Context } from "binden";
 import compression, { skipCompression } from "@binden/compression";
 
-// A response that is never compressed: before its headers are committed
+// A response that is never compressed: before its reply starts
 const handler = (context: Context): Promise<void> => {
   skipCompression(context.response);
   return context.text("as it is");
