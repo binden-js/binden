@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 // (linked into node_modules) through them, as it resolves the installed packages
 const root = join(import.meta.dirname, "..");
 const readJSON = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
-const { workspaces } = readJSON("package.json");
+const { engines, workspaces } = readJSON("package.json");
 const packages = workspaces.map((dir) => ({
   dir,
   manifest: readJSON(`${dir}/package.json`),
@@ -62,6 +62,13 @@ describe("the manifests of the workspaces", () => {
   it("have no side effects", () => {
     for (const { dir, manifest } of packages) {
       equal(manifest.sideEffects, false, dir);
+    }
+  });
+
+  it("require Node.js only (npm is a requirement of this repository)", () => {
+    equal(typeof engines.npm, "string");
+    for (const { dir, manifest } of packages) {
+      deepEqual(manifest.engines, { node: engines.node }, dir);
     }
   });
 
