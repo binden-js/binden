@@ -932,7 +932,7 @@ const headers = {
 await response.status(402).set(headers).send("Payment is required");
 ```
 
-- `.type()` - set the `Content-Type`: a media type with its parameters (a `TypeError` otherwise)
+- `.type()` - set the `Content-Type`: a media type with its parameters, each a token and a token or a quoted string (`name=value` or `name="value"`), with optional whitespace (a `TypeError` otherwise, e.g. for `text/plain; charset` or `text/plain; a=b c`)
 
 - `.attachment()` - ask the client to save the response (`Content-Disposition: attachment`), with the name to save it as: `filename` in ASCII (other characters are replaced with `_`) and `filename*` in UTF-8 ([RFC 6266](https://www.rfc-editor.org/rfc/rfc6266.html), [RFC 8187](https://www.rfc-editor.org/rfc/rfc8187.html))
 

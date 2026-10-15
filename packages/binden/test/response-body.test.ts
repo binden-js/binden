@@ -7,7 +7,7 @@ import { type IReply, type ITestServer, listen } from "./http.js";
 import { IncomingMessage, type OutgoingHttpHeaders } from "node:http";
 import { Socket, connect } from "node:net";
 import { afterEach, suite, test } from "node:test";
-import { deepStrictEqual, ok, rejects } from "node:assert/strict";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
@@ -287,5 +287,31 @@ suite("BindenResponse (bodies)", () => {
     ok(source.destroyed);
     ok(!response.started);
     ok(!response.headersSent);
+  });
+
+  test(".type() accepts only parameters of a token and a token or a quoted string", () => {
+    const response = new BindenResponse(new IncomingMessage(new Socket()));
+    for (const [valid, expected] of [
+      ["text/plain;", "text/plain"],
+      ['text/plain; a="b c"; d=e', 'text/plain; a="b c"; d=e'],
+      ['text/plain ;\ta="\\"q\\""', 'text/plain; a="\\"q\\""'],
+    ]) {
+      deepStrictEqual(response.type(valid).getHeader("Content-Type"), expected);
+    }
+    for (const invalid of [
+      "text/plain; charset",
+      "text/plain; a=b c",
+      "text/plain; =x",
+      'text/plain; a="unterminated',
+      "text/plain; a=b;c",
+      "text/plain; a=(b)",
+      "text/plain, text/html",
+      42,
+    ]) {
+      throws(
+        () => response.type(invalid as string),
+        new TypeError(`Invalid media type: ${String(invalid)}`),
+      );
+    }
   });
 });

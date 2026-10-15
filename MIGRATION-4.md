@@ -239,6 +239,8 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
   default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A
   `Readable` that has ended is an empty body, and one that has been destroyed rejects at once.
+- `response.type()` throws a `TypeError` for a parameter that is not a token with a token or a
+  quoted string as value (e.g. `text/plain; charset`), which it used to drop.
 - With `root`, `sendFile()` replies `404` for a socket, a device or a FIFO, without opening it.
 - A middleware that sets `context.done` without starting a reply gets an empty response with the
   status and the headers set so far (the request used to stay pending). A stack that runs out once

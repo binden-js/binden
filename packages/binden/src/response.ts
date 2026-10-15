@@ -104,6 +104,22 @@ function contentDisposition(filename?: string): string {
 /** A header field name (a token, RFC 9110, section 5.6.2) */
 const fieldName = /^[!#$%&'*+\-.^_`|~\dA-Za-z]+$/u;
 
+/** A token (RFC 9110, section 5.6.2) */
+const token = "[!#$%&'*+\\-.^_`|~\\dA-Za-z]+";
+
+/** A quoted string (RFC 9110, section 5.6.4) */
+const quoted =
+  '"(?:[\\t \\x21\\x23-\\x5B\\x5D-\\x7E\\x80-\\xFF]|\\\\[\\t \\x21-\\x7E\\x80-\\xFF])*"';
+
+/**
+ * A media type whose parameters are each a token with a token or a quoted
+ * string as value (RFC 9110, section 8.3.1), with optional whitespace
+ */
+const strictMediaType = new RegExp(
+  `^[\\t ]*${token}/${token}(?:[\\t ]*;[\\t ]*(?:${token}=(?:${token}|${quoted}))?)*[\\t ]*$`,
+  "u",
+);
+
 /** Without `[kSeal]()`, nothing may mutate a sealed response */
 const never = (): boolean => false;
 
@@ -300,12 +316,18 @@ export class BindenResponse<
     return this;
   }
 
-  /** Set the `Content-Type`: a media type with its parameters (a `TypeError` otherwise) */
+  /**
+   * Set the `Content-Type`: a media type whose parameters are each a token
+   * with a token or a quoted string as value (a `TypeError` otherwise)
+   */
   public type(media_type: string): this {
     if (!this.#allows()) {
       return this;
     }
-    const parsed = ContentType.fromString(media_type);
+    const parsed =
+      typeof media_type === "string" && strictMediaType.test(media_type)
+        ? ContentType.fromString(media_type)
+        : null;
     if (parsed === null) {
       throw new TypeError(`Invalid media type: ${media_type}`);
     }
