@@ -71,6 +71,9 @@ const representation = [
   "Transfer-Encoding",
 ];
 
+/** The entity-tags of a list (RFC 9110, section 8.8.3), weak or strong */
+const entityTags = /(?:W\/)?"[^"]*"/gu;
+
 /** The responses that a compression has been installed on */
 const installed = new WeakSet<object>();
 
@@ -462,10 +465,17 @@ export class CompressedResponse {
     }
 
     const { format, encodings } = this.#settings;
-    if (format !== "auto") {
+    if (format === "auto") {
+      response.vary("Accept-Encoding");
+    }
+    if (this.#matched()) {
+      // `If-Match` has been met by the strong tag of the representation as it
+      // is: that representation is sent (whatever the request accepts), as a
+      // compressed one has a weak tag, which `If-Match` never matches
+      return AS_IS;
+    } else if (format !== "auto") {
       return { kind: "compress", coding: format };
     }
-    response.vary("Accept-Encoding");
     const coding = negotiate(request.headers["accept-encoding"], encodings);
     if (coding === "identity") {
       return AS_IS;
@@ -473,6 +483,23 @@ export class CompressedResponse {
       return { kind: "replace", status: 406 };
     }
     return { kind: "compress", coding };
+  }
+
+  /**
+   * Whether `If-Match` lists the strong `ETag` of the response, by the strong
+   * comparison (RFC 9110, section 13.1.1): the precondition holds for the
+   * representation as it is (e.g. `sendFile()` has evaluated it), and would
+   * not for a compressed one, whose tag is weak
+   */
+  #matched(): boolean {
+    const etag = this.#response.getHeader("ETag");
+    const list = this.#context.request.headers["if-match"];
+    return (
+      typeof etag === "string" &&
+      !etag.startsWith("W/") &&
+      typeof list === "string" &&
+      list.match(entityTags)?.includes(etag) === true
+    );
   }
 
   /**

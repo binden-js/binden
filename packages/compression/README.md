@@ -93,6 +93,7 @@ A response is sent as it is when:
 - it has `Cache-Control: no-transform`;
 - `skipCompression()` has been called for it;
 - the `filter` refuses it, or its `Content-Length` is below the `threshold`;
+- the `If-Match` of the request lists its strong `ETag` (see [A compressed response](#a-compressed-response));
 - the compression ran once its headers had been sent (the response is not changed at all).
 
 A fixed `format` does not bypass any of these, and such a response is sent whatever the request
@@ -136,7 +137,11 @@ negotiates).
   the compressed body are not served);
 - a strong `ETag` becomes weak (`W/"…"`, [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8.3.3)):
   it was set for the bytes of the uncompressed body. It still validates caches (`If-None-Match`
-  compares weakly), but no longer ranges (`If-Range`) nor `If-Match`;
+  compares weakly), but no longer ranges (`If-Range`) nor `If-Match`. A request whose `If-Match` lists
+  the strong `ETag` (e.g. one that `sendFile()` has evaluated against its `validator`) therefore gets
+  the representation of that tag, uncompressed, whatever it accepts: compressed, it would no longer
+  meet the precondition ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.1)
+  compares `If-Match` strongly). `If-Match: *` matches any representation;
 - a `304 Not Modified` (e.g. of `sendFile()`, or of the dynamic `ETag` of binden) gets the same
   decision as the `200` that it stands for: the same `ETag` and `Vary`, without `Content-Length` and
   `Accept-Ranges` when the `200` is compressed, but without `Content-Encoding` (a cache that updates
