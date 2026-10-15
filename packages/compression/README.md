@@ -168,10 +168,10 @@ is (or `406`).
 - `sendFile()` sends a compressed file whole: `Range` (and `If-Range`) is ignored, as the ranges
   would be of the compressed bytes. The uncompressed file keeps its ranges (`206`, `416`);
 - a `304 Not Modified` (e.g. of `sendFile()`, or of the dynamic `ETag` of binden) gets the same
-  decision as the `200` that it stands for (as does a response to `HEAD` the one of `GET`): the same
-  `ETag` and `Vary`, without `Content-Length` and
-  `Accept-Ranges` when the `200` is compressed, but without `Content-Encoding` (a cache that updates
-  its stored response with it could mislabel an uncompressed one). The `threshold` applies to it by
+  decision as the `200` that it stands for (as a response to `HEAD` gets the one of `GET`): the same
+  `ETag` and `Vary`, without `Content-Length` and `Accept-Ranges` when the `200` is compressed, but
+  without `Content-Encoding` (a cache that updates its stored response with it could mislabel an
+  uncompressed one). The `threshold` applies to it by
   its `Content-Length`, the length of that `200` (binden keeps it on the `304` of `sendFile()` and of
   its dynamic `ETag`); a `304` without one gets the decision of a body without a length;
 - errors and backpressure are kept: `write()` returns `false` while the compressor is full, the

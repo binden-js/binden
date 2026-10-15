@@ -524,8 +524,8 @@ export class CompressedResponse {
    * content codings of `Accept-Encoding` (RFC 9110, section 12.5.3): a
    * response that may be compressed gets the acceptable coding that it
    * prefers, otherwise the response as it is when it is acceptable, otherwise
-   * `406`. Except for a response without a body, the decision depends on
-   * `Accept-Encoding` (`Vary`).
+   * `406`. Except for a response without a body (and a failed `filter`), the
+   * decision depends on `Accept-Encoding` (`Vary`).
    */
   #decide(length: number | null): IOutcome {
     const header = this.#context.request.headers["accept-encoding"];
