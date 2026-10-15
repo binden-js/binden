@@ -11,7 +11,8 @@ import { type Server, createServer } from "node:http";
 import { type Socket, connect } from "node:net";
 import { capture, listen, never, send, sleep, within } from "./helpers.js";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
-import { suite, test } from "node:test";
+import { mock, suite, test } from "node:test";
+import dns from "node:dns";
 import { once } from "node:events";
 
 /** A connection to a server, with everything it has received */
@@ -425,6 +426,91 @@ suite("shutdown()", () => {
       );
     } finally {
       // Not left listening by a failure
+      server.close();
+    }
+  });
+
+  test("a `listen()` that has not completed within `timeout` is cancelled", async () => {
+    const lookups: (() => void)[] = [];
+    // The address of the host is looked up once the shutdown has given up
+    mock.method(dns, "lookup", (...args: unknown[]): void => {
+      const callback = args.at(-1) as (
+        error: null,
+        address: string,
+        family: number,
+      ) => void;
+      lookups.push(() => {
+        callback(null, "127.0.0.1", 4);
+      });
+    });
+    const captured = capture();
+    const app = new Binden({ logger: captured.logger });
+    const server = app.createServer();
+    const listeners = ["listening", "close", "error"].map((name) =>
+      server.listenerCount(name),
+    );
+    try {
+      server.listen(0, "binden.test");
+      ok(!server.listening);
+      const start = performance.now();
+      await rejects(
+        within(shutdown(server, { timeout: 50 })),
+        new Error("The server has not started listening within 50 ms"),
+      );
+      ok(performance.now() - start < 1000);
+      deepStrictEqual(
+        ["listening", "close", "error"].map((name) =>
+          server.listenerCount(name),
+        ),
+        listeners,
+      );
+      await captured.waitFor("The shutdown has failed");
+      // Looked up now: the server does not listen
+      deepStrictEqual(lookups.length, 1);
+      for (const lookup of lookups) {
+        lookup();
+      }
+      await sleep(20);
+      ok(!server.listening);
+    } finally {
+      mock.restoreAll();
+      server.close();
+    }
+  });
+
+  test("the `timeout` covers the wait for a pending `listen()` and the drain", async () => {
+    const aborted = Promise.withResolvers<number>();
+    const app = new Binden().use(async (context: Context) => {
+      context.signal.addEventListener("abort", () => {
+        aborted.resolve(performance.now());
+      });
+      await never();
+    });
+    const { server, port } = await listen(app);
+    // A request in progress on a connection of a server that listens again
+    const client = await connection(port);
+    client.socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    await sleep(20);
+    server.close();
+    mock.method(dns, "lookup", (...args: unknown[]): void => {
+      const callback = args.at(-1) as (
+        error: null,
+        address: string,
+        family: number,
+      ) => void;
+      // Looked up after 2/3 of the `timeout`
+      setTimeout(callback, 200, null, "127.0.0.1", 4);
+    });
+    try {
+      server.listen(0, "binden.test");
+      const start = performance.now();
+      await within(shutdown(server, { timeout: 300 }));
+      // Aborted at the `timeout` of the whole shutdown, not of the drain
+      const elapsed = (await aborted.promise) - start;
+      ok(elapsed >= 250 && elapsed < 450, `${elapsed} ms`);
+    } finally {
+      mock.restoreAll();
+      client.socket.destroy();
       server.close();
     }
   });

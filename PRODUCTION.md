@@ -137,6 +137,10 @@ process.once("SIGTERM", () => {
 });
 ```
 
+- Register the server before its `listen()`: create it with `createServer()` or
+  `createSecureServer()` (or call `callback(server)`) first. `shutdown()` knows only the `listen()`
+  of a registered server: one in progress then (e.g. while the address of a host name is looked
+  up) is closed once it listens, or cancelled once `timeout` has passed.
 - Let the process exit on its own once nothing else keeps it alive: close the other resources
   (database pools, timers) after `shutdown()`, rather than calling `process.exit()`, which may drop
   the last logs.

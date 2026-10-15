@@ -179,9 +179,15 @@ export function isClosing(server: IServer): boolean {
 /**
  * Settles once a pending `listen()` has completed: `null` once the server is
  * listening (or closed), or the error of a `listen()` that has failed (which
- * the shutdown reports). Its listeners are removed then.
+ * the shutdown reports). A `listen()` that has not completed within `timeout`
+ * milliseconds is cancelled, with an error: the server is closed, so that an
+ * address looked up later is not bound (Node.js ignores it). Its listeners are
+ * removed then.
  */
-async function bound(server: IServer): Promise<{ error: unknown } | null> {
+async function bound(
+  server: IServer,
+  timeout: number,
+): Promise<{ error: unknown } | null> {
   const { promise, resolve } = Promise.withResolvers<{
     error: unknown;
   } | null>();
@@ -195,9 +201,15 @@ async function bound(server: IServer): Promise<{ error: unknown } | null> {
     .once("listening", settled)
     .once("close", settled)
     .once("error", failed);
+  const timer = setTimeout(() => {
+    const message = `The server has not started listening within ${timeout} ms`;
+    resolve({ error: new Error(message) });
+    server.close();
+  }, timeout);
   try {
     return await promise;
   } finally {
+    clearTimeout(timer);
     server.off("listening", settled).off("close", settled).off("error", failed);
   }
 }
@@ -259,10 +271,13 @@ async function close(
     }
   }
   // A server that is about to listen is closed once it listens, but not
-  // waited for when its `listen()` fails: its error rejects the shutdown
-  const failure = registration.pending ? await bound(server) : null;
+  // waited for when its `listen()` fails (or takes longer than `timeout`):
+  // its error rejects the shutdown. The `timeout` covers both waits.
+  const start = performance.now();
+  const failure = registration.pending ? await bound(server, timeout) : null;
   if (failure === null) {
-    await drain(server, registration, timeout);
+    const left = Math.max(0, timeout - (performance.now() - start));
+    await drain(server, registration, left);
   }
 
   // The cleanups run once the responses are closed: they must not take long
@@ -298,7 +313,9 @@ async function close(
  * are aborted (`shutdown`) and every connection is closed. Resolves once the
  * server has closed and the cleanups of its requests have run, or rejects
  * when they take longer than `cleanup_timeout`. Another call returns the same
- * promise.
+ * promise. The server must be registered (see `Binden.callback()`) before its
+ * `listen()`: a `listen()` in progress then is closed once it listens, or
+ * cancelled (with an error) once `timeout` has passed.
  */
 export function shutdown(
   server: IServer,

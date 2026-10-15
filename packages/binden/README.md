@@ -250,7 +250,9 @@ const app = new Binden({ timeout: 30_000 }).use(async (context: Context) => {
 3. then, at once, their signal is aborted (`shutdown`), and every connection is closed, including those that have been upgraded (e.g. WebSocket) or tunnelled (`CONNECT`);
 4. the promise resolves once the server has closed and the cleanups of the requests (see `context.onCleanup()`) have run. Cleanups that take longer than `cleanup_timeout` milliseconds once the server has closed reject it (and are logged).
 
-Another call returns the same promise. A server that is not listening (before `listen()`, or once closed) only waits for the cleanups of its requests. A server whose `listen()` has not completed yet (e.g. while the address of a host name is looked up) is closed once it listens; when its `listen()` fails, the promise rejects with that error (and logs it).
+Another call returns the same promise. A server that is not listening (before `listen()`, or once closed) only waits for the cleanups of its requests. A server whose `listen()` has not completed yet (e.g. while the address of a host name is looked up) is closed once it listens, within the same `timeout`; when its `listen()` fails, the promise rejects with that error (and logs it), and when it takes longer than `timeout`, it is cancelled (the server does not listen once the address has been looked up) and the promise rejects.
+
+The server must be registered before its `listen()`: create it with `createServer()` or `createSecureServer()`, or call `callback(server)`, first. A `listen()` called before is not known to `shutdown()`, which may then resolve before the server listens, and leave it listening.
 
 ```typescript
 import { Binden, shutdown } from "binden";
