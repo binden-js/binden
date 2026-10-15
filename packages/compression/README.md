@@ -31,7 +31,11 @@ request, so that every writer (the following middlewares, `send()`, `sendFile()`
 piped stream) goes through it. It is installed once per response: a second compression on the
 same response does nothing. A head that Node.js refuses (e.g. a reason phrase with a line break,
 or a `Trailer` of a body that is not chunked) throws as without a compression, and leaves nothing
-of the decision: the error is replied with a decision of its own.
+of the decision, whether the body would be compressed or sent as it is: the compressor is
+destroyed, and the status, the headers and the framing of Node.js (e.g. whether it closes the
+connection) are those from before, so that the error is replied with a decision of its own. A
+`write()` or an `end()` of a chunk that Node.js refuses (`null`, or neither a string nor bytes)
+throws the error of Node.js before anything is decided.
 
 ## Options
 
@@ -150,9 +154,10 @@ is added to every response with a body:
   one);
 - `identity` (the response as it is) is acceptable unless refused (`identity;q=0`, or `*;q=0`
   without `identity`). When nothing is acceptable, the response is replaced with
-  `406 Not Acceptable`: an empty body (`Content-Length: 0`) without the headers of the
-  representation (its type, validators, digests, …). What the application writes afterwards is
-  discarded (the callbacks of its writes still run);
+  `406 Not Acceptable`: an empty body (`Content-Length: 0`) without the headers of the body that
+  it replaces, as an error reply of binden (its type, framing with `Trailer`, validators,
+  digests, …), nor `Accept-Ranges`. What the application writes afterwards is discarded (the
+  callbacks of its writes still run);
 - an encoded response (e.g. a precompressed file, with the `Content-Encoding` that the application
   has set) has no other version: it is sent as it is when the request accepts its coding (any
   coding without `Accept-Encoding`, none with an empty one), and replaced with `406` otherwise.
