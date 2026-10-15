@@ -157,6 +157,18 @@ function isStrictMediaType(media_type: string): boolean {
 /** A character that a reason phrase cannot have (as Node.js checks it) */
 const invalidReason = /[^\t\x20-\x7E\x80-\xFF]/u;
 
+/** The properties of Node.js that frame the connection of a response */
+interface IConnection {
+  sendDate: boolean;
+  shouldKeepAlive: boolean;
+}
+
+/**
+ * The `sendDate` and `shouldKeepAlive` of the responses: the constructors of
+ * Node.js set them before the private fields of a response exist
+ */
+const connections = new WeakMap<object, IConnection>();
+
 /** Without `[kSeal]()`, nothing may mutate a sealed response */
 const never = (): boolean => false;
 
@@ -250,7 +262,10 @@ export class BindenResponse<
    * function that cancels them: the send rejects with the reason, and its
    * headers are removed (see `[kCancel]()`)
    */
-  readonly #pending = new Map<object, (reason: unknown) => void>();
+  readonly #pending = new Map<
+    object,
+    (reason: unknown, release: (() => void)[]) => void
+  >();
   /** The checks of the owners that may mutate the response (see `[kSeal]()`) */
   readonly #seals: ((owner: object | undefined) => boolean)[] = [];
   /** Set while the framework mutates the response (see `[kFramework]()`) */
@@ -290,6 +305,33 @@ export class BindenResponse<
         },
       },
     });
+    // Nor whether it sends a `Date` and keeps its connection open (the
+    // framework sets them with its rights, e.g. at a shutdown)
+    for (const name of ["sendDate", "shouldKeepAlive"] as const) {
+      Object.defineProperty(this.prototype, name, {
+        configurable: true,
+        enumerable: true,
+        get(this: BindenResponse): boolean {
+          return (connections.get(this) as IConnection)[name];
+        },
+        set(this: BindenResponse, value: boolean): void {
+          // Set by the constructors of Node.js before the fields exist
+          if (#seals in this && !this.#allows()) {
+            return;
+          }
+          const connection = connections.get(this);
+          if (connection) {
+            connection[name] = value;
+          } else {
+            connections.set(this, {
+              sendDate: false,
+              shouldKeepAlive: true,
+              [name]: value,
+            });
+          }
+        },
+      });
+    }
   }
 
   /** A response to the request (created by the server) */
@@ -699,12 +741,47 @@ export class BindenResponse<
     }
   }
 
-  /** Sets a header (see `setHeader()` of Node.js), unless the response is sealed */
+  /**
+   * Sets a header (see `setHeader()` of Node.js), unless the response is
+   * sealed. An array of values is copied: Node.js would keep the array itself,
+   * which the work that set it could change later, also once it may no longer
+   * change the response (as `appendHeader()` and `setHeaders()`, which set
+   * their values through it).
+   */
   public override setHeader(
     name: string,
     value: number | string | readonly string[],
   ): this {
-    return this.#allows() ? super.setHeader(name, value) : this;
+    return this.#allows()
+      ? super.setHeader(name, BindenResponse.#copy(value))
+      : this;
+  }
+
+  /**
+   * A header (see `getHeader()` of Node.js): an array of values is a copy, so
+   * that changing it does not change the response
+   */
+  public override getHeader(
+    name: string,
+  ): number | string | string[] | undefined {
+    return BindenResponse.#copy(super.getHeader(name));
+  }
+
+  /**
+   * The headers (see `getHeaders()` of Node.js): the arrays of values are
+   * copies, so that changing them does not change the response
+   */
+  public override getHeaders(): OutgoingHttpHeaders {
+    const headers = super.getHeaders();
+    for (const [name, value] of Object.entries(headers)) {
+      headers[name] = BindenResponse.#copy(value);
+    }
+    return headers;
+  }
+
+  /** A copy of an array (of the values of a header), or the value itself */
+  static #copy<T>(value: T): T {
+    return Array.isArray(value) ? ([...(value as unknown[])] as T) : value;
   }
 
   /** Appends a header (see `appendHeader()` of Node.js), unless the response is sealed */
@@ -720,6 +797,15 @@ export class BindenResponse<
     headers: Headers | Map<string, number | string | readonly string[]>,
   ): this {
     return this.#allows() ? super.setHeaders(headers) : this;
+  }
+
+  /**
+   * Sets the timeout of the socket (see `setTimeout()` of Node.js), unless the
+   * response is sealed: the abandoned work cannot cut the reply of the
+   * framework by the timeout of its connection
+   */
+  public override setTimeout(msecs: number, callback?: () => void): this {
+    return this.#allows() ? super.setTimeout(msecs, callback) : this;
   }
 
   /** Removes a header (see `removeHeader()` of Node.js), unless the response is sealed */
@@ -840,11 +926,18 @@ export class BindenResponse<
    */
   public [kCancel](reason: unknown): void {
     if (!this.headersSent) {
+      const release: (() => void)[] = [];
       this[kFramework](() => {
         for (const cancel of [...this.#pending.values()]) {
-          cancel(reason);
+          cancel(reason, release);
         }
       });
+      // Without the rights of the framework: a source is code of the
+      // application (e.g. its `_destroy()`), which may not change the response
+      // of the framework either
+      for (const fn of release) {
+        fn();
+      }
     }
   }
 
@@ -1428,8 +1521,10 @@ export class BindenResponse<
           fail(error as Error);
         }
       };
-      this.#pending.set(key, (reason: unknown) => {
-        BindenResponse.#discard(data);
+      this.#pending.set(key, (reason: unknown, release: (() => void)[]) => {
+        release.push(() => {
+          BindenResponse.#discard(data);
+        });
         // The framing of the body that is not sent
         this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
         settle(reason as Error);

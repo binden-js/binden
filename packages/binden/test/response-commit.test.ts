@@ -254,6 +254,21 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     deepStrictEqual(headers["set-cookie"], ["b=2", cookie1.toString()]);
   });
 
+  test(".setTimeout() sets the timeout of the socket, unless the response is sealed", () => {
+    const response = detached();
+    const listeners = (): number[] =>
+      ["timeout", "socket"].map((event) => response.listenerCount(event));
+    const timedOut = (): void => {
+      // Not called
+    };
+    deepStrictEqual(response.setTimeout(1000, timedOut), response);
+    // Set on its socket once it has one
+    deepStrictEqual(listeners(), [1, 1]);
+    response[kSeal]();
+    deepStrictEqual(response.setTimeout(1, timedOut), response);
+    deepStrictEqual(listeners(), [1, 1]);
+  });
+
   test("a `writeHead()` that Node.js refuses leaves the response unchanged", () => {
     const response = detached();
     response.statusCode = 201;

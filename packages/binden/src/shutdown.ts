@@ -1,8 +1,10 @@
 import { type EventEmitter, errorMonitor } from "node:events";
-import type { Server as HttpServer, ServerResponse } from "node:http";
+import type { BindenResponse } from "./response.js";
 import type { Exchange } from "./exchange.js";
+import type { Server as HttpServer } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import type { Socket } from "node:net";
+import { kFramework } from "./seal.js";
 import { validateDelay } from "./delay.js";
 
 /** A server that `shutdown()` closes */
@@ -37,14 +39,14 @@ interface IRegistration {
   pending: boolean;
   readonly sockets: Set<Socket>;
   /** The requests in progress, with their response */
-  readonly exchanges: Map<Exchange, ServerResponse>;
+  readonly exchanges: Map<Exchange, BindenResponse>;
   /** The newest response of every connection (with the latest request) */
-  readonly newest: WeakMap<Socket, ServerResponse>;
+  readonly newest: WeakMap<Socket, BindenResponse>;
   /**
    * The responses that close their connection because the server is closing,
    * with their own `shouldKeepAlive`
    */
-  readonly kept: WeakMap<ServerResponse, boolean>;
+  readonly kept: WeakMap<BindenResponse, boolean>;
   /** Called once no connection is left */
   readonly drained: (() => void)[];
 }
@@ -70,9 +72,9 @@ export function register(
     report,
     pending: false,
     sockets: new Set<Socket>(),
-    exchanges: new Map<Exchange, ServerResponse>(),
-    newest: new WeakMap<Socket, ServerResponse>(),
-    kept: new WeakMap<ServerResponse, boolean>(),
+    exchanges: new Map<Exchange, BindenResponse>(),
+    newest: new WeakMap<Socket, BindenResponse>(),
+    kept: new WeakMap<BindenResponse, boolean>(),
     drained: [],
   };
   registrations.set(server, registration);
@@ -112,11 +114,14 @@ export function register(
  */
 function closesConnection(
   registration: IRegistration,
-  response: ServerResponse,
+  response: BindenResponse,
 ): void {
   if (!response.headersSent && !registration.kept.has(response)) {
     registration.kept.set(response, response.shouldKeepAlive);
-    response.shouldKeepAlive = false;
+    // Also once the response is sealed (e.g. for the reply of a deadline)
+    response[kFramework](() => {
+      response.shouldKeepAlive = false;
+    });
   }
 }
 
@@ -127,7 +132,7 @@ function closesConnection(
 export function track(
   server: IServer,
   exchange: Exchange,
-  response: ServerResponse,
+  response: BindenResponse,
 ): void {
   const registration = register(server);
   registration.exchanges.set(exchange, response);
@@ -145,7 +150,10 @@ export function track(
     // A request that arrives once closing (its `503` closes the connection):
     // the response before it, unless its headers have been sent, keeps the
     // connection open for it
-    previous.shouldKeepAlive = registration.kept.get(previous) as boolean;
+    const kept = registration.kept.get(previous) as boolean;
+    previous[kFramework](() => {
+      previous.shouldKeepAlive = kept;
+    });
     registration.kept.delete(previous);
   }
   response.once("close", () => {

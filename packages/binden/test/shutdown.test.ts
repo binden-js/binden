@@ -331,6 +331,46 @@ suite("shutdown()", () => {
     deepStrictEqual(record.failure, { type: "Error", location: "shutdown" });
   });
 
+  test("frames the connection of the reply of a deadline, whose response is sealed", async () => {
+    for (const pipelined of [false, true]) {
+      const handled = gate();
+      const app = new Binden({
+        timeout: 20,
+        error_handler: async (context: Context): Promise<void> => {
+          await handled.promise;
+          await context.status(503).send("deadline");
+        },
+      }).use(async () => {
+        await never();
+      });
+      const { server, port } = await listen(app);
+      const client = await connection(port);
+      client.socket.write("GET /a HTTP/1.1\r\nHost: localhost\r\n\r\n");
+      // Past the deadline: the response is sealed, the error handler waits
+      await sleep(60);
+      const closing = shutdown(server);
+      if (pipelined) {
+        // It arrives once closing: the reply before it keeps the connection
+        client.socket.write("GET /b HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        await sleep(20);
+      }
+      handled.open();
+      await within(closing);
+      await within(client.closed);
+      const [first = "", second = ""] = client
+        .received()
+        .split(/(?=HTTP\/1\.1 )/u);
+      ok(first.startsWith("HTTP/1.1 503 "), first);
+      if (pipelined) {
+        ok(/\r\nConnection: keep-alive\r\n/iu.test(first), first);
+        ok(second.startsWith("HTTP/1.1 503 "), second);
+        ok(/\r\nConnection: close\r\n/iu.test(second), second);
+      } else {
+        ok(/\r\nConnection: close\r\n/iu.test(first), first);
+      }
+    }
+  });
+
   test("before `listen()`, and once closed, waits for the cleanups only", async () => {
     const app = new Binden();
     const unused = app.createServer();

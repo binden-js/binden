@@ -416,6 +416,93 @@ suite("Ownership of the response once the exchange is sealed", () => {
     );
   });
 
+  test("the abandoned work changes neither the connection nor the headers of the reply", async () => {
+    const abandoned = gate();
+    await withApp(
+      {
+        timeout: 20,
+        error_handler: async (context: Context): Promise<void> => {
+          await abandoned.promise;
+          // Long enough for a timeout of the socket of 1 ms
+          await sleep(30);
+          await context.status(503).send("handler");
+        },
+      },
+      (app) => {
+        app.use(async (context: Context) => {
+          const { response } = context;
+          // Arrays of values, kept by the work before the deadline
+          const set = ["a"];
+          response.setHeader("X-Set", set);
+          response.setHeader("X-Got", ["a"]);
+          const got = response.getHeader("X-Got") as string[];
+          response.setHeader("X-All", ["a"]);
+          const all = response.getHeaders()["x-all"] as string[];
+          const appended = ["a"];
+          response.appendHeader("X-Appended", appended);
+          const mapped = ["a"];
+          response.setHeaders(new Map([["X-Mapped", mapped]]));
+          await sleep(60);
+          for (const values of [set, got, all, appended, mapped]) {
+            values.push("late");
+          }
+          response.sendDate = false;
+          response.shouldKeepAlive = false;
+          response.setTimeout(1);
+          abandoned.open();
+        });
+      },
+      async ({ port }) => {
+        const head = await headOf(port, "GET / HTTP/1.1\r\nHost: a\r\n\r\n");
+        ok(head.startsWith("HTTP/1.1 503 "), head);
+        ok(/^Date: /mu.test(head), head);
+        ok(/^Connection: keep-alive$/imu.test(head), head);
+        for (const name of [
+          "X-Set",
+          "X-Got",
+          "X-All",
+          "X-Appended",
+          "X-Mapped",
+        ]) {
+          ok(head.includes(`\r\n${name}: a\r\n`), head);
+        }
+        ok(!head.includes("late"), head);
+      },
+    );
+  });
+
+  test("a cancelled source is released without the rights of the framework", async () => {
+    const released = gate();
+    await withApp(
+      { timeout: 20 },
+      (app) => {
+        app.use(async (context: Context) => {
+          const { response } = context;
+          const source = new Readable({
+            read(): void {
+              // Its first chunk never comes
+            },
+            destroy(error, callback): void {
+              // Code of the application, run by the cancellation
+              response.setHeader("X-Released", "1");
+              response.statusCode = 200;
+              released.open();
+              callback(error);
+            },
+          });
+          await reasonOf(context.send(source));
+          await never();
+        });
+      },
+      async ({ port }) => {
+        const head = await headOf(port, "GET / HTTP/1.1\r\nHost: a\r\n\r\n");
+        await within(released.promise);
+        ok(head.startsWith("HTTP/1.1 503 "), head);
+        ok(!/^X-Released/imu.test(head), head);
+      },
+    );
+  });
+
   test("the default error reply closes the connection of a body that has not been read in full", async () => {
     await withApp(
       {},
