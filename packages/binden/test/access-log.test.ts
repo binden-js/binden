@@ -353,6 +353,42 @@ suite("Access log", () => {
     );
   });
 
+  test("the ignored writes of a work past its deadline are not counted", async () => {
+    await withApp(
+      {
+        access_log: true,
+        timeout: 20,
+        error_handler: async (context: Context): Promise<void> => {
+          await sleep(60);
+          await context.status(503).text("deadline!");
+        },
+      },
+      (app) => {
+        app.use(async (context: Context) => {
+          await sleep(30);
+          // Past the deadline: the response no longer belongs to this work
+          context.response.write("x".repeat(1000));
+          await never();
+        });
+      },
+      async ({ port }, captured) => {
+        const reply = await send(port);
+        deepStrictEqual([reply.status, reply.body], [503, "deadline!"]);
+        await waitFor(captured, 1);
+        deepStrictEqual(records(captured), [
+          {
+            level: 30,
+            method: "GET",
+            route: "*",
+            status: 503,
+            body_bytes: 9,
+            aborted: true,
+          },
+        ]);
+      },
+    );
+  });
+
   test("a request that has passed its deadline", async () => {
     await withApp(
       { access_log: true, timeout: 20 },

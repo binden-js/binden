@@ -29,7 +29,7 @@ import {
 } from "./route.js";
 import { type IMiddleware, Middleware } from "./middleware.js";
 import { isClosing, register, track } from "./shutdown.js";
-import { kCancel, kFramework, kSeal } from "./seal.js";
+import { kCancel, kFramework, kOperation, kSeal } from "./seal.js";
 import { pathOf, property } from "./property.js";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
@@ -863,7 +863,7 @@ export class Binden<
   async #opaque(context: Context): Promise<void> {
     const { response } = context;
     // Once (`#representation` may list `Content-Type` as well)
-    for (const name of new Set([...Binden.#representation, "Content-Type"])) {
+    for (const name of Binden.#representation) {
       response.removeHeader(name);
     }
     await this.#empty(context, DefaultErrorCode);
@@ -1131,7 +1131,10 @@ export class Binden<
     let bytes = 0;
     const count = (chunk: unknown, encoding: unknown): void => {
       const { statusCode } = response;
-      if (
+      if (response[kOperation]() === null) {
+        // Ignored: the work that writes no longer owns the response (e.g. after its deadline)
+        return;
+      } else if (
         request.method === "HEAD" ||
         statusCode < 200 ||
         statusCode === 204 ||
