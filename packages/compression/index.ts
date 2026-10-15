@@ -23,9 +23,6 @@ import zlib, {
 export { type ICompressionFilter, isCompressible } from "./src/filter.js";
 export type { ICompressEncodings } from "./src/codings.js";
 
-/** The preferred content coding: the first of the default `encodings` */
-export const DefaultCompression = "br";
-
 /** The `format` of a compression: `auto` negotiates it, the others are fixed */
 export type ICompressFormats = ICompressEncodings | "auto";
 
