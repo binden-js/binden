@@ -238,6 +238,89 @@ suite("Conditional requests of compressed responses", () => {
     }
   });
 
+  test("`sendFile()` with a redirect or an error status: the whole file, whatever the preconditions and `Range`", async () => {
+    const tag = `"v1"`;
+    served = await serve({}, new Compression(), (context: Context) =>
+      context.response
+        .status(Number(context.request.headers["x-status"]))
+        .sendFile(file, { validator: tag }),
+    );
+    const { url } = served;
+    const conditions = {
+      "If-None-Match": { "If-None-Match": tag },
+      "If-Modified-Since": {
+        "If-Modified-Since": new Date(Date.now() + 86_400_000).toUTCString(),
+      },
+      "If-Match": { "If-Match": `"other"` },
+      Range: { Range: "bytes=0-9" },
+    };
+    // What they do to a `200` (to `GET`: `HEAD` has no ranges), by coding
+    const applied: Record<
+      "gzip" | "identity",
+      Record<keyof typeof conditions, number>
+    > = {
+      gzip: {
+        "If-None-Match": 304,
+        "If-Modified-Since": 304,
+        "If-Match": 412,
+        Range: 200,
+      },
+      identity: {
+        "If-None-Match": 304,
+        "If-Modified-Since": 304,
+        "If-Match": 412,
+        Range: 206,
+      },
+    };
+    for (const status of [200, 302, 404, 503]) {
+      for (const [name, condition] of Object.entries(conditions) as [
+        keyof typeof conditions,
+        Record<string, string>,
+      ][]) {
+        for (const coding of ["gzip", "identity"] as const) {
+          for (const method of ["GET", "HEAD"]) {
+            const label = `${method} ${status} ${name} (${coding})`;
+            const received = await fetchRaw(url, {
+              method,
+              headers: {
+                "X-Status": `${status}`,
+                ...accepts[coding],
+                ...condition,
+              },
+            });
+            const expected =
+              status === 200
+                ? method === "HEAD" && name === "Range"
+                  ? 200
+                  : applied[coding][name]
+                : status;
+            deepStrictEqual(received.status, expected, label);
+            if (status !== 200) {
+              // The file as a `200` would send it whole
+              deepStrictEqual(
+                [
+                  received.headers["content-encoding"],
+                  received.headers["content-length"],
+                  received.headers["content-range"],
+                  received.body,
+                ],
+                coding === "gzip"
+                  ? ["gzip", none, none, method === "GET" ? content : ""]
+                  : [
+                      none,
+                      `${content.length}`,
+                      none,
+                      method === "GET" ? content : "",
+                    ],
+                label,
+              );
+            }
+          }
+        }
+      }
+    }
+  });
+
   test("`sendFile()`: the preconditions of the chosen representation", async () => {
     const tag = `"v1"`;
     served = await serve({}, new Compression(), (context: Context) =>

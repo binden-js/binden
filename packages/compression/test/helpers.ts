@@ -102,6 +102,8 @@ export interface ICaptured {
   readonly logger: Logger;
   /** The messages logged so far, with their level */
   readonly records: { level: unknown; msg: unknown }[];
+  /** The records logged so far, whole */
+  readonly entries: Record<string, unknown>[];
   /** Resolves once `count` records have been written (within 5 s) */
   waitFor(count: number): Promise<void>;
 }
@@ -119,6 +121,9 @@ export function capture(): ICaptured {
   });
   return {
     logger,
+    get entries(): Record<string, unknown>[] {
+      return lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    },
     get records(): { level: unknown; msg: unknown }[] {
       return lines.map((line) => {
         const { level, msg } = JSON.parse(line) as Record<string, unknown>;
