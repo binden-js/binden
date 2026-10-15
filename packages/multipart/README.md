@@ -199,15 +199,16 @@ The `filename` of a file is the name that the client has sent, without its contr
 
 ### Errors
 
-| Situation                                                      | Reply                                          |
-| -------------------------------------------------------------- | ---------------------------------------------- |
-| A limit (`limit`, `config.limits` with `throw_limits`)         | `413 Content Too Large`                        |
-| A malformed body, a missing or invalid `boundary`              | `400 Bad Request`                              |
-| A file refused by `file_filter`, a field of an unknown charset | `415 Unsupported Media Type`                   |
-| A `BindenError` thrown by `file_filter` or `on_file`           | Its status                                     |
-| Another failure of `file_filter`, `on_file` or the storage     | `500 Internal Server Error`                    |
-| Another media type than `multipart/form-data`                  | Skipped: the body is not read                  |
-| The request is aborted (see `context.signal`)                  | `run()` rejects with a `400` of code `aborted` |
+| Situation                                                      | Reply                                                                      |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| A limit (`limit`, `config.limits` with `throw_limits`)         | `413 Content Too Large`                                                    |
+| A malformed body, a missing or invalid `boundary`              | `400 Bad Request`                                                          |
+| A file refused by `file_filter`, a field of an unknown charset | `415 Unsupported Media Type`                                               |
+| A `BindenError` thrown by `file_filter` or `on_file`           | Its status                                                                 |
+| Another failure of `file_filter`, `on_file` or the storage     | `500 Internal Server Error`                                                |
+| Another media type than `multipart/form-data`                  | Skipped: the body is not read                                              |
+| The client goes away                                           | `run()` rejects with a `400` of code `aborted`                             |
+| The deadline passes, or the server shuts down                  | `run()` rejects with the reason of `context.signal` (a `BindenAbortError`) |
 
 After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response that has already started destroys the request.
 

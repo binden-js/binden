@@ -206,12 +206,8 @@ describe("Multipart (file_filter)", () => {
     const error = await within(settled);
 
     deepEqual(reply, [503, "close"]);
-    ok(error instanceof BindenError);
-    ok(error.cause instanceof BindenAbortError);
-    deepEqual(
-      [error.status, error.code, error.cause.reason],
-      [400, "aborted", "deadline"],
-    );
+    ok(error instanceof BindenAbortError);
+    equal(error.reason, "deadline");
   });
 
   it("refuses an invalid `file_filter` or `filtered`", () => {

@@ -442,7 +442,10 @@ const values = new BodyParser({ strict: false, limit: 1024 * 1024 });
   and `config.limits`) or an invalid value throws a `TypeError` or a `RangeError`.
 - A body over a limit of `config.limits` gets `413 Content Too Large` (it was a `415`), a malformed
   body or boundary `400 Bad Request` (it was a `415`), and a `multipart/form-data` request without
-  a boundary `400` (it was skipped). An aborted request rejects with a `400` of code `aborted`.
+  a boundary `400` (it was skipped).
+- A client that goes away rejects `run()` with a `400` of code `aborted`. After the deadline or
+  during a shutdown, `run()` rejects with the reason of `context.signal` (a `BindenAbortError`), as
+  `@binden/body` does: the framework replies `503`.
 - The parameters of the parts (e.g. the names of the files) are decoded as UTF-8 (busboy decodes
   them as Latin-1 by default): set `config.defParamCharset` to `"latin1"` to keep the former names.
 - A file name is cleaned: its control characters are removed, it is cut to 255 bytes, and an empty

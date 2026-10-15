@@ -1,4 +1,9 @@
-import { BindenError, type Context, Middleware } from "binden";
+import {
+  BindenAbortError,
+  BindenError,
+  type Context,
+  Middleware,
+} from "binden";
 import {
   DiskStore,
   type IFileStream,
@@ -67,6 +72,19 @@ function create(config: BusboyConfig): Busboy | Error {
   } catch (error: unknown) {
     return error as Error;
   }
+}
+
+/**
+ * The error of an aborted request: a client that has gone away is a
+ * `400 Bad Request` (`aborted`), a deadline or a shutdown is the reason of
+ * `context.signal` (as for `@binden/body`)
+ */
+function abortError(reason: unknown): BindenAbortError | BindenError {
+  if (reason instanceof BindenAbortError && reason.reason !== "client_closed") {
+    return reason;
+  }
+  const message = "The request has been aborted";
+  return new BindenError(400, { message, code: "aborted", cause: reason });
 }
 
 /** The error of a failed callback: a `BindenError` as is, any other a `500` */
@@ -387,13 +405,12 @@ class Parser {
   }
 
   /**
-   * The request is aborted (see `context.signal`): e.g. the client has gone
-   * away, or the deadline has passed
+   * The request is aborted (see `context.signal`): the client has gone away
+   * (`400`), or the deadline has passed or the server is shutting down (the
+   * reason of the signal)
    */
   #abort(): void {
-    const message = "The request has been aborted";
-    const cause: unknown = this.#context.signal.reason;
-    this.#refuse(new BindenError(400, { message, code: "aborted", cause }));
+    this.#refuse(abortError(this.#context.signal.reason));
   }
 
   /**
@@ -401,7 +418,7 @@ class Parser {
    * connection is kept until the reply to the error, which closes it,
    * unless its response has already started.
    */
-  #refuse(error: BindenError): void {
+  #refuse(error: BindenAbortError | BindenError): void {
     if (this.#over) {
       return;
     }
@@ -426,9 +443,12 @@ class Parser {
         stream.destroy();
       }
     });
-    this.#log.debug("The multipart body has been refused", {
-      status: error.status,
-    });
+    this.#log.debug(
+      "The multipart body has been refused",
+      error instanceof BindenError
+        ? { status: error.status }
+        : { reason: error.reason },
+    );
     this.#deferred.reject(error);
   }
 
@@ -492,7 +512,8 @@ export class Multipart extends Middleware {
 
   /**
    * Parses the body of a `multipart/form-data` request: a limit gives a
-   * `413`, and a malformed body (or boundary) a `400`
+   * `413`, a malformed body (or boundary) a `400`, a client that goes away a
+   * `400` (`aborted`), a deadline or a shutdown the reason of the signal
    */
   public async run(context: Context): Promise<void> {
     const { request } = context;
