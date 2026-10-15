@@ -589,9 +589,11 @@ export class BindenRequest extends IncomingMessage {
 
   /**
    * The path and the query of a request-target (without its authority), which
-   * must be in origin-form, without a fragment, a backslash, an invalid
-   * percent-encoding, or dot-segments (which the URL parser would remove, so
-   * that the request would be routed to another path); nor, unless
+   * must be in origin-form, without a fragment, a backslash, a space or a
+   * control character (which the URL parser would remove or encode after the
+   * checks, e.g. `.\t.` is `..`, as a rewritten `request.url` may have them), an
+   * invalid percent-encoding, or dot-segments (which the URL parser would
+   * remove, so that the request would be routed to another path); nor, unless
    * `encoded_slashes`, with an encoded slash or backslash in its path (a
    * segment that a router would see as several, once decoded).
    */
@@ -602,6 +604,8 @@ export class BindenRequest extends IncomingMessage {
     if (
       !rest.startsWith("/") ||
       /[#\\]/u.test(rest) ||
+      // eslint-disable-next-line no-control-regex -- control characters on purpose
+      /[\x00-\x20\x7F]/u.test(rest) ||
       /%(?![\da-f]{2})/iu.test(rest)
     ) {
       throw new BindenError(400);

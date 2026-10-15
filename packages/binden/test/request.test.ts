@@ -372,6 +372,18 @@ suite("BindenRequest", () => {
       ["/..", "GET", "trusted.test"],
       ["/a/%2e%2E/b", "GET", "trusted.test"],
       ["/a/.%2e", "GET", "trusted.test"],
+      // Control characters and spaces, which the URL parser would remove or
+      // encode after the checks (e.g. a rewritten `request.url`)
+      ["/a/.\t./b", "GET", "trusted.test"],
+      ["/a/%2e\n%2E/b", "GET", "trusted.test"],
+      ["/a/.\r/b", "GET", "trusted.test"],
+      ["/a b", "GET", "trusted.test"],
+      ["/a\0b", "GET", "trusted.test"],
+      ["/a\x1Fb", "GET", "trusted.test"],
+      ["/a\x7Fb", "GET", "trusted.test"],
+      ["/a?b c", "GET", "trusted.test"],
+      ["/a?b\tc", "GET", "trusted.test"],
+      ["http://trusted.test/a\tb", "GET", "trusted.test"],
       ["http://user:pw@trusted.test/x", "GET", "trusted.test"],
       ["http://user@trusted.test/x", "GET", "trusted.test"],
       ["ftp://trusted.test/x", "GET", "trusted.test"],

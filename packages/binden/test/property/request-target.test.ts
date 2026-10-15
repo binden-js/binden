@@ -86,11 +86,29 @@ const fragments: readonly string[] = [
  * The path and query of a request-target as Node.js delivers it: visible
  * ASCII only (its parser refuses control characters, spaces and other bytes)
  */
-const target = fc
+const visibleTarget = fc
   .array(fc.oneof(fc.constantFrom(...fragments), fc.constantFrom(...visible)), {
     maxLength: 16,
   })
   .map((parts) => `/${parts.join("")}`);
+
+/** A space or a control character */
+const control = fc
+  .integer({ min: 0, max: 0x21 })
+  .map((code) => String.fromCharCode(code === 0x21 ? 0x7f : code));
+
+/**
+ * The path and query of a request-target, as Node.js delivers it, or with a
+ * space or a control character inserted anywhere (e.g. a rewritten
+ * `request.url`)
+ */
+const target = fc.oneof(
+  visibleTarget,
+  fc.tuple(visibleTarget, fc.nat(), control).map(([input, at, char]) => {
+    const index = 1 + (at % input.length);
+    return `${input.slice(0, index)}${char}${input.slice(index)}`;
+  }),
+);
 
 /** A request-target with any character, or in another form */
 const anyTarget = fc.oneof(
@@ -103,9 +121,6 @@ const anyTarget = fc.oneof(
       target,
     )
     .map((parts) => parts.join("")),
-  fc
-    .tuple(target, fc.constantFrom("\t", "\n", "\r", "\0", " ", "\x7F"), target)
-    .map(([a, control, b]) => `${a}${control}${b.slice(1)}`),
 );
 
 suite("Request-target (properties)", () => {
@@ -118,6 +133,19 @@ suite("Request-target (properties)", () => {
         } else {
           ok(url instanceof BindenError, String(url));
           deepStrictEqual(url.status, 400);
+        }
+      }),
+      500,
+    );
+  });
+
+  test("`URL` is a `400 Bad Request` for a request-target with a space or a control character", () => {
+    check(
+      fc.property(target, fc.boolean(), (input, encoded_slashes) => {
+        const url = urlOf(input, { encoded_slashes });
+        // eslint-disable-next-line no-control-regex -- control characters on purpose
+        if (/[\x00-\x20\x7F]/u.test(input)) {
+          ok(url instanceof BindenError && url.status === 400, input);
         }
       }),
       500,
