@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// Checks the packed workspaces the way a consumer uses them: the tarballs are
-// installed into a fresh project, which is type checked and then run as ESM
-// against a real server. The TypeScript examples of the READMEs are type checked
-// against the same installation. Each check runs with:
+// Checks the packed workspaces the way a consumer uses them:
+//
+// - every bare import of the modules and declarations of an archive (`dist/`) is
+//   declared by its `package.json` (`scripts/imports.mjs`);
+// - the tarballs are installed into a fresh project, which is type checked and then
+//   run as ESM against a real server. The TypeScript examples of the READMEs are
+//   type checked against the same installation.
+//
+// The installation of all the tarballs is checked with:
 //
 // - the TypeScript of this repository and `@types/node` 24;
 // - the same TypeScript and `@types/node` 26, with `skipLibCheck`: the types of
@@ -24,10 +29,11 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { readRelease, readTarball } from "./tarballs.mjs";
 import { execFileSync } from "node:child_process";
 import { npm } from "./npm.mjs";
-import { readRelease } from "./tarballs.mjs";
 import { tmpdir } from "node:os";
+import { undeclaredImports } from "./imports.mjs";
 
 const root = join(import.meta.dirname, "..");
 const readJSON = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -156,6 +162,21 @@ function writeExamples() {
   return examples;
 }
 
+/** Checks that every archive declares the packages that its `dist/` imports */
+function checkImports(tarballs) {
+  const errors = tarballs.flatMap((path) => {
+    const files = readTarball(readFileSync(path));
+    const manifest = JSON.parse(files.get("package.json"));
+    return undeclaredImports(manifest, files);
+  });
+  if (errors.length > 0) {
+    throw new Error(`Undeclared imports:\n  ${errors.join("\n  ")}`);
+  }
+  process.stderr.write(
+    `[consumer] the imports of ${tarballs.length} archives are declared\n`,
+  );
+}
+
 function run(command, args, cwd = dir) {
   process.stderr.write(`[consumer] ${command} ${args.join(" ")}\n`);
   const options = { cwd, stdio: ["ignore", "inherit", "inherit"] };
@@ -192,6 +213,7 @@ function pack() {
 
 try {
   const tarballs = pack();
+  checkImports(tarballs);
 
   writeFileSync(
     join(dir, "package.json"),
