@@ -521,7 +521,8 @@ export class BodyParser<T = unknown> extends Middleware {
    * output (`limit`), after a counter of the body as received
    * (`encoded_limit`). A refusal (or an abort) stops the reading: the
    * request is paused (not destroyed, so that the reply is sent), every
-   * decoder destroyed and the connection closed after the reply.
+   * decoder destroyed and the connection closed after the reply. A client
+   * that goes away is an abort, also once the response has finished.
    */
   #read(
     context: Context,
@@ -603,6 +604,23 @@ export class BodyParser<T = unknown> extends Middleware {
         }
       });
       request.pipe(wire);
+
+      // Once the response has finished, Node.js no longer tells the request
+      // that the client has gone away, but its connection closes. A body that
+      // has been received whole is still read.
+      const { socket } = request;
+      const closed = (): void => {
+        if (!request.complete) {
+          fail(abortError(null), "The request has been aborted");
+        }
+      };
+      socket.once("close", closed);
+      cleanups.push(() => {
+        socket.off("close", closed);
+      });
+      if (socket.destroyed) {
+        closed();
+      }
     });
   }
 

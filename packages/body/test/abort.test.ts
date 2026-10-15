@@ -1,3 +1,4 @@
+import { Agent, type IncomingMessage, request } from "node:http";
 import {
   Binden,
   BindenAbortError,
@@ -8,7 +9,6 @@ import {
   ct_text,
 } from "binden";
 import { type IServer, Recorder, listen, never, within } from "./helpers.js";
-import { type IncomingMessage, request } from "node:http";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { BodyParser } from "../index.js";
@@ -122,6 +122,172 @@ suite("BodyParser (aborted requests)", () => {
       }
     },
   );
+
+  test(
+    "a client that goes away once the response has finished",
+    { timeout: 10_000 },
+    async () => {
+      const parser = new BodyParser();
+      const { promise: settled, resolve: settle } =
+        Promise.withResolvers<IOutcome>();
+      const logger = new Recorder();
+      const server = await listen(
+        new Binden({ logger }).use(async (context: Context) => {
+          // Not awaited: the response finishes while the body is read
+          parser.run(context).then(
+            () => {
+              settle({ ok: true });
+            },
+            (error: unknown) => {
+              settle({ error });
+            },
+          );
+          await context.send("early");
+        }),
+      );
+      try {
+        const { req, response } = upload(
+          server,
+          { "Content-Type": ct_text, "Content-Length": 1000 },
+          "x".repeat(10),
+        );
+        const received = await within(response);
+        received.resume();
+        await within(once(received, "end"));
+        req.destroy();
+        ok(isAborted(failure(await within(settled))));
+        deepStrictEqual(logger.messages("error"), []);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  test(
+    "a client that has gone away before the body is read, once the response has finished",
+    { timeout: 10_000 },
+    async () => {
+      const parser = new BodyParser();
+      const { promise: settled, resolve: settle } =
+        Promise.withResolvers<IOutcome>();
+      const server = await listen(
+        new Binden().use(async (context: Context) => {
+          const { socket } = context.request;
+          const gone = once(socket, "close");
+          await context.send("early");
+          await gone;
+          // Read only now: no event of the request tells it
+          await parser.run(context).then(
+            () => {
+              settle({ ok: true });
+            },
+            (error: unknown) => {
+              settle({ error });
+            },
+          );
+        }),
+      );
+      try {
+        // The headers only
+        const { req, response } = upload(
+          server,
+          { "Content-Type": ct_text, "Content-Length": 1000 },
+          "",
+        );
+        const received = await within(response);
+        received.resume();
+        await within(once(received, "end"));
+        req.destroy();
+        ok(isAborted(failure(await within(settled))));
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  test(
+    "a body received whole is read, also when its connection then closes",
+    { timeout: 10_000 },
+    async () => {
+      const parser = new BodyParser();
+      const { promise: settled, resolve: settle } =
+        Promise.withResolvers<IOutcome>();
+      const { promise: closed, resolve: close } =
+        Promise.withResolvers<Context["request"]>();
+      const server = await listen(
+        new Binden().use(async (context: Context) => {
+          const { request: incoming } = context;
+          parser.run(context).then(
+            () => {
+              settle({ ok: true });
+            },
+            (error: unknown) => {
+              settle({ error });
+            },
+          );
+          // As if the rest of the body had been received, and were still on
+          // its way to the parser when the connection closes
+          incoming.complete = true;
+          incoming.socket.once("close", () => {
+            close(incoming);
+          });
+          await context.send("early");
+        }),
+      );
+      try {
+        const { req, response } = upload(
+          server,
+          { "Content-Type": ct_text, "Content-Length": 10 },
+          "first",
+        );
+        const received = await within(response);
+        received.resume();
+        await within(once(received, "end"));
+        req.destroy();
+        const incoming = await within(closed);
+        incoming.push("-last");
+        incoming.push(null);
+        deepStrictEqual(await within(settled), { ok: true });
+        deepStrictEqual(incoming.body, "first-last");
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  test("a connection that is kept alive keeps no listener of the parser", async () => {
+    const parser = new BodyParser();
+    const counts: number[] = [];
+    const server = await listen(
+      new Binden().use(async (context: Context) => {
+        await parser.run(context);
+        counts.push(context.request.socket.listenerCount("close"));
+        await context.send(String(context.request.body));
+      }),
+    );
+    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+    try {
+      for (let index = 0; index < 3; index += 1) {
+        const sent = request({
+          port: server.port,
+          method: "POST",
+          agent,
+          headers: { "Content-Type": ct_text },
+        });
+        sent.end("body");
+        const [received] = (await within(once(sent, "response"))) as [
+          IncomingMessage,
+        ];
+        received.resume();
+        await within(once(received, "end"));
+        deepStrictEqual(sent.reusedSocket, index > 0);
+      }
+      deepStrictEqual(new Set(counts).size, 1);
+    } finally {
+      agent.destroy();
+      await server.close();
+    }
+  });
 
   test("a deadline during the upload", { timeout: 10_000 }, async () => {
     const watched = watch(new BodyParser());

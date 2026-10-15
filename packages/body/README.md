@@ -223,7 +223,10 @@ The reading, `verify` and `parse` stop once `context.signal` is aborted: a promi
 `parse` that never settles is abandoned (its late rejection is observed), and the parser does not
 stay pending.
 
-- A client that goes away gets a `BindenError(400, { code: "aborted" })` (logged at `debug`).
+- A client that goes away gets a `BindenError(400, { code: "aborted" })` (logged at `debug`), also
+  when the parser is still reading once the response has finished (e.g. it was not awaited): then
+  `context.signal` is no longer aborted, but the connection closes before the body has been
+  received whole.
 - After the deadline of the request (or the timeout of a shutdown), the parser rejects with the
   reason of the signal (a `BindenAbortError`), and the connection is closed after the reply of
   the framework.
