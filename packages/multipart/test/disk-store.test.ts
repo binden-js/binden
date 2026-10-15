@@ -5,18 +5,22 @@ import {
   storedForm,
 } from "../src/disk.js";
 import { PassThrough, Readable } from "node:stream";
+import { type ReadStream, constants } from "node:fs";
 import { type TestContext, describe, it } from "node:test";
 import { deepEqual, equal, ok, rejects, throws } from "node:assert/strict";
 import { eventually, never, sleep, within } from "./helpers.js";
 import fs, {
+  type FileHandle,
+  lstat,
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
-import { constants } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -26,12 +30,14 @@ function system(overrides: Partial<IFileSystem> = {}): IFileSystem {
     mkdtemp: (prefix) => fs.mkdtemp(prefix),
     open: (path, flags, mode) => fs.open(path, flags, mode),
     link: (existing, target) => fs.link(existing, target),
-    copyFile: (source, target, mode) => fs.copyFile(source, target, mode),
+    lstat: (path, options) => fs.lstat(path, options),
     unlink: (path) => fs.unlink(path),
     rmdir: (path) => fs.rmdir(path),
     ...overrides,
   };
 }
+
+const posix = process.platform !== "win32";
 
 /** An error of the system */
 function failure(code: string): NodeJS.ErrnoException {
@@ -129,41 +135,69 @@ describe("DiskStore", () => {
     deepEqual([file.path, await readFile(target, "utf8")], [target, "Hello"]);
   });
 
-  it("copies a file to another file system", async (t) => {
+  it("copies a file where there cannot be a hard link", async (t) => {
+    for (const code of ["EXDEV", "EPERM", "ENOTSUP", "EMLINK"]) {
+      const { root, store } = await create(t, {
+        link: () => Promise.reject(failure(code)),
+      });
+      const target = join(root, "kept.txt");
+
+      const file = store.add(info, content("Hello"));
+      await file.written;
+      const temp = file.path;
+      await file.persist(target);
+      await store.cleanup();
+
+      const { mode, nlink } = await stat(target);
+      deepEqual(
+        [
+          await readdir(root),
+          await readFile(target, "utf8"),
+          posix ? mode & 0o777 : 0o600,
+          nlink,
+        ],
+        [["kept.txt"], "Hello", 0o600, 1],
+      );
+      ok(temp !== target);
+    }
+  });
+
+  it("throws the other errors of a hard link, without a copy", async (t) => {
     const { root, store } = await create(t, {
-      link: () => Promise.reject(failure("EXDEV")),
+      link: () => Promise.reject(failure("EACCES")),
     });
-    const target = join(root, "kept.txt");
 
     const file = store.add(info, content("Hello"));
-    await file.written;
-    const temp = file.path;
-    await file.persist(target);
-    await store.cleanup();
+    await rejects(file.persist(join(root, "kept.txt")), failure("EACCES"));
 
-    deepEqual(await readdir(root), ["kept.txt"]);
-    equal(await readFile(target, "utf8"), "Hello");
-    ok(temp !== target);
+    equal((await readdir(root)).includes("kept.txt"), false);
   });
 
   it("removes what a failed copy has written, and keeps the file", async (t) => {
     let copies = 0;
     const { root, store } = await create(t, {
       link: () => Promise.reject(failure("EXDEV")),
-      copyFile: async (source, target, mode) => {
-        copies += 1;
-        if (copies === 1) {
-          await writeFile(target, "Hel");
-          throw failure("ENOSPC");
+      open: async (path, flags, mode) => {
+        const handle = await fs.open(path, flags, mode);
+        if (flags === constants.O_RDONLY && (copies += 1) === 1) {
+          // Fails once a part has been written
+          handle.createReadStream = (): ReadStream =>
+            Readable.from(
+              (async function* chunks(): AsyncGenerator<Buffer> {
+                yield Buffer.from("Hel");
+                await sleep(10);
+                throw failure("EIO");
+              })(),
+            ) as ReadStream;
         }
-        await fs.copyFile(source, target, mode);
+        return handle;
       },
     });
     const target = join(root, "kept.txt");
 
     const file = store.add(info, content("Hello"));
-    await rejects(file.persist(target), failure("ENOSPC"));
-    deepEqual((await readdir(root)).includes("kept.txt"), false);
+    await rejects(file.persist(target), failure("EIO"));
+    equal((await readdir(root)).includes("kept.txt"), false);
     await file.persist(target);
 
     equal(await readFile(target, "utf8"), "Hello");
@@ -182,10 +216,163 @@ describe("DiskStore", () => {
     equal(await readFile(target, "utf8"), "Existing");
   });
 
+  it("never removes a target that it has not created, also when the file is gone", async (t) => {
+    let temp = "";
+    const { root, store } = await create(t, {
+      // The temporary file disappears before the copy
+      link: async () => {
+        await fs.unlink(temp);
+        throw failure("EXDEV");
+      },
+    });
+    const existing = join(root, "existing.txt");
+    await writeFile(existing, "Existing");
+
+    for (const target of [existing, join(root, "new.txt")]) {
+      const file = store.add(info, content("Hello"));
+      await file.written;
+      temp = file.path;
+      await rejects(file.persist(target), {
+        code: target === existing ? "EEXIST" : "ENOENT",
+      });
+    }
+
+    deepEqual(
+      [
+        (await readdir(root)).filter((name) => name.endsWith(".txt")),
+        await readFile(existing, "utf8"),
+      ],
+      [["existing.txt"], "Existing"],
+    );
+  });
+
+  it("never removes a file or a link that has replaced its target during a failed copy", async (t) => {
+    const replacements = posix ? ["file", "link"] : ["file"];
+    for (const replacement of replacements) {
+      let target = "";
+      let moved = "";
+      const { root, store } = await create(t, {
+        link: () => Promise.reject(failure("EXDEV")),
+        open: async (path, flags, mode) => {
+          if (flags === constants.O_RDONLY) {
+            // Another process replaces the file of the copy, which then fails
+            if (replacement === "file") {
+              await writeFile(moved, "Another");
+              await rename(moved, target);
+            } else {
+              await rename(target, moved);
+              await symlink(moved, target);
+            }
+            throw failure("EIO");
+          }
+          return fs.open(path, flags, mode);
+        },
+      });
+      target = join(root, "kept.txt");
+      moved = join(root, "moved.txt");
+
+      const file = store.add(info, content("Hello"));
+      await rejects(file.persist(target), failure("EIO"));
+
+      ok(
+        replacement === "file"
+          ? (await readFile(target, "utf8")) === "Another"
+          : (await lstat(target)).isSymbolicLink(),
+        replacement,
+      );
+    }
+  });
+
+  it("closes the descriptors of a copy, whether it succeeds or fails", async (t) => {
+    const handles: FileHandle[] = [];
+    let fail = "";
+    const { root, store } = await create(t, {
+      link: () => Promise.reject(failure("EXDEV")),
+      open: async (path, flags, mode) => {
+        if (fail === "open" && flags === constants.O_RDONLY) {
+          throw failure("EMFILE");
+        }
+        const handle = await fs.open(path, flags, mode);
+        handles.push(handle);
+        if (fail === "read" && flags === constants.O_RDONLY) {
+          handle.createReadStream = (): ReadStream =>
+            Readable.from(
+              (async function* chunks(): AsyncGenerator<Buffer> {
+                yield Buffer.from("Hel");
+                await sleep(10);
+                throw failure("EIO");
+              })(),
+            ) as ReadStream;
+        }
+        return handle;
+      },
+    });
+
+    for (const failing of ["", "read", "open"]) {
+      fail = failing;
+      const file = store.add(info, content("Hello"));
+      await file.persist(join(root, `${failing}.txt`)).catch(() => null);
+    }
+
+    // The temporary files, and for each copy its target and (once it can be
+    // opened) its source
+    equal(handles.length, 8);
+    deepEqual(
+      handles.map(({ fd }) => fd),
+      handles.map(() => -1),
+    );
+  });
+
+  it("fails a copy that cannot close its file, and removes it", async (t) => {
+    const { root, store } = await create(t, {
+      link: () => Promise.reject(failure("EXDEV")),
+      open: async (path, flags, mode) => {
+        const handle = await fs.open(path, flags, mode);
+        if (path.endsWith("kept.txt")) {
+          const close = handle.close.bind(handle);
+          handle.close = async (): Promise<void> => {
+            await close();
+            throw failure("EIO");
+          };
+        }
+        return handle;
+      },
+    });
+
+    const file = store.add(info, content("Hello"));
+    await rejects(file.persist(join(root, "kept.txt")), failure("EIO"));
+
+    equal((await readdir(root)).includes("kept.txt"), false);
+  });
+
+  it("leaves the file of a copy that cannot tell what it has created", async (t) => {
+    const { root, store } = await create(t, {
+      link: () => Promise.reject(failure("EXDEV")),
+      open: async (path, flags, mode) => {
+        const handle = await fs.open(path, flags, mode);
+        if (path.endsWith("kept.txt")) {
+          handle.stat = (): Promise<never> => Promise.reject(failure("EIO"));
+        }
+        return handle;
+      },
+    });
+
+    const file = store.add(info, content("Hello"));
+    await rejects(file.persist(join(root, "kept.txt")), failure("EIO"));
+
+    // It cannot be told from a file that has replaced it
+    equal((await readdir(root)).includes("kept.txt"), true);
+  });
+
   it("throws the error of a copy, also when what it has written cannot be removed", async (t) => {
     const { root, store } = await create(t, {
       link: () => Promise.reject(failure("EXDEV")),
-      copyFile: () => Promise.reject(failure("ENOSPC")),
+      open: async (path, flags, mode) => {
+        if (flags === constants.O_RDONLY) {
+          throw failure("EIO");
+        }
+        return fs.open(path, flags, mode);
+      },
       unlink: async (path) => {
         if (path.endsWith("kept.txt")) {
           throw failure("EACCES");
@@ -196,7 +383,7 @@ describe("DiskStore", () => {
 
     const file = store.add(info, content("Hello"));
 
-    await rejects(file.persist(join(root, "kept.txt")), failure("ENOSPC"));
+    await rejects(file.persist(join(root, "kept.txt")), failure("EIO"));
   });
 
   it("leaves the temporary file of a persisted file that cannot be removed to the cleanup", async (t) => {

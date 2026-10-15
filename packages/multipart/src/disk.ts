@@ -1,4 +1,4 @@
-import { type WriteStream, constants } from "node:fs";
+import { type BigIntStats, type WriteStream, constants } from "node:fs";
 import fs, { type FileHandle } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { IFileInfo } from "./options.js";
@@ -21,8 +21,12 @@ export interface IStoredFile extends IFileInfo {
   /**
    * Moves the file to `target` (which must not exist: a file or a symbolic
    * link there is an `EEXIST` error), so that it is kept once the response
-   * is closed: by a hard link, or a copy to another file system. Persisting
-   * it again to the same path does nothing, to another one throws.
+   * is closed: by a hard link, or a copy into a new file that the copy
+   * creates (`O_EXCL`) on another file system (or one without hard links).
+   * A failed copy removes only the file that it has created, and only while
+   * it is still there: the directory of `target` must be trusted (nothing can
+   * make that check and the removal atomic). Persisting it again to the same
+   * path does nothing, to another one throws.
    */
   persist(target: string): Promise<void>;
 }
@@ -43,8 +47,8 @@ export interface IFileSystem {
   open(path: string, flags: number, mode: number): Promise<FileHandle>;
   /** Creates a hard link (see `fs.link()`) */
   link(existing: string, target: string): Promise<void>;
-  /** Copies a file (see `fs.copyFile()`) */
-  copyFile(source: string, target: string, mode: number): Promise<void>;
+  /** The status of a path, without following a symbolic link (see `fs.lstat()`) */
+  lstat(path: string, options: { bigint: true }): Promise<BigIntStats>;
   /** Removes a file (see `fs.unlink()`) */
   unlink(path: string): Promise<void>;
   /** Removes an empty directory (see `fs.rmdir()`) */
@@ -53,6 +57,24 @@ export interface IFileSystem {
 
 /** A stream of the content of a file (`truncated` once it has been cut to `fileSize`) */
 export type IFileStream = Readable & { truncated?: boolean };
+
+/** The identity of a file: its device and its inode */
+interface IIdentity {
+  readonly dev: bigint;
+  readonly ino: bigint;
+}
+
+/**
+ * The errors of a hard link after which the file is copied: another file
+ * system (`EXDEV`), one without hard links (`EPERM`, `ENOTSUP`), or a file
+ * with too many links (`EMLINK`)
+ */
+const unlinkable: ReadonlySet<unknown> = new Set([
+  "EXDEV",
+  "EPERM",
+  "ENOTSUP",
+  "EMLINK",
+]);
 
 /** Ignores an error that is reported otherwise */
 function ignore(): void {
@@ -219,25 +241,68 @@ export class StoredFile implements IStoredFile {
 
   /**
    * Moves the file: a hard link (which fails on an existing target), or a
-   * copy that never replaces one to another file system. A copy that fails
-   * removes what it has written.
+   * copy, which never replaces one, where there cannot be a hard link
    */
   async #move(source: string, target: string): Promise<void> {
     try {
       await this.#system.link(source, target);
       return;
     } catch (error: unknown) {
-      if (codeOf(error) !== "EXDEV") {
+      if (!unlinkable.has(codeOf(error))) {
         throw error;
       }
     }
+    await this.#copy(source, target);
+  }
+
+  /**
+   * Copies the file into a new file that the copy creates (`O_EXCL`: never
+   * one that exists), through its own descriptor. A copy that fails removes
+   * that file, unless `target` is no longer it (its device and inode, without
+   * following a symbolic link).
+   */
+  async #copy(source: string, target: string): Promise<void> {
+    const { O_CREAT, O_EXCL, O_WRONLY } = constants;
+    const output = await this.#system.open(
+      target,
+      O_CREAT | O_EXCL | O_WRONLY,
+      0o600,
+    );
+    let created: IIdentity | null = null;
     try {
-      await this.#system.copyFile(source, target, constants.COPYFILE_EXCL);
+      const { dev, ino } = await output.stat({ bigint: true });
+      created = { dev, ino };
+      await this.#fill(source, output);
     } catch (error: unknown) {
-      if (codeOf(error) !== "EEXIST") {
-        await unlinkIfExists(this.#system, target).catch(ignore);
+      // Unless its stream has closed it (closing it again does nothing)
+      await output.close().catch(ignore);
+      if (created !== null) {
+        await this.#removeCreated(target, created).catch(ignore);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Writes the content of the file `source` through the descriptor of
+   * `output`: the streams close both descriptors once they are done (a
+   * failure to close `output`, e.g. to write what is left, fails the copy)
+   */
+  async #fill(source: string, output: FileHandle): Promise<void> {
+    const input = await this.#system.open(source, constants.O_RDONLY, 0);
+    try {
+      await pipeline(input.createReadStream(), output.createWriteStream());
+    } finally {
+      // Unless its stream has closed it
+      await input.close();
+    }
+  }
+
+  /** Removes `target` if it is still the file that a copy has created */
+  async #removeCreated(target: string, created: IIdentity): Promise<void> {
+    const { dev, ino } = await this.#system.lstat(target, { bigint: true });
+    if (dev === created.dev && ino === created.ino) {
+      await this.#system.unlink(target);
     }
   }
 
