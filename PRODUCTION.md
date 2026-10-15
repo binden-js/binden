@@ -329,7 +329,8 @@ app.use("/documents", new Router().post(documents, save));
   otherwise.
 - A copy writes into a new file that it creates itself, and a copy that fails removes only that
   file, while `target` is still it. Persist into a directory that only the application writes to:
-  the check and the removal cannot be atomic against another process that renames files there.
+  the check and the removal cannot be atomic against another process that renames files there. A
+  copy that cannot read the identity of the file that it has created leaves it, empty.
 - Await the parse before the reply: the files are stored until the cleanup of the request (once
   the response is closed), and a file that comes after it is refused (`run()` rejects with a
   `500`).

@@ -26,8 +26,9 @@ export interface IStoredFile extends IFileInfo {
    * creates (`O_EXCL`) on another file system (or one without hard links).
    * A failed copy removes only the file that it has created, and only while
    * it is still there: the directory of `target` must be trusted (nothing can
-   * make that check and the removal atomic). Persisting it again to the same
-   * path does nothing, to another one throws.
+   * make that check and the removal atomic). A copy that cannot read the
+   * identity of the file that it has created leaves it, empty. Persisting it
+   * again to the same path does nothing, to another one throws.
    */
   persist(target: string): Promise<void>;
 }
@@ -270,7 +271,8 @@ export class StoredFile implements IStoredFile {
    * Copies the file into a new file that the copy creates (`O_EXCL`: never
    * one that exists), through its own descriptor. A copy that fails removes
    * that file, unless `target` is no longer it (its device and inode, without
-   * following a symbolic link).
+   * following a symbolic link): when that identity cannot be read, the file
+   * is closed and left (empty), never removed.
    */
   async #copy(source: string, target: string): Promise<void> {
     const { O_CREAT, O_EXCL, O_WRONLY } = constants;

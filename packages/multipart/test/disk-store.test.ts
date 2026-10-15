@@ -357,23 +357,31 @@ describe("DiskStore", () => {
     equal((await readdir(root)).includes("kept.txt"), false);
   });
 
-  it("leaves the file of a copy that cannot tell what it has created", async (t) => {
+  it("closes and leaves the file of a copy that cannot tell what it has created", async (t) => {
+    const handles: FileHandle[] = [];
     const { root, store } = await create(t, {
       link: () => Promise.reject(failure("EXDEV")),
       open: async (path, flags, mode) => {
         const handle = await fs.open(path, flags, mode);
         if (path.endsWith("kept.txt")) {
+          handles.push(handle);
           handle.stat = (): Promise<never> => Promise.reject(failure("EIO"));
         }
         return handle;
       },
     });
+    const target = join(root, "kept.txt");
 
     const file = store.add(info, content("Hello"));
-    await rejects(file.persist(join(root, "kept.txt")), failure("EIO"));
+    await rejects(file.persist(target), failure("EIO"));
 
-    // It cannot be told from a file that has replaced it
-    equal((await readdir(root)).includes("kept.txt"), true);
+    // Without its identity, it cannot be told from a file that has replaced
+    // it: the empty file that the copy has created is left
+    deepEqual(
+      [handles.length, handles[0]?.fd, (await stat(target)).size],
+      [1, -1, 0],
+    );
+    equal(await readFile(file.path, "utf8"), "Hello");
   });
 
   it("throws the error of a copy, also when what it has written cannot be removed", async (t) => {
