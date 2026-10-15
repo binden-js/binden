@@ -1,4 +1,5 @@
 import {
+  type IRaw,
   type IServed,
   converse,
   framed,
@@ -105,15 +106,20 @@ suite("Early hints of a pipelined request with a compressed reply", () => {
           `GET /first HTTP/${version}\r\nHost: a\r\n${keep}\r\n` +
             `GET ${path} HTTP/${version}\r\nHost: a\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n`,
         );
-        const [first, early, second] = responses;
-        deepStrictEqual(responses.length, 3, path);
+        // An HTTP/1.0 client gets no informational response (RFC 9110, 15.2)
+        deepStrictEqual(responses.length, version === "1.0" ? 2 : 3, path);
+        const [first, ...rest] = responses as [IRaw, ...IRaw[]];
+        const early = version === "1.0" ? null : rest[0];
+        const second = rest[rest.length - 1];
         ok(first.head.startsWith("http/1.1 200 "), path);
         deepStrictEqual(first.body.toString(), "first", path);
-        deepStrictEqual(
-          [early.head, early.body.length],
-          [`http/1.1 103 early hints\r\nlink: ${hints.link}`, 0],
-          path,
-        );
+        if (early !== null) {
+          deepStrictEqual(
+            [early.head, early.body.length],
+            [`http/1.1 103 early hints\r\nlink: ${hints.link}`, 0],
+            path,
+          );
+        }
         ok(second.head.startsWith("http/1.1 200 "), path);
         ok(second.head.includes("\r\ncontent-encoding: gzip"), path);
         // Framed exactly (in chunks, or by the close of HTTP/1.0)

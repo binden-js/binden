@@ -1012,11 +1012,11 @@ export class BindenResponse<
   }
 
   /**
-   * Sends `100 Continue`, unless the response is sealed (its callback is then
-   * called asynchronously)
+   * Sends `100 Continue`, unless the response is sealed or the request is
+   * HTTP/1.0 (its callback is then called asynchronously)
    */
   public override writeContinue(callback?: () => void): void {
-    if (!this.#allows()) {
+    if (!this.#informs()) {
       BindenResponse.#ignore([callback]);
       return;
     }
@@ -1024,11 +1024,11 @@ export class BindenResponse<
   }
 
   /**
-   * Sends `102 Processing`, unless the response is sealed (its callback is
-   * then called asynchronously)
+   * Sends `102 Processing`, unless the response is sealed or the request is
+   * HTTP/1.0 (its callback is then called asynchronously)
    */
   public override writeProcessing(callback?: () => void): void {
-    if (!this.#allows()) {
+    if (!this.#informs()) {
       BindenResponse.#ignore([callback]);
       return;
     }
@@ -1036,14 +1036,14 @@ export class BindenResponse<
   }
 
   /**
-   * Sends `103 Early Hints`, unless the response is sealed (its callback is
-   * then called asynchronously)
+   * Sends `103 Early Hints`, unless the response is sealed or the request is
+   * HTTP/1.0 (its callback is then called asynchronously)
    */
   public override writeEarlyHints(
     hints: Record<string, string[] | string>,
     callback?: () => void,
   ): void {
-    if (!this.#allows()) {
+    if (!this.#informs()) {
       BindenResponse.#ignore([callback]);
       return;
     }
@@ -1052,8 +1052,8 @@ export class BindenResponse<
 
   /**
    * Sends an informational response (see `writeInformation()` of Node.js,
-   * from 24.18.0), unless the response is sealed (its callback is then called
-   * asynchronously)
+   * from 24.18.0), unless the response is sealed or the request is HTTP/1.0
+   * (its callback is then called asynchronously)
    */
   public override writeInformation(
     statusCode: number,
@@ -1066,7 +1066,7 @@ export class BindenResponse<
     callback: () => void,
   ): void;
   public override writeInformation(...args: unknown[]): void {
-    if (!this.#allows()) {
+    if (!this.#informs()) {
       BindenResponse.#ignore(args);
       return;
     }
@@ -1074,6 +1074,21 @@ export class BindenResponse<
   }
 
   /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
+  /**
+   * Whether an informational response may be sent: not once the response is
+   * sealed, and never to an HTTP/1.0 client, which does not know them
+   * (RFC 9110, section 15.2)
+   */
+  #informs(): boolean {
+    const { httpVersionMajor = 1, httpVersionMinor = 1 } = this.req as {
+      httpVersionMajor?: number;
+      httpVersionMinor?: number;
+    };
+    const old =
+      httpVersionMajor < 1 || (httpVersionMajor === 1 && httpVersionMinor < 1);
+    return !old && this.#allows();
+  }
+
   static #ignore(args: readonly unknown[]): void {
     const callback = args.find((arg) => typeof arg === "function") as
       (() => void) | undefined;

@@ -148,3 +148,55 @@ suite("Informational responses of a pipelined request", () => {
     });
   });
 });
+
+suite("Informational responses to HTTP/1.0", () => {
+  /** The raw response of one request of `version` (read until the server closes) */
+  async function raw(port: number, version: string): Promise<string> {
+    const socket = connect(port, "localhost");
+    await once(socket, "connect");
+    let data = "";
+    socket.setEncoding("latin1").on("data", (chunk: string) => {
+      data += chunk;
+    });
+    socket.write(
+      `GET / HTTP/${version}\r\nHost: a\r\nConnection: close\r\n\r\n`,
+    );
+    await within(once(socket, "close"), 5000);
+    return data;
+  }
+
+  test("an HTTP/1.0 client never gets an informational response (RFC 9110, 15.2)", async () => {
+    const callbacks: string[] = [];
+    const app = new Binden().use(async ({ response }: Context) => {
+      response.writeContinue(() => callbacks.push("continue"));
+      response.writeProcessing(() => callbacks.push("processing"));
+      response.writeEarlyHints(hints, () => callbacks.push("hints"));
+      await new Promise<null>((resolve) => {
+        response.end("final", () => {
+          resolve(null);
+        });
+      });
+    });
+    const listening = await listen(app);
+    try {
+      const old = await raw(listening.port, "1.0");
+      ok(old.startsWith("HTTP/1.1 200 OK\r\n"), old);
+      ok(!/HTTP\/1\.1 1\d\d /u.test(old), old);
+      ok(old.endsWith("final"), old);
+      // Ignored, but each callback is called once
+      deepStrictEqual(callbacks.toSorted(), [
+        "continue",
+        "hints",
+        "processing",
+      ]);
+
+      callbacks.length = 0;
+      const current = await raw(listening.port, "1.1");
+      ok(current.startsWith("HTTP/1.1 100 Continue\r\n"), current);
+      ok(current.includes("HTTP/1.1 102 Processing\r\n"), current);
+      ok(current.includes("HTTP/1.1 103 Early Hints\r\n"), current);
+    } finally {
+      await listening.close();
+    }
+  });
+});
