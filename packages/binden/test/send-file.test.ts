@@ -601,6 +601,94 @@ suite("sendFile", () => {
     }
   });
 
+  test("the status set before: the preconditions of a 2xx (or 412), the ranges of a 200", async () => {
+    const size = `${Buffer.byteLength(html)}`;
+    const check = async (
+      code: number,
+      method: string,
+      headers: Record<string, string> = {},
+    ): Promise<[number, string, string | null]> => {
+      const handled = server.handle(async (_request, response) => {
+        await response.status(code).sendFile("index.html", { root });
+      });
+      const reply = await server.request({ method, headers });
+      deepStrictEqual(await handled, null);
+      return [
+        reply.status,
+        reply.body.toString(),
+        reply.headers["content-length"] ?? null,
+      ];
+    };
+    const conditions: Record<string, string>[] = [
+      {},
+      { "If-None-Match": "*" },
+      { "If-Modified-Since": "Wed, 01 Jan 2031 00:00:00 GMT" },
+      { "If-Match": `"nope"` },
+      { "If-Unmodified-Since": "Thu, 01 Jan 1970 00:00:00 GMT" },
+      { Range: "bytes=0-2" },
+    ];
+    // A redirect or an error (e.g. a page of an error) is sent whole with its
+    // status, whatever the preconditions and the ranges (RFC 9110, section
+    // 13.2.1), with the length of the file for `HEAD`
+    for (const code of [302, 404, 503]) {
+      for (const headers of conditions) {
+        const name = `${code} ${JSON.stringify(headers)}`;
+        deepStrictEqual(
+          await check(code, "GET", headers),
+          [code, html, size],
+          name,
+        );
+        deepStrictEqual(
+          await check(code, "HEAD", headers),
+          [code, "", size],
+          name,
+        );
+      }
+    }
+    // Another method with a 2xx keeps its preconditions, without ranges
+    for (const method of ["POST", "PUT"]) {
+      deepStrictEqual(await check(201, method), [201, html, size]);
+      deepStrictEqual(await check(201, method, { Range: "bytes=0-2" }), [
+        201,
+        html,
+        size,
+      ]);
+      for (const headers of conditions.slice(1, 5)) {
+        // `If-Modified-Since` applies to `GET` and `HEAD` only
+        const expected: [number, string, string | null] =
+          "If-Modified-Since" in headers ? [201, html, size] : [412, "", "0"];
+        deepStrictEqual(await check(201, method, headers), expected);
+      }
+      deepStrictEqual(await check(204, method), [204, "", null]);
+      deepStrictEqual(await check(204, method, { "If-None-Match": "*" }), [
+        412,
+        "",
+        "0",
+      ]);
+    }
+    // A 2xx of `GET` other than 200 keeps its preconditions, without ranges
+    deepStrictEqual(await check(203, "GET", { Range: "bytes=0-2" }), [
+      203,
+      html,
+      size,
+    ]);
+    deepStrictEqual(await check(203, "GET", { "If-None-Match": "*" }), [
+      304,
+      "",
+      size,
+    ]);
+    deepStrictEqual(await check(412, "GET", { "If-Match": `"nope"` }), [
+      412,
+      "",
+      "0",
+    ]);
+    deepStrictEqual(await check(200, "GET", { Range: "bytes=0-2" }), [
+      206,
+      html.slice(0, 3),
+      "3",
+    ]);
+  });
+
   test("a `304` that is late writes nothing", async () => {
     const handled = server.handle(async (_request, response) => {
       let late = true;

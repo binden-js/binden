@@ -489,8 +489,10 @@ function setHeaders(
  * Sends a file (see `BindenResponse.sendFile()`). Its metadata and its content
  * are read from one file handle, so that they belong to the same file (also
  * when the path is replaced), and no more than its size is sent. A `304` is
- * sent by `notModified()`, with the length of the whole file. Once `stopped()`
- * (the send has been cancelled), the file is not opened, or is closed at once.
+ * sent by `notModified()`, with the length of the whole file. The file is the
+ * body of the status of the response: the preconditions apply to a `2xx` (or a
+ * `412`), the ranges to a `200`. Once `stopped()` (the send has been
+ * cancelled), the file is not opened, or is closed at once.
  */
 export async function sendFileTo(
   response: BindenResponse,
@@ -499,6 +501,9 @@ export async function sendFileTo(
   notModified: (length: number) => Promise<void>,
   stopped: () => boolean,
 ): Promise<void> {
+  // The status that the application has set (e.g. `404` for a page of an
+  // error): the file is its body
+  const status = response.statusCode;
   const parsed = parseOptions(options ?? {});
   const location = await locate(path, parsed);
   if (stopped()) {
@@ -543,7 +548,12 @@ export async function sendFileTo(
     const { req } = response;
     const { method = "GET", headers } = req;
     const etag = response.getHeader("ETag");
-    const failed = preconditionsOf(req, tagOf(etag, representation), lm);
+    // The preconditions apply to a successful response (or a `412`), not to
+    // a redirect or an error (RFC 9110, section 13.2.1)
+    const failed =
+      (status >= 200 && status <= 299) || status === 412
+        ? preconditionsOf(req, tagOf(etag, representation), lm)
+        : null;
     if (failed === 304) {
       // With the length of the whole file, as the `200` that it stands for
       await notModified(size);
@@ -562,10 +572,12 @@ export async function sendFileTo(
       return;
     }
 
-    // Ranges apply to GET only (RFC 9110, section 14.2), and to the file as
-    // it is: a coded representation is sent whole
+    // Ranges apply to GET only (RFC 9110, section 14.2), of a response that
+    // would be a `200` (not to any other status, e.g. of an error), and to
+    // the file as it is: a coded representation is sent whole
     const ranges =
       method !== "GET" ||
+      status !== 200 ||
       representation.coding !== null ||
       !ifRange(headers["if-range"], etag, lm)
         ? []

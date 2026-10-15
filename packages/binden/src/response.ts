@@ -1486,7 +1486,9 @@ export class BindenResponse<
    * Send a file: a filesystem path (or a `file:` URL), trusted without `root`;
    * with `root`, a relative path that must stay inside it (see
    * `ISendFileOptions`). Its metadata and its content are read from one file
-   * handle, and no more than its size is sent. Before the headers are
+   * handle, and no more than its size is sent. It is the body of the status
+   * set before (e.g. a page of an error): the preconditions apply to a `2xx`
+   * (or a `412`) only, the ranges to a `200`. Before the headers are
    * committed, the framework may cancel it (see `[kCancel]()`): it then
    * rejects with the reason at once, its headers and status are those from
    * before it, and a file opened later is closed.

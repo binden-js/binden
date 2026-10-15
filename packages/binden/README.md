@@ -1053,6 +1053,8 @@ const server = createServer({ ServerResponse: ETagResponse });
 
   A response to `HEAD` gets the headers of the whole file, without reading it.
 
+  The file is the body of the status set before (`200` by default): a redirect or an error (e.g. `response.status(404).sendFile("404.html", { root })`) is sent whole with its status, without evaluating the preconditions ([RFC 9110, section 13.2.1](https://www.rfc-editor.org/rfc/rfc9110.html#section-13.2.1): they apply to a `2xx` or `412` only, also for other methods, e.g. `201` to `PUT`), and the ranges apply to a `200` only.
+
   The path is a filesystem path (not URL-decoded) or a `file:` URL. Without `root`, it is trusted as it is: a missing file rejects with the error of the filesystem.
 
 ```typescript
