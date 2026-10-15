@@ -3,6 +3,8 @@ import {
   type BindenResponse,
   ContentType,
   type Context,
+  type IResponseOperation,
+  kOperation,
 } from "binden";
 import {
   type ICompressEncodings,
@@ -165,6 +167,15 @@ function attempt<T>(fn: () => T): { ok: true; value: T } | { ok: false } {
   }
 }
 
+/** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
+function ignore(args: readonly unknown[]): void {
+  const callback = args.find((arg) => typeof arg === "function") as
+    (() => void) | undefined;
+  if (callback) {
+    process.nextTick(callback);
+  }
+}
+
 /** The error of a write after `end()` */
 function writeAfterEnd(): Error {
   return Object.assign(new Error("write after end"), {
@@ -209,6 +220,12 @@ export class CompressedResponse {
   #written = 0;
   /** The flushes that wait for the response to flush the compressed bytes */
   #waiters: { readonly target: number; readonly callback: ICallback }[] = [];
+  /**
+   * The operation of the work that has committed the headers (see
+   * `IResponseOperation`): the compressor writes as its owner, and keeps
+   * writing what it has accepted once the response is ended
+   */
+  #operation: IResponseOperation | null = null;
 
   private constructor(context: Context, settings: ISettings) {
     const { response } = context;
@@ -268,11 +285,28 @@ export class CompressedResponse {
   }
 
   /**
+   * Whether the current work may mutate the response (see `kOperation`):
+   * once the response is sealed, the calls of the work that is abandoned are
+   * ignored. The operation of the work is kept for the compressor until the
+   * decision is taken.
+   */
+  #allowed(): boolean {
+    const operation = this.#response[kOperation]();
+    if (this.#sink === "pending") {
+      this.#operation = operation;
+    }
+    return operation !== null;
+  }
+
+  /**
    * `writeHead()`: the headers it is given are set first (as Node.js does),
    * then the decision is taken, and the headers are committed
    */
   #onWriteHead(args: unknown[]): IResponse {
     const response = this.#response;
+    if (!this.#allowed()) {
+      return response;
+    }
     const [code, reason, headers] = args;
     // As Node.js reads it
     const status = Number(code) | 0;
@@ -302,7 +336,10 @@ export class CompressedResponse {
 
   /** `write()`: the decision is taken first, unless it has been */
   #onWrite(args: unknown[]): boolean {
-    if (this.#sink === "pending") {
+    if (!this.#allowed()) {
+      ignore(args);
+      return true;
+    } else if (this.#sink === "pending") {
       this.#decideForBody(null);
     }
     const [chunk, second, third] = args;
@@ -342,6 +379,10 @@ export class CompressedResponse {
   /** `end()`: the decision is taken first (with the size of its chunk), unless it has been */
   #onEnd(args: unknown[]): IResponse {
     const response = this.#response;
+    if (!this.#allowed()) {
+      ignore(args);
+      return response;
+    }
     const [first, second, third] = args;
     const chunk: unknown = typeof first === "function" ? null : first;
     const encoding = typeof second === "string" ? second : "utf8";
@@ -371,6 +412,9 @@ export class CompressedResponse {
       }
       if (!this.#ended) {
         this.#ended = true;
+        // What the compressor has accepted is sent, even if the work that
+        // has ended the response is abandoned afterwards
+        (this.#operation as IResponseOperation).transfer();
         (this.#compressor as ICompressor).end(
           chunk,
           encoding as BufferEncoding,
@@ -576,20 +620,26 @@ export class CompressedResponse {
    * Backpressure goes both ways: the compressor pauses while the response is
    * full, and the `drain` of the compressor is the `drain` that writers of
    * the response wait for. An error of the compressor, or a response closed
-   * early (the client has gone away), end both sides.
+   * early (the client has gone away), end both sides. It writes as the owner
+   * of the work that has committed the headers: once that work is abandoned
+   * (e.g. a timed out error handler), it writes nothing more, unless it had
+   * ended the response, whose compressed bytes are then all sent.
    */
   #start(coding: ICompressEncodings): ICompressor {
     const response = this.#response;
+    const operation = this.#operation as IResponseOperation;
     const compressor = createCompressor(coding, this.#settings.compressors);
     compressor
       .on("data", (chunk: Buffer) => {
         this.#produced += chunk.length;
-        const accepted = this.#write(chunk, (error?: Error | null) => {
-          if (!error) {
-            this.#written += chunk.length;
-            this.#release();
-          }
-        });
+        const accepted = operation.run(() =>
+          this.#write(chunk, (error?: Error | null) => {
+            if (!error) {
+              this.#written += chunk.length;
+              this.#release();
+            }
+          }),
+        );
         if (!accepted) {
           compressor.pause();
           response.once("drain", () => {
@@ -601,10 +651,10 @@ export class CompressedResponse {
         response.emit("drain");
       })
       .on("error", () => {
-        response.destroy();
+        operation.run(() => response.destroy());
       })
       .once("end", () => {
-        this.#end();
+        operation.run(() => this.#end());
       });
     response.once("close", () => {
       // Its pending writes fail (and `flush()` rejects by itself)

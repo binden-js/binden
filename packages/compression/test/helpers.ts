@@ -1,3 +1,4 @@
+import { type AddressInfo, connect } from "node:net";
 import { Binden, type IBindenOptions, type IMiddleware } from "binden";
 import {
   type IncomingHttpHeaders,
@@ -7,7 +8,6 @@ import {
   createServer,
   request,
 } from "node:http";
-import type { AddressInfo } from "node:net";
 import { Logger } from "@binden/logger";
 import { once } from "node:events";
 import zlib from "node:zlib";
@@ -205,4 +205,51 @@ export function fetchRaw(
       sent.once("error", reject).end();
     }),
   );
+}
+
+/** The body of a chunked message, and whether it has its last chunk */
+export function dechunk(raw: Buffer): { body: Buffer; complete: boolean } {
+  const parts: Buffer[] = [];
+  let rest = raw;
+  for (;;) {
+    const index = rest.indexOf("\r\n");
+    if (index === -1) {
+      return { body: Buffer.concat(parts), complete: false };
+    }
+    const size = Number.parseInt(rest.subarray(0, index).toString(), 16);
+    if (size === 0) {
+      return { body: Buffer.concat(parts), complete: true };
+    }
+    parts.push(rest.subarray(index + 2, index + 2 + size));
+    rest = rest.subarray(index + 2 + size + 2);
+  }
+}
+
+/**
+ * Sends a request on a connection that is not read for `pause` milliseconds
+ * (a slow client, or none when `0`), then reads everything until the server
+ * closes it: the head of the response, and its body
+ */
+export async function exchange(
+  url: string,
+  pause = 0,
+): Promise<{ head: string; body: Buffer }> {
+  const socket = connect(Number(new URL(url).port), "localhost");
+  await once(socket, "connect");
+  socket.write(
+    "GET / HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n",
+  );
+  socket.pause();
+  await sleep(pause);
+  const chunks: Buffer[] = [];
+  socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const closed = once(socket, "close");
+  socket.resume();
+  await within(closed, 5000);
+  const received = Buffer.concat(chunks);
+  const index = received.indexOf("\r\n\r\n");
+  return {
+    head: received.subarray(0, index).toString(),
+    body: received.subarray(index + 4),
+  };
 }
