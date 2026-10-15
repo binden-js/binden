@@ -514,7 +514,12 @@ suite("BodyParser (once the response has finished)", () => {
 
   test(
     "a parser that starts once the response has ended, but not finished, reads the body",
-    { timeout: 10_000 },
+    {
+      // Windows takes a whole write while its send buffer has room: the
+      // response may finish before the client reads it
+      skip: process.platform === "win32",
+      timeout: 10_000,
+    },
     async () => {
       // Larger than what the connection buffers: the response cannot finish
       // before the client reads it

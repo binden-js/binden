@@ -344,45 +344,54 @@ describe("Multipart (a parse that starts once the response has ended)", () => {
     );
   });
 
-  it("parses the body once the response has ended, but not finished", async (t) => {
-    // Larger than what the connection buffers: the response cannot finish
-    // before the client reads it
-    const large = Buffer.alloc(32 * 1024 * 1024, 0x61);
-    const states: boolean[] = [];
-    const { promise: settled, resolve: settle } =
-      Promise.withResolvers<unknown>();
-    const { promise: started, resolve: start } = Promise.withResolvers<null>();
-    const parser = new Multipart();
-    const { url } = await serve(t, [
-      (context: Context): void => {
-        context.response.end(large);
-      },
-      async (context: Context): Promise<void> => {
-        const { response } = context;
-        states.push(response.writableEnded, response.writableFinished);
-        start(null);
-        await parser.run(context).then(() => {
-          settle([...(context.request.body as FormData)]);
-        }, settle);
-      },
-    ]);
-    const form = body(part('name="a"', "1"));
+  it(
+    "parses the body once the response has ended, but not finished",
+    {
+      // Windows takes a whole write while its send buffer has room: the
+      // response may finish before the client reads it
+      skip: process.platform === "win32",
+    },
+    async (t) => {
+      // Larger than what the connection buffers: the response cannot finish
+      // before the client reads it
+      const large = Buffer.alloc(32 * 1024 * 1024, 0x61);
+      const states: boolean[] = [];
+      const { promise: settled, resolve: settle } =
+        Promise.withResolvers<unknown>();
+      const { promise: started, resolve: start } =
+        Promise.withResolvers<null>();
+      const parser = new Multipart();
+      const { url } = await serve(t, [
+        (context: Context): void => {
+          context.response.end(large);
+        },
+        async (context: Context): Promise<void> => {
+          const { response } = context;
+          states.push(response.writableEnded, response.writableFinished);
+          start(null);
+          await parser.run(context).then(() => {
+            settle([...(context.request.body as FormData)]);
+          }, settle);
+        },
+      ]);
+      const form = body(part('name="a"', "1"));
 
-    const client = httpRequest(url, {
-      method: "POST",
-      headers: { "Content-Type": type, "Content-Length": form.length },
-    });
-    client.on("error", ignore);
-    client.flushHeaders();
-    await within(started);
-    client.end(form);
+      const client = httpRequest(url, {
+        method: "POST",
+        headers: { "Content-Type": type, "Content-Length": form.length },
+      });
+      client.on("error", ignore);
+      client.flushHeaders();
+      await within(started);
+      client.end(form);
 
-    deepEqual(await within(settled), [["a", "1"]]);
-    deepEqual(states, [true, false]);
-    const [response] = (await within(once(client, "response"))) as [
-      IncomingMessage,
-    ];
-    response.resume();
-    await within(once(response, "end"));
-  });
+      deepEqual(await within(settled), [["a", "1"]]);
+      deepEqual(states, [true, false]);
+      const [response] = (await within(once(client, "response"))) as [
+        IncomingMessage,
+      ];
+      response.resume();
+      await within(once(response, "end"));
+    },
+  );
 });

@@ -301,6 +301,48 @@ suite("Ownership of the response once the exchange is sealed", () => {
   });
 
   test(
+    "without writeInformation() (before Node.js 24.18.0), it is ignored or throws",
+    {
+      skip:
+        typeof (ServerResponse.prototype as { writeInformation?: unknown })
+          .writeInformation === "function",
+    },
+    async () => {
+      const abandoned = gate();
+      const calls: string[] = [];
+      await withApp(
+        {
+          timeout: 20,
+          error_handler: async (context: Context): Promise<void> => {
+            await abandoned.promise;
+            try {
+              context.response.writeInformation(110, {});
+            } catch (error: unknown) {
+              calls.push(error instanceof TypeError ? "TypeError" : "other");
+            }
+            await context.status(503).send("handler");
+          },
+        },
+        (app) => {
+          app.use(async (context: Context) => {
+            await sleep(60);
+            // Ignored, as Node.js would not have it either: no TypeError
+            context.response.writeInformation(102, {}, () => {
+              calls.push("ignored");
+            });
+            abandoned.open();
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual(received.body, "handler");
+        },
+      );
+      deepStrictEqual(calls.toSorted(), ["TypeError", "ignored"]);
+    },
+  );
+
+  test(
     "an informational response of the abandoned work is ignored",
     // From Node.js 24.18.0
     {
@@ -421,45 +463,53 @@ suite("Ownership of the response once the exchange is sealed", () => {
     );
   });
 
-  test("a timed out error handler that has ended its reply: it is still sent, and its late mutations are ignored", async () => {
-    const size = 8 * 1024 * 1024;
-    const states: boolean[] = [];
-    await withApp(
-      {
-        error_handler_timeout: 50,
-        error_handler: async (context: Context): Promise<void> => {
-          const { response } = context;
-          response.status(500);
-          // Not awaited: the client reads slowly
-          response.send(Buffer.alloc(size, "a")).catch(() => null);
-          states.push(response.writableEnded, response.writableFinished);
-          await sleep(150);
-          states.push(response.writableFinished);
-          // Once timed out
-          response.destroy();
-          response.setHeader("X-Late", "1");
-          response.statusCode = 200;
-          await never();
+  test(
+    "a timed out error handler that has ended its reply: it is still sent, and its late mutations are ignored",
+    {
+      // Windows takes a whole write while its send buffer has room: the
+      // response may finish before the client reads it
+      skip: process.platform === "win32",
+    },
+    async () => {
+      const size = 8 * 1024 * 1024;
+      const states: boolean[] = [];
+      await withApp(
+        {
+          error_handler_timeout: 50,
+          error_handler: async (context: Context): Promise<void> => {
+            const { response } = context;
+            response.status(500);
+            // Not awaited: the client reads slowly
+            response.send(Buffer.alloc(size, "a")).catch(() => null);
+            states.push(response.writableEnded, response.writableFinished);
+            await sleep(150);
+            states.push(response.writableFinished);
+            // Once timed out
+            response.destroy();
+            response.setHeader("X-Late", "1");
+            response.statusCode = 200;
+            await never();
+          },
         },
-      },
-      (app) => {
-        app.use(() => {
-          throw new Error("Failed");
-        });
-      },
-      async ({ port }, captured) => {
-        const received = await slowly(port, 400);
-        const index = received.indexOf("\r\n\r\n");
-        const head = received.subarray(0, index).toString();
-        ok(head.startsWith("HTTP/1.1 500 "), head);
-        deepStrictEqual(received.length - index - 4, size);
-        await captured.waitFor(
-          "The provided `error_handler` has not settled in time",
-        );
-      },
-    );
-    deepStrictEqual(states, [true, false, false]);
-  });
+        (app) => {
+          app.use(() => {
+            throw new Error("Failed");
+          });
+        },
+        async ({ port }, captured) => {
+          const received = await slowly(port, 400);
+          const index = received.indexOf("\r\n\r\n");
+          const head = received.subarray(0, index).toString();
+          ok(head.startsWith("HTTP/1.1 500 "), head);
+          deepStrictEqual(received.length - index - 4, size);
+          await captured.waitFor(
+            "The provided `error_handler` has not settled in time",
+          );
+        },
+      );
+      deepStrictEqual(states, [true, false, false]);
+    },
+  );
 
   test("a deadline cancels a send whose first chunk has not come: the error handler replies at once", async () => {
     const source = silent();
