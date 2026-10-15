@@ -23,6 +23,7 @@ import {
 } from "node:http";
 import { accepts, negotiate } from "./negotiate.js";
 import type { ICompressionFilter } from "./filter.js";
+import { isUint8Array } from "node:util/types";
 
 /** The settings of a compression, validated */
 export interface ISettings {
@@ -132,14 +133,11 @@ function lengthOf(
 }
 
 /**
- * The size of the chunk of `end()` in bytes: a chunk that is not a string nor
- * bytes throws the `TypeError` that `end()` of Node.js throws
+ * Whether `write()` and `end()` of Node.js accept a chunk: a string or a
+ * `Uint8Array` (e.g. a `Buffer`), as they check it before anything else
  */
-function sizeOf(chunk: unknown, encoding: string): number {
-  return Buffer.byteLength(
-    chunk as Uint8Array | string,
-    encoding as BufferEncoding,
-  );
+function isChunk(chunk: unknown): chunk is Uint8Array | string {
+  return typeof chunk === "string" || isUint8Array(chunk);
 }
 
 /**
@@ -382,15 +380,22 @@ export class CompressedResponse {
     return response;
   }
 
-  /** `write()`: the decision is taken first, unless it has been */
+  /**
+   * `write()`: the decision is taken first, unless it has been. A chunk that
+   * Node.js refuses (`null`, or neither a string nor bytes) is left to the
+   * response, which throws the error of Node.js before it changes anything:
+   * nothing is decided, and the response may still reply.
+   */
   #onWrite(args: unknown[]): boolean {
+    const [chunk, second, third] = args;
     if (!this.#allowed()) {
       ignore(args);
       return true;
+    } else if (!isChunk(chunk)) {
+      return Reflect.apply(this.#write, this.#response, args) as boolean;
     } else if (this.#sink === "pending") {
       this.#decideForBody(null);
     }
-    const [chunk, second, third] = args;
     const callback = (typeof second === "function" ? second : third) as
       ICallback | undefined;
     if (this.#sink === "compressor") {
@@ -424,15 +429,22 @@ export class CompressedResponse {
     return Reflect.apply(this.#write, this.#response, args) as boolean;
   }
 
-  /** `end()`: the decision is taken first (with the size of its chunk), unless it has been */
+  /**
+   * `end()`: the decision is taken first (with the size of its chunk), unless
+   * it has been. As for Node.js, a chunk that is falsy (e.g. `0`) is none,
+   * and a chunk that it refuses (neither a string nor bytes) is left to the
+   * response, which throws its error before it changes anything.
+   */
   #onEnd(args: unknown[]): IResponse {
     const response = this.#response;
+    const [first, second, third] = args;
+    const chunk = typeof first !== "function" && Boolean(first) ? first : null;
     if (!this.#allowed()) {
       ignore(args);
       return response;
+    } else if (chunk !== null && !isChunk(chunk)) {
+      return Reflect.apply(this.#end, response, args) as IResponse;
     }
-    const [first, second, third] = args;
-    const chunk: unknown = typeof first === "function" ? null : first;
     const encoding = typeof second === "string" ? second : "utf8";
     const callback = [first, second, third].find(
       (arg) => typeof arg === "function",
@@ -440,15 +452,15 @@ export class CompressedResponse {
     if (this.#sink === "pending") {
       // Without writes before it, its chunk is the body
       this.#decideForBody(
-        chunk === null || typeof chunk === "undefined"
+        chunk === null
           ? 0
-          : sizeOf(chunk, encoding),
+          : Buffer.byteLength(chunk, encoding as BufferEncoding),
       );
     }
     if (this.#sink === "compressor") {
       if (!this.#ended) {
-        // As Node.js, a chunk that the compressor refuses (e.g. an object)
-        // throws, and the response is not ended
+        // As Node.js, a chunk that the compressor refuses (e.g. in an
+        // unknown encoding) throws, and the response is not ended
         (this.#compressor as ICompressor).end(
           chunk,
           encoding as BufferEncoding,
