@@ -18,6 +18,25 @@ suite("ContentType", () => {
     );
   });
 
+  test("constructor (`multipart/form-data` in any case)", () => {
+    // A media type is case-insensitive (RFC 9110, section 8.3.1)
+    for (const type of ["Multipart/Form-Data", "MULTIPART/FORM-DATA"]) {
+      throws(
+        () => new ContentType({ type }),
+        new TypeError("`boundary` is missing"),
+        type,
+      );
+      const ct = new ContentType({ type, boundary: "b", charset: "utf-8" });
+      deepStrictEqual(ct.boundary, "b");
+      deepStrictEqual(ct.charset, null);
+      deepStrictEqual(ct.toString(), `${type}; boundary=b`);
+      // Parsed back
+      deepStrictEqual(ContentType.fromString(ct.toString())?.parameters, {
+        boundary: "b",
+      });
+    }
+  });
+
   test("constructor(with charset)", () => {
     const type = "text/plain";
     const charset = "UTF-8";

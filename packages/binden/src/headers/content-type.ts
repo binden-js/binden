@@ -61,9 +61,9 @@ export class ContentType implements IContentType {
     this.#type = type;
     this.#boundary = null;
     this.#charset = null;
-    // `boundary` (of `multipart/form-data` only) and `charset` (of the other
-    // types) are the options themselves
-    if (type === "multipart/form-data") {
+    // `boundary` (of `multipart/form-data` only, in any case) and `charset`
+    // (of the other types) are the options themselves
+    if (type.toLowerCase() === "multipart/form-data") {
       if (typeof boundary !== "string" || !boundary) {
         throw new TypeError("`boundary` is missing");
       }

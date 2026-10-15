@@ -238,6 +238,17 @@ const mediaRange = fc.oneof(
     .map(([type, subtype]) => `${type}/${subtype}`),
 );
 
+/** A media type (`type/subtype`), in any case */
+const mediaType = fc.oneof(
+  fc.constantFrom(
+    "multipart/form-data",
+    "Multipart/Form-Data",
+    "MULTIPART/FORM-DATA",
+    "Text/Plain",
+  ),
+  fc.tuple(token, token).map(([type, subtype]) => `${type}/${subtype}`),
+);
+
 /** A language tag (RFC 4647, section 2.1) */
 const languageTag = fc.stringMatching(
   /^[A-Za-z]{1,8}(?:-[A-Za-z\d]{1,8}){0,2}$/u,
@@ -390,22 +401,24 @@ suite("Headers (properties)", () => {
     create: (fields) => new ContentType(fields),
     serialize: (element) => element.toString(),
     valid: fc.record({
-      // In lowercase: the type of `multipart/form-data` is compared as it is
-      type: fc.oneof(
-        fc.constantFrom("multipart/form-data", "text/plain"),
-        fc
-          .tuple(token, token)
-          .map(([type, subtype]) => `${type}/${subtype}`.toLowerCase()),
-      ),
+      type: mediaType,
       charset: fc.option(text()),
       boundary: text(1),
       parameters,
     }),
-    // The charset in lowercase
+    // A `boundary` of `multipart/form-data` may be missing
+    any: fc.record({
+      type: mediaType,
+      charset: fc.option(text()),
+      boundary: fc.option(text()),
+      parameters,
+    }),
+    // The media type and the charset in lowercase
     parsed: (fields) => {
       const charset = fields.charset?.toLowerCase() ?? null;
       return {
         ...fields,
+        type: fields.type.toLowerCase(),
         charset,
         parameters:
           charset === null
