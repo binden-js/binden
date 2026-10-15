@@ -233,5 +233,29 @@ suite("Cookie", () => {
         ["empty", ""],
       ],
     );
+    // An invalid cookie does not hide a valid one of its name
+    deepStrictEqual(
+      Cookie.fromString(`c=x\u0001; c=ok`).map(({ key, value }) => [
+        key,
+        value,
+      ]),
+      [["c", "ok"]],
+    );
+  });
+
+  test(".fromString() is linear in the number of cookies", (t) => {
+    const count = 2000;
+    const input = Array.from(
+      { length: count },
+      (_, index) => `k${index}=`,
+    ).join(";");
+    // The names of the cookies found so far are never searched among them
+    const key = t.mock.getter(Cookie.prototype, "key");
+    try {
+      deepStrictEqual(Cookie.fromString(input).length, count);
+      deepStrictEqual(key.mock.callCount() <= count, true);
+    } finally {
+      key.mock.restore();
+    }
   });
 });

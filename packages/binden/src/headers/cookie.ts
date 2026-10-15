@@ -205,6 +205,8 @@ export class Cookie implements ICookie {
     }
 
     const output: Cookie[] = [];
+    // The names of the cookies found so far: linear in the number of cookies
+    const names = new Set<string>();
 
     for (const pair of input.split(";")) {
       // The value may contain `=` (e.g. base64)
@@ -217,9 +219,10 @@ export class Cookie implements ICookie {
           : raw;
 
       // An empty value is a value (RFC 6265, section 4.1.1)
-      if (index > 0 && !output.some((c) => c.key === key)) {
+      if (index > 0 && !names.has(key)) {
         try {
           output.push(new Cookie({ key, value }));
+          names.add(key);
         } catch {
           // Not a valid cookie: skipped
         }
