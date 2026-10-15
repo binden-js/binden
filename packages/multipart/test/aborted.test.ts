@@ -21,6 +21,7 @@ import {
 } from "./helpers.js";
 import { type TestContext, describe, it } from "node:test";
 import { deepEqual, equal, ok } from "node:assert/strict";
+import { Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { once } from "node:events";
 
@@ -97,6 +98,43 @@ describe("Multipart (aborted request)", () => {
 
     deepEqual(reply, [503, "close"]);
     deepEqual(outcome(await within(settled)), ["BindenAbortError", "deadline"]);
+  });
+
+  it("replies `503` at the deadline while a send waits for the first chunk of its stream", async (t) => {
+    const { promise: settled, resolve: settle } =
+      Promise.withResolvers<unknown>();
+    const { promise: sent, resolve: finish } = Promise.withResolvers<unknown>();
+    const parser = new Multipart();
+    const { url } = await serve(
+      t,
+      [
+        async (context: Context): Promise<void> => {
+          // Not awaited: the reply starts while the body is read
+          parser.run(context).then(settle, settle);
+          // A stream that gives nothing: the headers are never sent
+          const stream = new Readable({
+            read(): void {
+              // Nothing
+            },
+          });
+          await context.send(stream).then(finish, (error: unknown) => {
+            finish(error);
+            throw error;
+          });
+        },
+      ],
+      { timeout: 100 },
+    );
+
+    const reply = await upload(
+      url,
+      part('name="file"; filename="file.txt"', "Hello"),
+    );
+
+    // Not a closed connection: the deadline cancels the send, then replies
+    deepEqual(reply, [503, "close"]);
+    deepEqual(outcome(await within(settled)), ["BindenAbortError", "deadline"]);
+    deepEqual(outcome(await within(sent)), ["BindenAbortError", "deadline"]);
   });
 
   it("rejects at once when the request has already been aborted", async (t) => {

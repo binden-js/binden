@@ -214,7 +214,7 @@ The `filename` of a file is the name that the client has sent, without its contr
 | The client goes away                                           | `run()` rejects with a `400` of code `aborted`                             |
 | The deadline passes, or the server shuts down                  | `run()` rejects with the reason of `context.signal` (a `BindenAbortError`) |
 
-After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response that has already started destroys the request.
+After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response whose headers have been sent destroys the request (its reply cannot tell the error): a send whose headers are not sent yet (e.g. of a stream that has not given its first chunk) is left to the framework, whose reply closes the connection.
 
 A parse must start before the response has finished: Node.js then reads and discards what has not been read of the body. A parse that starts later (e.g. after a middleware that has replied without `done`) refuses the body with a `500` (logged at `error`), never with an empty form.
 

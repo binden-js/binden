@@ -453,8 +453,11 @@ class Parser {
 
   /**
    * Refuses the request: the body is not read further, nor parsed. The
-   * connection is kept until the reply to the error, which closes it,
-   * unless its response has already started.
+   * connection is kept until the reply, which closes it, unless the headers
+   * of the response have already been sent. A send whose headers are not
+   * sent yet (e.g. of a stream that has not given its first chunk) is left
+   * to the framework: its reply (or the `503` that cancels it at the
+   * deadline) closes the connection.
    */
   #refuse(error: BindenAbortError | BindenError): void {
     if (this.#over) {
@@ -466,7 +469,7 @@ class Parser {
     if (this.#busboy) {
       request.unpipe(this.#busboy);
     }
-    if (response.started) {
+    if (response.headersSent) {
       // The reply cannot tell the error
       request.destroy();
     } else {

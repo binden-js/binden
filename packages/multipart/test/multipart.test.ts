@@ -15,6 +15,7 @@ import {
 import { deepEqual, equal, ok } from "node:assert/strict";
 import { describe, it } from "node:test";
 import multipart, { Multipart } from "../index.js";
+import { PassThrough } from "node:stream";
 import { gzipSync } from "node:zlib";
 
 /** The entries of a form: a file as its name, type and content */
@@ -556,7 +557,35 @@ describe("Multipart (refusal)", () => {
     equal(failure.status, 413);
   });
 
-  it("destroys the request once its response has started", async () => {
+  it("keeps the request of a send whose headers are not sent, and closes its connection after the reply", async (t) => {
+    const outcomes: unknown[] = [];
+    const parser = new Multipart({ limit: 16 });
+    const { url } = await serve(t, [
+      async (context: Context): Promise<void> => {
+        const stream = new PassThrough();
+        const sending = context.send(stream);
+        await parser.run(context).catch((error: unknown) => {
+          outcomes.push(
+            (error as BindenError).status,
+            context.request.destroyed,
+          );
+        });
+        // Its first chunk once the parse has been refused
+        stream.end("replied");
+        await sending;
+      },
+    ]);
+
+    const reply = await post(url, body(part('name="a"', "a".repeat(64))));
+
+    deepEqual(
+      [reply.status, reply.headers.connection, reply.body],
+      [200, "close", "replied"],
+    );
+    deepEqual(outcomes, [413, false]);
+  });
+
+  it("destroys the request once the headers of its response are sent", async () => {
     const outcomes: unknown[] = [];
     const parser = new Multipart({ limit: 16 });
     const app = new Binden().use(async (context: Context) => {
