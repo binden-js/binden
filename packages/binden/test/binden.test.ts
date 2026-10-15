@@ -125,11 +125,13 @@ suite("Binden", () => {
   test(".createSecureServer()", async () => {
     const newApp = new Binden();
     const path = new URL(url);
-    const agent = new Agent({ rejectUnauthorized: false });
     path.protocol = "https:";
 
     const key = await readFile("./test/cert/key.pem", { encoding: "utf-8" });
     const cert = await readFile("./test/cert/cert.pem", { encoding: "utf-8" });
+    // The certificate of the tests (for `localhost`) is its own authority: it is
+    // verified like any other
+    const agent = new Agent({ ca: cert });
 
     const newServer = newApp.createSecureServer({ key, cert });
 
@@ -145,15 +147,22 @@ suite("Binden", () => {
     }, m);
     // An untrusted `Forwarded` does not change the protocol of the connection
     const headers = { Forwarded: "for=1.2.3.4" };
-    const response = await fetch(path.toString(), { agent, headers });
-    deepStrictEqual(response.status, 200);
-    const data = await response.text();
-    deepStrictEqual(data, m.id);
-    deepStrictEqual(protocol, "https:");
-
-    await new Promise((resolve) => {
-      newServer.close(resolve);
-    });
+    try {
+      const response = await fetch(path.toString(), {
+        agent,
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+      deepStrictEqual(response.status, 200);
+      const data = await response.text();
+      deepStrictEqual(data, m.id);
+      deepStrictEqual(protocol, "https:");
+    } finally {
+      newServer.closeAllConnections();
+      await new Promise((resolve) => {
+        newServer.close(resolve);
+      });
+    }
   });
 
   test("`trust_proxy`", async () => {
