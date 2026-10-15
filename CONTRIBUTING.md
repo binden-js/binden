@@ -73,9 +73,10 @@ Each commit is one logical change, and builds and passes the tests on its own.
 ## Pull requests
 
 - Fill in the template, and link the issue that the pull request resolves.
-- CI must pass: the lint job (formatting, commits, ESLint, the tooling tests, the release rehearsal,
-  the packed files, the consumer check and the docs), the tests on every supported Node.js, on
-  Windows and macOS, CodeQL and the dependency review.
+- CI must pass: the lint job (formatting, commits, ESLint, the tooling tests, the acceptance
+  scenarios and the docs), the package job (the release rehearsal on the runtime of the releases,
+  the packed files and the consumer check), the tests on every supported Node.js, on Windows and
+  macOS, CodeQL and the dependency review.
 - A maintainer ([`CODEOWNERS`](.github/CODEOWNERS)) reviews every pull request.
 
 Merging into `main` releases the packages: see [Releases](README.md#releases).
