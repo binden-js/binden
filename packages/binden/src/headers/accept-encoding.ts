@@ -123,14 +123,19 @@ export class AcceptEncoding implements IAcceptEncoding {
         const [coding = "", ...params] = part
           .split(";")
           .map((param) => param.trim());
-        const q = params
-          .map((param) => /^q\s*=\s*(?<value>.*)$/iu.exec(param)?.groups?.value)
-          .find((value) => typeof value === "string");
-        if (typeof q === "undefined") {
+        // `q = value`, split at its first `=` (a regular expression with `\s*` on
+        // both sides of `=` would backtrack polynomially on long runs of spaces)
+        const weight = params.find((param) => {
+          const equals = param.indexOf("=");
+          return (
+            equals !== -1 && param.slice(0, equals).trim().toLowerCase() === "q"
+          );
+        });
+        if (typeof weight === "undefined") {
           return [coding.toLowerCase(), null];
         }
         // A weight is a qvalue (RFC 9110, section 12.4.2), or the element is invalid
-        const value = q.trim();
+        const value = weight.slice(weight.indexOf("=") + 1).trim();
         return qvalue.test(value)
           ? [coding.toLowerCase(), Number(value)]
           : null;

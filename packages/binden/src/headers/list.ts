@@ -181,3 +181,19 @@ export function preferred<T extends { readonly q_value: number | null }>(
   }
   return best;
 }
+
+/**
+ * `value` without the spaces and tabs (OWS) around it, in linear time (a regular
+ * expression such as `[ \t]+$` backtracks polynomially on long runs of them)
+ */
+export function trimOws(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && (value[start] === " " || value[start] === "\t")) {
+    start += 1;
+  }
+  while (end > start && (value[end - 1] === " " || value[end - 1] === "\t")) {
+    end -= 1;
+  }
+  return value.slice(start, end);
+}

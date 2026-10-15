@@ -72,11 +72,14 @@ export class Authorization implements IAuthorization {
    * control characters)
    */
   public static fromString(input?: string): Authorization | null {
-    // auth-scheme [ 1*SP ( token68 / #auth-param ) ] (RFC 9110, section 11.4)
-    const { scheme = "", rest = "" } =
-      /^(?<scheme>[!#$%&'*+.^_`|~\w-]+)(?: +(?<rest>.*))?$/u.exec(
-        input?.trim() ?? "",
-      )?.groups ?? {};
+    // auth-scheme [ 1*SP ( token68 / #auth-param ) ] (RFC 9110, section 11.4),
+    // split at the first space (a regular expression with ` +` before `.*`
+    // would backtrack polynomially on long runs of spaces)
+    const value = input?.trim() ?? "";
+    const space = value.indexOf(" ");
+    const head = space === -1 ? value : value.slice(0, space);
+    const scheme = /^[!#$%&'*+.^_`|~\w-]+$/u.test(head) ? head : "";
+    const rest = space === -1 ? "" : value.slice(space + 1);
     // The scheme is case-insensitive (RFC 9110, section 11.1)
     const type = Authorization.#types.get(scheme.toLowerCase());
 

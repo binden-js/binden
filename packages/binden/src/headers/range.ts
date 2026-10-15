@@ -1,3 +1,5 @@
+import { trimOws } from "./list.js";
+
 /** A range of `Range`: its first and last positions, either one optional */
 export interface IRange {
   /**
@@ -82,8 +84,10 @@ export class Range implements IRange {
     const output: Range[] = [];
 
     for (const element of ranges.split(",")) {
+      // Trimmed first: `[ \t]*` on both sides of an empty `\d*` would backtrack
+      // polynomially on long runs of tabs
       const { first = "", last = "" } =
-        /^[ \t]*(?<first>\d*)[ \t]*-[ \t]*(?<last>\d*)[ \t]*$/u.exec(element)
+        /^(?<first>\d*)[ \t]*-[ \t]*(?<last>\d*)$/u.exec(trimOws(element))
           ?.groups ?? {};
       const start = first === "" ? null : Number(first);
       const end = last === "" ? null : Number(last);
