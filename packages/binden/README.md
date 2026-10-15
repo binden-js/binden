@@ -583,7 +583,7 @@ const app = new Binden().use("/items", list, create);
 
 A middleware that throws (or rejects) passes the error to the error handler. The default one:
 
-- replies with the `status` of the error when it is an integer from 400 to 599 (e.g. of a [`BindenError`](#bindenerror)), and `500 Internal Server Error` otherwise (for any thrown value, also `null`), with the `headers` of a `BindenError` and its exposed `json` or `message`. The framing and representation headers set for the body that is not sent (e.g. `Content-Length`, `Content-Encoding` or `ETag`) are removed, and the cookies of the response are sent;
+- replies with the `status` of the error when it is an integer from 400 to 599 (e.g. of a [`BindenError`](#bindenerror)), and `500 Internal Server Error` otherwise (for any thrown value, also `null`), with the `headers` of a `BindenError` and its exposed `json` or `message`. The headers set for the body that is not sent (its framing, representation and validators, e.g. `Content-Type`, `Content-Language`, `Content-Length`, `Content-Encoding` or `ETag`) are removed, so that an exposed `message` is never sent as the type of the route (e.g. as HTML), and the cookies of the response are sent;
 - logs a server error (5xx) at `error`, and a client error (4xx) at `debug` (see [Logging](#logging));
 - cuts a reply that has already started by closing the connection, and leaves a reply that has ended.
 
@@ -604,7 +604,7 @@ const app = new Binden({
 
 `BindenError` represents an HTTP error, with a status code from 400 to 599 (an integer: anything else throws a `TypeError`, and one out of this range a `RangeError`). Its options:
 
-- `expose` (default `false`) - whether the default error handler sends `json` (as `application/json`) or `message` (as `text/plain`); otherwise the reply is empty;
+- `expose` (default `false`) - whether the default error handler sends `json` (as `application/json`) or `message` (as `text/plain; charset=utf-8`); otherwise the reply is empty;
 - `json`, `message` (default: the reason phrase of the status) and `cause`;
 - `code` - a machine-readable reason (such as `deadline`), which is logged but not sent;
 - `headers` - headers that the default error handler sends with the error (e.g. `Allow`, `Retry-After` or `WWW-Authenticate`). They are copied (and frozen) when the error is created, and checked: an invalid name or value (e.g. with `CR` or `LF`), a duplicate name, or a header of the framing, the representation or the connection (`Content-Length`, `Transfer-Encoding`, `Content-Encoding`, `Content-Range`, `Content-Type` or `Connection`) throws a `TypeError`.

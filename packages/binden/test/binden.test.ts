@@ -968,7 +968,10 @@ suite("Binden", () => {
       const response = await fetch(url);
 
       deepStrictEqual(response.status, DefaultErrorCode);
-      deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+      deepStrictEqual(
+        response.headers.get("Content-Type"),
+        `${ct_text}; charset=utf-8`,
+      );
 
       const received = await response.text();
       deepStrictEqual(received, message);
@@ -1007,7 +1010,10 @@ suite("Binden", () => {
       const response = await fetch(url);
 
       deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), ct_text);
+      deepStrictEqual(
+        response.headers.get("Content-Type"),
+        `${ct_text}; charset=utf-8`,
+      );
 
       const received = await response.text();
 
@@ -1047,28 +1053,47 @@ suite("Binden", () => {
       deepStrictEqual(received, json);
     });
 
-    test("errorHadler (custom `Content-Type`)", async () => {
+    test("errorHadler (the representation of the body that it replaces)", async () => {
       const status = 405;
-      const message = "<html></html>";
-      const expose = true;
+      // Sent as text, never as the HTML of the route
+      const message = "<img src=x onerror=alert(1)>";
+      const json = { error: "invalid" };
       class CTMiddleware extends Middleware {
         public run(context: Context): void {
           context.response.setHeader("Content-Type", ct_html);
+          context.response.setHeader("Content-Language", "en");
+          context.response.setHeader("Content-Location", "/page.html");
+          context.response.setHeader("Repr-Digest", "sha-256=:AAAA:");
         }
       }
-      app.use(
-        new CTMiddleware(),
-        new ErrorMiddleware({}, status, { message, expose }),
-      );
+      const options: Record<string, IBindenErrorOptions> = {
+        "/message": { message, expose: true },
+        "/json": { message, json, expose: true },
+        "/hidden": { message },
+      };
+      app.use(new CTMiddleware(), (context: Context) => {
+        throw new BindenError(status, options[context.url.pathname]);
+      });
 
-      const response = await fetch(url);
+      const expected: Record<string, [string | null, string]> = {
+        "/message": [`${ct_text}; charset=utf-8`, message],
+        "/json": [ct_json, JSON.stringify(json)],
+        "/hidden": [null, ""],
+      };
+      for (const [path, [type, body]] of Object.entries(expected)) {
+        const response = await fetch(`${url}${path}`);
 
-      deepStrictEqual(response.status, status);
-      deepStrictEqual(response.headers.get("Content-Type"), ct_html);
-
-      const received = await response.text();
-
-      deepStrictEqual(received, message);
+        deepStrictEqual(response.status, status);
+        deepStrictEqual(response.headers.get("Content-Type"), type);
+        for (const name of [
+          "Content-Language",
+          "Content-Location",
+          "Repr-Digest",
+        ]) {
+          deepStrictEqual(response.headers.get(name), null, name);
+        }
+        deepStrictEqual(await response.text(), body);
+      }
     });
 
     test("errorHadler (invalid `json`)", async () => {

@@ -9,6 +9,7 @@ import {
   BindenResponse,
   type IResponseOptions,
   ct_json,
+  ct_text,
   validateResponseOptions,
 } from "./response.js";
 import { type ILayer, Stack, layersOf, markRoot } from "./stack.js";
@@ -858,7 +859,10 @@ export class Binden<
         context.log.debug("`message` is not a valid string", extra);
         return response.send();
       }
-      return response.send(message);
+      // Never the type of the body that it replaces (e.g. `text/html`)
+      return response
+        .setHeader("Content-Type", `${ct_text}; charset=utf-8`)
+        .send(message);
     };
 
     try {
@@ -954,14 +958,23 @@ export class Binden<
     return outcome.value;
   }
 
-  /** The headers of a body, which do not apply to an error that replaces it */
+  /**
+   * The headers of a body (its framing, representation and validators), which
+   * do not apply to an error that replaces it
+   */
   static readonly #representation = [
+    "Content-Digest",
     "Content-Disposition",
     "Content-Encoding",
+    "Content-Language",
     "Content-Length",
+    "Content-Location",
     "Content-Range",
+    "Content-Type",
+    "Digest",
     "ETag",
     "Last-Modified",
+    "Repr-Digest",
     "Transfer-Encoding",
   ];
 

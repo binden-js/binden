@@ -160,6 +160,10 @@ The default error reply is sent with the cookies of the response and the `header
 connection, so that the client knows that it is incomplete (it was ended as if it were complete),
 and a reply that has ended is left as it is (its request was destroyed).
 
+The type and language of the body that the error replaces are removed as well: an exposed
+`message` is sent as `text/plain; charset=utf-8` (and `json` as `application/json`), never with
+the `Content-Type` that the route had set (e.g. `text/html`, which used to be kept).
+
 ### Routing
 
 - `Router.on()` and `Router.off()` take any method token in any case (`router.on("propfind")` is
