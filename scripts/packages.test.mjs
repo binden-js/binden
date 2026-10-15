@@ -1,8 +1,8 @@
 import { deepEqual, equal, throws } from "node:assert/strict";
 import { describe, it } from "node:test";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { readFileSync } from "node:fs";
 
 // The manifests that the workspaces publish, and how Node.js resolves the workspaces
 // (linked into node_modules) through them, as it resolves the installed packages
@@ -34,14 +34,17 @@ describe("the manifests of the workspaces", () => {
   it("resolve the root and package.json, and no other module", () => {
     for (const { dir, manifest } of packages) {
       const { name } = manifest;
+      // The workspace itself, whatever links (or junctions on Windows) lead to it
+      const resolve = (specifier) =>
+        realpathSync(fileURLToPath(import.meta.resolve(specifier)));
       equal(
-        import.meta.resolve(name),
-        pathToFileURL(join(root, dir, "dist/index.js")).href,
+        resolve(name),
+        realpathSync(join(root, dir, "dist/index.js")),
         name,
       );
       equal(
-        import.meta.resolve(`${name}/package.json`),
-        pathToFileURL(join(root, dir, "package.json")).href,
+        resolve(`${name}/package.json`),
+        realpathSync(join(root, dir, "package.json")),
         name,
       );
       for (const path of [
