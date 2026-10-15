@@ -151,8 +151,8 @@ is added to every response with a body:
 - `identity` (the response as it is) is acceptable unless refused (`identity;q=0`, or `*;q=0`
   without `identity`). When nothing is acceptable, the response is replaced with
   `406 Not Acceptable`: an empty body (`Content-Length: 0`) without the headers of the
-  representation. What the application writes afterwards is discarded (the callbacks of its writes
-  still run);
+  representation (its type, validators, digests, …). What the application writes afterwards is
+  discarded (the callbacks of its writes still run);
 - an encoded response (e.g. a precompressed file, with the `Content-Encoding` that the application
   has set) has no other version: it is sent as it is when the request accepts its coding (any
   coding without `Accept-Encoding`, none with an empty one), and replaced with `406` otherwise.
@@ -164,7 +164,10 @@ is (or `406`).
 ### A compressed response
 
 - `Content-Encoding` names the coding; `Content-Length` and `Accept-Ranges` are removed (ranges of
-  the compressed body are not served), and the body is sent in chunks
+  the compressed body are not served), as are the digests of the uncompressed body
+  (`Content-Digest`, `Repr-Digest` and `Digest`,
+  [RFC 9530](https://www.rfc-editor.org/rfc/rfc9530.html)), which the compressed body does not
+  match. The body is sent in chunks
   (`Transfer-Encoding: chunked`, also on the headers of `HEAD`), or to an HTTP/1.0 client delimited
   by closing the connection (`Connection: close`, and never a `Transfer-Encoding`): a stale framing
   header (e.g. copied from an upstream response) neither closes a connection that may be kept alive

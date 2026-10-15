@@ -4,6 +4,7 @@ import {
   type IRequestOptions,
   type IServed,
   fetchRaw,
+  none,
   serve,
   text,
 } from "./helpers.js";
@@ -79,6 +80,62 @@ suite("The decision at the header commit", () => {
         ok(!("content-length" in response.headers), `${method} ${path}`);
         ok(!("accept-ranges" in response.headers));
         deepStrictEqual(response.body, method === "HEAD" ? "" : body);
+      }
+    }
+  });
+
+  test("the digests of the body are removed once it is compressed or replaced", async () => {
+    const digests = {
+      "Content-Digest": "sha-256=:YQ==:",
+      Digest: "sha-256=YQ==",
+      "Repr-Digest": "sha-256=:YQ==:",
+    };
+    const url = await start(
+      (context) => {
+        const { pathname } = context.url;
+        context.response.set(digests);
+        if (pathname === "/304") {
+          // Of a compressed `200`
+          return context.response.status(304).send();
+        }
+        return context.text(pathname === "/small" ? "small" : body);
+      },
+      {
+        format: "gzip",
+        filter: (context: Context): boolean => {
+          if (context.url.pathname === "/filter") {
+            throw new Error("Failed");
+          }
+          return true;
+        },
+      },
+    );
+    for (const [path, accept, status] of [
+      ["/", "gzip", 200],
+      ["/304", "gzip", 304],
+      ["/", "identity;q=0", 406],
+      ["/filter", "gzip", 500],
+      ["/small", "gzip", 200],
+      ["/", "identity", 200],
+    ] as const) {
+      for (const method of ["GET", "HEAD"]) {
+        const name = `${method} ${path} (${accept})`;
+        const response = await fetchRaw(url, {
+          method,
+          path,
+          headers: { "Accept-Encoding": accept },
+        });
+        deepStrictEqual(response.status, status, name);
+        // Kept for the uncompressed body only
+        deepStrictEqual(
+          ["content-digest", "digest", "repr-digest"].map(
+            (header) => response.headers[header],
+          ),
+          path === "/small" || accept === "identity"
+            ? Object.values(digests)
+            : [none, none, none],
+          name,
+        );
       }
     }
   });

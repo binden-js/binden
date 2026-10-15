@@ -75,6 +75,12 @@ const NOT_ACCEPTABLE: IOutcome = { kind: "replace", status: 406 };
 /** The `filter` has failed */
 const FAILED: IOutcome = { kind: "replace", status: 500 };
 
+/**
+ * The digests of the body as it is sent (RFC 9530, and `Digest` of RFC
+ * 3230): a coding changes it, and an empty replacement has another one
+ */
+const digests = ["Content-Digest", "Digest", "Repr-Digest"];
+
 /** The headers of a representation, which an empty replacement does not have */
 const representation = [
   "Accept-Ranges",
@@ -88,6 +94,7 @@ const representation = [
   "ETag",
   "Last-Modified",
   "Transfer-Encoding",
+  ...digests,
 ];
 
 /** The responses that a compression has been installed on */
@@ -703,7 +710,9 @@ export class CompressedResponse {
    * length is not known, without its body nor its encoding (a cache would
    * update the stored response with it); an empty body (e.g. of the `412`
    * of a failed precondition of the compressed representation) is not
-   * compressed either. A response to `HEAD` gets the headers of `GET`.
+   * compressed either. A response to `HEAD` gets the headers of `GET`. The
+   * digests of the uncompressed body are removed: they are not those of the
+   * compressed one (nor of an empty body).
    */
   #code(coding: ICompressEncodings): boolean {
     const response = this.#response;
@@ -713,7 +722,7 @@ export class CompressedResponse {
     if (!empty) {
       this.#remove("Content-Length");
     }
-    this.#remove("Accept-Ranges");
+    this.#remove("Accept-Ranges", ...digests);
     // A strong validator of the uncompressed body does not validate the
     // compressed one (RFC 9110, section 8.8.3.3): it becomes weak
     const etag = response.getHeader("ETag");
