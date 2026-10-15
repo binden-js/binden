@@ -15,7 +15,7 @@
     "npm": ">=11.11.0"
   },
   "scripts": {
-    "acceptance": "tsc -p examples && node --test --test-timeout=120000 scripts/acceptance/*.test.mjs",
+    "acceptance": "tsc -p examples && tsc -p scripts/acceptance && node --test --test-timeout=120000 scripts/acceptance/*.test.mjs",
     "bench": "npm run build && node bench/index.mjs",
     "build": "npm run build --workspaces",
     "ci:all": "npm ci && npm audit signatures && npm audit --omit=dev --audit-level=high && npm run release:check && npm run prettier && npm run commitlint && npm run eslint && npm run test:tooling && npm run coverage && npm run acceptance && npm run pack:check && npm run consumer:check && npm run release:rehearsal && npm run docs:build",
