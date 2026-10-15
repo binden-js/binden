@@ -29,6 +29,7 @@ import {
   type OutgoingHttpHeaders,
   ServerResponse,
 } from "node:http";
+import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
 import { Readable } from "node:stream";
@@ -121,14 +122,34 @@ const token = "[!#$%&'*+\\-.^_`|~\\dA-Za-z]+";
 const quoted =
   '"(?:[\\t \\x21\\x23-\\x5B\\x5D-\\x7E\\x80-\\xFF]|\\\\[\\t \\x21-\\x7E\\x80-\\xFF])*"';
 
+/** `type/subtype` (RFC 9110, section 8.3.1), without whitespace */
+const strictType = new RegExp(`^${token}/${token}$`, "u");
+
 /**
- * A media type whose parameters are each a token with a token or a quoted
- * string as value (RFC 9110, section 8.3.1), with optional whitespace
+ * A parameter of a media type: a token with a token or a quoted string as
+ * value (RFC 9110, section 5.6.6), without whitespace. Its alternatives start
+ * with distinct characters, so it is matched in linear time.
  */
-const strictMediaType = new RegExp(
-  `^[\\t ]*${token}/${token}(?:[\\t ]*;[\\t ]*(?:${token}=(?:${token}|${quoted}))?)*[\\t ]*$`,
-  "u",
-);
+const strictParameter = new RegExp(`^${token}=(?:${token}|${quoted})$`, "u");
+
+/**
+ * Whether a media type has parameters that are each a token with a token or
+ * a quoted string as value (RFC 9110, section 8.3.1), with optional
+ * whitespace around its parts (an empty parameter is allowed). Split on the
+ * `;` outside of the quoted strings and matched part by part, in linear time:
+ * a single regular expression with optional whitespace on both sides of the
+ * separators backtracks exponentially on a long run of ` ;`.
+ */
+function isStrictMediaType(media_type: string): boolean {
+  const [type = "", ...parameters] = split(media_type, ";");
+  return (
+    strictType.test(trimOws(type)) &&
+    parameters.every((parameter) => {
+      const trimmed = trimOws(parameter);
+      return trimmed === "" || strictParameter.test(trimmed);
+    })
+  );
+}
 
 /** Without `[kSeal]()`, nothing may mutate a sealed response */
 const never = (): boolean => false;
@@ -340,7 +361,7 @@ export class BindenResponse<
       return this;
     }
     const parsed =
-      typeof media_type === "string" && strictMediaType.test(media_type)
+      typeof media_type === "string" && isStrictMediaType(media_type)
         ? ContentType.fromString(media_type)
         : null;
     if (parsed === null) {

@@ -570,14 +570,20 @@ export class BindenRequest extends IncomingMessage {
    * `https`, or an empty authority
    */
   static #split(target: string): { authority: string | null; rest: string } {
-    const absolute =
-      /^(?<scheme>[a-z][\d+.a-z-]*):\/\/(?<host>[^/?]*)(?<tail>.*)$/iu.exec(
-        target,
-      )?.groups;
+    // The rest is sliced off rather than matched: `.*$` after the authority
+    // would backtrack quadratically on a line terminator (e.g. of a
+    // rewritten `request.url`), which `.` does not match
+    const absolute = /^(?<scheme>[a-z][\d+.a-z-]*):\/\/(?<host>[^/?]*)/iu.exec(
+      target,
+    );
     if (!absolute) {
       return { authority: null, rest: target };
     }
-    const { scheme = "", host = "", tail = "" } = absolute;
+    const { scheme, host } = absolute.groups as Record<
+      "host" | "scheme",
+      string
+    >;
+    const tail = target.slice(absolute[0].length);
     // The authority is then checked as `Host` (e.g. for userinfo)
     if (!["http", "https"].includes(scheme.toLowerCase()) || host === "") {
       throw new BindenError(400);
