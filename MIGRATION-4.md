@@ -360,8 +360,14 @@ const app = new Binden({ logger, log_error_details: true });
   of the requests and the messages of the errors.
 - The `serializers` option replaces the default serializers of its own keys only: it used to
   replace all of them.
-- `logger` (an existing `pino` logger) and `destination` throw a `TypeError` together: `logger`
-  used to be ignored.
+- `logger` (an existing `pino` logger) and any other option (`destination`, `level`,
+  `serializers`, `error_details`, …) throw a `TypeError` together: the other options do not apply
+  to it (`logger` used to be ignored with `destination`, and the other options with `logger`). A
+  `logger` that is not a `pino` logger, and an unknown level (of the options, of `child()` or set
+  to `level`), throw a `TypeError` as well.
+- The `err` key, under which `pino` logs an `Error` given as the fields of a record, has the
+  default `error` serializer too: the serializer of `pino` logged the message, the stack and
+  every property of the error.
 - The default logger (`import log from "@binden/logger"`) is created when it is first used:
   importing the package has no side effect, and `BINDEN_LOG_LEVEL` is read then.
 - `pino` 10 is used (it was 9).

@@ -35,9 +35,9 @@ log.debug("Received a message", { size: 42 });
 
 | Option          | Default                                  | Description                                                                                                                                    |
 | --------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `level`         | `Logger.getLevel()` (`BINDEN_LOG_LEVEL`) | The level of the logger                                                                                                                        |
+| `level`         | `Logger.getLevel()` (`BINDEN_LOG_LEVEL`) | The level of the logger: one of `pino`, a custom one (`customLevels`) or `silent` (another one throws a `TypeError`)                           |
 | `destination`   | `stdout`                                 | Where the records are written (a `pino` destination, or any object with a `write()` method)                                                    |
-| `logger`        | none                                     | An existing `pino` logger to write with, as it is (its own options and serializers apply). It cannot be set with `destination` (a `TypeError`) |
+| `logger`        | none                                     | An existing `pino` logger to write with, as it is (its own options and serializers apply): every other option set with it throws a `TypeError` |
 | `error_details` | `false`                                  | Whether the default `error` serializer adds the message, the stack and any `code` of an error                                                  |
 | `serializers`   | the default ones                         | Serializers by key: they replace the default ones of the same keys only                                                                        |
 
@@ -54,6 +54,7 @@ const logger = new Logger({ level: Logger.getLevel("OTHER_ENV_NAME") });
 The default serializers log an allowlist of details, found by duck typing (the logger does not depend on `binden`). A value of another kind under these keys is reduced to its type (e.g. `{ "type": "object" }`): it is never logged whole.
 
 - `error`: the type of the error (its nearest built-in error class, never a name the error defines), its `code` when it is a system error code (such as `ECONNRESET`) or one of a few stream and HTTP codes (such as `ERR_STREAM_PREMATURE_CLOSE`), and its `status` (an integer from 100 to 599). Its message, stack and any other `code` may quote the input: they are added only with `error_details: true`. It never throws, whatever is thrown;
+- `err`: the same as `error`, for the key under which `pino` logs an `Error` given as the fields of a record (e.g. `logger.error("Failed", error)`), which it would log whole otherwise (its message, stack and every property);
 - `request`: its method and its path (without the query string and the fragment, nor the scheme, the authority and the userinfo of an absolute-form target);
 - `response`: its status (`statusCode`).
 
@@ -85,7 +86,7 @@ try {
 }
 ```
 
-- `.child(bindings, { level })` - a logger that adds `bindings` to every record, with its own level if given
+- `.child(bindings, { level })` - a logger that adds `bindings` to every record, with its own level if given (an unknown level throws a `TypeError`)
 
 ```typescript
 import log from "@binden/logger";
@@ -94,7 +95,7 @@ const child = log.child({ module: "cache" }, { level: "debug" });
 child.debug("Cache miss", { key: "user:1" });
 ```
 
-- `.level` - the level of the logger (it can be changed), and `.isLevelEnabled(level)` - whether the records of a level are written
+- `.level` - the level of the logger (it can be changed: an unknown level throws a `TypeError`), and `.isLevelEnabled(level)` - whether the records of a level are written
 
 ```typescript
 import log from "@binden/logger";

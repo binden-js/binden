@@ -1,8 +1,13 @@
 import { deepEqual, equal, ok, rejects, throws } from "node:assert/strict";
 import { describe, it } from "node:test";
-import log, { Logger, createSerializers, serializers } from "../index.js";
+import log, {
+  Logger,
+  type LoggerOptions,
+  createSerializers,
+  serializers,
+} from "../index.js";
+import pino, { type LevelWithSilent, type Logger as PinoLogger } from "pino";
 import { join } from "node:path";
-import pino from "pino";
 import { spawnSync } from "node:child_process";
 
 type Line = Record<string, unknown>;
@@ -154,6 +159,28 @@ describe("Logger", () => {
     deepEqual(sink.lines[0].error, { type: "RangeError", code: "ECONNRESET" });
   });
 
+  it("serializes an error under `err` (the key of `pino`) as under `error`", () => {
+    const sink = new Sink();
+    const logger = new Logger({ destination: sink, level: "error" });
+    const secret = Object.assign(new Error("password=hunter2"), {
+      code: "E_SECRET",
+      config: { headers: { authorization: "Bearer SECRET" } },
+    });
+
+    logger.error("err", { err: secret });
+    // An `Error` as `extra` is logged under `err` by `pino`
+    logger.error("extra", secret as unknown as Record<string, unknown>);
+
+    deepEqual(
+      sink.lines.map(({ msg, err }) => [msg, err]),
+      [
+        ["err", { type: "Error" }],
+        ["extra", { type: "Error" }],
+      ],
+    );
+    deepEqual(serializers.err(secret), serializers.error(secret));
+  });
+
   it("serializes the details of an error with `error_details`", () => {
     const sink = new Sink();
     const logger = new Logger({
@@ -175,13 +202,54 @@ describe("Logger", () => {
 
   it("refuses invalid options", () => {
     throws(
-      () => new Logger({ logger: pino(), destination: new Sink() }),
-      new TypeError("`logger` and `destination` cannot both be set"),
-    );
-    throws(
       () => new Logger({ error_details: 1 as unknown as boolean }),
       new TypeError("`error_details` is not a boolean"),
     );
+    throws(
+      () => createSerializers({ error_details: "no" as unknown as boolean }),
+      new TypeError("`error_details` is not a boolean"),
+    );
+    for (const level of ["verbose", "INFO", "", 30]) {
+      throws(
+        () => new Logger({ destination: new Sink(), level: level as string }),
+        new TypeError(`Unknown level: ${level}`),
+      );
+    }
+    // The custom levels, and `silent`
+    const customLevels = { audit: 35 };
+    equal(new Logger({ level: "audit", customLevels }).level, "audit");
+    equal(new Logger({ level: "silent" }).level, "silent");
+    throws(
+      () =>
+        new Logger({ level: "info", customLevels, useOnlyCustomLevels: true }),
+      new TypeError("Unknown level: info"),
+    );
+  });
+
+  it("refuses the options combined with `logger`, and a `logger` that is not a `pino` logger", () => {
+    const logger = pino({ level: "warn" }, new Sink());
+    const combined: [LoggerOptions, string][] = [
+      [{ destination: new Sink() }, "destination"],
+      [{ level: "debug" }, "level"],
+      [{ error_details: true }, "error_details"],
+      [{ error_details: false }, "error_details"],
+      [{ serializers: {} }, "serializers"],
+    ];
+    for (const [options, name] of combined) {
+      throws(
+        () => new Logger({ ...options, logger }),
+        new TypeError(`\`logger\` cannot be combined with \`${name}\``),
+      );
+    }
+    // Options that are not set
+    const unset: unknown = Reflect.get({}, "unset");
+    equal(new Logger({ logger, level: unset } as LoggerOptions).level, "warn");
+    for (const invalid of [null, {}, "pino", { ...logger, flush: null }]) {
+      throws(
+        () => new Logger({ logger: invalid as unknown as PinoLogger }),
+        new TypeError("`logger` is not a `pino` logger"),
+      );
+    }
   });
 
   it("keeps the default serializers that are not replaced", () => {
@@ -213,6 +281,13 @@ describe("Logger", () => {
     logger.level = "debug";
     equal(logger.level, "debug");
     ok(logger.isLevelEnabled("debug"));
+    throws(() => {
+      logger.level = "nope" as LevelWithSilent;
+    }, new TypeError("Unknown level: nope"));
+    equal(logger.level, "debug");
+    const custom = new Logger({ customLevels: { audit: 35 } });
+    custom.level = "audit" as LevelWithSilent;
+    equal(custom.level, "audit");
   });
 
   it(".child() with its own level", () => {
@@ -228,6 +303,13 @@ describe("Logger", () => {
       sink.lines.map(({ msg, id }) => [msg, id]),
       [["written", 1]],
     );
+    throws(
+      () => logger.child({}, { level: "verbose" as LevelWithSilent }),
+      new TypeError("Unknown level: verbose"),
+    );
+    const custom = new Logger({ customLevels: { audit: 35 } });
+    const audit = "audit" as LevelWithSilent;
+    equal(custom.child({}, { level: audit }).level, audit);
   });
 
   it("Logger.fromPino()", () => {

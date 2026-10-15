@@ -122,13 +122,18 @@ function pathOf(target: string): string {
   return URL.canParse(target) ? new URL(target).pathname : "";
 }
 
-/** The default serializers of the `error`, `request` and `response` keys */
+/** The default serializers of the `error`, `err`, `request` and `response` keys */
 export interface ISerializers {
   /**
    * The type of an error, a known `code` and its `status` (with
    * `error_details`, also its message, stack and any `code`)
    */
   error(error: unknown): Record<string, unknown>;
+  /**
+   * The same as `error`, for the key of `pino` (an `Error` given as `extra`
+   * is logged under it)
+   */
+  err(error: unknown): Record<string, unknown>;
   /** The method and the path (without the query) of a request */
   request(request: unknown): Record<string, unknown>;
   /** The status of a response */
@@ -144,29 +149,34 @@ export interface ISerializers {
 export function createSerializers({
   error_details = false,
 }: { error_details?: boolean | undefined } = {}): ISerializers {
+  if (typeof error_details !== "boolean") {
+    throw new TypeError("`error_details` is not a boolean");
+  }
+  // The type of an error, a known `code` and its `status` (and, with
+  // `error_details`, its message, its stack and any `code`)
+  const error = (value: unknown): Record<string, unknown> => {
+    const type = typeOf(value);
+    if (typeof value !== "object" && typeof value !== "function") {
+      return { type };
+    }
+    const code = property(value, "code");
+    const status = property(value, "status");
+    const message = property(value, "message");
+    const stack = property(value, "stack");
+    const known = typeof code === "string" && errorCodes.has(code);
+    return {
+      type,
+      ...((known || error_details) && typeof code === "string" ? { code } : {}),
+      ...(isStatus(status) ? { status } : {}),
+      ...(error_details && typeof message === "string" ? { message } : {}),
+      ...(error_details && typeof stack === "string" ? { stack } : {}),
+    };
+  };
   return {
-    // The type of an error, a known `code` and its `status` (and, with
-    // `error_details`, its message, its stack and any `code`)
-    error: (error: unknown): Record<string, unknown> => {
-      const type = typeOf(error);
-      if (typeof error !== "object" && typeof error !== "function") {
-        return { type };
-      }
-      const code = property(error, "code");
-      const status = property(error, "status");
-      const message = property(error, "message");
-      const stack = property(error, "stack");
-      const known = typeof code === "string" && errorCodes.has(code);
-      return {
-        type,
-        ...((known || error_details) && typeof code === "string"
-          ? { code }
-          : {}),
-        ...(isStatus(status) ? { status } : {}),
-        ...(error_details && typeof message === "string" ? { message } : {}),
-        ...(error_details && typeof stack === "string" ? { stack } : {}),
-      };
-    },
+    error,
+    // `pino` logs an `Error` given as `extra` under `err`, which its own
+    // serializer would log whole (e.g. a `config` with credentials)
+    err: error,
     // The method and the path (without the query string) of a request
     request: (request: unknown): Record<string, unknown> => {
       const method = property(request, "method");
@@ -215,21 +225,29 @@ export class Logger implements ILogger {
 
   /**
    * A logger with the options of `pino` (and its safe serializers, merged by
-   * key with `serializers`), or one of an existing `pino` logger (`logger`):
-   * `logger` with `destination`, or an `error_details` that is not a boolean,
-   * throws a `TypeError`
+   * key with `serializers`), or one of an existing `pino` logger (`logger`,
+   * whose options apply: it cannot be combined with any other option). An
+   * invalid option (e.g. an unknown `level`, or a `logger` that is not a
+   * `pino` logger) throws a `TypeError`.
    */
-  public constructor({
-    logger,
-    destination,
-    error_details = false,
-    serializers: custom = {},
-    ...options
-  }: LoggerOptions = {}) {
-    if (typeof logger !== "undefined" && typeof destination !== "undefined") {
-      throw new TypeError("`logger` and `destination` cannot both be set");
+  public constructor(all: LoggerOptions = {}) {
+    const {
+      logger,
+      destination,
+      error_details = false,
+      serializers: custom = {},
+      ...options
+    } = all;
+    if (typeof logger !== "undefined") {
+      Logger.#checkPino(logger, all);
     } else if (typeof error_details !== "boolean") {
       throw new TypeError("`error_details` is not a boolean");
+    } else if (typeof options.level !== "undefined") {
+      const { customLevels = {}, useOnlyCustomLevels = false } = options;
+      Logger.#checkLevel(options.level, {
+        ...(useOnlyCustomLevels ? {} : pino.levels.values),
+        ...customLevels,
+      });
     }
     this.#create = (): PinoLogger => {
       if (typeof logger !== "undefined") {
@@ -257,9 +275,11 @@ export class Logger implements ILogger {
     return this.#pino().level as LevelWithSilent;
   }
 
-  /** Sets the level of the logger */
+  /** Sets the level of the logger (an unknown one throws a `TypeError`) */
   public set level(level: LevelWithSilent) {
-    this.#pino().level = level;
+    const logger = this.#pino();
+    Logger.#checkLevel(level, logger.levels.values);
+    logger.level = level;
   }
 
   /** Whether the records of a level are written */
@@ -280,9 +300,15 @@ export class Logger implements ILogger {
     });
   }
 
-  /** A logger that adds `bindings` to every record (with its own level, if given) */
+  /**
+   * A logger that adds `bindings` to every record (with its own level, if
+   * given: an unknown one throws a `TypeError`)
+   */
   public child(bindings: Bindings = {}, { level }: IChildOptions = {}): Logger {
     const logger = this.#pino();
+    if (typeof level !== "undefined") {
+      Logger.#checkLevel(level, logger.levels.values);
+    }
     return Logger.fromPino(
       typeof level === "undefined"
         ? logger.child(bindings)
@@ -347,6 +373,47 @@ export class Logger implements ILogger {
         return level;
       default:
         return "silent";
+    }
+  }
+
+  /** Throws a `TypeError` unless a level is `silent` or one of the known ones */
+  static #checkLevel(level: unknown, known: Record<string, number>): void {
+    if (
+      typeof level !== "string" ||
+      (level !== "silent" && !Object.hasOwn(known, level))
+    ) {
+      throw new TypeError(`Unknown level: ${String(level)}`);
+    }
+  }
+
+  /**
+   * Throws a `TypeError` unless `logger` is a `pino` logger (with its methods)
+   * that no other option is combined with: they would not apply to it
+   */
+  static #checkPino(logger: unknown, options: LoggerOptions): void {
+    const methods = [
+      "child",
+      "flush",
+      "isLevelEnabled",
+      "fatal",
+      "error",
+      "warn",
+      "info",
+      "debug",
+      "trace",
+    ];
+    if (
+      typeof logger !== "object" ||
+      logger === null ||
+      !methods.every((name) => typeof property(logger, name) === "function")
+    ) {
+      throw new TypeError("`logger` is not a `pino` logger");
+    }
+    const [other] = Object.entries(options).filter(
+      ([name, value]) => name !== "logger" && typeof value !== "undefined",
+    );
+    if (typeof other !== "undefined") {
+      throw new TypeError(`\`logger\` cannot be combined with \`${other[0]}\``);
     }
   }
 
