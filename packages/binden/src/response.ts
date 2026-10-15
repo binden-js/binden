@@ -5,6 +5,14 @@ import {
   isRedirectStatus,
   redirectLocation,
 } from "./redirect.js";
+import {
+  type IResponseOperation,
+  kCancel,
+  kFramework,
+  kOperation,
+  kSeal,
+  owners,
+} from "./seal.js";
 import { type ISendFileOptions, matches, sendFileTo } from "./send-file.js";
 import {
   IncomingMessage,
@@ -17,7 +25,6 @@ import ContentType from "./headers/content-type.js";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
-import { kSeal } from "./seal.js";
 
 /** The media type of `response.json()` */
 export const ct_json = "application/json";
@@ -97,8 +104,79 @@ function contentDisposition(filename?: string): string {
 /** A header field name (a token, RFC 9110, section 5.6.2) */
 const fieldName = /^[!#$%&'*+\-.^_`|~\dA-Za-z]+$/u;
 
-/** A late send is a no-op */
-const always = (): boolean => true;
+/** Without `[kSeal]()`, nothing may mutate a sealed response */
+const never = (): boolean => false;
+
+/** What the operations of a response need from it (see `Operation`) */
+interface IRights {
+  /** Whether the work of an owner may mutate the response */
+  allows(owner: object | undefined): boolean;
+  /** Runs a function with the rights of the framework */
+  force<T>(fn: () => T): T;
+  /** Whether the response has been ended */
+  ended(): boolean;
+}
+
+/**
+ * An operation on a response (a send of a stream, a file, a compressor): it
+ * belongs to the owner of the work that has started it, whose rights its
+ * asynchronous callbacks keep (see `IResponseOperation`)
+ */
+class Operation implements IResponseOperation {
+  readonly #owner: object | undefined;
+  readonly #rights: IRights;
+  #transfer = false;
+
+  public constructor(owner: object | undefined, rights: IRights) {
+    this.#owner = owner;
+    this.#rights = rights;
+  }
+
+  public get active(): boolean {
+    return this.#transfer || this.#rights.allows(this.#owner);
+  }
+
+  public run<T>(fn: () => T): T {
+    if (this.#transfer) {
+      const rights = this.#rights;
+      return owners.run(this.#owner as object, () => rights.force(fn));
+    }
+    return owners.run(this.#owner as object, fn);
+  }
+
+  public transfer(): void {
+    if (this.active && this.#rights.ended()) {
+      this.#transfer = true;
+    }
+  }
+}
+
+/**
+ * The cookies of a response: once the response is sealed, the abandoned work
+ * no longer changes them (also through a set obtained before)
+ */
+class Cookies extends Set<Cookie> {
+  readonly #allows: () => boolean;
+
+  public constructor(allows: () => boolean) {
+    super();
+    this.#allows = allows;
+  }
+
+  public override add(cookie: Cookie): this {
+    return this.#allows() ? super.add(cookie) : this;
+  }
+
+  public override delete(cookie: Cookie): boolean {
+    return this.#allows() && super.delete(cookie);
+  }
+
+  public override clear(): void {
+    if (this.#allows()) {
+      super.clear();
+    }
+  }
+}
 
 /**
  * A response (`ServerResponse`) with helpers to reply (`send()`, `json()`,
@@ -108,17 +186,63 @@ const always = (): boolean => true;
 export class BindenResponse<
   Request extends IncomingMessage = IncomingMessage,
 > extends ServerResponse<Request> {
-  #cookies?: Set<Cookie>;
-  #started = false;
-  readonly #seals: (() => boolean)[] = [];
+  #cookies?: Cookies;
+  /** Whether a stream has been piped into the response (by its owner) */
+  #piped = false;
+  /**
+   * The sends in progress (of a stream or a file), by their key, with the
+   * function that cancels them: the send rejects with the reason, and its
+   * headers are removed (see `[kCancel]()`)
+   */
+  readonly #pending = new Map<object, (reason: unknown) => void>();
+  /** The checks of the owners that may mutate the response (see `[kSeal]()`) */
+  readonly #seals: ((owner: object | undefined) => boolean)[] = [];
+  /** Set while the framework mutates the response (see `[kFramework]()`) */
+  #forced = 0;
+  #rights?: IRights;
+  #statusCode = 200;
+  #statusMessage: string | undefined;
+
+  static {
+    // The status of a sealed response is not changed by the abandoned work
+    // either (also by an assignment, which Node.js itself uses)
+    Object.defineProperties(this.prototype, {
+      statusCode: {
+        configurable: true,
+        enumerable: true,
+        get(this: BindenResponse): number {
+          return this.#statusCode;
+        },
+        set(this: BindenResponse, code: number): void {
+          if (this.#allows()) {
+            this.#statusCode = code;
+          }
+        },
+      },
+      statusMessage: {
+        configurable: true,
+        enumerable: true,
+        get(this: BindenResponse): string | undefined {
+          return this.#statusMessage;
+        },
+        set(this: BindenResponse, message: string | undefined): void {
+          if (this.#allows()) {
+            this.#statusMessage = message;
+          }
+        },
+      },
+    });
+  }
 
   /** A response to the request (created by the server) */
   public constructor(...args: [request: Request, options?: unknown]) {
     // node:http passes its options as well
     super(...(args as [Request]));
     // `Readable.pipe()` emits `pipe` on its destination synchronously
-    this.once("pipe", () => {
-      this.#started = true;
+    this.on("pipe", () => {
+      if (this.#allows()) {
+        this.#piped = true;
+      }
     });
   }
 
@@ -127,18 +251,22 @@ export class BindenResponse<
    * values that it has) once, when the headers are sent
    */
   public get cookies(): Set<Cookie> {
-    if (!this.#cookies) {
-      this.#cookies = new Set<Cookie>();
-    }
+    this.#cookies ??= new Cookies(() => this.#allows());
     return this.#cookies;
   }
 
   /**
-   * Whether the response has been started: by `.send()` or `.sendFile()`, by a
-   * stream piped into it, or by its headers being sent
+   * Whether the response has been started: by `.send()` or `.sendFile()`
+   * (until they fail before sending anything, or are cancelled), by a stream
+   * piped into it, or by its headers being sent
    */
   public get started(): boolean {
-    return this.#started || this.headersSent || this.writableEnded;
+    return (
+      this.#piped ||
+      this.#pending.size > 0 ||
+      this.headersSent ||
+      this.writableEnded
+    );
   }
 
   /**
@@ -152,7 +280,9 @@ export class BindenResponse<
 
   /** Set the status code: an integer from 100 to 599 */
   public status(code: number): this {
-    if (!isStatus(code)) {
+    if (!this.#allows()) {
+      return this;
+    } else if (!isStatus(code)) {
       throw new TypeError(`Status code ${code} is invalid`);
     }
     this.statusCode = code;
@@ -161,6 +291,9 @@ export class BindenResponse<
 
   /** Set headers: the own properties of the object (not inherited ones) */
   public set(headers: IHeaders): this {
+    if (!this.#allows()) {
+      return this;
+    }
     for (const [name, value] of Object.entries(headers)) {
       this.setHeader(name, value);
     }
@@ -169,6 +302,9 @@ export class BindenResponse<
 
   /** Set the `Content-Type`: a media type with its parameters (a `TypeError` otherwise) */
   public type(media_type: string): this {
+    if (!this.#allows()) {
+      return this;
+    }
     const parsed = ContentType.fromString(media_type);
     if (parsed === null) {
       throw new TypeError(`Invalid media type: ${media_type}`);
@@ -181,6 +317,9 @@ export class BindenResponse<
    * to save it as: in ASCII (`filename`) and in UTF-8 (`filename*`, RFC 8187)
    */
   public attachment(filename?: string): this {
+    if (!this.#allows()) {
+      return this;
+    }
     return this.setHeader("Content-Disposition", contentDisposition(filename));
   }
 
@@ -189,6 +328,9 @@ export class BindenResponse<
    * (once each, case-insensitively); `*` replaces them all
    */
   public vary(...fields: string[]): this {
+    if (!this.#allows()) {
+      return this;
+    }
     for (const field of fields) {
       if (!fieldName.test(field)) {
         throw new TypeError(`Invalid field name: ${field}`);
@@ -222,6 +364,9 @@ export class BindenResponse<
    * replaces a cookie of the same name, domain and path set on the response.
    */
   public clearCookie(name: string, attributes: IClearCookie = {}): this {
+    if (!this.#allows()) {
+      return this;
+    }
     const cookie = new Cookie({
       ...attributes,
       key: name,
@@ -262,6 +407,9 @@ export class BindenResponse<
     reason?: OutgoingHttpHeader[] | OutgoingHttpHeaders | string,
     headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
   ): this {
+    if (!this.#allows()) {
+      return this;
+    }
     // As `writeHead()` of Node.js: the headers follow a reason phrase, or are
     // the second argument
     const given = typeof reason === "string" ? headers : (headers ?? reason);
@@ -351,25 +499,266 @@ export class BindenResponse<
   }
 
   /**
-   * Seals the response against late sends: while `late()` returns `true`
-   * (always without it, or when it throws), the sending methods resolve without
-   * writing anything
+   * Writes a chunk of the body (see `write()` of Node.js). Once the response
+   * is sealed, the abandoned work writes nothing: its callback is called
+   * (asynchronously, without an error) and it returns `true`.
+   */
+  public override write(
+    chunk: unknown,
+    callback?: (error: Error | null | undefined) => void,
+  ): boolean;
+  /** Writes a chunk of the body in an encoding (as the first signature) */
+  public override write(
+    chunk: unknown,
+    encoding: BufferEncoding,
+    callback?: (error: Error | null | undefined) => void,
+  ): boolean;
+  public override write(...args: unknown[]): boolean {
+    if (!this.#allows()) {
+      BindenResponse.#ignore(args);
+      return true;
+    }
+    return super.write(...(args as [unknown]));
+  }
+
+  /**
+   * Ends the response (see `end()` of Node.js). Once the response is sealed,
+   * the abandoned work does not end it: its callback is called
+   * (asynchronously, without an error).
+   */
+  public override end(callback?: () => void): this;
+  /** Ends the response with a last chunk (as the first signature) */
+  public override end(chunk: unknown, callback?: () => void): this;
+  /** Ends the response with a last chunk in an encoding (as the first signature) */
+  public override end(
+    chunk: unknown,
+    encoding: BufferEncoding,
+    callback?: () => void,
+  ): this;
+  public override end(...args: unknown[]): this {
+    if (!this.#allows()) {
+      BindenResponse.#ignore(args);
+      return this;
+    }
+    return super.end(...(args as []));
+  }
+
+  /** Sends the headers (see `flushHeaders()` of Node.js), unless the response is sealed */
+  public override flushHeaders(): void {
+    if (this.#allows()) {
+      super.flushHeaders();
+    }
+  }
+
+  /** Sets a header (see `setHeader()` of Node.js), unless the response is sealed */
+  public override setHeader(
+    name: string,
+    value: number | string | readonly string[],
+  ): this {
+    return this.#allows() ? super.setHeader(name, value) : this;
+  }
+
+  /** Appends a header (see `appendHeader()` of Node.js), unless the response is sealed */
+  public override appendHeader(
+    name: string,
+    value: string | readonly string[],
+  ): this {
+    return this.#allows() ? super.appendHeader(name, value) : this;
+  }
+
+  /** Sets headers (see `setHeaders()` of Node.js), unless the response is sealed */
+  public override setHeaders(
+    headers: Headers | Map<string, number | string | readonly string[]>,
+  ): this {
+    return this.#allows() ? super.setHeaders(headers) : this;
+  }
+
+  /** Removes a header (see `removeHeader()` of Node.js), unless the response is sealed */
+  public override removeHeader(name: string): void {
+    if (this.#allows()) {
+      super.removeHeader(name);
+    }
+  }
+
+  /** Adds trailers (see `addTrailers()` of Node.js), unless the response is sealed */
+  public override addTrailers(
+    headers: OutgoingHttpHeaders | readonly [string, string][],
+  ): void {
+    if (this.#allows()) {
+      super.addTrailers(headers);
+    }
+  }
+
+  /**
+   * Destroys the response and its connection (see `destroy()` of Node.js),
+   * unless the response is sealed: the abandoned work cannot cut the reply
+   * of the framework
+   */
+  public override destroy(error?: Error): this {
+    return this.#allows() ? super.destroy(error) : this;
+  }
+
+  /**
+   * Sends `100 Continue`, unless the response is sealed (its callback is then
+   * called asynchronously)
+   */
+  public override writeContinue(callback?: () => void): void {
+    if (!this.#allows()) {
+      BindenResponse.#ignore([callback]);
+      return;
+    }
+    super.writeContinue(callback);
+  }
+
+  /**
+   * Sends `102 Processing`, unless the response is sealed (its callback is
+   * then called asynchronously)
+   */
+  public override writeProcessing(callback?: () => void): void {
+    if (!this.#allows()) {
+      BindenResponse.#ignore([callback]);
+      return;
+    }
+    super.writeProcessing(callback);
+  }
+
+  /**
+   * Sends `103 Early Hints`, unless the response is sealed (its callback is
+   * then called asynchronously)
+   */
+  public override writeEarlyHints(
+    hints: Record<string, string[] | string>,
+    callback?: () => void,
+  ): void {
+    if (!this.#allows()) {
+      BindenResponse.#ignore([callback]);
+      return;
+    }
+    super.writeEarlyHints(hints, callback);
+  }
+
+  /**
+   * Sends an informational response (see `writeInformation()` of Node.js,
+   * from 24.18.0), unless the response is sealed (its callback is then called
+   * asynchronously)
+   */
+  public override writeInformation(
+    statusCode: number,
+    headers?: OutgoingHttpHeaders | readonly string[],
+    callback?: () => void,
+  ): void;
+  /** Sends an informational response without headers (as the first signature) */
+  public override writeInformation(
+    statusCode: number,
+    callback: () => void,
+  ): void;
+  public override writeInformation(...args: unknown[]): void {
+    if (!this.#allows()) {
+      BindenResponse.#ignore(args);
+      return;
+    }
+    super.writeInformation(...(args as [number]));
+  }
+
+  /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
+  static #ignore(args: readonly unknown[]): void {
+    const callback = args.find((arg) => typeof arg === "function") as
+      (() => void) | undefined;
+    if (callback) {
+      process.nextTick(callback);
+    }
+  }
+
+  /**
+   * Seals the response: from now on, only the work of the owners that
+   * `allows(owner)` accepts (none without it, or when it throws) mutates it.
+   * The other calls are ignored: the sending methods resolve, `write()` and
+   * `end()` call their callback, the setters do nothing.
    *
    * @internal
    */
-  public [kSeal](late: () => boolean = always): void {
-    this.#seals.push(late);
+  public [kSeal](allows: (owner: object | undefined) => boolean = never): void {
+    this.#seals.push(allows);
   }
 
-  /** Whether a send is late (see `[kSeal]()`) */
-  #sealed(): boolean {
-    return this.#seals.some((late) => {
+  /**
+   * Cancels the sends in progress (of a stream, or of a file), unless the
+   * headers have been committed: each rejects with the reason, its source is
+   * released, and the headers that it has set are removed, so that another
+   * reply can be sent at once
+   *
+   * @internal
+   */
+  public [kCancel](reason: unknown): void {
+    if (!this.headersSent) {
+      this[kFramework](() => {
+        for (const cancel of [...this.#pending.values()]) {
+          cancel(reason);
+        }
+      });
+    }
+  }
+
+  /**
+   * Runs a function of the framework with its rights, whoever owns the
+   * response (e.g. to destroy it once sealed)
+   *
+   * @internal
+   */
+  public [kFramework]<T>(fn: () => T): T {
+    this.#forced += 1;
+    try {
+      return fn();
+    } finally {
+      this.#forced -= 1;
+    }
+  }
+
+  /**
+   * Starts an operation of a library that writes to the response (e.g. a
+   * compressor): `null` when the current work may not mutate the response
+   *
+   * @internal
+   */
+  public [kOperation](): IResponseOperation | null {
+    const owner = owners.getStore();
+    return this.#allows(owner) ? new Operation(owner, this.#control()) : null;
+  }
+
+  /** An operation of the current work (which may mutate the response) */
+  #operation(): Operation {
+    return new Operation(owners.getStore(), this.#control());
+  }
+
+  /** What the operations of the response need from it */
+  #control(): IRights {
+    this.#rights ??= {
+      allows: (owner): boolean => this.#allows(owner),
+      force: <T>(fn: () => T): T => this[kFramework](fn),
+      ended: (): boolean => this.writableEnded,
+    };
+    return this.#rights;
+  }
+
+  /**
+   * Whether the work of an owner (the current one by default) may mutate the
+   * response: every check of `[kSeal]()` accepts it, or the framework itself
+   * mutates it
+   */
+  #allows(owner: object | undefined = owners.getStore()): boolean {
+    if (this.#forced > 0) {
+      return true;
+    }
+    for (const allows of this.#seals) {
       try {
-        return late();
+        if (!allows(owner)) {
+          return false;
+        }
       } catch {
-        return true;
+        return false;
       }
-    });
+    }
+    return true;
   }
 
   /** Send a response */
@@ -382,7 +771,7 @@ export class BindenResponse<
     data?: Buffer | Readable | bigint | number | string,
     encoding?: BufferEncoding,
   ): Promise<void> {
-    if (this.writableEnded || this.#sealed()) {
+    if (this.writableEnded || !this.#allows()) {
       if (data instanceof Readable) {
         // Nothing of it will be sent: release it (e.g. its file)
         BindenResponse.#discard(data);
@@ -396,8 +785,6 @@ export class BindenResponse<
         new TypeError(`Unknown encoding: ${String(encoding)}`),
       );
     }
-
-    this.#started = true;
 
     if (data instanceof Readable) {
       if (this.#bodiless()) {
@@ -519,7 +906,7 @@ export class BindenResponse<
    * `sendFile()`, whose headers are not sent yet), unless it is late
    */
   #sendNotModified(length: number): Promise<void> {
-    if (this.#sealed()) {
+    if (!this.#allows()) {
       return Promise.resolve();
     }
     const done = this.#finished(() => false);
@@ -537,7 +924,7 @@ export class BindenResponse<
     data: T,
     stringify?: (data: T) => string,
   ): Promise<void> {
-    if (this.#sealed()) {
+    if (!this.#allows()) {
       return;
     }
     const type = typeof data;
@@ -559,7 +946,7 @@ export class BindenResponse<
 
   /** Send text as `text/plain; charset=utf-8` */
   public async text(data: string): Promise<void> {
-    if (this.#sealed()) {
+    if (!this.#allows()) {
       return;
     }
     await this.setHeader("Content-Type", `${ct_text}; charset=utf-8`).send(
@@ -569,7 +956,7 @@ export class BindenResponse<
 
   /** Send text as `text/html; charset=utf-8` */
   public async html(data: string): Promise<void> {
-    if (this.#sealed()) {
+    if (!this.#allows()) {
       return;
     }
     await this.setHeader("Content-Type", `${ct_html}; charset=utf-8`).send(
@@ -579,7 +966,7 @@ export class BindenResponse<
 
   /** Send `URLSearchParams` as `application/x-www-form-urlencoded` */
   public async form(params: URLSearchParams): Promise<void> {
-    if (this.#sealed()) {
+    if (!this.#allows()) {
       return;
     }
     await this.setHeader("Content-Type", ct_form).send(params.toString());
@@ -599,7 +986,7 @@ export class BindenResponse<
     status: IRedirectStatus = 302,
     { allow_external = false }: IRedirectOptions = {},
   ): Promise<void> {
-    if (this.#sealed()) {
+    if (!this.#allows()) {
       return;
     } else if (!isRedirectStatus(status)) {
       throw new TypeError(`Status code ${String(status)} is not a redirect`);
@@ -642,7 +1029,7 @@ export class BindenResponse<
    * the compressor as well.
    */
   public flush(): Promise<void> {
-    if (this.#sealed() || this.writableFinished) {
+    if (!this.#allows() || this.writableFinished) {
       return Promise.resolve();
     } else if (this.writableEnded || this.destroyed) {
       return this.#finished(() => false);
@@ -739,30 +1126,65 @@ export class BindenResponse<
    * replaced it with `406` when its first chunk committed the headers), the
    * rest of the source is not read: it is released, and the response is left
    * as it is.
+   *
+   * The callbacks of the source run as the owner that has started the send,
+   * whose rights they keep: once that owner may no longer mutate the
+   * response, they do not either. Before the headers are committed, the
+   * framework may cancel the send (see `[kCancel]()`): it then rejects with
+   * the reason at once, and its source is released.
    */
   #pipe(data: Readable): Promise<void> {
+    const operation = this.#operation();
+    const key = {};
     let flushed = 0;
     let sent = 0;
+    // Once the response is closed, `#finished()` tells how it ended
+    let closed = false;
+    // Once the response has been ended by another writer
+    let stopped = false;
+    let settled = false;
     const done = this.#finished(() => {
       const length = this.#length();
       return length !== null && flushed >= length;
     });
     return new Promise<void>((resolve, reject) => {
-      // Once the response is closed, `#finished()` tells how it ended
-      let closed = false;
-      // Once the response has been ended by another writer
-      let stopped = false;
+      const settle = (error: Error | null): void => {
+        if (!settled) {
+          settled = true;
+          this.#pending.delete(key);
+          if (error === null) {
+            resolve();
+          } else {
+            reject(error);
+          }
+        }
+      };
       const fail = (error: Error): void => {
-        if (stopped) {
+        if (settled || stopped) {
           // E.g. the source released below: the response is not changed
           return;
-        } else if (sent === 0) {
-          this.#started = false;
-        } else {
+        } else if (sent > 0) {
           this.destroy();
         }
-        reject(error);
+        settle(error);
       };
+      const end = (): void => {
+        const length = this.#length();
+        if (settled) {
+          return;
+        } else if (length !== null && sent < length) {
+          fail(BindenResponse.#mismatch(sent, length));
+        } else {
+          this.end();
+        }
+      };
+      this.#pending.set(key, (reason: unknown) => {
+        BindenResponse.#discard(data);
+        // The framing of the body that is not sent
+        this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
+        settle(reason as Error);
+      });
+
       this.once("close", () => {
         closed = true;
         // Releases the source (e.g. the file of `sendFile()`)
@@ -772,60 +1194,72 @@ export class BindenResponse<
       });
       data
         .on("data", (chunk: Uint8Array | string) => {
-          if (this.writableEnded) {
-            stopped = true;
-            BindenResponse.#discard(data);
-            return;
-          }
-          try {
-            const size = Buffer.byteLength(chunk);
-            const length = this.#length();
-            if (length !== null && sent + size > length) {
-              data.destroy(BindenResponse.#mismatch(sent + size, length));
+          operation.run(() => {
+            if (settled || !operation.active) {
+              // Cancelled, or its owner may no longer write
+              BindenResponse.#discard(data);
+              return;
+            } else if (this.writableEnded) {
+              stopped = true;
+              BindenResponse.#discard(data);
               return;
             }
-            sent += size;
-            const accepted = this.write(chunk, (error?: Error | null) => {
-              if (error) {
-                // Not delivered: the client went away (Node.js 24 may still
-                // emit `finish` once the response is ended)
-                data.destroy();
-                reject(error);
-              } else {
-                flushed += size;
+            try {
+              const size = Buffer.byteLength(chunk);
+              const length = this.#length();
+              if (length !== null && sent + size > length) {
+                data.destroy(BindenResponse.#mismatch(sent + size, length));
+                return;
               }
-            });
-            if (!accepted) {
-              data.pause();
-              this.once("drain", () => {
-                data.resume();
+              sent += size;
+              const accepted = this.write(chunk, (error?: Error | null) => {
+                if (error) {
+                  // Not delivered: the client went away (Node.js 24 may still
+                  // emit `finish` once the response is ended)
+                  data.destroy();
+                  settle(error);
+                } else {
+                  flushed += size;
+                }
               });
+              if (!accepted) {
+                data.pause();
+                this.once("drain", () => {
+                  data.resume();
+                });
+              }
+            } catch (error: unknown) {
+              // Not a chunk of bytes (e.g. an object)
+              data.destroy(error as Error);
             }
-          } catch (error: unknown) {
-            // Not a chunk of bytes (e.g. an object)
-            data.destroy(error as Error);
-          }
+          });
         })
         .once("end", () => {
-          const length = this.#length();
-          if (length !== null && sent < length) {
-            fail(BindenResponse.#mismatch(sent, length));
-          } else {
-            this.end();
-          }
+          operation.run(end);
         })
         // Every error (also one emitted while the source is destroyed later)
-        .on("error", fail)
+        .on("error", (error: Error) => {
+          operation.run(() => {
+            fail(error);
+          });
+        })
         .once("close", () => {
           // Destroyed without an error before its end
           if (!closed && !data.readableEnded && data.errored === null) {
-            fail(BindenResponse.#premature());
+            operation.run(() => {
+              fail(BindenResponse.#premature());
+            });
           }
         });
-      done.then(resolve, (error: Error) => {
-        data.destroy();
-        reject(error);
-      });
+      done.then(
+        () => {
+          settle(null);
+        },
+        (error: unknown) => {
+          data.destroy();
+          settle(error as Error);
+        },
+      );
     });
   }
 
@@ -911,24 +1345,69 @@ export class BindenResponse<
    * Send a file: a filesystem path (or a `file:` URL), trusted without `root`;
    * with `root`, a relative path that must stay inside it (see
    * `ISendFileOptions`). Its metadata and its content are read from one file
-   * handle, and no more than its size is sent.
+   * handle, and no more than its size is sent. Before the headers are
+   * committed, the framework may cancel it (see `[kCancel]()`): it then
+   * rejects with the reason at once, its headers and status are those from
+   * before it, and a file opened later is closed.
    */
-  public async sendFile(
+  public sendFile(
     path: URL | string,
     options?: ISendFileOptions,
   ): Promise<void> {
-    if (this.#sealed()) {
-      return;
+    if (!this.#allows()) {
+      return Promise.resolve();
     }
-    // Started at once (see `.started`), unless it fails before sending anything
-    this.#started = true;
-    try {
-      await sendFileTo(this, path, options, (length) =>
-        this.#sendNotModified(length),
+    const status = this.statusCode;
+    const headers = new Map(
+      this.getHeaderNames().map((name) => [name, this.getHeader(name)]),
+    );
+    const key = {};
+    let settled = false;
+    return new Promise<void>((resolve, reject) => {
+      const settle = (error: Error | null): void => {
+        if (!settled) {
+          settled = true;
+          this.#pending.delete(key);
+          if (error === null) {
+            resolve();
+          } else {
+            reject(error);
+          }
+        }
+      };
+      // Started at once (see `.started`), until it fails before sending
+      // anything
+      this.#pending.set(key, (reason: unknown) => {
+        // The headers and the status from before the file
+        this.statusCode = status;
+        for (const name of this.getHeaderNames()) {
+          if (!headers.has(name)) {
+            this.removeHeader(name);
+          }
+        }
+        for (const [name, value] of headers) {
+          if (this.getHeader(name) !== value) {
+            this.setHeader(name, value as OutgoingHttpHeader);
+          }
+        }
+        settle(reason as Error);
+      });
+      sendFileTo(
+        this,
+        path,
+        options,
+        (length) => this.#sendNotModified(length),
+        () => settled,
+      ).then(
+        () => {
+          settle(null);
+        },
+        (error: unknown) => {
+          // Once cancelled, a late failure (e.g. of a file opened late) is
+          // ignored
+          settle(error as Error);
+        },
       );
-    } catch (error: unknown) {
-      this.#started = false;
-      throw error;
-    }
+    });
   }
 }

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { AsyncLocalStorage } from "node:async_hooks";
+import { owners } from "./seal.js";
 
 /** Why the work of a request has been abandoned */
 export type IAbortReason = "client_closed" | "deadline" | "shutdown";
@@ -42,9 +42,6 @@ type IPhase = "finalizing" | "finished" | "running";
 const MAX_DELAY = 2 ** 31 - 1;
 
 const exchanges = new WeakMap<IncomingMessage, Exchange>();
-
-/** The reply (see `Exchange.reply()`) that the current asynchronous work belongs to */
-const replies = new AsyncLocalStorage<object>();
 
 /**
  * The state of one request and its response, shared by every context created
@@ -218,7 +215,8 @@ export class Exchange {
 
   /**
    * The route that the access log names: the templates of the matched mounts
-   * and of the latest layer that has run a middleware (`null` for none)
+   * and of the layer that has started the reply (`null` for none: the access
+   * log names `<unmatched>` for a reply of the framework)
    */
   public get route(): string | null {
     return this.#route;
@@ -247,10 +245,16 @@ export class Exchange {
    * exchange is sealed, then only the work run by the latest `reply()`
    */
   public get may_reply(): boolean {
-    return (
-      !this.#sealed ||
-      (this.#reply !== null && replies.getStore() === this.#reply)
-    );
+    return this.allows(owners.getStore());
+  }
+
+  /**
+   * Whether the work of an owner (see `owners`: a reply, or `undefined` for
+   * any other work) may reply: anything before the exchange is sealed, then
+   * only the latest `reply()`
+   */
+  public allows(owner: object | undefined): boolean {
+    return !this.#sealed || (this.#reply !== null && owner === this.#reply);
   }
 
   /**
@@ -267,7 +271,7 @@ export class Exchange {
   public reply<T>(fn: () => T): T {
     const reply = {};
     this.#reply = reply;
-    return replies.run(reply, fn);
+    return owners.run(reply, fn);
   }
 
   /** Settles once the response is closed and every cleanup has run */

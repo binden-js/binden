@@ -564,7 +564,7 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     const handled = app.handle(async (_request, response) => {
       // As a compression that replaces the response with an empty `406` when
       // the first chunk commits the headers, and discards the next writes
-      response.write = ((...args: unknown[]): boolean => {
+      response.write = (...args: unknown[]): boolean => {
         const callback = args.find((arg) => typeof arg === "function") as
           (() => void) | undefined;
         if (!response.headersSent) {
@@ -574,7 +574,7 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
           process.nextTick(callback);
         }
         return true;
-      }) as BindenResponse["write"];
+      };
       response.setHeader("Content-Length", chunks * chunk.length);
       await response.send(source);
       ok(response.writableFinished);
@@ -622,7 +622,7 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     const app = await start();
     let late = true;
     const handled = app.handle(async (_request, response) => {
-      response[kSeal](() => late);
+      response[kSeal](() => !late);
       await response.json({ late: true });
       ok(!response.started);
       late = false;

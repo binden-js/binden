@@ -240,10 +240,8 @@ export class CompressedResponse {
     const response = this.#response;
     response.writeHead = (...args: unknown[]): IResponse =>
       this.#onWriteHead(args);
-    response.write = ((...args: unknown[]): boolean =>
-      this.#onWrite(args)) as IResponse["write"];
-    response.end = ((...args: unknown[]): IResponse =>
-      this.#onEnd(args)) as IResponse["end"];
+    response.write = (...args: unknown[]): boolean => this.#onWrite(args);
+    response.end = (...args: unknown[]): IResponse => this.#onEnd(args);
     response.flush = (): Promise<void> => {
       // `flush()` of binden writes an empty chunk, whose callback runs once
       // the chunks before it are flushed: for a compressed response, it is

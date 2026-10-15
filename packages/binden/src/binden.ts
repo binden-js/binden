@@ -29,6 +29,7 @@ import {
 } from "./route.js";
 import { type IMiddleware, Middleware } from "./middleware.js";
 import { isClosing, register, track } from "./shutdown.js";
+import { kCancel, kFramework, kSeal } from "./seal.js";
 import { pathOf, property } from "./property.js";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
@@ -36,7 +37,6 @@ import type { ILogger } from "@binden/logger";
 import { Router } from "./router.js";
 import http from "node:http";
 import https from "node:https";
-import { kSeal } from "./seal.js";
 import { validateDelay } from "./delay.js";
 
 /**
@@ -382,10 +382,10 @@ export class Binden<
     });
     const exchange = Exchange.for(request, response);
     track(server, exchange, response);
-    // Once the exchange is sealed (e.g. after the deadline), the sends of
-    // the response (`send()`, `json()`, `redirect()`, `sendFile()`, …) do
-    // nothing, but those of the reply of the framework
-    response[kSeal](() => !exchange.may_reply);
+    // Once the exchange is sealed (e.g. after the deadline), only the reply
+    // of the framework mutates the response: the sends, writes, headers,
+    // status and cookies of the abandoned work do nothing
+    response[kSeal]((owner) => exchange.allows(owner));
     if (this.#request_id?.echo === true) {
       // Every reply sends it back, also the error replies of the framework
       response.setHeader(this.#request_id.header, request.id);
@@ -405,13 +405,14 @@ export class Binden<
       // Unexpected (every failure is handled): the process must not crash
       const message = "The request has failed";
       context.log.error(message, this.#failure(context, error, "send"));
-      response.destroy();
+      response[kFramework](() => response.destroy());
     });
   }
 
   /**
    * Runs the stack, then the error handler on a failure or a deadline. A
-   * deadline that passes later (e.g. while a stream is sent) closes the
+   * deadline that passes later (e.g. while a stream is sent) cancels a send
+   * whose headers are not committed and replies `503`, or closes the
    * connection of a response that has not finished.
    */
   async #run(
@@ -449,13 +450,13 @@ export class Binden<
         "abort",
         () => {
           const { reason } = signal as { reason: BindenAbortError };
-          if (
-            reason.reason === "deadline" &&
-            !context.response.writableFinished
-          ) {
-            const message = "The deadline has passed. Destroying the socket";
-            context.log.debug(message);
-            context.response.destroy();
+          if (reason.reason === "deadline") {
+            this.#deadline(context, exchange).catch((error: unknown) => {
+              // Unexpected (every failure is handled)
+              const message = "The request has failed";
+              context.log.error(message, this.#failure(context, error, "send"));
+              context.response[kFramework](() => context.response.destroy());
+            });
           }
         },
         { once: true },
@@ -670,26 +671,55 @@ export class Binden<
 
   /**
    * The request has been aborted while the stack ran (the stack has stopped):
-   * after the deadline, a `503` error is replied through the error handler
-   * when nothing has started, and the connection is closed otherwise; a client
-   * that has gone away (or a shutdown) gets nothing
+   * after the deadline, see `#deadline()`; a client that has gone away (or a
+   * shutdown) gets nothing
    */
   async #aborted(context: Context, exchange: Exchange): Promise<void> {
-    const { response } = context;
     const { reason } = exchange.signal as { reason: BindenAbortError };
-    if (reason.reason === "deadline" && !response.started) {
-      // The middlewares that still run may no longer reply
-      exchange.seal();
-      const error = new BindenError(503, { code: "deadline" });
-      await exchange.reply(async () => {
-        await this.#errorHandler(context, exchange, error);
-      });
+    if (reason.reason === "deadline") {
+      await this.#deadline(context, exchange);
       return;
     }
+    const { response } = context;
     if (!response.writableFinished) {
       const message = "The request has been aborted. Destroying the socket";
       context.log.debug(message, { reason: reason.reason });
-      response.destroy();
+      response[kFramework](() => response.destroy());
+    }
+  }
+
+  /**
+   * The deadline has passed: the work of the middlewares may no longer
+   * mutate the response, and a send whose headers are not committed is
+   * cancelled (its file or stream released). A response that has not started
+   * then gets a `503` error through the error handler; one that has not
+   * finished is cut by closing the connection.
+   */
+  async #deadline(context: Context, exchange: Exchange): Promise<void> {
+    const { response } = context;
+    exchange.seal();
+    response[kCancel](exchange.signal.reason);
+    if (!response.started) {
+      const error = new BindenError(503, { code: "deadline" });
+      await exchange.reply(async () => {
+        Binden.#closeUnread(context);
+        await this.#errorHandler(context, exchange, error);
+      });
+    } else if (!response.writableFinished) {
+      const message = "The deadline has passed. Destroying the socket";
+      context.log.debug(message);
+      response[kFramework](() => response.destroy());
+    }
+  }
+
+  /**
+   * A reply of the framework to a request whose body has not been read in
+   * full (e.g. abandoned at its deadline) closes the connection: the rest of
+   * the body would be read as the next request of the connection
+   */
+  static #closeUnread({ request, response }: Context): void {
+    if (!request.complete) {
+      response.setHeader("Connection", "close");
     }
   }
 
@@ -741,7 +771,7 @@ export class Binden<
       const { response } = context;
       if (outcome !== null) {
         // The handler has failed, or has not settled in time: it may no
-        // longer reply, and the request gets an opaque error
+        // longer mutate the response, and the request gets an opaque error
         exchange.seal();
         if (outcome === EXPIRED) {
           const late = "The provided `error_handler` has not settled in time";
@@ -754,10 +784,17 @@ export class Binden<
           const extra = this.#failure(context, outcome.error, "error_handler");
           context.log.error(failed, extra);
         }
-        if (response.started) {
-          response.destroy();
+        if (response.writableEnded) {
+          // Its reply is complete: what is left of it (e.g. under
+          // backpressure) is still sent
+          return;
+        } else if (response.started) {
+          response[kFramework](() => response.destroy());
         } else {
-          await exchange.reply(async () => this.#opaque(context));
+          await exchange.reply(async () => {
+            Binden.#closeUnread(context);
+            await this.#opaque(context);
+          });
         }
         return;
       } else if (response.writableEnded) {
@@ -825,7 +862,8 @@ export class Binden<
    */
   async #opaque(context: Context): Promise<void> {
     const { response } = context;
-    for (const name of [...Binden.#representation, "Content-Type"]) {
+    // Once (`#representation` may list `Content-Type` as well)
+    for (const name of new Set([...Binden.#representation, "Content-Type"])) {
       response.removeHeader(name);
     }
     await this.#empty(context, DefaultErrorCode);
@@ -1112,14 +1150,14 @@ export class Binden<
     // compression that writes the encoded body with them)
     const write = response.write.bind(response);
     const end = response.end.bind(response);
-    response.write = ((...args: unknown[]): boolean => {
+    response.write = (...args: unknown[]): boolean => {
       count(args[0], args[1]);
       return Reflect.apply(write, response, args) as boolean;
-    }) as typeof response.write;
-    response.end = ((...args: unknown[]): typeof response => {
+    };
+    response.end = (...args: unknown[]): typeof response => {
       count(args[0], args[1]);
       return Reflect.apply(end, response, args) as typeof response;
-    }) as typeof response.end;
+    };
 
     response.once("close", () => {
       const duration = performance.now() - start;

@@ -603,10 +603,12 @@ suite("sendFile", () => {
 
   test("a `304` that is late writes nothing", async () => {
     const handled = server.handle(async (_request, response) => {
+      let late = true;
       const sent = response.sendFile(join(root, "index.html"));
       // Sealed while the file is opened
-      response[kSeal]();
+      response[kSeal](() => !late);
       await sent;
+      late = false;
       ok(!response.headersSent);
       response.statusCode = 503;
       response.end();
