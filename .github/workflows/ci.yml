@@ -70,6 +70,11 @@ jobs:
       - name: Tooling tests (release scripts, test runner)
         run: npm run test:tooling
 
+      # The examples and the process-level scenarios (shutdown, disconnects, shared
+      # middlewares), each in a process of its own, against the built workspaces
+      - name: Acceptance (examples and process-level scenarios)
+        run: npm run acceptance
+
       # The next version, its release notes and its archives, made as the release job makes
       # them (scripts/release.mjs `verify`, `version`, `pack` and `publish --dry-run`):
       # nothing is tagged or published. The next checks use these archives.
