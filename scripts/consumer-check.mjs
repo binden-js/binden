@@ -5,7 +5,9 @@
 //   declared by its `package.json` (`scripts/imports.mjs`);
 // - the tarballs are installed into a fresh project, which is type checked and then
 //   run as ESM against a real server. The TypeScript examples of the READMEs are
-//   type checked against the same installation.
+//   type checked against the same installation, and so are the runnable examples
+//   (`examples/*.ts`), which are then compiled, run and checked over HTTP
+//   (`scripts/examples.mjs`, POSIX only).
 //
 // The installation of all the tarballs is checked with:
 //
@@ -20,8 +22,8 @@
 //   node scripts/consumer-check.mjs --tarballs <dir>   the archives that
 //                                                      `scripts/release.mjs pack <dir>`
 //                                                      prepared (their integrity is checked)
-import { join, resolve } from "node:path";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -29,6 +31,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { examples, runExample } from "./examples.mjs";
+import { join, resolve } from "node:path";
 import { readRelease, readTarball } from "./tarballs.mjs";
 import { execFileSync } from "node:child_process";
 import { npm } from "./npm.mjs";
@@ -138,28 +142,51 @@ declare global {
 
 const dir = mkdtempSync(join(tmpdir(), "binden-consumer-"));
 
-/** Writes every `typescript` block of the READMEs as a module of `examples/` */
-function writeExamples() {
-  const examples = join(dir, "examples");
-  mkdirSync(examples);
+const blockPattern = /^```typescript\r?\n(?<code>[\s\S]*?)^```\r?$/gmu;
+
+/** The `typescript` blocks of a Markdown file */
+const blocksOf = (markdown) =>
+  [...markdown.matchAll(blockPattern)].map(({ groups }) => groups.code);
+
+/** Writes every `typescript` block of the READMEs as a module of `snippets/` */
+function writeSnippets() {
+  const target = join(dir, "snippets");
+  mkdirSync(target);
   let count = 0;
-  for (const workspace of workspaces) {
-    const readme = readFileSync(join(root, workspace, "README.md"), "utf8");
-    const name = workspace.split("/").at(-1);
-    const blocks = readme.matchAll(
-      /^```typescript\r?\n(?<code>[\s\S]*?)^```\r?$/gmu,
-    );
-    for (const [index, { groups }] of [...blocks].entries()) {
-      writeFileSync(join(examples, `${name}-${index + 1}.ts`), groups.code);
+  const write = (name, blocks) => {
+    for (const [index, code] of blocks.entries()) {
+      writeFileSync(join(target, `${name}-${index + 1}.ts`), code);
       count += 1;
     }
+  };
+  for (const workspace of workspaces) {
+    const readme = readFileSync(join(root, workspace, "README.md"), "utf8");
+    write(workspace.split("/").at(-1), blocksOf(readme));
   }
   if (count === 0) {
     throw new Error("No TypeScript examples found in the READMEs");
   }
-  writeFileSync(join(examples, "globals.d.ts"), globals);
+  writeFileSync(join(target, "globals.d.ts"), globals);
   process.stderr.write(`[consumer] ${count} README examples\n`);
-  return examples;
+  return target;
+}
+
+/** Copies the runnable examples (`examples/*.ts`) into `runnable/` */
+function copyRunnable() {
+  const target = join(dir, "runnable");
+  mkdirSync(target);
+  const source = join(root, "examples");
+  const files = readdirSync(source).filter((file) => file.endsWith(".ts"));
+  for (const { file } of examples) {
+    if (!files.includes(`${file}.ts`)) {
+      throw new Error(`examples/${file}.ts is missing (scripts/examples.mjs)`);
+    }
+  }
+  for (const file of files) {
+    copyFileSync(join(source, file), join(target, file));
+  }
+  process.stderr.write(`[consumer] ${files.length} runnable examples\n`);
+  return target;
 }
 
 /** Checks that every archive declares the packages that its `dist/` imports */
@@ -220,9 +247,10 @@ try {
     `${JSON.stringify({ private: true, type: "module" })}\n`,
   );
   writeFileSync(join(dir, "consumer.ts"), consumer);
-  const examples = writeExamples();
+  const snippets = writeSnippets();
+  const runnable = copyRunnable();
 
-  for (const { typescript, types, skipLibCheck } of [
+  for (const [round, { typescript, types, skipLibCheck }] of [
     {
       typescript: devDependencies.typescript,
       types: "24",
@@ -230,7 +258,7 @@ try {
     },
     { typescript: devDependencies.typescript, types: "26", skipLibCheck: true },
     { typescript: "7", types: "24", skipLibCheck: false },
-  ]) {
+  ].entries()) {
     process.stderr.write(
       `[consumer] typescript@${typescript}, @types/node@${types}\n`,
     );
@@ -249,6 +277,7 @@ try {
         ([name, version]) => `${name}@${version}`,
       ),
     ]);
+    const tsc = join(dir, "node_modules/typescript/bin/tsc");
     writeFileSync(
       join(dir, "tsconfig.json"),
       `${JSON.stringify({
@@ -263,16 +292,12 @@ try {
         files: ["consumer.ts"],
       })}\n`,
     );
-    run(process.execPath, [
-      join(dir, "node_modules/typescript/bin/tsc"),
-      "-p",
-      dir,
-    ]);
+    run(process.execPath, [tsc, "-p", dir]);
     run(process.execPath, [join(dir, "dist/consumer.js")]);
 
     // Each example is a module (`moduleDetection`), checked as strictly as the consumer
     writeFileSync(
-      join(examples, "tsconfig.json"),
+      join(snippets, "tsconfig.json"),
       `${JSON.stringify({
         compilerOptions: {
           module: "nodenext",
@@ -286,11 +311,41 @@ try {
         include: ["*.ts"],
       })}\n`,
     );
-    run(process.execPath, [
-      join(dir, "node_modules/typescript/bin/tsc"),
-      "-p",
-      examples,
-    ]);
+    run(process.execPath, [tsc, "-p", snippets]);
+
+    // The runnable examples, as strictly as in this repository (`exactOptionalPropertyTypes`),
+    // compiled
+    writeFileSync(
+      join(runnable, "tsconfig.json"),
+      `${JSON.stringify({
+        compilerOptions: {
+          module: "nodenext",
+          target: "es2022",
+          strict: true,
+          exactOptionalPropertyTypes: true,
+          skipLibCheck,
+          types: ["node"],
+          outDir: "dist",
+        },
+        include: ["*.ts"],
+      })}\n`,
+    );
+    run(process.execPath, [tsc, "-p", runnable]);
+
+    if (round === 0) {
+      if (process.platform === "win32") {
+        process.stderr.write("[consumer] the examples are run on POSIX only\n");
+      } else {
+        for (const example of examples) {
+          process.stderr.write(`[consumer] example ${example.name}\n`);
+          await runExample(example, {
+            command: process.execPath,
+            args: [join(runnable, "dist", `${example.file}.js`)],
+            cwd: dir,
+          });
+        }
+      }
+    }
   }
   process.stderr.write("[consumer] OK\n");
 } finally {
