@@ -579,16 +579,16 @@ export class CompressedResponse {
       // A `304` has no body, nor its encoding (a cache would update the
       // stored response with it)
       const bodiless = response.statusCode === 304;
-      if (!bodiless) {
-        response.setHeader("Content-Encoding", outcome.coding);
-      }
-      response.removeHeader("Content-Length");
-      response.removeHeader("Accept-Ranges");
+      this.#remove("Content-Length", "Accept-Ranges");
       // A strong validator of the uncompressed body does not validate the
       // compressed one (RFC 9110, section 8.8.3.3): it becomes weak
       const etag = response.getHeader("ETag");
       if (typeof etag === "string" && !etag.startsWith("W/")) {
         response.setHeader("ETag", `W/${etag}`);
+      }
+      if (!bodiless) {
+        response.setHeader("Content-Encoding", outcome.coding);
+        this.#frame();
       }
       if (!bodiless && this.#context.request.method !== "HEAD") {
         this.#kind = flushKind(outcome.coding);
@@ -601,14 +601,43 @@ export class CompressedResponse {
   }
 
   /**
+   * Frames the compressed body, whose length is not known (RFC 9112, section
+   * 6.3), also for `HEAD`: in chunks for HTTP/1.1, and by closing the
+   * connection for HTTP/1.0, which knows no chunks. Explicitly: Node.js
+   * would otherwise close the connection of HTTP/1.1 as well once both
+   * `Content-Length` and `Transfer-Encoding` have been removed (e.g. a stale
+   * `Transfer-Encoding` by binden), and the next requests of the connection
+   * would be lost.
+   */
+  #frame(): void {
+    const response = this.#response;
+    if (this.#context.request.httpVersion === "1.0") {
+      this.#remove("Transfer-Encoding");
+      response.setHeader("Connection", "close");
+    } else {
+      response.setHeader("Transfer-Encoding", "chunked");
+    }
+  }
+
+  /**
+   * Removes the headers that are set: Node.js also remembers the removal of
+   * a header that is not, which changes how it frames the body
+   */
+  #remove(...names: string[]): void {
+    for (const name of names) {
+      if (this.#response.hasHeader(name)) {
+        this.#response.removeHeader(name);
+      }
+    }
+  }
+
+  /**
    * Replaces the response with an empty one of the status, and sends it: the
    * writes of the application are then discarded
    */
   #replace(status: 406 | 500): void {
     const response = this.#response;
-    for (const name of representation) {
-      response.removeHeader(name);
-    }
+    this.#remove(...representation);
     response.setHeader("Content-Length", 0);
     this.#sink = "discard";
     this.#writeHead(status, STATUS_CODES[status] as string);

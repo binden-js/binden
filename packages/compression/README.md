@@ -134,7 +134,11 @@ negotiates).
 ### A compressed response
 
 - `Content-Encoding` names the coding; `Content-Length` and `Accept-Ranges` are removed (ranges of
-  the compressed body are not served);
+  the compressed body are not served), and the body is sent in chunks
+  (`Transfer-Encoding: chunked`, also on the headers of `HEAD`), or to an HTTP/1.0 client delimited
+  by closing the connection (`Connection: close`, and never a `Transfer-Encoding`): a stale framing
+  header (e.g. copied from an upstream response) neither closes a connection that may be kept alive
+  nor sends chunks to a client that does not know them;
 - a strong `ETag` becomes weak (`W/"…"`, [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8.3.3)):
   it was set for the bytes of the uncompressed body. It still validates caches (`If-None-Match`
   compares weakly), but no longer ranges (`If-Range`) nor `If-Match`. A request whose `If-Match` lists
