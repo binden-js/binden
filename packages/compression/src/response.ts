@@ -5,6 +5,7 @@ import {
   type Context,
   type IRepresentation,
   type IResponseOperation,
+  bodyHeaders,
   kNegotiator,
   kOperation,
   kValidateHead,
@@ -78,25 +79,17 @@ const FAILED: IOutcome = { kind: "replace", status: 500 };
 
 /**
  * The digests of the body as it is sent (RFC 9530, and `Digest` of RFC
- * 3230): a coding changes it, and an empty replacement has another one
+ * 3230), which a coding changes
  */
 const digests = ["Content-Digest", "Digest", "Repr-Digest"];
 
-/** The headers of a representation, which an empty replacement does not have */
-const representation = [
-  "Accept-Ranges",
-  "Content-Disposition",
-  "Content-Encoding",
-  "Content-Language",
-  "Content-Length",
-  "Content-Location",
-  "Content-Range",
-  "Content-Type",
-  "ETag",
-  "Last-Modified",
-  "Transfer-Encoding",
-  ...digests,
-];
+/**
+ * The headers that an empty replacement does not have: those of the body that
+ * it replaces, as for an error reply of binden (its framing, with `Trailer`,
+ * its representation and its validators), and `Accept-Ranges`, as it has no
+ * ranges either
+ */
+const replaced = [...bodyHeaders, "Accept-Ranges"];
 
 /** The responses that a compression has been installed on */
 const installed = new WeakSet<object>();
@@ -792,7 +785,7 @@ export class CompressedResponse {
    */
   #replace(status: 406 | 500): void {
     const response = this.#response;
-    this.#remove(...representation);
+    this.#remove(...replaced);
     if (status === 406) {
       // The request has refused every representation
       response.vary("Accept-Encoding");

@@ -28,8 +28,8 @@ import {
   split,
 } from "./route.js";
 import { type IMiddleware, Middleware } from "./middleware.js";
+import { bodyHeaders, kCancel, kFramework, kOperation, kSeal } from "./seal.js";
 import { isClosing, register, track } from "./shutdown.js";
-import { kCancel, kFramework, kOperation, kSeal } from "./seal.js";
 import { pathOf, property } from "./property.js";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
@@ -1107,25 +1107,10 @@ export class Binden<
 
   /**
    * The headers of a body (its framing, representation and validators), which
-   * do not apply to an error that replaces it
+   * do not apply to an error that replaces it: the list that the libraries
+   * share (e.g. for the `406` of `@binden/compression`)
    */
-  static readonly #representation = [
-    "Content-Digest",
-    "Content-Disposition",
-    "Content-Encoding",
-    "Content-Language",
-    "Content-Length",
-    "Content-Location",
-    "Content-Range",
-    "Content-Type",
-    "Digest",
-    "ETag",
-    "Last-Modified",
-    "Repr-Digest",
-    // The trailers of a chunked body: Node.js refuses it for another body
-    "Trailer",
-    "Transfer-Encoding",
-  ];
+  static readonly #representation = bodyHeaders;
 
   /**
    * The state of a request, from the `state` option: a factory that fails (or

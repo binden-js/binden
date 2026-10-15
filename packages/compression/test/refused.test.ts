@@ -78,8 +78,7 @@ const checked: Partial<Record<string, (response: BindenResponse) => unknown>> =
 
 /**
  * Replies that Node.js refuses once the decision is taken: a status out of
- * range, and a `Trailer` of a body that is not chunked (of HTTP/1.0, or of
- * the empty `406`)
+ * range, and a `Trailer` of a body that is not chunked (of HTTP/1.0)
  */
 const refused: Partial<Record<string, (response: BindenResponse) => unknown>> =
   {
@@ -99,10 +98,6 @@ const refused: Partial<Record<string, (response: BindenResponse) => unknown>> =
         Trailer: "X-T",
         Vary: "Origin",
       });
-      response.end(body);
-    },
-    "/trailer-406": (response) => {
-      response.setHeader("Trailer", "X-T");
       response.end(body);
     },
   };
@@ -172,7 +167,6 @@ suite("A head that Node.js refuses", () => {
         ["/status", "1.0", "gzip"],
         ["/trailer", "1.0", "gzip"],
         ["/trailer-end", "1.0", "gzip"],
-        ["/trailer-406", "1.1", "identity;q=0, gzip;q=0"],
       ] as const) {
         const responses = await converse(
           url,
@@ -234,7 +228,6 @@ suite("A head that Node.js refuses", () => {
         { ...length, etag: '"v"', vary: "Origin" },
         [true],
       ],
-      "/trailer-406": ["ERR_HTTP_TRAILER_INVALID", 200, false, {}, []],
     });
   });
 });

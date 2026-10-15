@@ -1,5 +1,6 @@
 /* eslint-disable init-declarations */
 import { Compression, skipCompression } from "../index.js";
+import { type Context, bodyHeaders } from "binden";
 import {
   type IReceived,
   type IServed,
@@ -11,7 +12,6 @@ import {
 } from "./helpers.js";
 import { after, afterEach, before, suite, test } from "node:test";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import type { Context } from "binden";
 import { Readable } from "node:stream";
 import { deepStrictEqual } from "node:assert/strict";
 import { join } from "node:path";
@@ -363,6 +363,85 @@ suite("The representation that the request accepts", () => {
     );
     deepStrictEqual(partial.raw, gzipped.subarray(0, 10));
   });
+  test("an empty replacement has none of the headers of the body that it replaces, as an error reply of binden", async () => {
+    const errors: unknown[] = [];
+    // Valid values of the headers of a body (any other is "x"): not
+    // encoded, so that the `filter` decides
+    const values: Record<string, string> = {
+      "Content-Encoding": "identity",
+      "Content-Length": "4",
+      "Content-Range": "bytes 0-3/8",
+      "Content-Type": "text/plain",
+      ETag: '"e"',
+      "Last-Modified": new Date(0).toUTCString(),
+      Trailer: "X-T",
+      "Transfer-Encoding": "chunked",
+    };
+    const served = await serve(
+      {
+        app: {
+          error_handler: (context: Context, error: unknown): void => {
+            errors.push((error as { code?: unknown }).code);
+            context.response.destroy();
+          },
+        },
+      },
+      new Compression({
+        threshold: 0,
+        filter: (context: Context): boolean => {
+          if (context.url.pathname === "/failed") {
+            throw new Error("Failed filter");
+          }
+          return true;
+        },
+      }),
+      (context: Context) => {
+        const { response } = context;
+        context.done = true;
+        if (context.url.pathname === "/trailer") {
+          // The reproduction of the review
+          response.setHeader("Trailer", "X-T");
+        } else {
+          for (const name of [...bodyHeaders, "Accept-Ranges"]) {
+            // A range is never compressed (nor filtered)
+            if (
+              name !== "Content-Range" ||
+              context.url.pathname !== "/failed"
+            ) {
+              response.setHeader(name, values[name] ?? "x");
+            }
+          }
+        }
+        response.end("body");
+      },
+    );
+    servers.push(served);
+    const removed = [...bodyHeaders, "Accept-Ranges"]
+      .map((name) => name.toLowerCase())
+      .filter((name) => name !== "content-length");
+    for (const [path, header, status] of [
+      ["/trailer", "*;q=0", 406],
+      ["/", "*;q=0", 406],
+      ["/failed", "gzip", 500],
+    ] as const) {
+      for (const method of methods) {
+        const received = await accepting(served.url, header, { path, method });
+        deepStrictEqual(
+          [
+            received.status,
+            received.headers["content-length"],
+            received.raw.length,
+            received.headers.vary,
+            removed.filter((name) => name in received.headers),
+          ],
+          [status, "0", 0, status === 406 ? "Accept-Encoding" : none, []],
+          `${method} ${path}`,
+        );
+      }
+    }
+    deepStrictEqual(errors, []);
+  });
+
   test("a representation that the request refuses is never sent (the reproductions of the review)", async () => {
     const tag = `"v1"`;
     const file = join(tmp, "file.txt");

@@ -144,3 +144,29 @@ export interface IRepresentationNegotiator {
    */
   forget(): void;
 }
+
+/**
+ * The headers of a body (its framing, representation and validators), which
+ * do not apply to a reply that replaces it: the error replies of binden, and
+ * the empty replacements of a library (e.g. the `406` of
+ * `@binden/compression`). For the packages of binden only.
+ *
+ * @internal
+ */
+export const bodyHeaders: readonly string[] = Object.freeze([
+  "Content-Digest",
+  "Content-Disposition",
+  "Content-Encoding",
+  "Content-Language",
+  "Content-Length",
+  "Content-Location",
+  "Content-Range",
+  "Content-Type",
+  "Digest",
+  "ETag",
+  "Last-Modified",
+  "Repr-Digest",
+  // The trailers of a chunked body: Node.js refuses them for another body
+  "Trailer",
+  "Transfer-Encoding",
+]);
