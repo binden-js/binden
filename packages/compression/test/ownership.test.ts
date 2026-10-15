@@ -13,6 +13,7 @@ import {
 } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok } from "node:assert/strict";
+import { Readable } from "node:stream";
 import { randomBytes } from "node:crypto";
 import zlib from "node:zlib";
 
@@ -81,6 +82,44 @@ suite("Compression of a response whose owner is abandoned", () => {
           msg === "The provided `error_handler` has not settled in time",
       ),
     );
+  });
+
+  test("a `drain` listener of the abandoned work does not end the reply of the error handler", async () => {
+    // Not compressible: the compressor and the response are full at once
+    const body = randomBytes(4 * 1024 * 1024);
+    const pieces = Array.from({ length: 64 }, (_, index) =>
+      body.subarray(index * 65_536, (index + 1) * 65_536),
+    );
+    let drained = 0;
+    const { url } = await start(
+      {
+        timeout: 20,
+        error_handler: async (context: Context): Promise<void> => {
+          context.response.status(503).type("text/plain");
+          // Written with backpressure: it waits for the `drain` of the
+          // compressor, which the response emits to every listener
+          await context.send(Readable.from(pieces));
+        },
+      },
+      new Compression({ format: "gzip" }),
+      async (context: Context) => {
+        const { response } = context;
+        response.once("drain", () => {
+          drained += 1;
+          response.end("OLD");
+        });
+        await new Promise<void>(() => {
+          // Abandoned at its deadline
+        });
+      },
+    );
+    // A slow client: the response is full
+    const { head, body: raw } = await exchange(url, 300);
+    ok(head.startsWith("HTTP/1.1 503 "), head);
+    const { body: compressed, complete } = dechunk(raw);
+    ok(complete);
+    sameBytes(zlib.gunzipSync(compressed), body);
+    deepStrictEqual(drained, 1);
   });
 
   test("the writes of the abandoned work are ignored while the error handler replies", async () => {
