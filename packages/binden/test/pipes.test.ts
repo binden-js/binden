@@ -2356,8 +2356,9 @@ suite("A pipe into the response", () => {
     });
 
     for (const work of ["another request", "no request"]) {
-      test(`refused, of a work of ${work}: unpiped and logged, the response left to its owner`, async () => {
+      test(`refused, of a work of ${work}: unpiped and logged, the response left to its owner (not started)`, async () => {
         const source = silent();
+        const started: boolean[] = [];
         await withApp(
           {},
           (app) => {
@@ -2371,13 +2372,20 @@ suite("A pipe into the response", () => {
               } else {
                 owners.run({ name: "a work of another request" }, pipe);
               }
+              // It writes nothing
+              started.push(context.response.started);
               await context.status(202).send("sent");
             });
           },
           async ({ port }, captured) => {
             const reply = await exchange(port);
             deepStrictEqual([reply.status, reply.body], [202, "sent"]);
-
+            deepStrictEqual(started, [false]);
+            ok(
+              !messages(captured, 40).includes(
+                "The response has already been started",
+              ),
+            );
             const { reason } = await captured.waitFor(
               "A pipe of a work of no request (or of another) has been refused",
             );

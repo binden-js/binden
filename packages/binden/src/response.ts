@@ -687,9 +687,6 @@ export class BindenResponse<
    */
   #piping(source: unknown): void {
     const owner = owners.getStore();
-    if (this.#allows(owner)) {
-      this.#piped = true;
-    }
     if (isProxy(source)) {
       // Before any inspection (even `instanceof`), which would run its traps
       this.#refuse(source as EventEmitter, owner, "the source is a proxy");
@@ -723,6 +720,7 @@ export class BindenResponse<
       this.#refuse(source, owner, "its listeners cannot be bound");
       return;
     }
+    this.#start(owner);
     this.#sourcesOf(owner).add(source);
     // A write of the pipe that throws (e.g. a head that Node.js refuses) is
     // caught by the pipe, which destroys the response with it (see
@@ -777,6 +775,16 @@ export class BindenResponse<
       );
     }
     this.#guard(source, owner);
+  }
+
+  /**
+   * A pipe that may write starts the response of a work that may mutate it
+   * (see `started`): never one that is refused, which writes nothing
+   */
+  #start(owner: object | undefined): void {
+    if (this.#allows(owner)) {
+      this.#piped = true;
+    }
   }
 
   /** The sources piped by a work (see `#adopt()`) */
@@ -1015,7 +1023,7 @@ export class BindenResponse<
    * Whether the response has been started: by `.send()` or `.sendFile()`
    * (until they fail before sending anything, or are cancelled), by a stream
    * piped into it (until a deadline cancels it before it has written
-   * anything), or by its headers being sent
+   * anything; never by a refused pipe), or by its headers being sent
    */
   public get started(): boolean {
     return (
