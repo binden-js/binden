@@ -34,13 +34,13 @@ const app = new Binden().use(async (context: Context) => {
 });
 
 const server = app.createServer();
-server.listen(0, "localhost");
+server.listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 const agent = new Agent({ keepAlive: true, maxSockets: 8 });
 const request = (): Promise<void> =>
   new Promise((resolve, reject) => {
-    get({ port, agent, host: "localhost" }, (response) => {
+    get({ port, agent, host: "127.0.0.1" }, (response) => {
       response.resume().once("end", resolve);
     }).once("error", reject);
   });

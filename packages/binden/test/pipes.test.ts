@@ -98,7 +98,7 @@ async function exchange(
   port: number,
   { path = "/", linger = 30, ms = 5000 } = {},
 ): Promise<IRaw> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let raw = "";
   let closed = false;
@@ -1904,7 +1904,7 @@ suite("A pipe into the response", () => {
           throw new BindenError(409);
         });
         const listening = await listen(app);
-        const socket = connect(listening.port, "localhost");
+        const socket = connect(listening.port, "127.0.0.1");
         try {
           await once(socket, "connect");
           socket.on("error", () => null);
@@ -2127,7 +2127,7 @@ suite("A pipe into the response", () => {
             });
           },
           async ({ port, server }, captured) => {
-            const socket = connect(port, "localhost");
+            const socket = connect(port, "127.0.0.1");
             await once(socket, "connect");
             socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
             await within(piping.promise);
@@ -2161,7 +2161,7 @@ suite("A pipe into the response", () => {
      * `pause` milliseconds (the reply waits under backpressure)
      */
     const slowly = async (port: number, pause: number): Promise<IRaw> => {
-      const socket = connect(port, "localhost");
+      const socket = connect(port, "127.0.0.1");
       await once(socket, "connect");
       socket.write(
         "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
@@ -2400,7 +2400,7 @@ suite("A pipe into the response", () => {
           });
         },
         async ({ port }, captured) => {
-          const socket = connect(port, "localhost");
+          const socket = connect(port, "127.0.0.1");
           await once(socket, "connect");
           socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
           await once(socket, "data");
@@ -2427,7 +2427,7 @@ suite("A pipe into the response", () => {
           });
         },
         async ({ port }, captured) => {
-          const socket = connect(port, "localhost");
+          const socket = connect(port, "127.0.0.1");
           await once(socket, "connect");
           socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
           await once(socket, "data");

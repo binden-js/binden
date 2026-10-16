@@ -80,7 +80,7 @@ suite("Request and response options", () => {
     await withApp(
       {
         trust_proxy: { trust: 1, headers: "x-forwarded" },
-        allowed_hosts: ["localhost"],
+        allowed_hosts: ["127.0.0.1"],
         query: { max_keys: 1 },
         etag: true,
       },
@@ -172,7 +172,7 @@ suite("Request and response options", () => {
           deepStrictEqual(status, 400, JSON.stringify(options));
         }
         // Several `Host` field lines
-        const socket = connect(port);
+        const socket = connect(port, "127.0.0.1");
         await once(socket, "connect");
         socket.end(
           "GET / HTTP/1.1\r\nHost: localhost\r\nHost: evil.test\r\nConnection: close\r\n\r\n",
@@ -251,7 +251,7 @@ suite("Request ids", () => {
           (await send(port, { path: "/hangs" })).headers["x-request-id"],
         ];
         // A request that arrives on an open connection once closing
-        const client = connect(port);
+        const client = connect(port, "127.0.0.1");
         await once(client, "connect");
         let received = "";
         client.setEncoding("utf8").on("data", (chunk: string) => {

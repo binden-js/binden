@@ -42,7 +42,7 @@ function settle(promise: Promise<unknown>): Promise<unknown> {
 
 /** Sends raw requests on one connection, and reads until the server closes it */
 async function raw(url: string, data: string): Promise<string> {
-  const socket = connect(Number(new URL(url).port), "localhost");
+  const socket = connect(Number(new URL(url).port), "127.0.0.1");
   await once(socket, "connect");
   const chunks: Buffer[] = [];
   socket.on("data", (chunk: Buffer) => chunks.push(chunk));

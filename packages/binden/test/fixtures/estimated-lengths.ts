@@ -161,7 +161,7 @@ const server = createServer(
     }
   },
 );
-server.listen(0, "localhost");
+server.listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -170,7 +170,7 @@ const { port } = server.address() as AddressInfo;
  * has passed, e.g. once a response has declared more bytes than it has sent)
  */
 async function exchange(requests: string): Promise<Buffer> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   const chunks: Buffer[] = [];
   socket.on("data", (chunk: Buffer) => chunks.push(chunk));

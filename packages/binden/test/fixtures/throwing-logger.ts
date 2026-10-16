@@ -33,12 +33,14 @@ const app = new Binden({ logger }).use((context) => {
   return context.send("ok");
 });
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 const response = await new Promise<IncomingMessage>((resolve, reject) => {
-  request({ agent: false, port }, resolve).on("error", reject).end();
+  request({ agent: false, host: "127.0.0.1", port }, resolve)
+    .on("error", reject)
+    .end();
 });
 let body = "";
 response.setEncoding("utf8").on("data", (chunk: string) => {

@@ -33,7 +33,7 @@ async function converse(
   requests: string,
   idle = 300,
 ): Promise<IConversation> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   const { promise: quiet, resolve } = Promise.withResolvers<boolean>();
@@ -82,7 +82,7 @@ async function serve(server: Server): Promise<{
   port: number;
   close(): Promise<void>;
 }> {
-  server.listen(0, "localhost");
+  server.listen(0, "127.0.0.1");
   await once(server, "listening");
   return {
     port: (server.address() as AddressInfo).port,
@@ -228,7 +228,7 @@ suite("A write() or an end() that throws once the head is committed", () => {
       const listening = await serve(server);
       try {
         await rejects(
-          fetch(`http://localhost:${listening.port}/mismatch`, {
+          fetch(`http://127.0.0.1:${listening.port}/mismatch`, {
             signal: AbortSignal.timeout(5000),
           }),
           (error: unknown) =>

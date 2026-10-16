@@ -32,7 +32,7 @@ const app = new Binden({ logger: new Logger({ level: "silent" }) }).use(
   (context: Context) => context.text("Some text to compress. ".repeat(64)),
 );
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -40,7 +40,13 @@ const statuses: number[] = [];
 for (const path of ["/", "/thenable"]) {
   const response = await new Promise<IncomingMessage>((resolve, failed) => {
     request(
-      { agent: false, path, port, headers: { "Accept-Encoding": "gzip" } },
+      {
+        agent: false,
+        path,
+        host: "127.0.0.1",
+        port,
+        headers: { "Accept-Encoding": "gzip" },
+      },
       resolve,
     )
       .on("error", failed)

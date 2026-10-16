@@ -34,7 +34,7 @@ async function talk(
   requests: string,
   idle = 300,
 ): Promise<IConversation> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   const { promise: quiet, resolve } = Promise.withResolvers<boolean>();
@@ -126,12 +126,12 @@ function native(name: string): Server {
 
 /** Listens on a free port */
 async function listen(server: Server): Promise<IServed> {
-  server.listen(0, "localhost");
+  server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return {
     server,
-    url: `http://localhost:${port}`,
+    url: `http://127.0.0.1:${port}`,
     close: async (): Promise<void> => {
       server.closeAllConnections();
       server.close();

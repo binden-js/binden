@@ -98,10 +98,10 @@ if (mode === "write") {
       });
     },
   );
-  const server = app.createServer().listen(0);
+  const server = app.createServer().listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as { port: number };
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   socket.on("error", () => {
     // Reset below
   });

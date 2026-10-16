@@ -61,7 +61,13 @@ function fetch(
 ): Promise<IReceived> {
   return new Promise<IReceived>((resolve, reject) => {
     const informational: number[] = [];
-    request({ agent: false, headers, port, signal: AbortSignal.timeout(5000) })
+    request({
+      agent: false,
+      headers,
+      host: "127.0.0.1",
+      port,
+      signal: AbortSignal.timeout(5000),
+    })
       .on("information", ({ statusCode }) => {
         informational.push(statusCode);
       })
@@ -94,7 +100,7 @@ function fetch(
  * (a slow client), then reads everything until the server closes it
  */
 async function slowly(port: number, pause: number): Promise<Buffer> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   socket.write(
     "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
@@ -114,7 +120,7 @@ async function slowly(port: number, pause: number): Promise<Buffer> {
  * (the connection is closed once it has come)
  */
 async function headOf(port: number, data: string): Promise<string> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let received = "";
   const { promise, resolve } = Promise.withResolvers<string>();

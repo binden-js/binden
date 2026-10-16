@@ -223,6 +223,7 @@ suite("BodyParser (content codings)", () => {
         const cap = 64 * 1024 * 1024;
         const chunk = Buffer.alloc(64 * 1024, 0x20);
         const client = request({
+          host: "127.0.0.1",
           port: server.port,
           method: "POST",
           agent: false,

@@ -80,14 +80,16 @@ const app = new Binden({ timeout: 50 }).use(async (context) => {
   }
 });
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 const statuses: number[] = [];
 for (const path of ["/closed", "/custom", "/deadline", "/late"]) {
   const response = await new Promise<IncomingMessage>((resolve, reject) => {
-    request({ agent: false, path, port }, resolve).on("error", reject).end();
+    request({ agent: false, path, host: "127.0.0.1", port }, resolve)
+      .on("error", reject)
+      .end();
   });
   response.resume();
   await once(response, "end");

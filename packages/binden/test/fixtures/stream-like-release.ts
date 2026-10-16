@@ -89,7 +89,7 @@ const app = new Binden({
   await context.send(source);
 });
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -105,7 +105,7 @@ for (const [method, path] of [
   ["GET", "/deadline"],
 ]) {
   const response = await new Promise<IncomingMessage>((resolve, reject) => {
-    request({ agent: false, method, path, port }, resolve)
+    request({ agent: false, method, path, host: "127.0.0.1", port }, resolve)
       .on("error", reject)
       .end();
   });

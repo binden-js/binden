@@ -1,6 +1,6 @@
 // The runnable examples (`examples/*.ts`) and what each one must do over HTTP. An
-// example is a server: it is started on a free port (`PORT=0`: it prints
-// `Listening on http://localhost:<port>`), checked with real requests (statuses,
+// example is a server: it is started on a free port of 127.0.0.1 (`PORT`: it
+// prints `Listening on http://localhost:<port>`), checked with real requests (statuses,
 // headers and bodies), then stopped with SIGTERM, on which it must shut down
 // gracefully and exit with code 0, without writing to stderr.
 //
@@ -13,11 +13,12 @@ import {
   createGunzip,
   gzipSync,
 } from "node:zlib";
+import { createServer, request } from "node:http";
 import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { request } from "node:http";
+import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 
@@ -543,14 +544,29 @@ export const examples = [
 ];
 
 /**
+ * A free port of 127.0.0.1, for an example: it listens without a host (`::`),
+ * and its clients connect to 127.0.0.1. `PORT=0` could give it a port that a
+ * foreign process listens on at 127.0.0.1, which those connections would reach
+ */
+async function freePort() {
+  const server = createServer().listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  server.close();
+  await once(server, "close");
+  return String(port);
+}
+
+/**
  * Starts an example (`command` with `args`), checks it, stops it with SIGTERM
  * and checks that it has exited with code 0 and an empty stderr
  */
 export async function runExample(example, { command, args, cwd }) {
   const dir = mkdtempSync(join(tmpdir(), "binden-example-"));
+  const free = await freePort();
   const child = spawn(command, args, {
     cwd,
-    env: { ...process.env, PORT: "0", ...example.env?.(dir) },
+    env: { ...process.env, PORT: free, ...example.env?.(dir) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";

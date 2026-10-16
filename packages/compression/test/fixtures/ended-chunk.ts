@@ -64,14 +64,14 @@ const app = new Binden({ logger: new Logger({ level: "silent" }) }).use(
     await routes[context.url.pathname]?.(context.response);
   },
 );
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 const replies: string[] = [];
 for (const path of Object.keys(routes)) {
   const accept = path === "/compressed" ? "gzip" : "identity;q=0";
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   const chunks: Buffer[] = [];
   socket.on("data", (chunk: Buffer) => chunks.push(chunk));
   socket.write(

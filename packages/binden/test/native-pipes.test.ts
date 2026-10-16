@@ -105,7 +105,7 @@ async function exchange(
   port: number,
   { method = "GET", body = "", ms = 300 } = {},
 ): Promise<IRaw> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   const received = { raw: "", closed: false };
   socket.setEncoding("latin1").on("data", (chunk: string) => {
@@ -287,7 +287,7 @@ suite(
           response.setHeader("Content-Type", "text/plain");
           response.end("UPSTREAM");
         });
-        server.listen(0, "localhost");
+        server.listen(0, "127.0.0.1");
         await once(server, "listening");
         return {
           port: (server.address() as AddressInfo).port,
@@ -316,7 +316,7 @@ suite(
                     return;
                   }
                   const source = await new Promise<Readable>((resolve) => {
-                    get({ port: up.port, host: "localhost" }, (proxied) => {
+                    get({ port: up.port, host: "127.0.0.1" }, (proxied) => {
                       resolve(otel(proxied));
                     });
                   });
@@ -422,7 +422,7 @@ suite(
           },
           async (port, captured) => {
             // Pipelined: the second response waits for the first one
-            const socket = connect(port, "localhost");
+            const socket = connect(port, "127.0.0.1");
             await once(socket, "connect");
             let raw = "";
             socket.setEncoding("latin1").on("data", (chunk: string) => {

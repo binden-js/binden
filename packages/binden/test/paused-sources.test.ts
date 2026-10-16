@@ -178,7 +178,7 @@ suite("A paused Readable", () => {
         },
       );
       const listening = await listen(app);
-      const socket = connect(listening.port, "localhost");
+      const socket = connect(listening.port, "127.0.0.1");
       try {
         await once(socket, "connect");
         let tail = "";

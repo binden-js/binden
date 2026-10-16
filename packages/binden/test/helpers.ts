@@ -106,16 +106,23 @@ export interface IApp {
   createServer(): Server;
 }
 
-/** Creates the server of the application and listens on a free port */
+/**
+ * The address of the test servers, which their clients connect to: never `::`
+ * (as `listen(0)` without a host binds), whose port may be one that a foreign
+ * process listens on at 127.0.0.1 (its connections would reach that process)
+ */
+export const HOST = "127.0.0.1";
+
+/** Creates the server of the application and listens on a free port of `HOST` */
 export async function listen(app: IApp): Promise<IListening> {
   const server: Server = app.createServer();
-  server.listen(0);
+  server.listen(0, HOST);
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return {
     server,
     port,
-    url: `http://localhost:${port}`,
+    url: `http://${HOST}:${port}`,
     close: async (): Promise<void> => {
       server.closeAllConnections();
       server.close();
@@ -131,7 +138,7 @@ export interface IReceived {
   readonly body: string;
 }
 
-/** Sends a request (on a new connection) and reads the response within `ms` */
+/** Sends a request (on a new connection to `HOST`) and reads the response within `ms` */
 export function send(
   port: number,
   {
@@ -153,6 +160,7 @@ export function send(
       {
         agent: false,
         headers,
+        host: HOST,
         method,
         path,
         port,

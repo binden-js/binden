@@ -47,7 +47,7 @@ const app = new Binden({ timeout: 30 })
     }),
   );
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -58,6 +58,7 @@ for (const path of ["/verify", "/verify-binden", "/parse", "/type"]) {
       {
         agent: false,
         path,
+        host: "127.0.0.1",
         port,
         method: "POST",
         headers: { "Content-Type": "application/json" },

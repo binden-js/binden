@@ -27,7 +27,7 @@ interface IConnection {
 
 /** Opens a connection to a server (closed by the test at the latest) */
 async function connection(port: number): Promise<IConnection> {
-  const socket = connect(port);
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   socket.setEncoding("utf8").on("data", (chunk: string) => {
@@ -598,7 +598,7 @@ suite("shutdown()", () => {
     const server: Server = createServer((_request, response) => {
       response.end("ok");
     });
-    server.listen(0);
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     await within(shutdown(server));
     ok(!server.listening);
@@ -619,7 +619,7 @@ suite("callback()", () => {
     ok(other.ServerResponse !== options.ServerResponse);
     const server = createServer(options);
     server.on("request", app.callback(server));
-    server.listen(0);
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const { port } = server.address() as { port: number };
     try {
@@ -652,7 +652,7 @@ suite("callback()", () => {
     ]) {
       const server = createServer(options);
       server.on("request", app.callback(server));
-      server.listen(0);
+      server.listen(0, "127.0.0.1");
       await once(server, "listening");
       const { port } = server.address() as { port: number };
       try {
@@ -682,7 +682,7 @@ suite("callback()", () => {
     });
     const server = createServer();
     server.on("request", failing.callback(server));
-    server.listen(0);
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const { port } = server.address() as { port: number };
     try {

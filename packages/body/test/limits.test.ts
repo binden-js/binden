@@ -50,6 +50,7 @@ async function partial(
 ): Promise<{ status: number | undefined; connection: unknown }> {
   const server = await serve(parser);
   const req = request({
+    host: "127.0.0.1",
     port: server.port,
     method: "POST",
     agent: false,
@@ -273,6 +274,7 @@ suite("BodyParser (limits)", () => {
       );
       try {
         const req = request({
+          host: "127.0.0.1",
           port: server.port,
           method: "POST",
           agent: false,

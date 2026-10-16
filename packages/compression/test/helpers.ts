@@ -212,12 +212,12 @@ export async function serve(
     rejectNonStandardBodyWrites: strict,
   });
   server.on("request", app.callback(server));
-  server.listen(0);
+  server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return {
     server,
-    url: `http://localhost:${port}`,
+    url: `http://127.0.0.1:${port}`,
     close: async (): Promise<void> => {
       server.closeAllConnections();
       server.close();
@@ -304,7 +304,7 @@ export async function exchange(
   url: string,
   pause = 0,
 ): Promise<{ head: string; body: Buffer }> {
-  const socket = connect(Number(new URL(url).port), "localhost");
+  const socket = connect(Number(new URL(url).port), "127.0.0.1");
   await once(socket, "connect");
   socket.write(
     "GET / HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n",
@@ -335,7 +335,7 @@ export interface IRaw {
  * closes it (within 5 s): the responses, split by their head
  */
 export async function converse(url: string, requests: string): Promise<IRaw[]> {
-  const socket = connect(Number(new URL(url).port), "localhost");
+  const socket = connect(Number(new URL(url).port), "127.0.0.1");
   const chunks: Buffer[] = [];
   socket.on("data", (chunk: Buffer) => chunks.push(chunk));
   const closed = once(socket, "close");

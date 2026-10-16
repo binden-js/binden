@@ -36,10 +36,14 @@ suite("BindenRequest", () => {
   let server: Server<typeof BindenRequest>;
 
   beforeEach((_t, done) => {
-    server = createServer({ IncomingMessage: BindenRequest }).listen(0, () => {
-      url = `http://localhost:${portOf(server)}`;
-      done();
-    });
+    server = createServer({ IncomingMessage: BindenRequest }).listen(
+      0,
+      "127.0.0.1",
+      () => {
+        url = `http://127.0.0.1:${portOf(server)}`;
+        done();
+      },
+    );
   });
 
   test(".accept_encoding", async () => {

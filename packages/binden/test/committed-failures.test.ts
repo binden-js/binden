@@ -14,7 +14,7 @@ async function exchange(
   port: number,
   data: string,
 ): Promise<{ received: string; closed: boolean }> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   const state = { received: "", closed: false, last: Date.now() };
   socket

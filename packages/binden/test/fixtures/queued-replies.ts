@@ -37,12 +37,12 @@ const app = new Binden({ timeout: 30 }).use(async (context: Context) => {
 });
 
 const server = app.createServer();
-server.listen(0, "localhost");
+server.listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 await Promise.all(
   Array.from({ length: clients }, async () => {
-    const socket = connect(port, "localhost");
+    const socket = connect(port, "127.0.0.1");
     socket.on("error", () => null);
     await once(socket, "connect");
     socket.write(

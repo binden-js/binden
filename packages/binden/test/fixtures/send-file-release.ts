@@ -138,14 +138,14 @@ const app = new Binden({
   throw new Error("The route fails");
 });
 
-const server = app.createServer().listen(0, "localhost");
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 /** The status of a response, `(cut)` when its connection closes before its end */
 const get = (path: string): Promise<string> =>
   new Promise((resolve) => {
-    request({ agent: false, path, port, host: "localhost" }, (response) => {
+    request({ agent: false, path, port, host: "127.0.0.1" }, (response) => {
       response.resume();
       response.once("end", () => {
         resolve(String(response.statusCode));

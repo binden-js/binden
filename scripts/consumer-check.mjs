@@ -95,10 +95,10 @@ if (![bodyParser, compression].every(Boolean) || typeof multipart !== "function"
   throw new Error("Missing default exports");
 }
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
-const url = \`http://localhost:\${port}\`;
+const url = \`http://127.0.0.1:\${port}\`;
 
 try {
   const json = await fetch(\`\${url}/json\`, {

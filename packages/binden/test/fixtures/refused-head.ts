@@ -57,14 +57,16 @@ const routes: Partial<Record<string, (context: Context) => unknown>> = {
 const app = new Binden().use(async (context: Context) => {
   await routes[context.url.pathname]?.(context);
 });
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 const replies: string[] = [];
 for (const path of Object.keys(routes)) {
   const response = await new Promise<IncomingMessage>((resolve, reject) => {
-    request({ agent: false, path, port }, resolve).on("error", reject).end();
+    request({ agent: false, path, host: "127.0.0.1", port }, resolve)
+      .on("error", reject)
+      .end();
   });
   response.resume();
   await once(response, "end");

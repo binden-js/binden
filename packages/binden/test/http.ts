@@ -8,6 +8,7 @@ import {
   request as httpRequest,
 } from "node:http";
 import type { AddressInfo } from "node:net";
+import { HOST } from "./helpers.js";
 import { once } from "node:events";
 
 /** A response as the client receives it */
@@ -46,7 +47,7 @@ export interface IListenOptions {
   readonly Response?: new (request: IncomingMessage) => BindenResponse;
 }
 
-/** Starts a server on a random port of `localhost` */
+/** Starts a server on a random port of `HOST` (127.0.0.1) */
 export async function listen({
   plain = false,
   Response = BindenResponse,
@@ -75,10 +76,10 @@ export async function listen({
       },
     );
   });
-  server.listen(0, "localhost");
+  server.listen(0, HOST);
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
-  const url = `http://localhost:${port}`;
+  const url = `http://${HOST}:${port}`;
 
   return {
     url,

@@ -33,7 +33,7 @@ const app = new Binden({ timeout: 30 })
   .use("/on-file-fails-late", multipart({ storage: { on_file: failsLate } }))
   .use((context: Context) => context.send());
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -57,6 +57,7 @@ for (const path of [
       agent: false,
       method: "POST",
       path,
+      host: "127.0.0.1",
       port,
       headers: {
         "Content-Type": `multipart/form-data; boundary=${boundary}`,

@@ -95,9 +95,9 @@ async function loggedApp(
   const logged = new Binden({ ...options, logger });
   const loggedServer = logged.createServer();
   await new Promise<void>((resolve) => {
-    loggedServer.listen(0, resolve);
+    loggedServer.listen(0, "127.0.0.1", resolve);
   });
-  const loggedUrl = `http://localhost:${portOf(loggedServer)}`;
+  const loggedUrl = `http://127.0.0.1:${portOf(loggedServer)}`;
   return {
     app: logged,
     url: loggedUrl,
@@ -117,8 +117,8 @@ suite("Binden", () => {
 
   beforeEach((_t, done) => {
     app = new Binden();
-    server = app.createServer().listen(0, () => {
-      url = `http://localhost:${portOf(server)}`;
+    server = app.createServer().listen(0, "127.0.0.1", () => {
+      url = `http://127.0.0.1:${portOf(server)}`;
       done();
     });
   });
@@ -130,14 +130,14 @@ suite("Binden", () => {
 
     const key = await readFile("./test/cert/key.pem", { encoding: "utf-8" });
     const cert = await readFile("./test/cert/cert.pem", { encoding: "utf-8" });
-    // The certificate of the tests (for `localhost`) is its own authority: it is
+    // The certificate of the tests (for 127.0.0.1) is its own authority: it is
     // verified like any other
     const agent = new Agent({ ca: cert });
 
     const newServer = newApp.createSecureServer({ key, cert });
 
     await new Promise<void>((resolve) => {
-      newServer.listen(0, resolve);
+      newServer.listen(0, "127.0.0.1", resolve);
     });
     path.port = `${portOf(newServer)}`;
 
@@ -318,7 +318,7 @@ suite("Binden", () => {
     const newServer = newApp.createServer();
 
     await new Promise<void>((resolve) => {
-      newServer.listen(0, resolve);
+      newServer.listen(0, "127.0.0.1", resolve);
     });
     path.port = `${portOf(newServer)}`;
 
@@ -785,10 +785,13 @@ suite("Binden", () => {
     // Sent as it is (a URL would be normalized by the client)
     const status = (path: string): Promise<number | undefined> =>
       new Promise((resolve, reject) => {
-        httpRequest({ path, port: portOf(server) }, (response) => {
-          response.resume();
-          resolve(response.statusCode);
-        })
+        httpRequest(
+          { path, host: "127.0.0.1", port: portOf(server) },
+          (response) => {
+            response.resume();
+            resolve(response.statusCode);
+          },
+        )
           .on("error", reject)
           .end();
       });
@@ -959,7 +962,7 @@ suite("Binden", () => {
     const newServer = newApp.createServer();
 
     await new Promise<void>((resolve) => {
-      newServer.listen(0, resolve);
+      newServer.listen(0, "127.0.0.1", resolve);
     });
     path.port = `${portOf(newServer)}`;
 
@@ -989,7 +992,7 @@ suite("Binden", () => {
       const newServer = newApp.createServer();
 
       await new Promise<void>((resolve) => {
-        newServer.listen(0, resolve);
+        newServer.listen(0, "127.0.0.1", resolve);
       });
       path.port = `${portOf(newServer)}`;
 

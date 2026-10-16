@@ -41,14 +41,16 @@ const app = new Binden({ logger }).use((context) => {
   return context.send("ok");
 });
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 const statuses: number[] = [];
 for (const path of ["/", "/fails", "/client"]) {
   const response = await new Promise<IncomingMessage>((resolve, failed) => {
-    request({ agent: false, path, port }, resolve).on("error", failed).end();
+    request({ agent: false, path, host: "127.0.0.1", port }, resolve)
+      .on("error", failed)
+      .end();
   });
   response.resume();
   await once(response, "end");

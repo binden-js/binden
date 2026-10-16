@@ -53,6 +53,7 @@ function upload(
   chunk: Buffer | string,
 ): { req: ReturnType<typeof request>; response: Promise<IncomingMessage> } {
   const req = request({
+    host: "127.0.0.1",
     port: server.port,
     method: "POST",
     agent: false,
@@ -274,6 +275,7 @@ suite("BodyParser (aborted requests)", () => {
     try {
       for (let index = 0; index < 3; index += 1) {
         const sent = request({
+          host: "127.0.0.1",
           port: server.port,
           method: "POST",
           agent,

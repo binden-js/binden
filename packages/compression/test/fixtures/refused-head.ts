@@ -75,7 +75,7 @@ const app = new Binden({ logger: new Logger({ level: "silent" }) }).use(
     await routes[context.url.pathname]?.(context.response);
   },
 );
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -86,7 +86,7 @@ for (const version of ["1.1", "1.0"]) {
     (path) => version === "1.0" || path !== "/trailer",
   );
   for (const path of paths) {
-    const socket = connect(port, "localhost");
+    const socket = connect(port, "127.0.0.1");
     const chunks: Buffer[] = [];
     socket.on("data", (chunk: Buffer) => chunks.push(chunk));
     socket.write(

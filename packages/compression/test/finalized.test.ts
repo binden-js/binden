@@ -68,7 +68,7 @@ suite("A compressed reply queued past its deadline", () => {
         },
       );
       servers.push(served);
-      const socket = connect(Number(new URL(served.url).port), "localhost");
+      const socket = connect(Number(new URL(served.url).port), "127.0.0.1");
       socket.on("error", () => null);
       await once(socket, "connect");
       socket.write(

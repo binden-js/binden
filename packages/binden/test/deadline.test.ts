@@ -54,7 +54,7 @@ interface IClient {
 
 /** Opens a connection that is kept alive */
 async function client(port: number): Promise<IClient> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   let closed = false;
@@ -146,7 +146,7 @@ async function converse(
   port: number,
   requests: string,
 ): Promise<{ head: string; body: string }[]> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   socket.setEncoding("latin1").on("data", (chunk: string) => {
@@ -499,7 +499,7 @@ suite("The deadline", () => {
       // The head of a body that never comes
       response.writeHead(200, { "Content-Length": 100_000 }).flushHeaders();
     });
-    upstream.listen(0, "localhost");
+    upstream.listen(0, "127.0.0.1");
     await once(upstream, "listening");
     const { port: up } = upstream.address() as AddressInfo;
     const rejected: unknown[] = [];
@@ -534,7 +534,7 @@ suite("The deadline", () => {
             if (url.pathname.startsWith("/proxy")) {
               // A proxy of the upstream, which forwards its length
               source = await new Promise<IncomingMessage>((resolve, reject) => {
-                get({ host: "localhost", port: up, signal }, resolve).once(
+                get({ host: "127.0.0.1", port: up, signal }, resolve).once(
                   "error",
                   reject,
                 );
@@ -606,7 +606,7 @@ suite("The deadline", () => {
         });
       },
       async ({ port }) => {
-        const socket = connect(port, "localhost");
+        const socket = connect(port, "127.0.0.1");
         await once(socket, "connect");
         socket.write("GET / HTTP/1.1\r\nHost: a\r\n\r\n");
         await within(sending.promise);
@@ -1090,7 +1090,7 @@ suite("A complete reply that waits for the response before it", () => {
         },
       );
       const listening = await listen(app);
-      const socket = connect(listening.port, "localhost");
+      const socket = connect(listening.port, "127.0.0.1");
       try {
         await once(socket, "connect");
         socket.pause();
@@ -1131,7 +1131,7 @@ suite("A complete reply that waits for the response before it", () => {
       false,
     );
     const listening = await listen(app);
-    const socket = connect(listening.port, "localhost");
+    const socket = connect(listening.port, "127.0.0.1");
     try {
       await once(socket, "connect");
       let data = "";
@@ -1162,7 +1162,7 @@ suite("A complete reply that waits for the response before it", () => {
     const { app, captured, ended, closed } = queued({});
     const listening = await listen(app);
     try {
-      const socket = connect(listening.port, "localhost");
+      const socket = connect(listening.port, "127.0.0.1");
       await once(socket, "connect");
       socket.write(requests);
       await within(ended);
@@ -1187,7 +1187,7 @@ suite("A complete reply that waits for the response before it", () => {
   test("is cut by a shutdown that times out, on every Node.js", async () => {
     const { app, captured, ended, closed } = queued({});
     const listening = await listen(app);
-    const socket = connect(listening.port, "localhost");
+    const socket = connect(listening.port, "127.0.0.1");
     await once(socket, "connect");
     let data = "";
     socket.setEncoding("latin1").on("data", (chunk: string) => {
@@ -1292,7 +1292,7 @@ suite("A sealed reply that waits for the response before it", () => {
       const { app, captured, cleaned, events } = sealed(kind, 5000);
       const listening = await listen(app);
       try {
-        const socket = connect(listening.port, "localhost");
+        const socket = connect(listening.port, "127.0.0.1");
         await once(socket, "connect");
         socket.write(requests);
         // Once its deadline has passed
@@ -1317,7 +1317,7 @@ suite("A sealed reply that waits for the response before it", () => {
     test(`${kind === "complete" ? "a complete reply left at its deadline" : "the 503 of its deadline"}: finalized by a shutdown that times out`, async () => {
       const { app, cleaned, events } = sealed(kind, 5000);
       const listening = await listen(app);
-      const socket = connect(listening.port, "localhost");
+      const socket = connect(listening.port, "127.0.0.1");
       try {
         await once(socket, "connect");
         socket.on("error", () => null);

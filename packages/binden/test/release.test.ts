@@ -24,7 +24,7 @@ interface IRaw {
 
 /** Opens a raw connection to a port */
 async function connection(port: number): Promise<IRaw> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   let closed = false;
@@ -507,7 +507,7 @@ suite("The request of a response, sent as its body (an echo)", () => {
         },
       );
       const listening = await listen(app);
-      const socket = connect(listening.port, "localhost");
+      const socket = connect(listening.port, "127.0.0.1");
       try {
         await once(socket, "connect");
         let tail = "";

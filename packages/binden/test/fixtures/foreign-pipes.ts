@@ -71,13 +71,13 @@ const app = new Binden().use(async (context: Context) => {
   }, 20);
   await never();
 });
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 /** Sends a request on a new connection; resolves with what it has received */
 function request(path: string): { received: Promise<string> } {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   let data = "";
   socket.setEncoding("latin1").on("data", (chunk: string) => {
     data += chunk;

@@ -137,8 +137,8 @@ suite("BindenResponse", () => {
     await new Promise<void>((resolve) => {
       server = createServer<typeof IncomingMessage, typeof BindenResponse>({
         ServerResponse: BindenResponse,
-      }).listen(0, () => {
-        url = `http://localhost:${portOf(server)}`;
+      }).listen(0, "127.0.0.1", () => {
+        url = `http://127.0.0.1:${portOf(server)}`;
         resolve();
       });
     });
@@ -703,12 +703,12 @@ suite("BindenResponse", () => {
           // The test fails on the response instead
         });
       },
-    ).listen(0);
+    ).listen(0, "127.0.0.1");
     await once(strict, "listening");
     const { port: local } = strict.address() as AddressInfo;
 
     try {
-      const response = await fetch(`http://localhost:${local}`, {
+      const response = await fetch(`http://127.0.0.1:${local}`, {
         method: "HEAD",
         signal: AbortSignal.timeout(5000),
       });
@@ -1206,7 +1206,7 @@ suite("BindenResponse", () => {
     });
 
     await new Promise<void>((resolve) => {
-      newServer.listen(0, resolve);
+      newServer.listen(0, "127.0.0.1", resolve);
     });
 
     const end = 100;
@@ -1220,7 +1220,7 @@ suite("BindenResponse", () => {
     });
     const headers = { Range: `bytes=  - ${end} ` };
     try {
-      const response = await fetch(`http://localhost:${portOf(newServer)}`, {
+      const response = await fetch(`http://127.0.0.1:${portOf(newServer)}`, {
         headers,
       });
       await serverPromise;

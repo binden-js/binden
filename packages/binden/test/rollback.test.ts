@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 
 /** Writes requests on one connection, and reads everything until the server closes it */
 async function converse(port: number, requests: string): Promise<string> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   socket.setEncoding("latin1").on("data", (chunk: string) => {
@@ -168,7 +168,7 @@ suite("A head that Node.js refuses", () => {
         response.setHeader("Content-Length", 4).end("body");
       },
     );
-    server.listen(0, "localhost");
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     try {
       const { port } = server.address() as AddressInfo;
@@ -293,7 +293,7 @@ suite("A head that Node.js refuses", () => {
         response.end("body");
       },
     );
-    server.listen(0, "localhost");
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     try {
       const { port } = server.address() as AddressInfo;
@@ -503,7 +503,7 @@ suite("A head that Node.js refuses", () => {
         response.destroy();
       },
     );
-    server.listen(0, "localhost");
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     try {
       await converse(
@@ -521,7 +521,7 @@ suite("A head that Node.js refuses", () => {
 suite("An end() that throws", () => {
   /** Reads everything from one connection until the server closes it, within `ms` */
   async function read(port: number, data: string, ms: number): Promise<string> {
-    const socket = connect(port, "localhost");
+    const socket = connect(port, "127.0.0.1");
     await once(socket, "connect");
     const chunks: Buffer[] = [];
     socket.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -687,7 +687,7 @@ suite("An end() that throws", () => {
           }
         },
       );
-      server.listen(0, "localhost");
+      server.listen(0, "127.0.0.1");
       await once(server, "listening");
       try {
         const data = await converse(
@@ -763,7 +763,7 @@ suite("An end() that throws", () => {
         response.setHeader("Content-Length", 6).end("second");
       },
     );
-    server.listen(0, "localhost");
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     try {
       const data = await converse(

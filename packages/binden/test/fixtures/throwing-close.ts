@@ -38,11 +38,11 @@ const app = new Binden({ logger, access_log: true }).use(
     await context.text("ok");
   },
 );
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
-const socket = connect(port, "localhost").resume();
+const socket = connect(port, "127.0.0.1").resume();
 await once(socket, "connect");
 socket.write("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
 await once(socket, "close");

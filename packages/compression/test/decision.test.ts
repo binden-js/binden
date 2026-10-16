@@ -398,7 +398,7 @@ suite("The decision at the header commit", () => {
       context.response.end();
     });
     const { port } = new URL(url);
-    const socket = connect(Number(port), "localhost");
+    const socket = connect(Number(port), "127.0.0.1");
     socket.end(
       "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
     );

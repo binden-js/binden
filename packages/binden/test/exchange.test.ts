@@ -61,7 +61,9 @@ suite("Exchange", () => {
     IPair & { client: ReturnType<typeof get> }
   > => {
     const pending = once(server, "request") as Promise<IPair>;
-    const client = get({ port, path: "/" }, (response) => response.resume());
+    const client = get({ host: "127.0.0.1", port, path: "/" }, (response) =>
+      response.resume(),
+    );
     client.on("error", () => {
       // Aborted by the test
     });
@@ -74,7 +76,7 @@ suite("Exchange", () => {
       IncomingMessage: BindenRequest,
       ServerResponse: BindenResponse,
     });
-    server.listen(0);
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     ({ port } = server.address() as AddressInfo);
   });

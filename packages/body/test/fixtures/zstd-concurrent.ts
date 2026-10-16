@@ -48,6 +48,7 @@ function post(): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
     const client = request(
       {
+        host: "127.0.0.1",
         port,
         method: "POST",
         agent: false,

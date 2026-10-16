@@ -26,7 +26,7 @@ function gate(): { promise: Promise<void>; open(): void } {
  * server closes it (the last request has `Connection: close`)
  */
 async function converse(port: number, requests: string): Promise<string> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   socket.setEncoding("latin1").on("data", (chunk: string) => {
@@ -167,7 +167,7 @@ suite("Informational responses of a pipelined request", () => {
 suite("Informational responses to HTTP/1.0", () => {
   /** The raw response of one request of `version` (read until the server closes) */
   async function raw(port: number, version: string): Promise<string> {
-    const socket = connect(port, "localhost");
+    const socket = connect(port, "127.0.0.1");
     await once(socket, "connect");
     let data = "";
     socket.setEncoding("latin1").on("data", (chunk: string) => {
@@ -441,11 +441,11 @@ suite("Informational responses, then a native write in any encoding", () => {
         replied.open();
       },
     );
-    server.listen(0, "localhost");
+    server.listen(0, "127.0.0.1");
     await once(server, "listening");
     try {
       const { port } = server.address() as AddressInfo;
-      const socket = connect(port, "localhost");
+      const socket = connect(port, "127.0.0.1");
       let data = "";
       socket.setEncoding("latin1").on("data", (chunk: string) => {
         data += chunk;
@@ -541,7 +541,7 @@ suite("Informational responses, then a native write in any encoding", () => {
             replied.open();
           },
         );
-        server.listen(0, "localhost");
+        server.listen(0, "127.0.0.1");
         await once(server, "listening");
         try {
           const { port } = server.address() as AddressInfo;
@@ -595,11 +595,11 @@ suite("Informational responses, then a native write in any encoding", () => {
           replied.open();
         },
       );
-      server.listen(0, "localhost");
+      server.listen(0, "127.0.0.1");
       await once(server, "listening");
       const socket = connect(
         (server.address() as AddressInfo).port,
-        "localhost",
+        "127.0.0.1",
       );
       try {
         let data = "";
@@ -681,7 +681,7 @@ suite("Informational responses, then a native write in any encoding", () => {
           replied.open();
         },
       );
-      server.listen(0, "localhost");
+      server.listen(0, "127.0.0.1");
       await once(server, "listening");
       try {
         const data = await pipelined(

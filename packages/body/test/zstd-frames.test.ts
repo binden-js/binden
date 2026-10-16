@@ -486,6 +486,7 @@ suite("BodyParser (zstd frames)", () => {
         }, echo),
       );
       const client = request({
+        host: "127.0.0.1",
         port: refusing.port,
         method: "POST",
         agent: false,

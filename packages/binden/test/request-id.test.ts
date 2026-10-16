@@ -129,7 +129,7 @@ suite("request ids", () => {
       response.end();
     });
     await new Promise<void>((resolve) => {
-      server.listen(0, resolve);
+      server.listen(0, "127.0.0.1", resolve);
     });
     const { port } = server.address() as AddressInfo;
     const socket = connect(port, "127.0.0.1", () => {

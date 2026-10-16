@@ -71,13 +71,13 @@ const app = new Binden().use(async (context: Context) => {
   routes[context.url.pathname]?.(context);
   await never();
 });
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
 /** The status lines received on a connection, and whether it was closed */
 async function exchange(path: string): Promise<string> {
-  const socket = connect(port, "localhost");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   let data = "";
   socket.setEncoding("latin1").on("data", (chunk: string) => {

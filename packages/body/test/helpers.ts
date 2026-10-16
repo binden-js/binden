@@ -40,11 +40,11 @@ export function echo(context: Context): Promise<void> {
 
 /** Listens with an app (closing every connection on `close()`) */
 export async function listen(app: Binden): Promise<IServer> {
-  const server: Server = app.createServer().listen(0);
+  const server: Server = app.createServer().listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return {
-    url: `http://localhost:${port}/`,
+    url: `http://127.0.0.1:${port}/`,
     port,
     close: async (): Promise<void> => {
       server.closeAllConnections();

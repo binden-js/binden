@@ -17,7 +17,7 @@ export interface IReply {
   readonly body: string;
 }
 
-/** A server of an app, on a random port of `localhost` */
+/** A server of an app, on a random port of 127.0.0.1 (never `::`, see binden) */
 export interface ITestServer {
   readonly url: string;
   readonly server: Server;
@@ -26,11 +26,11 @@ export interface ITestServer {
 
 /** Starts the server of `app` */
 export async function listen(app: Binden): Promise<ITestServer> {
-  const server = app.createServer().listen(0, "localhost");
+  const server = app.createServer().listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return {
-    url: `http://localhost:${port}/`,
+    url: `http://127.0.0.1:${port}/`,
     server,
     async close(): Promise<void> {
       server.closeAllConnections();

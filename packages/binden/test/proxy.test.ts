@@ -638,7 +638,7 @@ suite("Trusted proxies", () => {
       }
     });
     await new Promise<void>((done) => {
-      server.listen(0, done);
+      server.listen(0, "127.0.0.1", done);
     });
     const { port } = server.address() as AddressInfo;
     const socket = connect(port, "127.0.0.1", () => {
@@ -680,6 +680,8 @@ suite("Trusted proxies", () => {
       }
     });
     await new Promise<void>((done) => {
+      // Without a host (`::`, unless the machine has no IPv6): the IPv4 peer
+      // through an IPv6 socket (`::ffff:127.0.0.1`), which this test needs
       server.listen(0, done);
     });
     const { port } = server.address() as AddressInfo;

@@ -23,7 +23,7 @@ const app = new Binden().use(async (context) => {
   await context.send("done");
 });
 
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -35,7 +35,9 @@ const closing = new Promise<void>((resolve, reject) => {
 });
 
 const pending = new Promise<IncomingMessage>((resolve, reject) => {
-  request({ agent: false, port }, resolve).on("error", reject).end();
+  request({ agent: false, host: "127.0.0.1", port }, resolve)
+    .on("error", reject)
+    .end();
 });
 await received.promise;
 process.kill(process.pid, "SIGTERM");

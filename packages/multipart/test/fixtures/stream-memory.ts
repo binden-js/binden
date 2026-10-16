@@ -33,7 +33,7 @@ const storage: IMultipartOptions["storage"] =
 const app = new Binden()
   .use(multipart({ storage }))
   .use((context: Context) => context.send());
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -57,6 +57,7 @@ const sampler = setInterval(() => {
 const client = request({
   agent: false,
   method: "POST",
+  host: "127.0.0.1",
   port,
   headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
 });

@@ -75,6 +75,7 @@ suite("Keep-alive", () => {
           headers,
           method,
           path,
+          host: "127.0.0.1",
           port,
           signal: AbortSignal.timeout(5000),
         },
@@ -100,7 +101,7 @@ suite("Keep-alive", () => {
     const app = new Binden().use(async (context) => {
       await routes[context.url.pathname]?.(context);
     });
-    server = app.createServer().listen(0);
+    server = app.createServer().listen(0, "127.0.0.1");
     await once(server, "listening");
     // The connection is open: the next request reuses it
     deepStrictEqual(await exchange("/ok"), {

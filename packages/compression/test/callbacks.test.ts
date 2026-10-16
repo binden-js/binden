@@ -285,7 +285,7 @@ async function slowClient(
   coding: string,
   before = "",
 ): Promise<Socket> {
-  const socket = connect(Number(new URL(url).port), "localhost");
+  const socket = connect(Number(new URL(url).port), "127.0.0.1");
   socket.on("error", () => null);
   await within(once(socket, "connect"));
   socket.pause();

@@ -28,8 +28,8 @@ suite("Context", () => {
     server = createServer({
       IncomingMessage: BindenRequest,
       ServerResponse: BindenResponse,
-    }).listen(0, () => {
-      url = `http://localhost:${portOf(server)}`;
+    }).listen(0, "127.0.0.1", () => {
+      url = `http://127.0.0.1:${portOf(server)}`;
       done();
     });
   });

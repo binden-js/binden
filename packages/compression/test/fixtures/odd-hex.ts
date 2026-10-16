@@ -41,7 +41,7 @@ const app = new Binden({ logger: new Logger({ level: "silent" }) }).use(
     }
   },
 );
-const server = app.createServer().listen(0);
+const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
@@ -53,7 +53,7 @@ const requests = [
   ["/gzip", "gzip"],
   ["/small", "identity"],
 ] as const;
-const socket = connect(port, "localhost");
+const socket = connect(port, "127.0.0.1");
 const chunks: Buffer[] = [];
 socket.on("data", (chunk: Buffer) => chunks.push(chunk));
 socket.write(

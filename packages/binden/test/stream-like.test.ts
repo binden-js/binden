@@ -156,7 +156,14 @@ function fetchBytes(
 ): Promise<IBytes> {
   return new Promise<IBytes>((resolve, reject) => {
     httpRequest(
-      { agent: false, method, path, port, signal: AbortSignal.timeout(5000) },
+      {
+        agent: false,
+        method,
+        path,
+        host: "127.0.0.1",
+        port,
+        signal: AbortSignal.timeout(5000),
+      },
       (response) => {
         const chunks: Buffer[] = [];
         response
@@ -179,7 +186,7 @@ function fetchBytes(
 /** Sends a `GET` on a new connection, and reads what it receives until the connection closes */
 function fetchRaw(port: number): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    const socket = connect(port, "localhost");
+    const socket = connect(port, "127.0.0.1");
     let data = "";
     const timer = setTimeout(() => {
       socket.destroy();
@@ -377,7 +384,7 @@ for (const [library, create] of libraries) {
           await context.send(source);
         },
         async ({ port }) => {
-          const socket = connect(port, "localhost");
+          const socket = connect(port, "127.0.0.1");
           try {
             await once(socket, "connect");
             let received = 0;
@@ -468,7 +475,7 @@ for (const [library, create] of libraries) {
           );
         },
         async ({ port }) => {
-          const socket = connect(port, "localhost");
+          const socket = connect(port, "127.0.0.1");
           try {
             await once(socket, "connect");
             let data = "";

@@ -491,6 +491,7 @@ suite("BodyParser (zstd)", () => {
       }, echo),
     );
     const client = request({
+      host: "127.0.0.1",
       port: server.port,
       method: "POST",
       agent: false,
@@ -540,6 +541,7 @@ suite("BodyParser (zstd)", () => {
       }, echo),
     );
     const client = request({
+      host: "127.0.0.1",
       port: server.port,
       method: "POST",
       agent: false,
