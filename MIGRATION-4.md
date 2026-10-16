@@ -198,8 +198,10 @@ behaviours of Node.js:
   `stream.finished()` of the response settle with `ERR_STREAM_PREMATURE_CLOSE` (or that error).
   `context.onCleanup()` and the access log still run at the real close.
 - **A legacy `Stream.prototype.pipe()` into the response is refused**: the work that has piped it
-  fails with a `TypeError` (`500` before the headers). Wrap such a stream (e.g. of an old stream
-  library) with `new Readable().wrap(stream)`, or use `stream.pipeline()`.
+  fails with a `TypeError` (`500` before the headers), also through `stream.pipeline()`, which
+  pipes such a stream with its own `pipe()`. Wrap such a stream (e.g. of an old stream library)
+  with `new Readable().wrap(stream)`, then pipe the wrapper or send it
+  (`context.send(new Readable().wrap(stream))`).
 - **A pipe that binden cannot attribute is refused** the same way: while the response or the
   source has listeners of `newListener` or `removeListener`, when the source is a `Proxy` or has
   its own listener methods, `emit()`, `pipe()`, `unpipe()`, `pause()`, `resume()`, `read()`,
