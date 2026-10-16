@@ -645,6 +645,47 @@ suite("The first write() of a body past its strict Content-Length", () => {
         },
         [null, true, false],
       ],
+      // As Node.js reads it: also an array of equal values (the last one)
+      [
+        "of spaces before it",
+        (): unknown[] =>
+          outcome(strict().setHeader("Content-Length", " 2"), "abc"),
+        [refused, false, false],
+      ],
+      [
+        "of a zero before it",
+        (): unknown[] =>
+          outcome(strict().setHeader("Content-Length", "02"), "abc"),
+        [refused, false, false],
+      ],
+      [
+        "of an array of it",
+        (): unknown[] =>
+          outcome(strict().setHeader("Content-Length", ["2"]), "abc"),
+        [refused, false, false],
+      ],
+      [
+        "of an array of equal values past it",
+        (): unknown[] =>
+          outcome(strict().setHeader("Content-Length", ["2", "2"]), "abc"),
+        [refused, false, false],
+      ],
+      [
+        "of an array of equal values, within it",
+        (): unknown[] =>
+          outcome(strict().setHeader("Content-Length", ["2", " 2"]), "ab"),
+        [null, true, false],
+      ],
+      [
+        "of appended equal numbers past it",
+        (): unknown[] => {
+          const response = strict();
+          // @ts-expect-error -- a number, which Node.js keeps as it is
+          response.appendHeader("Content-Length", 2);
+          return outcome(response, "abc");
+        },
+        [refused, false, false],
+      ],
       [
         "without a valid Content-Length",
         (): unknown[] =>
@@ -681,6 +722,226 @@ suite("The first write() of a body past its strict Content-Length", () => {
     for (const [name, run, expected] of cases) {
       deepStrictEqual(run(), expected, name);
     }
+  });
+});
+
+suite("Content-Length values that disagree", () => {
+  /** A body whose excess a client that reads the first value would read as the next response */
+  const body = `ab${injected}`;
+  /** Values that disagree, given in a way, then the call that commits the head */
+  const disagreeing: Record<string, (response: ServerResponse) => void> = {
+    "an array set, then write()": (response) => {
+      response.setHeader("Content-Length", ["2", String(body.length)]);
+      response.write(body);
+    },
+    "two appendHeader(), then write()": (response) => {
+      response.appendHeader("Content-Length", "2");
+      response.appendHeader("Content-Length", String(body.length));
+      response.write(body);
+    },
+    "two appendHeader() under strictContentLength, then write()": (
+      response,
+    ) => {
+      response.strictContentLength = true;
+      // The last one, which Node.js would check the next chunks against
+      response.appendHeader("Content-Length", String(body.length));
+      response.appendHeader("Content-Length", "2");
+      response.write(body);
+    },
+    "a list, then write()": (response) => {
+      response.setHeader("Content-Length", `2, ${body.length}`);
+      response.write(body);
+    },
+    "a list of equal lengths, then write()": (response) => {
+      response.setHeader("Content-Length", "2, 2");
+      response.write(body);
+    },
+    "an array with a list of equal lengths, then write()": (response) => {
+      response.setHeader("Content-Length", ["2", "2,"]);
+      response.write(body);
+    },
+    "equal values that are not lengths, then write()": (response) => {
+      response.setHeader("Content-Length", ["0x2", "0x2"]);
+      response.write("ab");
+    },
+    "values past the safe integers, then write()": (response) => {
+      response.setHeader("Content-Length", [
+        "9007199254740993",
+        "9007199254740992",
+      ]);
+      response.write("ab");
+    },
+    "an array set, then end() with a chunk": (response) => {
+      response.setHeader("Content-Length", ["2", String(body.length)]);
+      response.end(body);
+    },
+    "an array set, then end()": (response) => {
+      response.setHeader("Content-Length", ["0", "2"]);
+      response.end();
+    },
+    "an array set, then flushHeaders()": (response) => {
+      response.setHeader("Content-Length", ["2", "3"]);
+      response.flushHeaders();
+    },
+    "an array given to writeHead()": (response) => {
+      response.writeHead(200, {
+        "Content-Length": ["2", String(body.length)],
+      });
+    },
+    "pairs given to writeHead()": (response) => {
+      response.writeHead(200, [
+        "Content-Length",
+        "2",
+        "content-length",
+        String(body.length),
+      ]);
+    },
+    "nested pairs given to writeHead() with a reason phrase": (response) => {
+      response.writeHead(200, "OK", [
+        ["Content-Length", "2"],
+        ["Content-Length", "3"],
+      ]);
+    },
+  };
+
+  test("are refused before anything is committed: the call that would commit the head throws, and the error is replied, where Node.js sends them", async () => {
+    const outcomes: unknown[] = [];
+    const app = new Binden().use(({ response, url }: Context) => {
+      const name = decodeURIComponent(url.pathname.slice(1));
+      if (name === "next") {
+        response.end("next");
+        return;
+      }
+      try {
+        disagreeing[name](response);
+      } catch (error: unknown) {
+        const { code, message } = error as { code?: unknown; message: string };
+        outcomes.push([
+          name,
+          code,
+          message,
+          response.headersSent,
+          response.destroyed,
+        ]);
+        throw error;
+      }
+    });
+    const listening = await listen(app);
+    try {
+      for (const name of Object.keys(disagreeing)) {
+        deepStrictEqual(
+          await converse(
+            listening.port,
+            `GET /${encodeURIComponent(name)} HTTP/1.1\r\nHost: a\r\n\r\n` +
+              "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+          ),
+          {
+            data:
+              "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n" +
+              "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnext",
+            closed: true,
+          },
+          name,
+        );
+      }
+      deepStrictEqual(
+        outcomes,
+        Object.keys(disagreeing).map((name) => [
+          name,
+          "ERR_HTTP_INVALID_HEADER_VALUE",
+          "Content-Length values disagree",
+          false,
+          false,
+        ]),
+      );
+    } finally {
+      await listening.close();
+    }
+    // Node.js sends both values, and frames the body by the last one
+    const response = new ServerResponse(new IncomingMessage(new Socket()));
+    response.setHeader("Content-Length", ["2", "3"]);
+    response.flushHeaders();
+    ok(
+      String(Reflect.get(response, "_header")).includes(
+        "Content-Length: 2\r\nContent-Length: 3\r\n",
+      ),
+    );
+    deepStrictEqual(Reflect.get(response, "_contentLength"), 3);
+  });
+
+  test("given to writeHead() replace the ones set, as Node.js does: only the values of the head are checked", () => {
+    const sent = new BindenResponse(new IncomingMessage(new Socket()));
+    sent.setHeader("Content-Length", ["2", "3"]);
+    sent.writeHead(200, { "Content-Length": ["2", "2"] });
+    deepStrictEqual(
+      [sent.headersSent, sent.getHeader("content-length")],
+      [true, ["2", "2"]],
+    );
+    const kept = new BindenResponse(new IncomingMessage(new Socket()));
+    kept.setHeader("Content-Length", "2");
+    throws(
+      () => kept.writeHead(200, ["Content-Length", "2", "Content-Length", "3"]),
+      { code: "ERR_HTTP_INVALID_HEADER_VALUE" },
+    );
+    // Nothing is changed
+    deepStrictEqual(
+      [kept.headersSent, kept.getHeader("content-length")],
+      [false, "2"],
+    );
+    // Without a value given, the ones set (none: as many as Node.js sends)
+    const none = new BindenResponse(new IncomingMessage(new Socket()));
+    none.setHeader("Content-Length", []);
+    none.writeHead(200, { "X-Length": ["2", "3"] });
+    deepStrictEqual(none.headersSent, true);
+  });
+
+  test("equal ones are that length: a first write() past it under strictContentLength is refused, and the error replied, where Node.js sends the excess", async () => {
+    const handler = async (
+      request: IncomingMessage,
+      response: ServerResponse,
+    ): Promise<void> => {
+      if (request.url === "/next") {
+        response.end("next");
+        return;
+      }
+      response.strictContentLength = true;
+      response.setHeader("Content-Length", ["2", "2"]);
+      response.write(body);
+      await sleep(10);
+      response.end();
+    };
+    const node = createServer((request, response) => {
+      handler(request, response).catch(() => {
+        response.destroy();
+      });
+    });
+    const app = new Binden().use(async ({ request, response }: Context) => {
+      await handler(request, response);
+    });
+    const conversations: IConversation[] = [];
+    for (const server of [node, app.createServer()]) {
+      const listening = await serve(server);
+      try {
+        conversations.push(await converse(listening.port, pipelined));
+      } finally {
+        await listening.close();
+      }
+    }
+    const [fromNode, fromBinden] = conversations as [
+      IConversation,
+      IConversation,
+    ];
+    ok(
+      fromNode.data.includes(`Content-Length: 2\r\nContent-Length: 2\r\n`) &&
+        fromNode.data.endsWith(`\r\n\r\n${body}`),
+      fromNode.data,
+    );
+    deepStrictEqual(fromBinden, {
+      data:
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n" +
+        "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnext",
+      closed: true,
+    });
   });
 });
 

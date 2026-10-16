@@ -203,9 +203,10 @@ export interface IResponseOperation {
  * `response[kValidateHead](statusCode, reason, headers)` throws the error
  * that `writeHead()` would throw for the reason phrase that it would send (the
  * one given, or the one of the response) or for a header given, after it had
- * changed the response. A library that takes a decision at the commit of the
- * headers (e.g. `@binden/compression`) checks them first. For the packages of
- * binden only.
+ * changed the response, and the error of binden for `Content-Length` values
+ * that disagree (the ones given, or else the ones set). A library that takes
+ * a decision at the commit of the headers (e.g. `@binden/compression`) checks
+ * them first. For the packages of binden only.
  *
  * @internal
  */

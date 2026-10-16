@@ -1458,6 +1458,10 @@ export class BindenResponse<
    * (the one given, or else the one of the response), and the names and the
    * values of the headers given (a list must be of pairs). An invalid status
    * code is left to `writeHead()`, which throws before it changes anything.
+   * The `Content-Length` values that the head would have (the ones given, or
+   * else the ones set) must not disagree (see `#disagree()`): every path that
+   * commits the head runs `writeHead()` (also a first `write()`, an `end()`
+   * and `flushHeaders()`), which then throws before anything is committed.
    *
    * @internal
    */
@@ -1484,6 +1488,8 @@ export class BindenResponse<
         code: "ERR_INVALID_ARG_VALUE",
       });
     }
+    /** The `Content-Length` values given, which replace the ones set */
+    const lengths: unknown[] = [];
     for (let index = 0; index < pairs.length; index += 2) {
       const name = pairs[index] as string;
       // Node.js skips an empty name (of the headers that it sets)
@@ -1491,8 +1497,45 @@ export class BindenResponse<
         validateHeaderName(name);
         // Also an array (of the values of the header) or a number
         validateHeaderValue(name, pairs[index + 1] as string);
+        if (name.toLowerCase() === "content-length") {
+          lengths.push(pairs[index + 1]);
+        }
       }
     }
+    if (
+      BindenResponse.#disagree(
+        lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
+      )
+    ) {
+      throw Object.assign(new TypeError("Content-Length values disagree"), {
+        code: "ERR_HTTP_INVALID_HEADER_VALUE",
+      });
+    }
+  }
+
+  /**
+   * Whether the `Content-Length` values of a head disagree: more than one
+   * (the elements of an array, which Node.js sends a line of each of and
+   * frames the body by the last, or the members of a list, e.g. `2, 3`),
+   * which are not all one same length (each an element of digits only), so
+   * that a recipient may read either of them (RFC 9110, section 8.6), or
+   * Node.js none (it cannot read a list). Refused by binden before anything
+   * is committed (see `kValidateHead`), where Node.js would send them.
+   */
+  static #disagree(value: unknown): boolean {
+    const elements = BindenResponse.#values(value as OutgoingHttpHeader).map(
+      (element) => trimOws(element),
+    );
+    const [first = ""] = elements;
+    return (
+      elements.flatMap((element) => element.split(",")).length > 1 &&
+      !elements.every(
+        (element) =>
+          /^\d+$/u.test(element) &&
+          Number.isSafeInteger(Number(element)) &&
+          Number(element) === Number(first),
+      )
+    );
   }
 
   /**
@@ -3139,9 +3182,19 @@ export class BindenResponse<
     return signal?.aborted === true ? (signal.reason as Error) : error;
   }
 
-  /** The `Content-Length` of the response, `null` without a valid one */
+  /**
+   * The `Content-Length` of the response, `null` without a valid one: as
+   * Node.js reads it (the last element of an array, which agrees with the
+   * others), unless its values disagree (see `#disagree()`)
+   */
   #length(): number | null {
-    const length = Number(this.getHeader("Content-Length") ?? Number.NaN);
+    const value = this.getHeader("Content-Length");
+    if (BindenResponse.#disagree(value)) {
+      return null;
+    }
+    const length = Number(
+      (Array.isArray(value) ? value.at(-1) : value) ?? Number.NaN,
+    );
     return Number.isSafeInteger(length) && length >= 0 ? length : null;
   }
 
