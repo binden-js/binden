@@ -102,6 +102,26 @@ const attempts: Record<
       response.write("tiny");
     },
   ],
+  // As it is, with the byte count of `strictContentLength`, which Node.js
+  // counts before it commits the head
+  "/strict-end": [
+    (response): void => {
+      response.strictContentLength = true;
+      response.set({ "Content-Length": 4, Trailer: "X-T" });
+    },
+    (response): void => {
+      response.end("tiny");
+    },
+  ],
+  "/strict-write": [
+    (response): void => {
+      response.strictContentLength = true;
+      response.set({ "Content-Length": 4, Trailer: "X-T" });
+    },
+    (response): void => {
+      response.write("tiny");
+    },
+  ],
   // As it is, not chunked for HTTP/1.0
   "/as-is-http10": [
     (response): void => {
@@ -184,6 +204,8 @@ const scenarios = [
   ["/as-is-end", "1.0", "keep-alive"],
   ["/as-is-write", "1.1", ""],
   ["/as-is-write", "1.0", "keep-alive"],
+  ["/strict-end", "1.1", ""],
+  ["/strict-write", "1.1", ""],
   ["/as-is-http10", "1.0", "keep-alive"],
   ["/as-is-http10", "1.0", ""],
   ["/keep-alive", "1.1", ""],
@@ -298,6 +320,8 @@ suite("A refused head leaves nothing of the attempt", () => {
       "/as-is-end (HTTP/1.0, keep-alive)": refused(false),
       "/as-is-write (HTTP/1.1)": refused(false),
       "/as-is-write (HTTP/1.0, keep-alive)": refused(false),
+      "/strict-end (HTTP/1.1)": refused(false),
+      "/strict-write (HTTP/1.1)": refused(false),
       "/as-is-http10 (HTTP/1.0, keep-alive)": refused(false),
       "/as-is-http10 (HTTP/1.0)": refused(false),
       "/keep-alive (HTTP/1.1)": refused(false),
@@ -309,6 +333,61 @@ suite("A refused head leaves nothing of the attempt", () => {
       "/compressed-write-head (HTTP/1.0, keep-alive)": refused(true),
       "/compressed-write-head (HTTP/1.0)": refused(true),
     });
+  });
+
+  test("the byte count of `strictContentLength`: the reply that follows is framed by its own length", async () => {
+    const codes: unknown[] = [];
+    served = await serve(
+      {},
+      new Compression({ format: "gzip" }),
+      (context: Context) => {
+        const { response } = context;
+        context.done = true;
+        response.type("text/plain");
+        if (context.url.pathname === "/next") {
+          response.end("next");
+          return;
+        }
+        // Sent as it is (below the `threshold`)
+        response.strictContentLength = true;
+        response.set({ "Content-Length": 4, Trailer: "X-T" });
+        try {
+          if (context.url.pathname === "/write") {
+            response.write("body");
+          } else {
+            response.end("body");
+          }
+        } catch (error: unknown) {
+          codes.push((error as { code?: unknown }).code);
+        }
+        // The same body, which Node.js counts once
+        response.removeHeader("Trailer");
+        response.end("body");
+      },
+    );
+    for (const path of ["/end", "/write"]) {
+      const replies = await converse(
+        served.url,
+        `GET ${path} HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\nGET /next HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`,
+      );
+      const [reply, next] = replies as [IRaw, IRaw];
+
+      deepStrictEqual(
+        [
+          replies.length,
+          reply.head.split("\r\n")[0],
+          `${reply.head}\r\n`.includes("\r\ncontent-length: 4\r\n"),
+          framed(reply).toString(),
+          framed(next).toString(),
+        ],
+        [2, "http/1.1 200 ok", true, "body", "next"],
+        path,
+      );
+    }
+    deepStrictEqual(codes, [
+      "ERR_HTTP_TRAILER_INVALID",
+      "ERR_HTTP_TRAILER_INVALID",
+    ]);
   });
 
   test("the error reply negotiates its own representation (the reproduction of the review)", async () => {
