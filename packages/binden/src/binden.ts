@@ -697,7 +697,11 @@ export class Binden<
           }
           context = await this.#runMiddleware(middleware, context, exchange);
           run.context = context;
-          if (context.done) {
+          if (exchange.has_halted) {
+            // Also after a synchronous middleware (e.g. whose pipe has been
+            // refused): the stack stops at once
+            throw ABORTED;
+          } else if (context.done) {
             await Binden.#complete(context);
             return true;
           }

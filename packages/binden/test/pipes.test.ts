@@ -807,6 +807,35 @@ suite("A pipe into the response", () => {
       );
     });
 
+    for (const done of [false, true]) {
+      test(`of a synchronous middleware${done ? " that sets `done`" : ""}: the next middleware does not run`, async () => {
+        const ran = { next: false };
+        await withApp(
+          {},
+          (app) => {
+            app
+              .use((context: Context) => {
+                // Refused: its pipe fails at once
+                context.response.on("newListener", () => null);
+                silent().pipe(context.response);
+                context.done = done;
+              })
+              .use(async (context: Context) => {
+                ran.next = true;
+                await context.json({ next: true });
+              });
+          },
+          async ({ port }, captured) => {
+            const reply = await exchange(port, { linger: 50 });
+            deepStrictEqual([reply.status, reply.complete], [500, true]);
+            deepStrictEqual(reply.raw.match(/HTTP\/1\.1/gu)?.length, 1);
+            deepStrictEqual(ran, { next: false });
+            deepStrictEqual(messages(captured, 50), ["The request has failed"]);
+          },
+        );
+      });
+    }
+
     test("an `error` that its listener emits again reaches no other work, nor throws", async () => {
       const received: string[] = [];
       await withApp(
