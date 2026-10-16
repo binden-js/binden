@@ -436,6 +436,74 @@ suite("The request of a response, sent as its body (an echo)", () => {
     }
   });
 
+  test(
+    "paused by the backpressure of its send, whose reply another writer ends: resumed (the rest of its body is read, and the next request of the connection answered)",
+    {
+      // Windows takes a whole write while its send buffer has room: the
+      // response is never full, and the send never pauses the request
+      skip: process.platform === "win32",
+    },
+    async () => {
+      const size = 4 * 1024 * 1024;
+      const paused = Promise.withResolvers<null>();
+      const outcome = Promise.withResolvers<unknown>();
+      const app = new Binden({ logger: capture().logger }).use(
+        async (context: Context) => {
+          if (context.url.pathname === "/next") {
+            await context.text("next");
+            return;
+          }
+          const sent = outcomeOf(context.send(context.request));
+          // Its client does not read the reply yet
+          await within(
+            (async (): Promise<void> => {
+              while (!context.request.isPaused()) {
+                await sleep(5);
+              }
+            })(),
+          );
+          paused.resolve(null);
+          context.response.end();
+          outcome.resolve(await sent);
+        },
+      );
+      const listening = await listen(app);
+      const socket = connect(listening.port, "localhost");
+      try {
+        await once(socket, "connect");
+        let tail = "";
+        socket
+          .on("data", (chunk: Buffer) => {
+            tail = (tail + chunk.toString("latin1")).slice(-100);
+          })
+          .on("error", () => {
+            // Closed by the server: `close` follows
+          })
+          .pause();
+        socket.write(
+          `POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: ${size}\r\n\r\n`,
+        );
+        socket.write(Buffer.alloc(size / 2, "a"));
+        await within(paused.promise);
+        socket.resume();
+        deepStrictEqual(await within(outcome.promise), "resolved");
+        socket.write(Buffer.alloc(size / 2, "b"));
+        socket.write(
+          "GET /next HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        await within(
+          new Promise((resolve) => {
+            socket.once("close", resolve);
+          }),
+        );
+        ok(tail.endsWith("\r\n\r\nnext"), tail);
+      } finally {
+        socket.destroy();
+        await listening.close();
+      }
+    },
+  );
+
   test("whose reply another writer ends before its body has come: not destroyed (the rest of its body is read, and the connection is kept)", async () => {
     const outcome = Promise.withResolvers<unknown>();
     const app = new Binden({ logger: capture().logger }).use(

@@ -3056,11 +3056,15 @@ export class BindenResponse<
       /**
        * Releases the source that the send no longer reads: it is destroyed,
        * unless it is the request of the response (see `#destroys()`), which
-       * is only left
+       * is only left, no longer paused (e.g. by the backpressure of the send,
+       * once another writer has ended the response), so that Node.js reads
+       * the rest of its body, and the next request of the connection
        */
       const drop = (): void => {
         if (this.#destroys(data)) {
           data.destroy();
+        } else if (data.isPaused()) {
+          data.resume();
         }
       };
       /**
