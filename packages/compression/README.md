@@ -228,7 +228,10 @@ is (or `406`).
   `ERR_STREAM_DESTROYED`), so that a middleware that awaits them resumes. None is called again
   afterwards (e.g. by the compressor that completes the write in progress). A `send()` (or
   `sendFile()`) whose chunk waits in the compressor rejects with that error, as it rejects with the
-  error of the socket without a compression.
+  error of the socket without a compression. A response destroyed before its headers are committed
+  (e.g. the client has gone away while a middleware waited for a query) gets no compressor: it is
+  left as it is, and the callback of a `write()` gets `ERR_STREAM_DESTROYED` on the next tick, as
+  without a compression.
 
 ## `flush()` and server-sent events
 

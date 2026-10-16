@@ -523,10 +523,12 @@ export class CompressedResponse {
     if (
       this.#sink !== "pending" ||
       response.headersSent ||
+      this.#gone() ||
       status < 100 ||
       status > 999
     ) {
-      // Decided already, or rejected by Node.js before it changes anything
+      // Decided already, destroyed (no compressor, see `#gone()`), or
+      // rejected by Node.js before it changes anything
       return Reflect.apply(this.#writeHead, response, args) as IResponse;
     }
     const given = (
@@ -548,6 +550,20 @@ export class CompressedResponse {
       }
     });
     return response;
+  }
+
+  /**
+   * Whether the response is destroyed (e.g. the client has gone away while
+   * the work waited for something else) before the decision: nothing of it
+   * is sent any more, and no compressor is created for it (once the response
+   * has closed, nothing would destroy it). It is left as it is: its body goes
+   * to binden, whose `write()` calls back `ERR_STREAM_DESTROYED`, as without
+   * a compression. A closed response is destroyed: Node.js, and binden for
+   * one that it closes itself, set `destroyed` before they emit `close` (see
+   * also `#start()`).
+   */
+  #gone(): boolean {
+    return this.#response.destroyed;
   }
 
   /**
@@ -752,14 +768,18 @@ export class CompressedResponse {
    * otherwise), and commits the headers: at once for a compressed body, and
    * by `send` (the `write()` or the `end()` of the response, whose result is
    * returned) for a body sent as it is, so that a head that Node.js refuses
-   * then is rolled back as well. `null` when the body does not go to the
-   * response as it is.
+   * then is rolled back as well. A destroyed response is sent as it is,
+   * without a decision (see `#gone()`). `null` when the body does not go to
+   * the response as it is.
    */
   #decideForBody<T>(
     size: number | null,
     send: () => T,
   ): { readonly value: T } | null {
     const response = this.#response;
+    if (this.#gone()) {
+      return { value: send() };
+    }
     let sent: { readonly value: T } | null = null;
     this.#commit(() => {
       // What Node.js would refuse (e.g. a reason phrase), before anything is
@@ -1172,10 +1192,17 @@ export class CompressedResponse {
         process.nextTick(callback, response.errored ?? destroyed("end"));
       }
     };
-    // The real close only: an abandoned work that sees its response closed
-    // early (see `kListen`) does not cut what the compressor has accepted
-    // (removed by `kUnlisten`, see `#rollback()`)
-    response[kListen]("close", this.#destroy);
+    if (response.closed) {
+      // Closed already (e.g. its connection has closed while the `filter`
+      // ran, after `#gone()`): its `close` would never come, the compressor
+      // is destroyed at once, and the writes that it gets fail
+      this.#destroy();
+    } else {
+      // The real close only: an abandoned work that sees its response closed
+      // early (see `kListen`) does not cut what the compressor has accepted
+      // (removed by `kUnlisten`, see `#rollback()`)
+      response[kListen]("close", this.#destroy);
+    }
     return compressor;
   }
 

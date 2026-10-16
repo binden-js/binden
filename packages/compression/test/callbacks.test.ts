@@ -1,6 +1,7 @@
 import { type Context, type IMiddleware } from "binden";
 import {
   type IServed,
+  compressors,
   fetchRaw,
   gzips,
   serve,
@@ -672,6 +673,208 @@ suite("The callbacks of a compressed response that is destroyed", () => {
         deepStrictEqual(calls, [
           ["end", "stack", "none", ["ERR_STREAM_DESTROYED"]],
         ]);
+      }
+    }
+  });
+});
+
+/** The codings, and `null` without a compression */
+const modes = [null, ...codings] as const;
+
+/** The sizes of the writes: within the buffers, and far beyond them */
+const sizes = [100, 8 * 1024 * 1024] as const;
+
+/**
+ * How the response of a middleware is gone before its first write: its
+ * client goes away while the middleware waits for something else (e.g. a
+ * query), the middleware destroys it, or its connection closes while the
+ * `filter` of the compression decides (its `close` emitted at once)
+ */
+type IGone = "client" | "destroy" | "filter";
+
+/** The options of `writeGone()` */
+interface IGoneOptions {
+  /** The coding of the compression, `null` without one */
+  readonly coding: (typeof modes)[number];
+  readonly size: number;
+  readonly gone: IGone;
+  /** What the middleware does before its write (nothing by default) */
+  readonly reply?:
+    ((response: Context["response"], chunk: Buffer) => void) | undefined;
+}
+
+suite("The callbacks of a response that is gone before the decision", () => {
+  const servers: IServed[] = [];
+  const sockets: Socket[] = [];
+
+  afterEach(async () => {
+    for (const socket of sockets.splice(0)) {
+      socket.destroy();
+    }
+    await Promise.all(servers.splice(0).map(async (served) => served.close()));
+  });
+
+  /**
+   * How a middleware writes once its response is gone: the calls of the
+   * callback of the write that it awaits, its steps (the error of that
+   * write, then its `finally`), and whether each compressor created is
+   * destroyed
+   */
+  const writeGone = async ({
+    coding,
+    size,
+    gone,
+    reply = (): null => null,
+  }: IGoneOptions): Promise<{
+    calls: ICall[];
+    steps: unknown[];
+    created: boolean[];
+  }> => {
+    const calls: ICall[] = [];
+    const steps: unknown[] = [];
+    const { promise: started, resolve: start } = Promise.withResolvers<null>();
+    const { promise: settled, resolve: settle } = Promise.withResolvers<null>();
+    const filter = (context: Context): boolean => {
+      if (gone === "filter") {
+        context.request.socket.emit("close", false);
+      }
+      return true;
+    };
+    const middlewares =
+      coding === null
+        ? []
+        : [new Compression({ format: coding, threshold: 0, filter })];
+    const created = await compressors(async () => {
+      const served = await serve(
+        {},
+        ...middlewares,
+        async (context: Context) => {
+          const { response } = context;
+          context.done = true;
+          response.type("text/plain");
+          const written = recorder(calls, response)("write");
+          try {
+            const closed = once(response, "close");
+            start(null);
+            if (gone === "client") {
+              await closed;
+            } else if (gone === "destroy") {
+              response.destroy();
+            }
+            await new Promise<void>((resolve, reject) => {
+              reply(response, randomBytes(size));
+              response.write(
+                randomBytes(size),
+                settling(written, resolve, reject),
+              );
+            });
+            steps.push("written");
+          } catch (error: unknown) {
+            steps.push(codeOf(error));
+          } finally {
+            steps.push("finally");
+            settle(null);
+          }
+        },
+      );
+      servers.push(served);
+      const socket = await slowClient(served.url, coding ?? "identity");
+      sockets.push(socket);
+      await within(started);
+      if (gone === "client") {
+        socket.destroy();
+      }
+      await within(settled);
+      // None runs twice
+      await sleep(30);
+    });
+    return {
+      calls,
+      steps,
+      created: created.map((compressor) => compressor.destroyed),
+    };
+  };
+
+  /** What a write gets, as without a compression */
+  const failed = (
+    error: string,
+  ): Omit<Awaited<ReturnType<typeof writeGone>>, "created"> => ({
+    calls: [["write", "stack", "none", [error]]],
+    steps: [error, "finally"],
+  });
+
+  test("of a write that the middleware awaits once its client has gone away run once with the error, as without a compression, without a compressor", async () => {
+    for (const coding of modes) {
+      for (const size of sizes) {
+        deepStrictEqual(
+          {
+            coding,
+            size,
+            ...(await writeGone({ coding, size, gone: "client" })),
+          },
+          { coding, size, ...failed("ERR_STREAM_DESTROYED"), created: [] },
+        );
+      }
+    }
+  });
+
+  test("of a write that the middleware awaits once it has destroyed the response (not closed yet) run once with the error, without a compressor", async () => {
+    for (const coding of modes) {
+      for (const size of sizes) {
+        deepStrictEqual(
+          {
+            coding,
+            size,
+            ...(await writeGone({ coding, size, gone: "destroy" })),
+          },
+          { coding, size, ...failed("ERR_STREAM_DESTROYED"), created: [] },
+        );
+      }
+    }
+  });
+
+  test("of a write after `writeHead()`, `flushHeaders()` or `end()` once the client has gone away run once with the error, without a compressor", async () => {
+    const commits: Record<
+      string,
+      (response: Context["response"], chunk: Buffer) => void
+    > = {
+      writeHead: (response) => response.writeHead(200),
+      flushHeaders: (response) => {
+        response.flushHeaders();
+      },
+      // Node.js never calls back the `end()` of a destroyed response
+      end: (response, chunk) => response.end(chunk),
+    };
+    for (const coding of modes) {
+      for (const [name, reply] of Object.entries(commits)) {
+        // A write after the end of a response gets its own error
+        const error =
+          name === "end"
+            ? "ERR_STREAM_WRITE_AFTER_END"
+            : "ERR_STREAM_DESTROYED";
+        deepStrictEqual(
+          {
+            coding,
+            name,
+            ...(await writeGone({ coding, size: 100, gone: "client", reply })),
+          },
+          { coding, name, ...failed(error), created: [] },
+        );
+      }
+    }
+  });
+
+  test("of a write whose compressor starts once the connection has closed run once with the error, the compressor destroyed at once", async () => {
+    for (const coding of codings) {
+      for (const size of sizes) {
+        deepStrictEqual(
+          {
+            coding,
+            size,
+            ...(await writeGone({ coding, size, gone: "filter" })),
+          },
+          { coding, size, ...failed("ERR_STREAM_DESTROYED"), created: [true] },
+        );
       }
     }
   });

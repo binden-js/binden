@@ -9,6 +9,7 @@ import {
   request,
 } from "node:http";
 import { Logger } from "@binden/logger";
+import type { Transform } from "node:stream";
 import { once } from "node:events";
 import zlib from "node:zlib";
 
@@ -68,6 +69,47 @@ export async function gzips(
     await fn(created);
   } finally {
     Object.defineProperty(zlib, "createGzip", original as PropertyDescriptor);
+  }
+  return created;
+}
+
+/** The functions of `node:zlib` that create the compressor of each coding */
+const creators = [
+  "createBrotliCompress",
+  "createDeflate",
+  "createGzip",
+  "createZstdCompress",
+] as const;
+
+/** The compressors of every coding that `node:zlib` creates while `fn` runs */
+export async function compressors(
+  fn: () => Promise<void>,
+): Promise<Transform[]> {
+  const created: Transform[] = [];
+  const originals = creators.map(
+    (name) =>
+      [name, Object.getOwnPropertyDescriptor(zlib, name)] as [
+        string,
+        PropertyDescriptor,
+      ],
+  );
+  for (const [name, original] of originals) {
+    const create = original.value as (options?: object) => Transform;
+    Object.defineProperty(zlib, name, {
+      ...original,
+      value: (options?: object): Transform => {
+        const compressor = create(options);
+        created.push(compressor);
+        return compressor;
+      },
+    });
+  }
+  try {
+    await fn();
+  } finally {
+    for (const [name, original] of originals) {
+      Object.defineProperty(zlib, name, original);
+    }
   }
   return created;
 }
