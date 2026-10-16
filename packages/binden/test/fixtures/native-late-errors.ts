@@ -1,8 +1,10 @@
 // Run by `settled-sends.test.ts`: the destroy of a Node.js `Readable` may fail
 // later, without a listener of the application, once its send no longer
-// listens to it. It must not crash the process when the application has
-// destroyed it before the send (which rejects): its late error is logged at
-// `debug`, and its guard is removed once it has closed.
+// listens to it. It must not crash the process: when the application has
+// destroyed it before the send (which rejects), and when it destroys itself
+// once it has ended (`autoDestroy`), before the send or while it is sent. Its
+// late error is logged at `debug`, and its guard is removed once it has
+// closed.
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Binden } from "../../index.js";
@@ -15,7 +17,7 @@ setTimeout(() => {
   process.exit(2);
 }, 10_000).unref();
 
-/** A readable whose destroy fails 20 ms later */
+/** A readable that ends once read, whose destroy fails 20 ms later */
 function failing(pathname: string): Readable {
   return new Readable({
     read(): void {
@@ -40,7 +42,13 @@ const app = new Binden({
   const { pathname } = context.url;
   const source = failing(pathname);
   sources.set(pathname, source);
-  source.destroy();
+  if (pathname === "/destroyed") {
+    source.destroy();
+  } else if (pathname === "/ended") {
+    // Its destroy is pending
+    source.resume();
+    await once(source, "end");
+  }
   await context.send(source).then(
     () => {
       sent.set(pathname, "resolved");
@@ -56,7 +64,7 @@ const server = app.createServer().listen(0);
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
-const paths = ["/destroyed"];
+const paths = ["/destroyed", "/ended", "/active"];
 const statuses: number[] = [];
 for (const path of paths) {
   const response = await new Promise<IncomingMessage>((resolve, reject) => {

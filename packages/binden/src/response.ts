@@ -439,6 +439,15 @@ interface IObserver {
   fired: boolean;
 }
 
+/**
+ * Adds the listeners of a send to its source, by the methods of the source,
+ * and records them (see `BindenResponse.#pipe()`)
+ */
+interface IListening {
+  on(event: string, listener: (...args: never[]) => void): IListening;
+  once(event: string, listener: (...args: never[]) => void): IListening;
+}
+
 /** The pipe whose adopted `data` listener runs now (see `destroy()`) */
 interface IMarker {
   readonly owner: object | undefined;
@@ -2976,6 +2985,15 @@ export class BindenResponse<
    * response, they do not either. Before the headers are committed, the
    * framework may cancel the send (see `[kCancel]()`): it then rejects with
    * the reason at once, and its source is released.
+   *
+   * Once the send has settled (sent, failed or cancelled), every listener
+   * that it has added to the source (its once listeners of `end` and `close`
+   * too, which a source that has ended or closed before never runs) and
+   * every observer of the response is removed, so that a source that the
+   * application keeps holds nothing of the response, and the listeners of
+   * the application stay. The guard of the source listens before, and
+   * reports a late error of it (e.g. of a destroy by `autoDestroy` that fails
+   * after its end).
    */
   #pipe(data: Readable): Promise<void> {
     if (!data.readableEnded && data.destroyed) {
@@ -3001,15 +3019,50 @@ export class BindenResponse<
     // Once the response has been ended by another writer
     let stopped = false;
     let settled = false;
+    /** What removes the observers that `#finished()` adds to the response */
+    const finishing: (() => void)[] = [];
     const done = this.#finished(() => {
       const length = this.#length();
       return length !== null && flushed >= length;
-    });
+    }, finishing);
     return new Promise<void>((resolve, reject) => {
-      const settle = (error: Error | null): void => {
+      /** The listeners that the send adds to the source (see `listening`) */
+      const listeners: [string, (...args: never[]) => void][] = [];
+      /**
+       * What removes the other observers that the send adds to the response:
+       * of its `close`, and of each `drain` that it waits for
+       */
+      const observers = new Set<() => void>();
+      /**
+       * Removes every listener of the source and every observer of the
+       * response that the send has added, once it has settled, so that a
+       * source that lives on holds nothing of the response: the guard of the
+       * source (see `guard()`) listens before, and reports a late error of it
+       * (e.g. of a destroy by `autoDestroy` that fails after its end)
+       */
+      const unlisten = (): void => {
+        guard(data, emitterMethods, this.#report(), hasClosed(data));
+        for (const [event, listener] of listeners) {
+          Reflect.apply(emitterMethods.remove, data, [event, listener]);
+        }
+        for (const dispose of [...finishing, ...observers]) {
+          dispose();
+        }
+      };
+      /**
+       * Settles the send once (`cancelled`: by `[kCancel]()`, which releases
+       * its source afterwards). A source still read then (neither ended nor
+       * destroyed, e.g. once another writer has ended the response) is
+       * released, as it would be once the response has closed.
+       */
+      const settle = (error: Error | null, cancelled = false): void => {
         if (!settled) {
           settled = true;
           this.#pending.delete(key);
+          unlisten();
+          if (!cancelled && !data.readableEnded && !data.destroyed) {
+            data.destroy();
+          }
           if (error === null) {
             resolve();
             return;
@@ -3053,17 +3106,31 @@ export class BindenResponse<
         });
         // The framing of the body that is not sent
         this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
-        settle(reason as Error);
+        settle(reason as Error, true);
       });
 
-      this[kListen]("close", () => {
+      const unclose = this[kListen]("close", () => {
         closed = true;
         // Releases the source (e.g. the file of `sendFile()`)
         if (!data.readableEnded) {
           data.destroy();
         }
       });
-      data
+      observers.add(unclose);
+      /** Adds the listeners of the send to the source, and records them */
+      const listening: IListening = {
+        on: (event, listener) => {
+          data.on(event, listener as IListener);
+          listeners.push([event, listener]);
+          return listening;
+        },
+        once: (event, listener) => {
+          data.once(event, listener as IListener);
+          listeners.push([event, listener]);
+          return listening;
+        },
+      };
+      listening
         .on("data", (chunk: Uint8Array | string) => {
           operation.run(() => {
             if (settled || !operation.active) {
@@ -3096,9 +3163,11 @@ export class BindenResponse<
               sent += size;
               if (!accepted) {
                 data.pause();
-                this[kListen]("drain", () => {
+                const drained = this[kListen]("drain", () => {
+                  observers.delete(drained);
                   data.resume();
                 });
+                observers.add(drained);
               }
             } catch (error: unknown) {
               // Not a chunk of bytes (e.g. an object)
@@ -3292,16 +3361,19 @@ export class BindenResponse<
   /**
    * Resolves when the response has finished (flushed to the connection), rejects
    * when it is closed before (e.g. the client went away), unless it is
-   * `complete()` for the client already
+   * `complete()` for the client already. What removes its observers is added
+   * to `unlisten` (e.g. for a send that settles otherwise, see `#pipe()`).
    */
-  #finished(complete: () => boolean): Promise<void> {
+  #finished(
+    complete: () => boolean,
+    unlisten: (() => void)[] = [],
+  ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (this.destroyed) {
         reject(BindenResponse.#premature());
         return;
       }
       const listeners: [string, (error?: Error) => void][] = [];
-      const unlisten: (() => void)[] = [];
       const settle = (error: Error | null): void => {
         for (const dispose of unlisten) {
           dispose();
