@@ -857,20 +857,29 @@ export class Binden<
     exchange: Exchange,
     error: unknown,
   ): Promise<typeof EXPIRED | typeof SUPERSEDED | { error: unknown } | null> {
-    let abandoned = false;
+    // Once the handler is abandoned, a failure of its own (then or later) is
+    // only logged
+    const state: { abandoned: boolean; failure: { error: unknown } | null } = {
+      abandoned: false,
+      failure: null,
+    };
+    const late = (failure: unknown): void => {
+      const message = "The provided `error_handler` has failed late";
+      context.log.debug(
+        message,
+        this.#failure(context, failure, "error_handler"),
+      );
+    };
     const settled = (async (): Promise<void> => {
       await handler(context, error);
     })().then(
       () => null,
       (failure: unknown) => {
-        if (abandoned) {
-          const late = "The provided `error_handler` has failed late";
-          context.log.debug(
-            late,
-            this.#failure(context, failure, "error_handler"),
-          );
+        state.failure = { error: failure };
+        if (state.abandoned) {
+          late(failure);
         }
-        return { error: failure };
+        return state.failure;
       },
     );
     const { promise: timeout, resolve } =
@@ -881,13 +890,17 @@ export class Binden<
       typeof EXPIRED | typeof SUPERSEDED | { error: unknown } | null
     >[] = [settled, timeout];
     const { signal } = exchange;
-    if (!signal.aborted) {
+    const superseded = (): boolean =>
+      signal.aborted &&
+      (signal.reason as BindenAbortError).reason === "deadline";
+    const { aborted } = signal;
+    if (!aborted) {
       // A deadline that passes while it runs takes the reply over (but for the
       // reply of the deadline itself, which runs once the signal is aborted)
       outcomes.push(
         exchange.aborted.then(
           async (): Promise<typeof EXPIRED | typeof SUPERSEDED> => {
-            if ((signal.reason as BindenAbortError).reason === "deadline") {
+            if (superseded()) {
               return SUPERSEDED;
             }
             // Not by another reason: e.g. a client that goes away leaves it
@@ -897,9 +910,18 @@ export class Binden<
         ),
       );
     }
-    const outcome = await Promise.race(outcomes);
+    let outcome = await Promise.race(outcomes);
     clearTimeout(timer);
-    abandoned = outcome === EXPIRED || outcome === SUPERSEDED;
+    // Whatever has won (e.g. its rejection from a listener of the abort): a
+    // deadline that has passed while it ran has taken the reply over
+    if (!aborted && superseded()) {
+      outcome = SUPERSEDED;
+    }
+    state.abandoned = outcome !== null && outcome !== state.failure;
+    if (state.abandoned && state.failure !== null) {
+      // It had failed already (e.g. as the deadline passed)
+      late(state.failure.error);
+    }
     return outcome;
   }
 

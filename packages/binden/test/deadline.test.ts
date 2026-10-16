@@ -103,6 +103,29 @@ function isDeadline(error: unknown): boolean {
   return error instanceof BindenError && error.code === "deadline";
 }
 
+/**
+ * A promise that settles synchronously from a listener of the abort of the
+ * request (before the framework learns of it), as the path of the request
+ * says: it rejects (`/rejects`), resolves, or resolves and then throws from its
+ * own continuation (`/throws`)
+ */
+function settledAtTheDeadline(context: Context): Promise<void> {
+  const { pathname } = context.url;
+  const { promise, resolve, reject } = Promise.withResolvers<never>();
+  context.signal.addEventListener("abort", () => {
+    if (pathname === "/rejects") {
+      reject(new Error("Rejected at the deadline"));
+    } else {
+      (resolve as () => void)();
+    }
+  });
+  return pathname === "/throws"
+    ? promise.then(() => {
+        throw new Error("Thrown at the deadline");
+      })
+    : promise;
+}
+
 /** A source that never ends (nor pushes anything by itself) */
 function silent(): Readable {
   return new Readable({
@@ -331,6 +354,51 @@ suite("The deadline", () => {
         await within(
           captured.waitFor("The provided `error_handler` has failed late"),
         );
+      },
+    );
+  });
+
+  test("takes the reply over from an error handler that settles as the deadline passes", async () => {
+    const paths = ["/rejects", "/resolves", "/throws"];
+    await withApp(
+      {
+        timeout: 30,
+        error_handler_timeout: 1000,
+        // Not `async`: its promise is the one that settles at the deadline
+        error_handler: (context: Context, error: unknown): Promise<void> => {
+          if (isDeadline(error)) {
+            // Its reply comes later than the outcome of the handler
+            return sleep(20).then(async () => {
+              await context.status(503).send("deadline");
+            });
+          }
+          return settledAtTheDeadline(context);
+        },
+      },
+      (app) => {
+        app.use(() => {
+          throw new Error("A failure");
+        });
+      },
+      async ({ port }, captured) => {
+        for (const path of paths) {
+          const connection = await client(port);
+          try {
+            const { head, body } = await connection.request(path);
+            ok(head.startsWith("HTTP/1.1 503 "), `${path}: ${head}`);
+            deepStrictEqual(body, "deadline", path);
+          } finally {
+            connection.close();
+          }
+        }
+        const messages = captured.records.map(({ msg }) => msg);
+        deepStrictEqual(
+          messages.filter(
+            (msg) => msg === "The provided `error_handler` has failed late",
+          ).length,
+          2,
+        );
+        ok(!messages.includes("The provided `error_handler` has failed"));
       },
     );
   });
