@@ -29,6 +29,17 @@ export const kSeal: unique symbol = Symbol("binden.seal");
 export const kCancel: unique symbol = Symbol("binden.cancel");
 
 /**
+ * The key of the internal method that records at once the cancellation of
+ * the pending sends of a response whose headers are not committed yet, which
+ * `[kCancel]()` carries out later (e.g. once the works that it abandons have
+ * been told, see `kRevoke`): `response[kCancelling](reason)`. A send that
+ * settles in between rejects with the reason. Not part of the public API.
+ *
+ * @internal
+ */
+export const kCancelling: unique symbol = Symbol("binden.cancelling");
+
+/**
  * The key of the internal method that runs a function of the framework with
  * the rights of the framework, whoever owns the response:
  * `response[kFramework](() => response.destroy())`. Not part of the public API.

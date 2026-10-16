@@ -1269,6 +1269,175 @@ suite("Ownership of the response once the exchange is sealed", () => {
       released.open();
       await within(closed(handles));
     });
+
+    /**
+     * A pipe of the stack fails, once its source ends (after `ms`
+     * milliseconds), while a `sendFile()` of the stack is pending: whether it
+     * has seen its work revoked before the cancellation (in the turn of its
+     * call) or not (its file is being read), it rejects with the error of the
+     * pipe, and the 500 is replied
+     */
+    const pipeFailsAfter = async (ms: number): Promise<void> => {
+      const released = gate();
+      const handles = delay({ stating: released.promise });
+      const failure = new Error("The pipe has failed");
+      const settled = Promise.withResolvers<unknown[]>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            settledAs(context.response.sendFile(file)).then(
+              settled.resolve,
+              settled.reject,
+            );
+            const source = new PassThrough();
+            source.pipe(context.response);
+            source.prependListener("end", () => {
+              throw failure;
+            });
+            if (ms > 0) {
+              await sleep(ms);
+            }
+            source.end();
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual([received.status, received.body], [500, ""]);
+        },
+      );
+      deepStrictEqual(await within(settled.promise), ["rejected", failure]);
+      released.open();
+      if (ms > 0) {
+        await within(closed(handles));
+      } else {
+        // Its work revoked before its file is opened: it is never opened
+        deepStrictEqual(handles.length, 0);
+      }
+    };
+
+    test("cancelled by a pipe of the stack that fails in the turn of its call: it rejects with its error (never as an ignored send), and the 500 is replied", async () => {
+      await pipeFailsAfter(0);
+    });
+
+    test("cancelled by a pipe of the stack that fails while its file is read: it rejects with its error, and the 500 is replied", async () => {
+      await pipeFailsAfter(20);
+    });
+
+    test("a pipe of the stack that fails once the headers are committed cancels nothing: it is ignored, and the connection is closed", async () => {
+      const released = gate();
+      const handles = delay({ stating: released.promise });
+      const settled = Promise.withResolvers<unknown[]>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            settledAs(context.response.sendFile(file)).then(
+              settled.resolve,
+              settled.reject,
+            );
+            context.response.flushHeaders();
+            const source = new PassThrough();
+            source.pipe(context.response);
+            source.prependListener("end", () => {
+              throw new Error("The pipe has failed");
+            });
+            // While its file is read
+            await sleep(20);
+            source.end();
+            await never();
+          });
+        },
+        async ({ port }) => {
+          await within(
+            fetch(port).then(
+              () => {
+                throw new Error("Not cut");
+              },
+              () => null,
+            ),
+          );
+        },
+      );
+      released.open();
+      deepStrictEqual(await within(settled.promise), ["resolved"]);
+      await within(closed(handles));
+    });
+
+    test("cancelled by a pipe of the error handler that fails in the turn of its call: it rejects with its error (never as an ignored send), and the 500 is replied", async () => {
+      const handles = delay({});
+      const failure = new Error("The pipe has failed");
+      const settled = Promise.withResolvers<unknown[]>();
+      await withApp(
+        {
+          error_handler: async (context: Context): Promise<void> => {
+            const source = new PassThrough();
+            source.pipe(context.response);
+            source.prependListener("end", () => {
+              throw failure;
+            });
+            // In a callback of the handler (not a continuation of a
+            // promise): the end of the source comes before the `sendFile()`
+            // goes on
+            await new Promise<void>((resolve) => {
+              setImmediate(() => {
+                settledAs(context.response.sendFile(file)).then(
+                  settled.resolve,
+                  settled.reject,
+                );
+                source.end();
+                resolve();
+              });
+            });
+            await never();
+          },
+        },
+        (app) => {
+          app.use(() => {
+            throw new Error("A failure");
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual([received.status, received.body], [500, ""]);
+        },
+      );
+      deepStrictEqual(await within(settled.promise), ["rejected", failure]);
+      // Its work revoked before its file is opened: it is never opened
+      deepStrictEqual(handles.length, 0);
+    });
+  });
+
+  test("a send of a stream of the stack that settles before the pipe of the stack that fails cancels it: it rejects with the error of the pipe", async () => {
+    const failure = new Error("The pipe has failed");
+    const settled = Promise.withResolvers<unknown>();
+    await withApp(
+      {},
+      (app) => {
+        app.use(async (context: Context) => {
+          const other = silent();
+          reasonOf(context.response.send(other)).then(
+            settled.resolve,
+            settled.reject,
+          );
+          const source = new PassThrough();
+          source.pipe(context.response);
+          source.prependListener("end", () => {
+            // Its `close` (a premature close) comes before the cancellation
+            other.destroy();
+            throw failure;
+          });
+          source.end();
+          await never();
+        });
+      },
+      async ({ port }) => {
+        const received = await fetch(port);
+        deepStrictEqual([received.status, received.body], [500, ""]);
+      },
+    );
+    deepStrictEqual(await within(settled.promise), failure);
   });
 });
 

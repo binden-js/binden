@@ -648,7 +648,8 @@ export class Binden<
       response[kFramework](() => response.destroy());
       return;
     }
-    // The sends of the stack have written nothing
+    // The sends of the stack have written nothing: their cancellation,
+    // recorded at once (see `Exchange.seal()`), is carried out
     response[kCancel](error);
     await exchange.reply(() => this.#errorHandler(context, exchange, error));
   }

@@ -28,6 +28,7 @@ import {
   type IRepresentationNegotiator,
   type IResponseOperation,
   kCancel,
+  kCancelling,
   kFramework,
   kListen,
   kNegotiator,
@@ -598,6 +599,12 @@ export class BindenResponse<
     object,
     (reason: unknown, release: (() => void)[]) => void
   >();
+  /**
+   * The cancellations recorded for sends in progress (see
+   * `[kCancelling]()`), by their key: such a send rejects with the reason,
+   * however it settles
+   */
+  readonly #cancellations = new WeakMap<object, { readonly reason: Error }>();
   /** The checks of the owners that may mutate the response (see `[kSeal]()`) */
   readonly #seals: ((owner: object | undefined) => boolean)[] = [];
   /** How the framework handles the works that own the response (see `[kOwnership]()`) */
@@ -2429,6 +2436,54 @@ export class BindenResponse<
   }
 
   /**
+   * Records at once the cancellation of the sends in progress (of a stream,
+   * or of a file), unless the headers have been committed, which
+   * `[kCancel]()` carries out later: each rejects with the reason, however it
+   * settles in between (e.g. a `sendFile()` that sees that its work may no
+   * longer mutate the response, whose send would otherwise be ignored). The
+   * sends started afterwards are not cancelled.
+   *
+   * @internal
+   */
+  public [kCancelling](reason: unknown): void {
+    if (!this.headersSent) {
+      for (const key of this.#pending.keys()) {
+        // Whatever it is (e.g. `null`), as `[kCancel]()`
+        this.#cancellations.set(key, { reason: reason as Error });
+      }
+    }
+  }
+
+  /**
+   * The promise of a send in progress (see `#pending`), by its key: once its
+   * cancellation has been recorded (see `[kCancelling]()`), it rejects with
+   * its reason, however the send settles
+   */
+  #cancellable(
+    key: object,
+    executor: (resolve: () => void, reject: (error: Error) => void) => void,
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      executor(
+        () => {
+          const cancellation = this.#cancellations.get(key);
+          if (typeof cancellation === "undefined") {
+            resolve();
+          } else {
+            reject(cancellation.reason);
+          }
+        },
+        (error) => {
+          const cancellation = this.#cancellations.get(key);
+          reject(
+            typeof cancellation === "undefined" ? error : cancellation.reason,
+          );
+        },
+      );
+    });
+  }
+
+  /**
    * Runs a function of the framework with its rights, whoever owns the
    * response (e.g. to destroy it once sealed)
    *
@@ -3025,7 +3080,7 @@ export class BindenResponse<
       const length = this.#length();
       return length !== null && flushed >= length;
     }, finishing);
-    return new Promise<void>((resolve, reject) => {
+    return this.#cancellable(key, (resolve, reject) => {
       /** The listeners that the send adds to the source (see `listening`) */
       const listeners: [string, (...args: never[]) => void][] = [];
       /**
@@ -3497,7 +3552,7 @@ export class BindenResponse<
     );
     const key = {};
     let settled = false;
-    return new Promise<void>((resolve, reject) => {
+    return this.#cancellable(key, (resolve, reject) => {
       // As the settlement of `#pipe()`: a cancellation always fails (with a
       // reason that may be anything)
       const settle = (error: Error | null, cancelled = false): void => {

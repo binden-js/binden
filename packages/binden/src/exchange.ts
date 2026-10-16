@@ -6,6 +6,7 @@ import {
 } from "./listeners.js";
 import {
   type IPipeFailure,
+  kCancelling,
   kFramework,
   kListen,
   kPipeFailure,
@@ -411,11 +412,18 @@ export class Exchange implements ITokenIssuer {
    * From now on only the framework replies (e.g. once the deadline has
    * passed): the works of the exchange (its stack, and any earlier
    * `reply()`) may no longer reply, and are told so (see `kRevoke`), with the
-   * failure of a pipe of one of them, if any
+   * failure of a pipe of one of them, if any. The pending sends are then
+   * cancelled at once with its error (see `kCancelling`): the framework
+   * carries the cancellation out once they have been told (see `delivered`),
+   * and a send that settles in between rejects with that error, never as a
+   * send that is ignored.
    */
   public seal(failure: IPipeFailure | null = null): void {
     this.#sealed = true;
     this.#reply = null;
+    if (failure !== null) {
+      this.#response[kCancelling](failure.error);
+    }
     this.#revoke([...this.#live], failure);
   }
 
