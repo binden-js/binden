@@ -610,18 +610,37 @@ export class BindenResponse<
   /**
    * The sends in progress (of a stream or a file), by their key, with the
    * function that cancels them: the send rejects with the reason, and its
-   * headers are removed (see `[kCancel]()`)
+   * source is released (see `[kCancel]()`, which restores the response
+   * first, see `#rollbacks`)
    */
   readonly #pending = new Map<
     object,
     (reason: unknown, release: (() => void)[]) => void
   >();
   /**
+   * What restores the response as it was before each send in progress (see
+   * `#pending`), by its key, in the order of their start: run by
+   * `[kCancel]()`, before the reply that replaces them. A send that settles
+   * once its cancellation has been recorded keeps it until then (see
+   * `#settled()`), so that this reply never inherits what it has set.
+   */
+  readonly #rollbacks = new Map<object, () => void>();
+  /**
    * The cancellations recorded for sends in progress (see
    * `[kCancelling]()`), by their key: such a send rejects with the reason,
-   * however it settles
+   * however it settles, and is still restored by `[kCancel]()`
    */
   readonly #cancellations = new WeakMap<object, { readonly reason: Error }>();
+  /**
+   * The rollback of a send of a stream (see `#rollbacks`): without the
+   * framing of its body, which is not sent, nor the representation chosen
+   * for it (see `#forget()`). It holds nothing of the send (e.g. its source),
+   * which may have settled long before.
+   */
+  readonly #unsent = (): void => {
+    this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
+    this.#forget();
+  };
   /** The checks of the owners that may mutate the response (see `[kSeal]()`) */
   readonly #seals: ((owner: object | undefined) => boolean)[] = [];
   /** How the framework handles the works that own the response (see `[kOwnership]()`) */
@@ -2427,8 +2446,11 @@ export class BindenResponse<
   /**
    * Cancels the sends in progress (of a stream, or of a file), unless the
    * headers have been committed: each rejects with the reason, its source is
-   * released, and the headers that it has set are removed, so that another
-   * reply can be sent at once
+   * released, and the response is restored as it was before it (its status,
+   * its headers and its framing, without the representation chosen for its
+   * body), also for a send that has settled once its cancellation was
+   * recorded (see `[kCancelling]()`), so that another reply can be sent at
+   * once
    *
    * @internal
    */
@@ -2439,6 +2461,14 @@ export class BindenResponse<
       this.#piped = false;
       const release: (() => void)[] = [];
       this[kFramework](() => {
+        // Restored first, in the order of their start (e.g. a `sendFile()`,
+        // then the send of its file): also a send that has settled once its
+        // cancellation was recorded (see `#settled()`)
+        const rollbacks = [...this.#rollbacks.values()];
+        this.#rollbacks.clear();
+        for (const rollback of rollbacks) {
+          rollback();
+        }
         for (const cancel of [...this.#pending.values()]) {
           cancel(reason, release);
         }
@@ -2457,8 +2487,9 @@ export class BindenResponse<
    * or of a file), unless the headers have been committed, which
    * `[kCancel]()` carries out later: each rejects with the reason, however it
    * settles in between (e.g. a `sendFile()` that sees that its work may no
-   * longer mutate the response, whose send would otherwise be ignored). The
-   * sends started afterwards are not cancelled.
+   * longer mutate the response, whose send would otherwise be ignored), and
+   * is restored by `[kCancel]()` all the same (see `#rollbacks`). The sends
+   * started afterwards are not cancelled.
    *
    * @internal
    */
@@ -2498,6 +2529,20 @@ export class BindenResponse<
         },
       );
     });
+  }
+
+  /**
+   * A send in progress has settled (see `#pending`): it is no longer
+   * cancelled, nor restored, unless its cancellation has been recorded (see
+   * `[kCancelling]()`), whose rollback (see `#rollbacks`) `[kCancel]()` still
+   * runs, whatever the send has done in between (e.g. failed, or settled as
+   * ignored)
+   */
+  #settled(key: object): void {
+    this.#pending.delete(key);
+    if (!this.#cancellations.has(key)) {
+      this.#rollbacks.delete(key);
+    }
   }
 
   /**
@@ -3197,7 +3242,8 @@ export class BindenResponse<
           return;
         }
         settled = true;
-        this.#pending.delete(key);
+        // Restored by `[kCancel]()` still, once its cancellation is recorded
+        this.#settled(key);
         unlisten();
         if (error === null && !cancelled) {
           resolve();
@@ -3264,12 +3310,13 @@ export class BindenResponse<
           fail(error as Error);
         }
       };
+      // The framing of the body that is not sent, and its representation,
+      // which `[kCancel]()` removes first (see `#rollbacks`)
+      this.#rollbacks.set(key, this.#unsent);
       this.#pending.set(key, (reason: unknown, release: (() => void)[]) => {
         release.push(() => {
           this.#discard(data);
         });
-        // The framing of the body that is not sent
-        this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
         settle(reason as Error, true);
       });
 
@@ -3645,7 +3692,10 @@ export class BindenResponse<
       const settle = (error: Error | null, cancelled = false): void => {
         if (!settled) {
           settled = true;
-          this.#pending.delete(key);
+          // Restored by `[kCancel]()` still, once its cancellation is
+          // recorded (e.g. it has seen that its work may no longer mutate the
+          // response, or the send of its file has failed in between)
+          this.#settled(key);
           if (error === null && !cancelled) {
             resolve();
             return;
@@ -3654,10 +3704,9 @@ export class BindenResponse<
           reject(failure);
         }
       };
-      // Started at once (see `.started`), until it fails before sending
-      // anything
-      this.#pending.set(key, (reason: unknown) => {
-        // The headers and the status from before the file
+      // The headers and the status from before the file, which
+      // `[kCancel]()` restores first (see `#rollbacks`)
+      this.#rollbacks.set(key, () => {
         this.statusCode = status;
         for (const name of this.getHeaderNames()) {
           if (!headers.has(name)) {
@@ -3669,6 +3718,10 @@ export class BindenResponse<
             this.setHeader(name, value as OutgoingHttpHeader);
           }
         }
+      });
+      // Started at once (see `.started`), until it fails before sending
+      // anything
+      this.#pending.set(key, (reason: unknown) => {
         settle(reason as Error, true);
       });
       sendFileTo(
