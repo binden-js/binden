@@ -293,6 +293,36 @@ function writeAfterEnd(): Error {
   });
 }
 
+/** The error of an `end()` whose response is destroyed before it has ended */
+function destroyed(): Error {
+  return Object.assign(
+    new Error("Cannot call end after a stream was destroyed"),
+    { code: "ERR_STREAM_DESTROYED" },
+  );
+}
+
+/**
+ * A callback of a `write()` or an `end()` that runs as the work that has
+ * called it (the `operation` of its call, see `kOperation`), as binden runs
+ * it, with the receiver and the arguments that it is called with: the
+ * compressor would otherwise call it as the work that has created the
+ * compressor
+ */
+function owned(callback: ICallback, operation: IResponseOperation): ICallback {
+  return function ownedCallback(this: unknown, ...args: unknown[]): void {
+    operation.run(() => {
+      Reflect.apply(callback, this, args);
+    });
+  };
+}
+
+/** A callback that gives `fn` the receiver and the arguments that it is called with */
+function relay(fn: (receiver: unknown, args: unknown[]) => void): ICallback {
+  return function relayed(this: unknown, ...args: unknown[]): void {
+    fn(this, args);
+  };
+}
+
 /**
  * Leaves one response uncompressed: called before its reply starts
  * (afterwards, it may have no effect), and ignored for the work that may no
@@ -335,6 +365,22 @@ export class CompressedResponse {
   #kind = 0;
   /** Whether the application has ended a compressed response */
   #ended = false;
+  /**
+   * The callbacks of the `end()` calls of the application that wait for the
+   * end of the response (see `owned()`): of a compressed response, which
+   * the end of the response by the compressor gets (see `#start()`), and of
+   * the first `end()` of a replaced one, called as the end of the
+   * replacement is (see `#onReplaced()`). `null` once they have been given.
+   */
+  #ending: ICallback[] | null = [];
+  /**
+   * How Node.js has called back the end of a replacement: its receiver and
+   * its arguments (see `#replace()`), `null` until it has
+   */
+  #replacement: {
+    readonly receiver: unknown;
+    readonly args: unknown[];
+  } | null = null;
   /** Set while `flush()` writes its marker (see `#onWrite()`) */
   #flushing = false;
   /** The compressed bytes emitted, and those that the response has flushed */
@@ -421,17 +467,18 @@ export class CompressedResponse {
   }
 
   /**
-   * Whether the current work may mutate the response (see `kOperation`):
-   * once the response is sealed, the calls of the work that is abandoned are
-   * ignored. The operation of the work is kept for the compressor until the
-   * decision is taken.
+   * The operation of the current work (see `kOperation`), whose callbacks
+   * run as that work (see `owned()`): `null` when it may not mutate the
+   * response (once the response is sealed, the calls of the work that is
+   * abandoned are ignored). The operation of the work is kept for the
+   * compressor until the decision is taken.
    */
-  #allowed(): boolean {
+  #allowed(): IResponseOperation | null {
     const operation = this.#response[kOperation]();
     if (this.#sink === "pending") {
       this.#operation = operation;
     }
-    return operation !== null;
+    return operation;
   }
 
   /**
@@ -441,7 +488,7 @@ export class CompressedResponse {
    */
   #onWriteHead(args: unknown[]): IResponse {
     const response = this.#response;
-    if (!this.#allowed()) {
+    if (this.#allowed() === null) {
       return response;
     }
     const [code, reason, headers] = args;
@@ -510,12 +557,14 @@ export class CompressedResponse {
    * its error), the chunk as it is written (see `normalized()`), then the
    * decision, unless it has been taken. Nothing is decided by a write that
    * throws, and the response may still reply. A response sent as it is gets
-   * its arguments, as without a compression.
+   * its arguments, as without a compression. The callback runs once, as the
+   * work that has called `write()` (see `owned()`).
    */
   #onWrite(args: unknown[]): boolean {
     const response = this.#response;
     const [chunk, second, third] = args;
-    if (!this.#allowed()) {
+    const operation = this.#allowed();
+    if (operation === null) {
       ignore(args);
       return true;
     } else if (this.#current() === "as_is") {
@@ -536,9 +585,10 @@ export class CompressedResponse {
     const callback = (typeof second === "function" ? second : third) as
       ICallback | undefined;
     if (this.#sink === "discard") {
-      // The response has been replaced: its writes are discarded
+      // The response has been replaced: its writes are discarded, and their
+      // callback runs as for a chunk that has been written
       if (callback) {
-        process.nextTick(callback);
+        process.nextTick(callback, null);
       }
       return true;
     }
@@ -557,8 +607,10 @@ export class CompressedResponse {
       return false;
     }
     // Decoded by the compressor as `Buffer.from()` decodes it (see
-    // `normalized()`)
-    return compressor.write(chunk, encoding, callback as ICallback);
+    // `normalized()`), and called back by it, once
+    return callback
+      ? compressor.write(chunk, encoding, owned(callback, operation))
+      : compressor.write(chunk, encoding);
   }
 
   /**
@@ -567,13 +619,16 @@ export class CompressedResponse {
    * falsy (e.g. `0`) is none, and a chunk that it refuses throws its error
    * before anything is changed, the cork of the socket by `end()` of Node.js
    * as well (see `refuse()`): unless the application has ended the response
-   * as it is, which Node.js answers as without a compression.
+   * as it is, which Node.js answers as without a compression. Its callback
+   * runs once, as `end()` of Node.js calls it (by the version of Node.js),
+   * as the work that has called `end()`.
    */
   #onEnd(args: unknown[]): IResponse {
     const response = this.#response;
     const [first, second, third] = args;
     const chunk = typeof first !== "function" && Boolean(first) ? first : null;
-    if (!this.#allowed()) {
+    const operation = this.#allowed();
+    if (operation === null) {
       ignore(args);
       return response;
     }
@@ -609,12 +664,16 @@ export class CompressedResponse {
       }
     }
     if (this.#sink === "discard") {
-      // Ended already: only its callback runs
-      return Reflect.apply(
-        this.#end,
-        response,
-        callback ? [callback] : [],
-      ) as IResponse;
+      // Ended already: only its callback runs, as for the end of the
+      // replacement (the first `end()` of the application), or as Node.js
+      // calls the one of an `end()` that follows it
+      if (callback && this.#ended) {
+        this.#end(callback);
+      } else if (callback) {
+        this.#join(owned(callback, operation));
+      }
+      this.#ended = true;
+      return response;
     } else if (!this.#ended) {
       // Its chunk and its encoding have been checked: the compressor
       // accepts them
@@ -626,17 +685,34 @@ export class CompressedResponse {
     }
     // As Node.js: the callback runs once the response has finished (or
     // with `ERR_STREAM_ALREADY_FINISHED` once it has), and a second `end()`
-    // writes nothing
-    if (callback) {
-      if (response.writableFinished) {
-        this.#end(callback);
-      } else {
-        response.once("finish", () => {
-          callback();
-        });
-      }
+    // writes nothing. It is given to the end of the response, once the
+    // compressor has ended (see `#start()`), unless the response is
+    // destroyed (Node.js does not call it back).
+    if (!callback) {
+      return response;
+    } else if (this.#ending === null || response.destroyed) {
+      this.#end(callback);
+    } else {
+      this.#ending.push(owned(callback, operation));
     }
     return response;
+  }
+
+  /**
+   * Gives the callback of the first `end()` of a replaced response the
+   * receiver and the arguments of the end of the replacement (see
+   * `#onReplaced()`): once it has been called back (asynchronously, as
+   * `end()` of Node.js calls it), or when it is
+   */
+  #join(callback: ICallback): void {
+    const replacement = this.#replacement;
+    if (replacement === null) {
+      (this.#ending as ICallback[]).push(callback);
+    } else {
+      process.nextTick(() => {
+        Reflect.apply(callback, replacement.receiver, replacement.args);
+      });
+    }
   }
 
   /**
@@ -949,7 +1025,9 @@ export class CompressedResponse {
 
   /**
    * Replaces the response with an empty one of the status, and sends it: the
-   * writes of the application are then discarded
+   * writes of the application are then discarded. The callback of its end
+   * gets the receiver and the arguments of Node.js, which the callbacks of
+   * the end of the application get (see `#onReplaced()`).
    */
   #replace(status: 406 | 500): void {
     const response = this.#response;
@@ -961,7 +1039,25 @@ export class CompressedResponse {
     response.setHeader("Content-Length", 0);
     this.#sink = "discard";
     this.#writeHead(status, STATUS_CODES[status] as string);
-    this.#end();
+    this.#end(
+      relay((receiver, args) => {
+        this.#onReplaced(receiver, args);
+      }),
+    );
+  }
+
+  /**
+   * The end of a replacement has been called back (see `#replace()`), with
+   * a receiver and arguments: so are the callbacks of the end of the
+   * application, the waiting ones now (see `#onEnd()`)
+   */
+  #onReplaced(receiver: unknown, args: unknown[]): void {
+    const ending = this.#ending as ICallback[];
+    this.#replacement = { receiver, args };
+    this.#ending = null;
+    for (const callback of ending) {
+      Reflect.apply(callback, receiver, args);
+    }
   }
 
   /**
@@ -1004,11 +1100,28 @@ export class CompressedResponse {
         operation.run(() => response.destroy());
       })
       .once("end", () => {
-        operation.run(() => this.#end());
+        // The callbacks of `end()` are those of the end of the response (the
+        // first one), and of the `end()` calls that follow it: Node.js calls
+        // them as it calls those of an uncompressed response
+        const [ending, ...after] = this.#ending as ICallback[];
+        this.#ending = null;
+        operation.run(() => {
+          this.#end(...(typeof ending === "undefined" ? [] : [ending]));
+          for (const callback of after) {
+            this.#end(callback);
+          }
+        });
       });
     this.#destroy = (): void => {
       // Its pending writes fail (and `flush()` rejects by itself)
       compressor.destroy();
+      // Not ended by the compressor: the callbacks of `end()` get the error,
+      // as Node.js calls those of a response destroyed before it has finished
+      const ending = this.#ending ?? [];
+      this.#ending = null;
+      for (const callback of ending) {
+        process.nextTick(callback, response.errored ?? destroyed());
+      }
     };
     // The real close only: an abandoned work that sees its response closed
     // early (see `kListen`) does not cut what the compressor has accepted

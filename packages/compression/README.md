@@ -172,7 +172,8 @@ is added to every response with a body:
   `406 Not Acceptable`: an empty body (`Content-Length: 0`) without the headers of the body that
   it replaces, as an error reply of binden (its type, framing with `Trailer`, validators,
   digests, …), nor `Accept-Ranges`. What the application writes afterwards is discarded (the
-  callbacks of its writes still run, and a refused chunk or encoding still throws);
+  callbacks of its writes still run, as for written chunks, the callback of its `end()` as the one
+  of the end of the replacement, and a refused chunk or encoding still throws);
 - an encoded response (e.g. a precompressed file, with the `Content-Encoding` that the application
   has set) has no other version: it is sent as it is when the request accepts its coding (any
   coding without `Accept-Encoding`, none with an empty one), and replaced with `406` otherwise.
@@ -211,9 +212,14 @@ is (or `406`).
   its `Content-Length`, the length of that `200` (binden keeps it on the `304` of `sendFile()` and of
   its dynamic `ETag`); a `304` without one gets the decision of a body without a length;
 - errors and backpressure are kept: `write()` returns `false` while the compressor is full, the
-  response emits `drain` once it is not, the callbacks of `write()` get the errors, the callback of
-  `end()` runs once the response has finished, and `writableEnded` is set by `end()`. A client that
-  goes away closes the compressor (its pending writes fail).
+  response emits `drain` once it is not, and `writableEnded` is set by `end()`. Each callback runs
+  once, as the work that has called `write()` or `end()` (not as the one that has started the
+  compressor): the callback of `write()` once the compressor has taken its chunk, with its error if
+  any (and no receiver, as the callback of a stream), the callback of `end()` once the response has
+  finished, as Node.js calls it without a compression (its receiver and its arguments depend on the
+  version of Node.js). A client that goes away closes the compressor: its pending writes fail, and
+  the callbacks of an `end()` that the compressor has not finished get the error of the response
+  (or `ERR_STREAM_DESTROYED`).
 
 ## `flush()` and server-sent events
 
