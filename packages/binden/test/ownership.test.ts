@@ -1013,6 +1013,53 @@ suite("Ownership of the response once the exchange is sealed", () => {
       deepStrictEqual(streams.length, 0);
     });
 
+    test("on a response that has ended (by a work that keeps its rights): it resolves at once, without checking its options nor touching the filesystem", async () => {
+      const calls: string[] = [];
+      for (const name of ["open", "realpath", "lstat"] as const) {
+        const original = fsp[name] as (...args: unknown[]) => unknown;
+        mock.method(fsp, name, (...args: unknown[]): unknown => {
+          calls.push(name);
+          return original(...args);
+        });
+      }
+      syncBuiltinESMExports();
+      const outcomes = Promise.withResolvers<unknown[]>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            const { response } = context;
+            response.end("ended");
+            outcomes.resolve(
+              await Promise.all(
+                [
+                  (): Promise<void> => response.sendFile(file),
+                  (): Promise<void> =>
+                    response.sendFile("file.txt", { root: tmp }),
+                  (): Promise<void> =>
+                    response.sendFile("missing.txt", { root: tmp }),
+                  (): Promise<void> =>
+                    response.sendFile(join(tmp, "missing.txt")),
+                  (): Promise<void> =>
+                    response.sendFile("../file.txt", { root: tmp }),
+                  (): Promise<void> => response.sendFile(file, { max_age: -1 }),
+                ].map(async (sent) => reasonOf(sent())),
+              ),
+            );
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual([received.status, received.body], [200, "ended"]);
+        },
+      );
+      deepStrictEqual(
+        await within(outcomes.promise),
+        Array.from({ length: 6 }, () => null),
+      );
+      deepStrictEqual(calls, []);
+    });
+
     test("the stream of a send that settles without reading it is destroyed, which closes the file", async () => {
       const handles = delay({});
       const outcomes: unknown[] = [];

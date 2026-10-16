@@ -3473,7 +3473,8 @@ export class BindenResponse<
    * before it, and a file opened later is closed. So is a file whose send
    * would be ignored (once the response has ended, or once the work that has
    * called it may no longer mutate the response, e.g. a failed error
-   * handler): it then resolves without sending anything.
+   * handler): it then resolves without sending anything, at once when it is
+   * called so (without reading its options, nor resolving its path).
    */
   public sendFile(
     path: URL | string,
@@ -3481,7 +3482,9 @@ export class BindenResponse<
   ): Promise<void> {
     // The work that sends the file, whose rights it keeps
     const owner = owners.getStore();
-    if (!this.#allows(owner)) {
+    if (this.writableEnded || !this.#allows(owner)) {
+      // Ignored, as `#send()`: its options are not read, nor its path
+      // resolved
       return Promise.resolve();
     }
     const status = this.statusCode;
