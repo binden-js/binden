@@ -1,4 +1,15 @@
-import { type IBody, type IReply, chunked, send, serve } from "./helpers.js";
+import { Binden, type BindenError, type Context, ct_text } from "binden";
+import {
+  type IBody,
+  type IReply,
+  chunked,
+  echo,
+  listen,
+  send,
+  serve,
+  sleep,
+  within,
+} from "./helpers.js";
 import {
   type IncomingMessage,
   type OutgoingHttpHeaders,
@@ -8,7 +19,6 @@ import { brotliCompressSync, gzipSync } from "node:zlib";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { BodyParser } from "../index.js";
-import { ct_text } from "binden";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
 
@@ -235,6 +245,65 @@ suite("BodyParser (limits)", () => {
         ),
         { status: 413, connection: "close" },
       );
+    },
+  );
+
+  test(
+    "a refused body that the error handler echoes: the rest of the request (unpiped by the parser) is read and sent",
+    { timeout: 10_000 },
+    async () => {
+      const echoed = Promise.withResolvers<unknown>();
+      const server = await listen(
+        new Binden({
+          error_handler: async (
+            context: Context,
+            error: unknown,
+          ): Promise<void> => {
+            context.status((error as BindenError).status);
+            await context.send(context.request).then(
+              () => {
+                echoed.resolve("resolved");
+              },
+              (failure: unknown) => {
+                echoed.resolve(failure);
+              },
+            );
+          },
+        }).use(new BodyParser({ limit: 4 }), echo),
+      );
+      try {
+        const req = request({
+          port: server.port,
+          method: "POST",
+          agent: false,
+          headers: { "Content-Type": ct_text },
+        });
+        const response = new Promise<IncomingMessage>((resolve, reject) => {
+          req.once("response", resolve).once("error", reject);
+        });
+        // Chunked: the parser reads the first chunks, refuses the second
+        // one, and unpipes the request
+        req.write("abc");
+        await sleep(50);
+        req.write("defgh");
+        await sleep(50);
+        req.end("ijk");
+        const received = await within(response);
+        let body = "";
+        received.setEncoding("latin1").on("data", (chunk: string) => {
+          body += chunk;
+        });
+        await within(once(received, "end"));
+        deepStrictEqual(
+          [received.statusCode, await within(echoed.promise)],
+          [413, "resolved"],
+        );
+        // What the parser has not read (all of it, once its last chunk has
+        // come with the one that it refuses)
+        ok(["ijk", ""].includes(body), body);
+      } finally {
+        await server.close();
+      }
     },
   );
 });

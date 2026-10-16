@@ -3028,7 +3028,10 @@ export class BindenResponse<
    * look complete, and more bytes are not read by the client as the next
    * response of the connection. A source that has already ended is an empty
    * body; one that has been destroyed before rejects at once, under its
-   * guard (see `guard()`: its destroy may still fail).
+   * guard (see `guard()`: its destroy may still fail). One that is paused
+   * (e.g. by the application, or by an `unpipe()`) is resumed once the
+   * listeners of the send are added, as `Readable.prototype.pipe()` does:
+   * once the response drains when it needs to.
    *
    * Once another writer has ended the response (e.g. a compression that has
    * replaced it with `406` when its first chunk committed the headers), the
@@ -3121,6 +3124,14 @@ export class BindenResponse<
         } else if (data.isPaused()) {
           data.resume();
         }
+      };
+      /** Resumes the source, which is paused, once the response drains */
+      const drain = (): void => {
+        const drained = this[kListen]("drain", () => {
+          observers.delete(drained);
+          data.resume();
+        });
+        observers.add(drained);
       };
       /**
        * Settles the send once (`cancelled`: by `[kCancel]()`, which releases
@@ -3254,11 +3265,7 @@ export class BindenResponse<
               sent += size;
               if (!accepted) {
                 data.pause();
-                const drained = this[kListen]("drain", () => {
-                  observers.delete(drained);
-                  data.resume();
-                });
-                observers.add(drained);
+                drain();
               }
             } catch (error: unknown) {
               // Not a chunk of bytes (e.g. an object)
@@ -3286,6 +3293,21 @@ export class BindenResponse<
       if (data.readableEnded) {
         // Its end has been read already: an empty body
         end();
+      } else if (data.readableFlowing !== true) {
+        // Paused (e.g. by the application, by an `unpipe()`, or the request
+        // that a body parser has refused), which a listener of `data` does
+        // not resume: read, as `Readable.prototype.pipe()` does, once the
+        // response has room
+        try {
+          if (this.writableNeedDrain) {
+            drain();
+          } else {
+            data.resume();
+          }
+        } catch (error: unknown) {
+          // E.g. a `resume()` of its own that throws
+          destroy(error as Error);
+        }
       }
       done.then(
         () => {
