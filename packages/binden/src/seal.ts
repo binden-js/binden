@@ -56,7 +56,9 @@ export const kListen: unique symbol = Symbol("binden.listen");
  * @internal
  */
 export interface IPipeFailure {
+  /** The work whose pipe has failed (its token) */
   readonly owner: object;
+  /** The error of the pipe (e.g. of the write of its source) */
   readonly error: unknown;
 }
 

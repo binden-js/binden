@@ -22,6 +22,8 @@ export * from "./src/middleware.js";
 export * from "./src/request.js";
 export * from "./src/response.js";
 export {
+  type IOwnership,
+  type IPipeFailure,
   type IRepresentation,
   type IRepresentationNegotiator,
   type IResponseOperation,
