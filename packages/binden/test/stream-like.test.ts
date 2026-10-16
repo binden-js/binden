@@ -10,6 +10,8 @@ import { EventEmitter, once } from "node:events";
 import { type IListening, capture, listen, sleep, within } from "./helpers.js";
 import {
   type IStreamLikeMethods,
+  emitterMethods,
+  guard,
   readStreamLike,
   streamLikeOf,
 } from "../src/stream-like.js";
@@ -17,6 +19,7 @@ import { IncomingMessage, request as httpRequest } from "node:http";
 import { Socket, connect } from "node:net";
 import { deepStrictEqual, ok, rejects } from "node:assert/strict";
 import { suite, test } from "node:test";
+import { Readable } from "node:stream";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { kSeal } from "../src/seal.js";
@@ -489,7 +492,7 @@ for (const [library, create] of libraries) {
       );
     });
 
-    test("rejects at once for a source that has been destroyed, without listening to it", async () => {
+    test("rejects at once for a source that has been destroyed, without reading it: only its guard listens (until the turn after its close, once its state tells it)", async () => {
       const source = create();
       source.destroy();
       await nextTurn();
@@ -508,7 +511,15 @@ for (const [library, create] of libraries) {
             "ERR_STREAM_PREMATURE_CLOSE",
           );
           await nextTurn();
-          deepStrictEqual([recorded.added, recorded.destroys], [[], []]);
+          deepStrictEqual(
+            [recorded.added.map(([event]) => event), recorded.destroys],
+            [["error", "close"], []],
+          );
+          // Of `readable-stream` 4: `closeEmitted`
+          deepStrictEqual(
+            recorded.left().length,
+            library === "readable-stream 4" ? 0 : 2,
+          );
         },
       );
     });
@@ -696,34 +707,66 @@ function reported(captured: ReturnType<typeof capture>): unknown[] {
 }
 
 suite("send() of a stream-like source", () => {
-  test("without destroy(): pauses it once cancelled, and removes every listener", async () => {
-    const source = new Emitting();
-    const removed: string[] = [];
-    // Only `off()`: its listeners are removed by it
-    Object.assign(source, {
-      removeListener: null,
-      off(event: string, listener: () => void): Emitting {
-        removed.push(event);
-        EventEmitter.prototype.removeListener.call(source, event, listener);
-        return source;
-      },
-    });
+  test("without destroy(): paused once cancelled or released, guarded before (an error of its pause is reported), and the listeners of the send are removed", async () => {
+    const captured = capture();
+    /** The events whose listeners have been removed, by source */
+    const removed = new Map<Emitting, string[]>();
+    /** A source without `destroy()`, with only `off()`, whose pause fails */
+    const create = (): Emitting => {
+      const source: Emitting = Object.assign(new Emitting(), {
+        removeListener: null,
+        off(event: string, listener: () => void): Emitting {
+          removed.get(source)?.push(event);
+          EventEmitter.prototype.removeListener.call(source, event, listener);
+          return source;
+        },
+        pause(): Emitting {
+          source.calls.push("pause");
+          source.emit("error", new Error("Failed to pause"));
+          return source;
+        },
+      });
+      removed.set(source, []);
+      return source;
+    };
+    const [cancelled, bodiless] = [create(), create()];
     await withApp(
-      { timeout: 50 },
+      { logger: captured.logger, log_error_details: true, timeout: 50 },
       async (context: Context) => {
-        await context.send(source);
+        await context.send(
+          context.request.method === "HEAD" ? bodiless : cancelled,
+        );
       },
       async ({ port }) => {
-        deepStrictEqual((await fetchBytes(port)).status, 503);
-        await until(() => source.calls.at(-1) === "pause");
-        await nextTurn();
         deepStrictEqual(
-          ["data", "end", "error", "close"].map((event) =>
-            source.listenerCount(event),
-          ),
-          [0, 0, 0, 0],
+          [
+            (await fetchBytes(port)).status,
+            (await fetchBytes(port, { method: "HEAD" })).status,
+          ],
+          [503, 200],
         );
-        deepStrictEqual(removed.sort(), ["close", "data", "end", "error"]);
+        await until(() => reported(captured).length === 2);
+        deepStrictEqual(reported(captured), [
+          "Failed to pause",
+          "Failed to pause",
+        ]);
+        await nextTurn();
+        // Its guard stays (it never closes)
+        deepStrictEqual(
+          [counts(cancelled), counts(bodiless)],
+          [
+            [0, 0, 1, 1],
+            [0, 0, 1, 1],
+          ],
+        );
+        deepStrictEqual(
+          [cancelled.calls, bodiless.calls],
+          [["resume", "pause"], ["pause"]],
+        );
+        deepStrictEqual(
+          [removed.get(cancelled)?.sort(), removed.get(bodiless)],
+          [["close", "data", "end", "error"], []],
+        );
       },
     );
   });
@@ -875,15 +918,16 @@ suite("send() of a stream-like source", () => {
     );
   });
 
-  test("an end or a close once destroyed is not its end: the error emitted within the turn rejects", async () => {
+  test("an end or a close once destroyed is not its end: the error emitted within the turn rejects (not reported), and a later one is reported once (by the send until its listener is removed, then by its guard until the turn after its close)", async () => {
     for (const [flag, event] of [
       ["destroyed", "end"],
       ["_destroyed", "close"],
     ] as const) {
       const source = new Emitting();
+      const captured = capture();
       let rejected: unknown = null;
       await withApp(
-        {},
+        { logger: captured.logger, log_error_details: true },
         async (context: Context) => {
           setTimeout(() => {
             Object.assign(source, { [flag]: true });
@@ -895,6 +939,8 @@ suite("send() of a stream-like source", () => {
           }, 10);
           await context.send(source).catch((error: unknown) => {
             rejected = error;
+            // Before the listener of the send is removed
+            source.emit("error", new Error("Decided"));
             throw error;
           });
         },
@@ -902,7 +948,19 @@ suite("send() of a stream-like source", () => {
           deepStrictEqual((await fetchBytes(port)).status, 500);
           deepStrictEqual((rejected as { code?: unknown }).code, "E_GONE");
           await nextTurn();
-          deepStrictEqual(source.eventNames(), [], flag);
+          if (event === "end") {
+            // Its guard, which has not seen its close
+            deepStrictEqual(counts(source), [0, 0, 1, 1]);
+            source.emit("error", new Error("Later"));
+            source.emit("close");
+            await nextTurn();
+          }
+          // The error of the send is not reported
+          deepStrictEqual(
+            [reported(captured), source.eventNames()],
+            [event === "end" ? ["Decided", "Later"] : ["Decided"], []],
+            flag,
+          );
         },
       );
     }
@@ -1017,7 +1075,8 @@ suite("send() of a stream-like source that will not be sent", () => {
       "error",
     ]);
     deepStrictEqual(emitting.calls, ["pause"]);
-    deepStrictEqual(emitting.eventNames(), []);
+    // Its guard, until it closes
+    deepStrictEqual(counts(emitting), [0, 0, 1, 1]);
     // Without the framework: its error is not reported, nor thrown
     const failing = Object.assign(new Emitting(), {
       destroy(): void {
@@ -1120,6 +1179,24 @@ suite("send() of a stream-like source that will not be sent", () => {
     });
   });
 
+  test("the late errors of a source without destroy(), or destroyed by the application, without a listener of the application, are logged and do not crash the process", () => {
+    // Its pause fails on the next tick (cancelled at the deadline, and
+    // released with 204); destroyed before the send (`readable-stream` 2 and
+    // 4 failing 20 ms later, a `PassThrough` of 2 on the next tick), or once
+    // sent by an `end` (failing 20 ms later): the guards of those that never
+    // close stay
+    deepStrictEqual(fixture("stream-like-destroyed.ts"), {
+      status: 0,
+      stdout:
+        "503 204 500 500 500 500\n" +
+        `deadline resolved ${Array.from({ length: 4 }, () => "ERR_STREAM_PREMATURE_CLOSE").join(" ")}\n` +
+        "Failed after its end, Failed after its pause, Failed after its pause, " +
+        "Failed before the send (/v2), Failed before the send (/v4), Failed in the same turn\n" +
+        "1 1 0 1 0 1\n",
+      stderr: "",
+    });
+  });
+
   test("cancelled, whose destroy() emits nothing, does not keep its response: only its guard stays", () => {
     // 400 sources: no listener of their sends (`data`, `end`), and a guard
     // each (`error`, `close`)
@@ -1128,6 +1205,43 @@ suite("send() of a stream-like source that will not be sent", () => {
       stdout: "collected 0 0 400 400\n",
       stderr: "",
     });
+  });
+});
+
+suite("guard() of a source", () => {
+  test("by the methods of Node.js (emitterMethods): the own methods of a Readable are never read, the error of its destroy is reported, and it is removed on the turn after its close", async () => {
+    const reports: unknown[] = [];
+    const source = new Readable({
+      read(): void {
+        // Nothing to read
+      },
+      destroy(_error, callback): void {
+        callback(new Error("Failed to close"));
+      },
+    });
+    const read: string[] = [];
+    for (const name of ["on", "removeListener", "off", "destroy"]) {
+      Object.defineProperty(source, name, {
+        get(): never {
+          read.push(name);
+          throw new Error(`${name} has been read`);
+        },
+      });
+    }
+    guard(source, emitterMethods, (error) => reports.push(error));
+    guard(source, emitterMethods, (error) => reports.push(error));
+    Readable.prototype.destroy.call(source);
+    await nextTurn();
+    await nextTurn();
+    deepStrictEqual(
+      [
+        reports.map((error) => (error as Error).message),
+        read,
+        source.listenerCount("error"),
+        source.listenerCount("close"),
+      ],
+      [["Failed to close"], [], 0, 0],
+    );
   });
 });
 

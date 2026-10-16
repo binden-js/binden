@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 
 /** A listener of an event of a stream-like source (see `IStreamLike`) */
@@ -111,29 +112,89 @@ function premature(): Error {
   });
 }
 
+/**
+ * Whether a stream-like source has emitted its `close`: `closeEmitted` of
+ * its state (e.g. of `readable-stream` 4, but not 2 nor 3, whose state does
+ * not tell)
+ */
+function hasClosed(source: object): boolean {
+  const state = Reflect.get(source, "_readableState") as
+    { readonly closeEmitted?: unknown } | null | undefined;
+  return state?.closeEmitted === true;
+}
+
 /** The listener of `error` of the guard of each source (see `guard()`) */
 const guards = new WeakMap<object, (error: unknown) => void>();
 
 /**
- * Keeps a late `error` of a source that is not sent, or no longer (released,
- * or cancelled), from crashing the process without a listener of the
- * application: its `destroy()` may fail asynchronously, at any time. A guard
- * of its own reports it (see `ISourceReport`), and holds nothing else (never
- * the response, nor the send), so that it may stay on a source that never
- * emits anything: it is never removed by a timer, only on the turn after the
- * `close` of the source (some sources emit their `error` after it, e.g.
- * `readable-stream` 2). One guard per source, however many sends release it.
+ * How many sends listen to the `error` of each source: an error that one of
+ * them hears fails it, and is not reported by the guard of the source too
+ * (see `guard()`)
  */
-function guard(
+const hearing = new WeakMap<object, number>();
+
+/** Counts a send that listens to the `error` of a source (`1`), or no longer (`-1`) */
+function hear(source: object, change: 1 | -1): void {
+  const count = (hearing.get(source) ?? 0) + change;
+  if (count > 0) {
+    hearing.set(source, count);
+  } else {
+    hearing.delete(source);
+  }
+}
+
+/**
+ * How a guard (see `guard()`) adds its listeners to a source, and removes
+ * them: by the methods of the source (see `IStreamLikeMethods`), or by
+ * `emitterMethods`
+ *
+ * @internal
+ */
+export type IGuardMethods = Pick<IStreamLikeMethods, "on" | "remove">;
+
+/**
+ * The methods of Node.js that add and remove the listeners of an emitter
+ * (`EventEmitter.prototype.on()` and `removeListener()`), for a guard (see
+ * `guard()`) of a source whose own methods are not read (e.g. a Node.js
+ * `Readable`, whose own `on` may be a getter)
+ *
+ * @internal
+ */
+export const emitterMethods: IGuardMethods = Object.freeze({
+  on: Reflect.get(EventEmitter.prototype, "on") as IMethod,
+  remove: Reflect.get(EventEmitter.prototype, "removeListener") as IMethod,
+});
+
+/**
+ * Keeps a late `error` of a source that is not sent, or no longer (released,
+ * cancelled, or destroyed by the application), from crashing the process
+ * without a listener of the application: its `destroy()` (or its `pause()`)
+ * may fail asynchronously, at any time. Installed before the source is
+ * paused or destroyed, and before a send removes its own listener of
+ * `error`. A guard of its own reports it (see `ISourceReport`), but not an
+ * error that a send hears (which fails the send), and holds nothing else
+ * (never the response, nor the send), so that it may stay on a source that
+ * never emits anything: it is never removed by a timer, only on the turn
+ * after the `close` of the source (some sources emit their `error` after it,
+ * e.g. `readable-stream` 2), or after it is installed for a source that has
+ * emitted its `close` already (`closed`). One guard per source, however many
+ * sends release it. For the packages of binden only.
+ *
+ * @internal
+ */
+export function guard(
   source: object,
-  { on, remove }: IStreamLikeMethods,
+  { on, remove }: IGuardMethods,
   report: ISourceReport,
+  closed = false,
 ): void {
   if (guards.has(source)) {
     return;
   }
   const failed = (error: unknown): void => {
-    report(error);
+    if (!hearing.has(source)) {
+      report(error);
+    }
   };
   const close = (): void => {
     setImmediate(() => {
@@ -153,23 +214,27 @@ function guard(
   guards.set(source, failed);
   Reflect.apply(on, source, ["error", failed]);
   Reflect.apply(on, source, ["close", close]);
+  if (closed) {
+    close();
+  }
 }
 
 /**
  * Releases a stream-like source that is not sent (e.g. to `HEAD`): it is
  * destroyed (without an error), or paused, and never read. A late error of
- * its destroy is reported (see `guard()`).
+ * its destroy (or of its pause) is reported (see `guard()`).
  */
 export function releaseStreamLike(
   source: object,
   methods: IStreamLikeMethods,
   report: ISourceReport,
 ): void {
+  // Its guard listens before it is paused or destroyed
+  guard(source, methods, report);
   const { destroy, pause } = methods;
   if (destroy === null) {
     Reflect.apply(pause, source, []);
   } else {
-    guard(source, methods, report);
     Reflect.apply(destroy, source, []);
   }
 }
@@ -190,13 +255,15 @@ export function releaseStreamLike(
  *
  * Every listener that it adds is removed through the source (by its
  * `removeListener()` or `off()`): at once for a cancellation, whatever the
- * source emits then (a late error of a destroyed source is reported by its
- * guard, see `guard()`), and once the source has ended, failed or closed,
- * but the one of `error` on the next turn (which an error emitted after the
- * end or the close would otherwise crash the process without a listener of
- * the application). A source that has ended already is an empty body, and
- * one destroyed before its end closes the readable at once: neither is
- * listened to.
+ * source emits then, and once the source has ended, failed or closed, but
+ * the one of `error` on the next turn (which an error emitted after the end
+ * or the close would otherwise crash the process without a listener of the
+ * application, and is reported as a late error). A source that has ended
+ * already is an empty body, and one destroyed before its end closes the
+ * readable at once: neither is listened to. The guard of a source (see `guard()`) reports a later error of one
+ * that it cancels (also without `destroy()`), or that the application has
+ * destroyed (before the send, or by an `end` or a `close` once destroyed,
+ * whose destroy may fail after the turn that decides the send).
  */
 export function readStreamLike(
   source: object,
@@ -219,6 +286,9 @@ export function readStreamLike(
   ): void => {
     call(methods.on, event, listener);
     listeners.set(event, listener);
+    if (event === "error") {
+      hear(source, 1);
+    }
   };
   /** Removes the listeners of these events that the source still has */
   const release = (...names: readonly string[]): void => {
@@ -226,6 +296,9 @@ export function readStreamLike(
       const listener = listeners.get(event);
       if (typeof listener !== "undefined") {
         listeners.delete(event);
+        if (event === "error") {
+          hear(source, -1);
+        }
         call(methods.remove, event, listener);
       }
     }
@@ -252,17 +325,15 @@ export function readStreamLike(
     destroy: (error, callback): void => {
       if (!settled) {
         settled = true;
+        // Its guard listens before its listeners are removed, and before it
+        // is paused or destroyed
+        guard(source, methods, report);
+        release("data", "end", "close", "error");
         const { destroy, pause } = methods;
         if (destroy === null) {
-          release("data", "end", "close", "error");
           call(pause);
-        } else {
-          // Its guard listens before its listeners are removed
-          guard(source, methods, report);
-          release("data", "end", "close", "error");
-          if (!destroyed) {
-            call(destroy, error ?? reason());
-          }
+        } else if (!destroyed) {
+          call(destroy, error ?? reason());
         }
       }
       callback(error);
@@ -277,11 +348,14 @@ export function readStreamLike(
    * An `end` or a `close` of a source that has been destroyed, which is not
    * its end: the error of its destroy, which may follow, fails the readable,
    * or a premature close on the next turn (which changes nothing once the
-   * readable is destroyed)
+   * readable is destroyed). Its destroy may fail later: its guard listens
+   * before the listener of `error` of the send is removed (`closed`: by its
+   * `close`).
    */
-  const stopped = (): void => {
+  const stopped = (closed: boolean): void => {
     if (!destroyed) {
       destroyed = true;
+      guard(source, methods, report, closed);
       release("data", "end", "close");
       setImmediate(() => {
         fail(premature());
@@ -293,25 +367,33 @@ export function readStreamLike(
     readable.push(null);
     return readable;
   } else if (isDestroyed(source)) {
-    // Nothing more of it can be read (see `BindenResponse.#pipe()`)
+    // Nothing more of it can be read (see `BindenResponse.#pipe()`), but its
+    // destroy may still fail
     settled = true;
+    guard(source, methods, report, hasClosed(source));
     readable.destroy();
     return readable;
   }
   listen("error", (error: Error) => {
-    fail(error);
+    if (settled) {
+      // Once the send is decided, until its listener is removed: a late
+      // error, which its guard does not report while it is heard
+      report(error);
+    } else {
+      fail(error);
+    }
   });
   listen("close", () => {
     // Before its end (once it has ended, it is no longer listened to)
     if (isDestroyed(source)) {
-      stopped();
+      stopped(true);
     } else {
       fail(premature());
     }
   });
   listen("end", () => {
     if (isDestroyed(source)) {
-      stopped();
+      stopped(false);
     } else {
       settle();
       readable.push(null);
