@@ -1,8 +1,14 @@
-import { type AddressInfo, connect } from "node:net";
-import { Binden, BindenResponse, type Context, Cookie } from "../index.js";
-import { type IncomingMessage, createServer } from "node:http";
+import { type AddressInfo, Socket, connect } from "node:net";
+import {
+  Binden,
+  BindenError,
+  BindenResponse,
+  type Context,
+  Cookie,
+} from "../index.js";
+import { IncomingMessage, createServer } from "node:http";
+import { capture, listen, sleep, within } from "./helpers.js";
 import { deepStrictEqual, ok, throws } from "node:assert/strict";
-import { listen, within } from "./helpers.js";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
 import { once } from "node:events";
@@ -362,6 +368,118 @@ suite("A head that Node.js refuses", () => {
         );
         ok(next.endsWith("\r\n\r\nnext"), `${path}: ${next}`);
       }
+    } finally {
+      await listening.close();
+    }
+  });
+
+  test("an error reply whose end() throws once its head is committed closes the connection", async () => {
+    // The counter of `strictContentLength` of Node.js, set as a refused head
+    // would have left it if it were not restored: the `end()` of every reply
+    // throws once it has committed its head
+    const counter = Object.getOwnPropertySymbols(
+      new BindenResponse(new IncomingMessage(new Socket())),
+    ).find((key) => key.description === "kBytesWritten") as symbol;
+    const miscount = (response: BindenResponse): void => {
+      response.strictContentLength = true;
+      Reflect.set(response, counter, 3);
+    };
+    const captured = capture();
+    const app = new Binden({
+      logger: captured.logger,
+      error_handler: ({ request, response }: Context): void => {
+        if (request.url === "/handler") {
+          // Its own failure: the framework replies an opaque `500`
+          miscount(response);
+          throw new Error("Failed");
+        }
+      },
+    }).use(({ response }: Context) => {
+      miscount(response);
+      throw new Error("Failed");
+    });
+    const listening = await listen(app);
+    try {
+      for (const path of ["/stack", "/handler"]) {
+        // The head of the reply is never sent: closed, rather than left open
+        const data = await converse(
+          listening.port,
+          `GET ${path} HTTP/1.1\r\nHost: a\r\n\r\n`,
+        );
+        deepStrictEqual(data, "", path);
+      }
+      const unsent = captured.records.filter(
+        ({ msg }) => msg === "The error reply has not been sent",
+      );
+      deepStrictEqual(
+        unsent.map(
+          ({ failure }) => (failure as { code?: unknown } | undefined)?.code,
+        ),
+        [
+          "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
+          "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
+        ],
+      );
+    } finally {
+      await listening.close();
+    }
+  });
+
+  test("an error reply that has ended is not cut when its send fails later", async () => {
+    const late: unknown[] = [];
+    const closed: unknown[] = [];
+    const captured = capture();
+    const app = new Binden({
+      logger: captured.logger,
+      error_handler: ({ response }: Context): void => {
+        // Does not reply (the framework does), then writes once the reply has
+        // ended, while it waits for the response before it: Node.js emits
+        // `ERR_STREAM_WRITE_AFTER_END`, and the send of the reply rejects
+        setTimeout(() => {
+          late.push(response.writableEnded, response.writableFinished);
+          response.write("late");
+        }, 50);
+      },
+    }).use(async (context: Context) => {
+      if (context.url.pathname === "/first") {
+        await sleep(150);
+        await context.text("first");
+        return;
+      }
+      throw new BindenError(500, { expose: true, message: "failed" });
+    });
+    const listening = await listen(app);
+    listening.server.on(
+      "request",
+      (request: IncomingMessage, response: BindenResponse) => {
+        response.once("close", () => {
+          closed.push([request.url, response.writableFinished]);
+        });
+      },
+    );
+    try {
+      const data = await converse(
+        listening.port,
+        "GET /first HTTP/1.1\r\nHost: a\r\n\r\n" +
+          "GET /second HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+      );
+      const [first = "", second = "", ...rest] = data.split(/(?=HTTP\/1\.1 )/u);
+      ok(first.endsWith("\r\n\r\nfirst"), first);
+      ok(second.startsWith("HTTP/1.1 500 Internal Server Error\r\n"), second);
+      ok(second.endsWith("\r\n\r\nfailed"), second);
+      deepStrictEqual(rest, []);
+      deepStrictEqual(late, [true, false]);
+      deepStrictEqual(closed, [
+        ["/first", true],
+        ["/second", true],
+      ]);
+      const { failure } = await captured.waitFor(
+        "The error reply has not been sent",
+      );
+      deepStrictEqual(
+        (failure as { code?: unknown }).code,
+        "ERR_STREAM_WRITE_AFTER_END",
+      );
     } finally {
       await listening.close();
     }

@@ -1104,6 +1104,18 @@ export class Binden<
     } catch (error: unknown) {
       const message = "The error reply has not been sent";
       context.log.debug(message, this.#failure(context, error, "send"));
+      Binden.#unsent(context);
+    }
+  }
+
+  /**
+   * A reply of the framework has failed without ending the response (e.g.
+   * its `end()` has thrown once its head was committed): the connection is
+   * closed, rather than left open without a reply
+   */
+  static #unsent({ response }: Context): void {
+    if (!response.writableEnded) {
+      response[kFramework](() => response.destroy());
     }
   }
 
@@ -1190,6 +1202,7 @@ export class Binden<
       // E.g. the client went away
       const message = "The error reply has not been sent";
       context.log.debug(message, this.#failure(context, failure, "send"));
+      Binden.#unsent(context);
     }
   }
 
