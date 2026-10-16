@@ -6,11 +6,12 @@ export type IListener = (...args: unknown[]) => unknown;
 
 /**
  * Who has added a bound listener: the work of an application to a response
- * (`user`, which an abandoned work sees closed early, see `kRevoke`), the
- * framework or a library of binden to a response (`service`), a work to a
- * source piped into a response (`source`), or a callback (e.g. of `write()`)
+ * (`user`, which an abandoned work sees closed early, see `kRevoke`), a work
+ * to a source piped into a response (`source`), or a callback (e.g. of
+ * `write()`). The observers of the framework are not listeners (see
+ * `kListen`).
  */
-export type IKind = "callback" | "service" | "source" | "user";
+export type IKind = "callback" | "source" | "user";
 
 /** A listener bound to the work that has added it (see `bind()`) */
 export interface IBinding {

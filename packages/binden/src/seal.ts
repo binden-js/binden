@@ -38,16 +38,29 @@ export const kCancel: unique symbol = Symbol("binden.cancel");
 export const kFramework: unique symbol = Symbol("binden.framework");
 
 /**
- * The key of the internal method that adds a listener of the framework (or a
- * library of binden) to a response, which runs once:
- * `response[kListen](event, listener)`. It is not a listener of a work of the
- * application: it never runs before the event (see `kRevoke`), and it runs as
- * the work that has added it, without the rights of the framework. Not part of
- * the public API.
+ * The key of the internal method that adds an observer of an event of a
+ * response for the framework (or a library of binden), which runs once by
+ * default: `response[kListen](event, listener, { once })` returns what
+ * removes it (see also `kUnlisten`). It is not a listener of the response,
+ * which the application may remove (e.g. `removeAllListeners()`): it runs
+ * from `emit()` after the listeners (also when one of them throws, which is
+ * then thrown), never before the event (see `kRevoke`), as the work that has
+ * added it (without the rights of the framework), with the response as its
+ * receiver. An `error` that observers listen to is not thrown without a
+ * listener. Not part of the public API.
  *
  * @internal
  */
 export const kListen: unique symbol = Symbol("binden.listen");
+
+/**
+ * The key of the internal method that removes an observer that
+ * `[kListen]()` has added (the last one of the listener):
+ * `response[kUnlisten](event, listener)`. Not part of the public API.
+ *
+ * @internal
+ */
+export const kUnlisten: unique symbol = Symbol("binden.unlisten");
 
 /**
  * The key of the internal method that fails a pipe of a work of the exchange

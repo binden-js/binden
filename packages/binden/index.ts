@@ -29,6 +29,7 @@ export {
   type IResponseOperation,
   bodyHeaders,
   kListen,
+  kUnlisten,
   kNegotiator,
   kOperation,
   kRepresentation,

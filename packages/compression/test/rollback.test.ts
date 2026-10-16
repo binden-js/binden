@@ -390,6 +390,50 @@ suite("A refused head leaves nothing of the attempt", () => {
     ]);
   });
 
+  test("no observer of the compressor that it destroys remains", async () => {
+    const again: number[] = [];
+    await gzips(async (compressors) => {
+      served = await serve(
+        {},
+        new Compression({ format: "gzip" }),
+        async (context: Context) => {
+          const { response } = context;
+          response.type("text/plain");
+          const count = compressors.length;
+          try {
+            // Refused for HTTP/1.0 once the compressor is created
+            response.writeHead(200, { Trailer: "X-T" });
+          } catch {
+            // Rolled back
+          }
+          const created = compressors.slice(count);
+          deepStrictEqual(
+            created.map(({ destroyed }) => destroyed),
+            [true],
+          );
+          for (const [index, compressor] of created.entries()) {
+            const destroy = compressor.destroy.bind(compressor);
+            compressor.destroy = (error?: Error): typeof compressor => {
+              again.push(index);
+              return destroy(error);
+            };
+          }
+          await response.send("ok");
+        },
+      );
+      const [reply] = (await converse(
+        served.url,
+        "GET / HTTP/1.0\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n",
+      )) as [IRaw];
+      deepStrictEqual(
+        [reply.head.split("\r\n")[0], framed(reply).toString()],
+        ["http/1.1 200 ok", "ok"],
+      );
+    });
+    // The real close of the response does not destroy it again
+    deepStrictEqual(again, []);
+  });
+
   test("the error reply negotiates its own representation (the reproduction of the review)", async () => {
     const seen: unknown[] = [];
     served = await serve(

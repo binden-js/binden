@@ -75,6 +75,14 @@ suite("Process safety", () => {
     });
   });
 
+  test("a `close` listener that throws surfaces as with Node.js, once the framework has completed the request", () => {
+    deepStrictEqual(run("throwing-close.ts"), {
+      status: 0,
+      stdout: "listener,cleanup A close listener has failed logged:1\n",
+      stderr: "",
+    });
+  });
+
   test("a reason phrase or a header that Node.js refuses does not crash the process", () => {
     deepStrictEqual(run("refused-head.ts"), {
       status: 0,

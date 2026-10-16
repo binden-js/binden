@@ -1,4 +1,5 @@
 import Cookie, { type ICookie } from "./headers/cookie.js";
+import { EventEmitter, errorMonitor } from "node:events";
 import {
   type IFramingState,
   framingCounters,
@@ -9,6 +10,7 @@ import {
 import {
   type IListener,
   adderNames,
+  as,
   bind,
   bindingOf,
   force,
@@ -32,6 +34,7 @@ import {
   kRepresentation,
   kRevoke,
   kSeal,
+  kUnlisten,
   kValidateHead,
   owners,
 } from "./seal.js";
@@ -60,7 +63,6 @@ import { isProxy, isUint8Array } from "node:util/types";
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
-import { EventEmitter } from "node:events";
 import { Exchange } from "./exchange.js";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
@@ -318,6 +320,16 @@ function callbacksOf(args: readonly unknown[]): unknown[] {
   return bound;
 }
 
+/** An observer of an event of a response (see `[kListen]()`) */
+interface IObserver {
+  readonly listener: IListener;
+  /** The work that has added it */
+  readonly owner: object | undefined;
+  readonly once: boolean;
+  /** Whether it has run, once it runs once */
+  fired: boolean;
+}
+
 /** The pipe whose adopted `data` listener runs now (see `destroy()`) */
 interface IMarker {
   readonly owner: object | undefined;
@@ -485,6 +497,8 @@ export class BindenResponse<
   readonly #absorbing = new Set<object>();
   /** The pipe whose adopted `data` listener runs now (see `destroy()`) */
   #marker: IMarker | null = null;
+  /** The observers of the framework, by event (see `[kListen]()`) */
+  readonly #observers = new Map<string | symbol, IObserver[]>();
   #rights?: IRights;
   /** How a library chooses the representation of the body (see `[kNegotiator]()`) */
   #negotiator: IRepresentationNegotiator | null = null;
@@ -552,7 +566,7 @@ export class BindenResponse<
         // Node.js once it has unpiped): the framework handles the error
         return false;
       }
-      return parent.emit.call(this, event, ...args);
+      return this.#emit(event, args);
     }
     // The listeners added by the application run as the work that has added
     // them (see `bind()`), never as whoever emits their event. Replaced at
@@ -1887,14 +1901,130 @@ export class BindenResponse<
   }
 
   /**
-   * Adds a listener of the framework (see `kListen`), which runs once
+   * Adds an observer of the framework (see `kListen`), once by default:
+   * returns what removes it
    *
    * @internal
    */
-  public [kListen](event: string, listener: () => void): void {
-    const owner = owners.getStore();
-    const once = { emitter: this, event };
-    parent.on.call(this, event, bind(listener, owner, "service", once));
+  public [kListen](
+    event: string,
+    listener: (...args: never[]) => unknown,
+    {
+      once = true,
+    }: {
+      /** Whether it runs once (`true`), and is removed then */
+      readonly once?: boolean | undefined;
+    } = {},
+  ): () => void {
+    const observer: IObserver = {
+      listener: listener as IListener,
+      owner: owners.getStore(),
+      once,
+      fired: false,
+    };
+    const observers = this.#observers.get(event) ?? [];
+    observers.push(observer);
+    this.#observers.set(event, observers);
+    return (): void => {
+      this.#unobserve(event, observer);
+    };
+  }
+
+  /**
+   * Removes the last observer of the framework of a listener (see
+   * `kUnlisten`)
+   *
+   * @internal
+   */
+  public [kUnlisten](
+    event: string,
+    listener: (...args: never[]) => unknown,
+  ): void {
+    const observer = this.#observers
+      .get(event)
+      ?.findLast((candidate) => candidate.listener === listener);
+    if (typeof observer !== "undefined") {
+      this.#unobserve(event, observer);
+    }
+  }
+
+  /** Removes an observer (see `[kListen]()`), if it is still there */
+  #unobserve(event: string | symbol, observer: IObserver): void {
+    const observers = this.#observers.get(event) ?? [];
+    const index = observers.indexOf(observer);
+    if (index !== -1) {
+      observers.splice(index, 1);
+      if (observers.length === 0) {
+        this.#observers.delete(event);
+      }
+    }
+  }
+
+  /**
+   * Emits an event to the listeners of the response, then to the observers
+   * of the framework that it has then (see `[kListen]()`): also when a
+   * listener throws, which is thrown once they have run. An `error` that the
+   * response has no listener of, but observers, is not thrown (as when they
+   * were listeners).
+   */
+  #emit(event: string | symbol, args: unknown[]): boolean {
+    const observers = this.#observers.get(event);
+    if (typeof observers === "undefined") {
+      return parent.emit.call(this, event, ...args);
+    }
+    const snapshot = [...observers];
+    if (
+      event === "error" &&
+      intrinsic.listenerCount.call(this, "error") === 0
+    ) {
+      parent.emit.call(this, errorMonitor, ...args);
+    } else {
+      try {
+        parent.emit.call(this, event, ...args);
+      } catch (error: unknown) {
+        const failure = this.#observe(event, snapshot, args);
+        if (failure !== null) {
+          const message = "An observer of the response has failed";
+          this.#ownership.debug(message, failure.error);
+        }
+        throw error;
+      }
+    }
+    const failure = this.#observe(event, snapshot, args);
+    if (failure !== null) {
+      throw failure.error;
+    }
+    return true;
+  }
+
+  /**
+   * Runs the observers of an event (see `[kListen]()`), each as the work
+   * that has added it, with the response as its receiver, and once when it
+   * runs once (also when it emits its event again): what the first one that
+   * throws has thrown, once they have all run
+   */
+  #observe(
+    event: string | symbol,
+    observers: readonly IObserver[],
+    args: unknown[],
+  ): { error: unknown } | null {
+    let failure: { error: unknown } | null = null;
+    for (const observer of observers) {
+      if (!observer.fired) {
+        if (observer.once) {
+          observer.fired = true;
+          this.#unobserve(event, observer);
+        }
+        try {
+          as(observer.owner, () =>
+            Reflect.apply(observer.listener, this, args),
+          );
+        } catch (error: unknown) {
+          failure ??= { error };
+        }
+      }
+    }
+    return failure;
   }
 
   /**
@@ -2351,15 +2481,23 @@ export class BindenResponse<
       // First: when it throws (e.g. for a reason phrase that Node.js refuses),
       // the promise rejects without a listener left
       this.flushHeaders();
+      const listening: (() => void)[] = [];
+      const unlisten = (): void => {
+        for (const dispose of listening) {
+          dispose();
+        }
+      };
       const fail = (error?: Error): void => {
-        this.off("close", fail).off("error", fail);
+        unlisten();
         reject(error ?? BindenResponse.#premature());
       };
-      this[kListen]("close", fail);
-      this[kListen]("error", fail);
+      listening.push(
+        this[kListen]("close", fail),
+        this[kListen]("error", fail),
+      );
       // Its callback runs once the writes before it are flushed
       this.write("", (error?: Error | null) => {
-        this.off("close", fail).off("error", fail);
+        unlisten();
         if (error) {
           reject(error);
         } else {
@@ -2690,9 +2828,10 @@ export class BindenResponse<
         return;
       }
       const listeners: [string, (error?: Error) => void][] = [];
+      const unlisten: (() => void)[] = [];
       const settle = (error: Error | null): void => {
-        for (const [event, listener] of listeners) {
-          this.off(event, listener);
+        for (const dispose of unlisten) {
+          dispose();
         }
         if (error) {
           reject(error);
@@ -2721,7 +2860,7 @@ export class BindenResponse<
         ],
       );
       for (const [event, listener] of listeners) {
-        this[kListen](event, listener);
+        unlisten.push(this[kListen](event, listener));
       }
     });
   }

@@ -193,6 +193,38 @@ suite("Streaming through the compressor", () => {
     deepStrictEqual(ended, true);
   });
 
+  test(
+    "a slow client pauses the compressor, whose `drain` the application cannot remove",
+    { timeout: 15_000 },
+    async () => {
+      const expected = randomBytes(4 * 1024 * 1024);
+      const url = await start(async (context) => {
+        context.done = true;
+        const { response } = context;
+        // An application that removes the `drain` listeners it believes are
+        // its own: the compressor resumes all the same
+        const timer = setInterval(() => {
+          response.removeAllListeners("drain");
+        }, 1);
+        try {
+          await new Promise<void>((resolve) => {
+            response.end(expected, resolve);
+          });
+        } finally {
+          clearInterval(timer);
+        }
+      });
+
+      const response = await respond(url);
+      response.pause();
+      await sleep(100);
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk)).resume();
+      await within(once(response, "end"));
+      sameBytes(decode("gzip", Buffer.concat(chunks)), expected);
+    },
+  );
+
   test("`send()` resolves once the response has finished", async () => {
     const events: string[] = [];
     const url = await start(async (context) => {

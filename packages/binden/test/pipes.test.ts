@@ -26,7 +26,7 @@ import {
 } from "node:stream";
 import { Socket, connect } from "node:net";
 import { deepStrictEqual, ok } from "node:assert/strict";
-import { kListen, kOwnership, owners } from "../src/seal.js";
+import { kListen, kOwnership, kUnlisten, owners } from "../src/seal.js";
 import { suite, test } from "node:test";
 import { IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
@@ -844,14 +844,18 @@ suite("A pipe into the response", () => {
       );
     });
 
-    test("a listener of the framework (closed by the real close only) is removed by its function", () => {
+    test("an observer of the framework (closed by the real close only) is removed by `kUnlisten`, not by `removeListener()`", () => {
       const response = detached();
-      const listener = (): null => null;
-      const before = response.listenerCount("close");
-      response[kListen]("close", listener);
-      deepStrictEqual(response.listenerCount("close"), before + 1);
+      let closed = 0;
+      const listener = (): void => {
+        closed += 1;
+      };
+      response[kListen]("close", listener, { once: false });
       response.removeListener("close", listener);
-      deepStrictEqual(response.listenerCount("close"), before);
+      response.emit("close");
+      response[kUnlisten]("close", listener);
+      response.emit("close");
+      deepStrictEqual(closed, 1);
     });
   });
 

@@ -12,6 +12,7 @@ import {
   kOperation,
   kRestoreFraming,
   kSaveFraming,
+  kUnlisten,
   kValidateHead,
 } from "binden";
 import {
@@ -705,7 +706,7 @@ export class CompressedResponse {
     const response = this.#response;
     const compressor = this.#compressor;
     if (compressor !== null) {
-      response.removeListener("close", this.#destroy as () => void);
+      response[kUnlisten]("close", this.#destroy as () => void);
       compressor.destroy();
       this.#compressor = null;
     }
@@ -1011,7 +1012,7 @@ export class CompressedResponse {
     };
     // The real close only: an abandoned work that sees its response closed
     // early (see `kListen`) does not cut what the compressor has accepted
-    // (removed by its function, see `#rollback()`)
+    // (removed by `kUnlisten`, see `#rollback()`)
     response[kListen]("close", this.#destroy);
     return compressor;
   }
