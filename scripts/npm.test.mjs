@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { deepEqual, equal, match } from "node:assert/strict";
+import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { delimiter, join } from "node:path";
 import {
   mkdirSync,
@@ -25,7 +25,8 @@ process.stdout.write(npm(${JSON.stringify(args)}, { encoding: "utf8" }));`;
 }
 
 // Prints what `npmTar()` (scripts/npm.mjs) loads: the `marker` of a fake tar, or
-// whether it is the tar of the npm that comes with Node.js
+// whether it is the tar of the npm that comes with Node.js (it throws for a CLI that
+// is not an npm installation)
 function tarOf(env) {
   const script = `import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -89,7 +90,7 @@ describe("scripts/npm.mjs", () => {
     equal(stdout, "fake");
   });
 
-  it("loads the tar of the npm of Node.js for a CLI that is not npm", () => {
+  it("refuses a CLI that is not an npm installation, instead of another tar", () => {
     const cli = join(dir, "npm-cli.cjs");
     writeFileSync(cli, "");
     // A package of another name, with a tar of its own
@@ -111,17 +112,23 @@ describe("scripts/npm.mjs", () => {
       join(dir, "missing.js"),
       join(other, "bin", "cli.js"),
     ]) {
-      const { status, stdout } = tarOf({
+      const { status, stdout, stderr } = tarOf({
         ...process.env,
         npm_execpath: execpath,
       });
-      equal(status, 0);
-      equal(stdout, "bundled", execpath);
+      equal(status, 1, execpath);
+      equal(stdout, "", execpath);
+      match(
+        stderr,
+        /The npm CLI \(.+\) is not an npm installation, whose tar must read the archives: run this script with npm/u,
+        execpath,
+      );
+      ok(stderr.includes(execpath), execpath);
     }
   });
 
   it(
-    "loads the tar of the npm on the PATH without `npm_execpath`",
+    "loads the tar of the npm on the PATH without `npm_execpath`, or refuses",
     // Windows runs the npm that comes with Node.js (`npm` is `npm.cmd` there)
     { skip: process.platform === "win32" },
     () => {
@@ -136,9 +143,42 @@ describe("scripts/npm.mjs", () => {
       const { status, stdout } = tarOf(env);
       equal(status, 0);
       equal(stdout, "fake");
-      // Without npm on the PATH: the npm of Node.js
+
+      // A version-manager shim, which runs an npm that cannot be found
+      const shims = join(dir, "shims");
+      mkdirSync(shims);
+      writeFileSync(join(shims, "npm"), '#!/bin/sh\nexec npm "$@"\n', {
+        mode: 0o755,
+      });
+      env.PATH = `${shims}${delimiter}${process.env.PATH}`;
+      const shimmed = tarOf(env);
+      equal(shimmed.status, 1);
+      match(
+        shimmed.stderr,
+        /The npm CLI \(.+shims.npm\) is not an npm installation/u,
+      );
+
+      // Without npm on the PATH
       env.PATH = join(dir, "empty");
-      equal(tarOf(env).stdout, "bundled");
+      const none = tarOf(env);
+      equal(none.status, 1);
+      match(
+        none.stderr,
+        /The npm CLI \(none on the PATH\) is not an npm installation/u,
+      );
+    },
+  );
+
+  it(
+    "loads the tar of the npm of Node.js on Windows without `npm_execpath`",
+    // The npm that `npm()` runs there
+    { skip: process.platform !== "win32" },
+    () => {
+      const env = { ...process.env };
+      delete env.npm_execpath;
+      const { status, stdout, stderr } = tarOf(env);
+      equal(status, 0, stderr);
+      equal(stdout, "bundled");
     },
   );
 

@@ -33,7 +33,7 @@ export function npm(args, options = {}) {
 }
 
 // The npm installation of a CLI (`<npm>/bin/npm-cli.js`, or a link to it), or null
-// when it is not one (e.g. the fake npm of the tests)
+// when it is not one (e.g. a version-manager shim, or the CLI of another package manager)
 function installation(path) {
   try {
     const dir = dirname(dirname(realpathSync(path)));
@@ -57,13 +57,20 @@ let tar = null;
 
 /**
  * The `tar` package (node-tar) of the npm installation that `npm()` runs, which
- * reads the archives that it publishes (e.g. their package.json): when that CLI
- * is not an npm installation, the npm that comes with Node.js. Loaded once.
+ * reads the archives that it publishes (e.g. their package.json). Loaded once.
+ * When that CLI is not an npm installation (e.g. a version-manager shim, which
+ * runs an npm that cannot be found), it throws: the archives are never read by
+ * the tar of another npm, such as the one that comes with Node.js.
  */
 export function npmTar() {
   if (tar === null) {
     const path = cli() ?? onPath();
-    const dir = (path === null ? null : installation(path)) ?? bundled();
+    const dir = path === null ? null : installation(path);
+    if (dir === null) {
+      throw new Error(
+        `The npm CLI (${path ?? "none on the PATH"}) is not an npm installation, whose tar must read the archives: run this script with npm (\`npm run\` or \`npm exec\`, which set npm_execpath)`,
+      );
+    }
     tar = createRequire(join(dir, "package.json"))("tar");
   }
   return tar;

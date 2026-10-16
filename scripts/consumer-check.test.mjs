@@ -9,18 +9,22 @@ import {
 import { deepEqual, equal, match } from "node:assert/strict";
 import { integrity, manifestFile } from "./tarballs.mjs";
 import { join } from "node:path";
+import { npmInstallation } from "./fixtures/npm-installation.mjs";
 import { npmTarball } from "./fixtures/tar.mjs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
-// A fake npm CLI (run as `npm_execpath`) that logs its arguments and fails, so that the
-// check stops at its first npm command (before anything is installed)
+// A fake npm CLI (run as the CLI of an npm installation, `npm_execpath`: see
+// fixtures/npm-installation.mjs) that logs its arguments and fails, so that the check
+// stops at its first npm command (before anything is installed)
 const fakeNpm = `require("node:fs").appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
 process.exit(1);
 `;
 
 describe("scripts/consumer-check.mjs", () => {
   let dir = "";
+  // The CLI of the npm installation of the fake
+  let cli = "";
 
   const check = (...args) =>
     spawnSync(
@@ -31,7 +35,7 @@ describe("scripts/consumer-check.mjs", () => {
         timeout: 60_000,
         env: {
           ...process.env,
-          npm_execpath: join(dir, "npm.cjs"),
+          npm_execpath: cli,
           FAKE_NPM_LOG: join(dir, "npm.log"),
         },
       },
@@ -68,6 +72,7 @@ describe("scripts/consumer-check.mjs", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "binden-consumer-check-"));
     writeFileSync(join(dir, "npm.cjs"), fakeNpm);
+    cli = npmInstallation(dir, join(dir, "npm.cjs"));
   });
 
   afterEach(() => {

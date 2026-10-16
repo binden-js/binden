@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { after, afterEach, beforeEach, describe, it } from "node:test";
 import {
   appendFileSync,
   copyFileSync,
@@ -13,11 +13,19 @@ import { deepEqual, doesNotMatch, equal, match, ok } from "node:assert/strict";
 import { delimiter, dirname, join } from "node:path";
 import { integrity, manifestFile, readTarball } from "./tarballs.mjs";
 import { npmTarball, tar } from "./fixtures/tar.mjs";
+import { npmInstallation } from "./fixtures/npm-installation.mjs";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
-const fakeNpm = join(import.meta.dirname, "fixtures", "fake-npm.mjs");
+// The fake npm, as the CLI of an npm installation (scripts/npm.mjs reads archives with
+// the tar of that installation only)
+const fakeCli = join(import.meta.dirname, "fixtures", "fake-npm.mjs");
+const installed = mkdtempSync(join(tmpdir(), "binden-release-npm-"));
+const fakeNpm = npmInstallation(installed, fakeCli);
+after(() => {
+  rmSync(installed, { force: true, recursive: true });
+});
 const repository = join(import.meta.dirname, "..");
 
 // The commands of @semantic-release/exec in .releaserc.json
@@ -641,6 +649,18 @@ describe("scripts/release.mjs", () => {
       }
     });
 
+    it("refuses to run with an npm CLI that is not an npm installation", () => {
+      succeed(["version", "2.0.0"]);
+      // The fake itself, whose tar would be another one
+      const { status, stderr } = release(["pack", out], {
+        npm_execpath: fakeCli,
+      });
+      equal(status, 1);
+      match(stderr, /\(.+fake-npm\.mjs\) is not an npm installation/u);
+      deepEqual(npmCalls("pack"), []);
+      equal(existsSync(out), false);
+    });
+
     it("fails when npm cannot pack", () => {
       succeed(["version", "2.0.0"]);
       const { status } = release(["pack", out], { FAKE_NPM_FAIL_PACK: "1" });
@@ -963,6 +983,21 @@ describe("scripts/release.mjs", () => {
       const untagged = release(["publish", out, "--skip-existing"]);
       equal(untagged.status, 1);
       deepEqual(npmCalls("view", "publish"), []);
+    });
+
+    it("publishes nothing with an npm CLI that is not an npm installation", () => {
+      prepare();
+      const { status, stderr } = release(["publish", out], {
+        npm_execpath: fakeCli,
+      });
+      equal(status, 1);
+      match(stderr, /\(.+fake-npm\.mjs\) is not an npm installation/u);
+      deepEqual(npmCalls("view", "publish"), []);
+      // Refused before anything else (here, before the manifest is read)
+      rmSync(out, { force: true, recursive: true });
+      const missing = release(["publish", out], { npm_execpath: fakeCli });
+      equal(missing.status, 1);
+      match(missing.stderr, /is not an npm installation/u);
     });
 
     it("fails without the manifest", () => {

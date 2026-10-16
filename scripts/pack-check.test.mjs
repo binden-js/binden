@@ -11,11 +11,13 @@ import {
 import { deepEqual, doesNotMatch, equal, match } from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { integrity, manifestFile } from "./tarballs.mjs";
+import { npmInstallation } from "./fixtures/npm-installation.mjs";
 import { npmTarball } from "./fixtures/tar.mjs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
-// A fake npm CLI (run as `npm_execpath`) that logs its arguments to FAKE_NPM_LOG, whose
+// A fake npm CLI (run as the CLI of an npm installation, `npm_execpath`: see
+// fixtures/npm-installation.mjs) that logs its arguments to FAKE_NPM_LOG, whose
 // `npm pack --json` prints FAKE_NPM_PACK, whose `npm run` does nothing, and that fails
 // for anything else
 const fakeNpm = `const { appendFileSync } = require("node:fs");
@@ -76,6 +78,8 @@ describe(".github/secret_scanning.yml", () => {
 
 describe("scripts/pack-check.mjs", () => {
   let root = "";
+  // The CLI of the npm installation of the fake
+  let cli = "";
   // The workspaces of the root
   const names = new Set();
 
@@ -88,7 +92,7 @@ describe("scripts/pack-check.mjs", () => {
         timeout: 60_000,
         env: {
           ...process.env,
-          npm_execpath: join(root, "npm.cjs"),
+          npm_execpath: cli,
           FAKE_NPM_PACK: packed(files),
           FAKE_NPM_LOG: join(root, "npm.log"),
         },
@@ -167,6 +171,7 @@ describe("scripts/pack-check.mjs", () => {
       );
     }
     writeFileSync(join(root, "npm.cjs"), fakeNpm);
+    cli = npmInstallation(root, join(root, "npm.cjs"));
     writeFileSync(
       join(root, "scripts/pack-files.json"),
       JSON.stringify({ a: ["LICENSE", "dist/index.js", "package.json"] }),

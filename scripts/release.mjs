@@ -13,7 +13,9 @@
 //                       version, the `gitHead` and the files (scripts/pack-files.json) inside
 //                       each archive, and list them in <dir>/release-manifest.json. An archive
 //                       is read strictly, and npm's own tar must read the same files in it
-//                       (scripts/tarballs.mjs), here and before `publish`
+//                       (scripts/tarballs.mjs), here and before `publish`: the tar of the npm
+//                       installation that runs (scripts/npm.mjs). `pack` and `publish` refuse
+//                       to run when that npm is not an npm installation
 //   publish <dir>       check the archives of <dir>/release-manifest.json against the
 //                       workspaces (one archive of each, of their version, packed from HEAD,
 //                       with the integrity of the manifest, byte for byte the package.json
@@ -36,10 +38,10 @@ import {
   readRelease,
   readTarball,
 } from "./tarballs.mjs";
+import { npm as execNpm, npmTar } from "./npm.mjs";
 import { join, resolve } from "node:path";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { npm as execNpm } from "./npm.mjs";
 import { packageErrors } from "./pack-rules.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -281,6 +283,8 @@ function expectedFiles() {
 }
 
 function pack(dir) {
+  // Before anything is done: the archives are read with the tar of the npm that runs
+  npmTar();
   const { packages, version } = check();
   const head = git(["rev-parse", "HEAD"]);
   assertCommitted(packages);
@@ -408,6 +412,8 @@ function releaseArchives(dir, packages, version, head) {
 }
 
 function publish(dir, { skipExisting, dryRun }) {
+  // Before anything is done: the archives are read with the tar of the npm that runs
+  npmTar();
   const { packages, version } = check();
   const head = git(["rev-parse", "HEAD"]);
   if (skipExisting) {

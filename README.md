@@ -185,6 +185,14 @@ When the `release` job fails before the tag because the archives are not the one
 re-run all the jobs of the workflow, so that the `package` job packs them again: re-running the
 failed job alone checks the same archives.
 
+The npm that publishes is the npm that runs the scripts: the one of `npm run` or `npm exec` (which
+set `npm_execpath`), otherwise the first `npm` on the `PATH` (on Windows, the npm that comes with
+Node.js). Its `tar` is loaded from its installation ([`scripts/npm.mjs`](scripts/npm.mjs)). When
+that `npm` is not an npm installation (e.g. a version-manager shim, not a link to the CLI of npm),
+the scripts that read archives refuse to run (`scripts/release.mjs pack` and `publish` before
+anything else) instead of reading them with the `tar` of another npm, such as the one that comes
+with Node.js: run them through `npm run` or `npm exec` then.
+
 Nothing is committed back to `main`, as
 [recommended by semantic-release](https://semantic-release.gitbook.io/semantic-release/support/faq):
 a release commit would have to bypass the branch protection of `main`. The versions in the
