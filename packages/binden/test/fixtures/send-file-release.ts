@@ -39,37 +39,61 @@ const tmp = await mkdtemp(join(tmpdir(), "binden-release-"));
 const file = join(tmp, "page.html");
 await writeFile(file, "<p>error</p>");
 
-/** The handles that `sendFile()` opens, and the streams that it creates of them */
-let handles: FileHandle[] = [];
-let streams = 0;
-/** Whether the metadata of the files is read slowly (as on a slow disk) */
-let slow = false;
+/**
+ * What the requests of a scenario have done: the handles that their
+ * `sendFile()` has opened (and the opens still pending), the streams that it
+ * has created of them, and how it has settled
+ */
+interface IScenario {
+  readonly slow: boolean;
+  readonly handles: FileHandle[];
+  opening: number;
+  streams: number;
+  readonly outcomes: string[];
+}
+
+const scenario = (slow: boolean): IScenario => ({
+  slow,
+  handles: [],
+  opening: 0,
+  streams: 0,
+  outcomes: [],
+});
+
+/** The scenario of the requests sent now (an open or a send keeps its own) */
+let current = scenario(false);
 const { open } = fsp;
 fsp.open = async (...args: Parameters<typeof open>): Promise<FileHandle> => {
-  const handle = await open(...args);
-  handles.push(handle);
-  const stat = handle.stat.bind(handle);
-  const delayed = slow;
-  handle.stat = (async () => {
-    if (delayed) {
-      await sleep(100);
-    }
-    return stat();
-  }) as FileHandle["stat"];
-  const create = handle.createReadStream.bind(handle);
-  handle.createReadStream = (
-    ...options: Parameters<FileHandle["createReadStream"]>
-  ): ReturnType<FileHandle["createReadStream"]> => {
-    streams += 1;
-    return create(...options);
-  };
-  return handle;
+  const of = current;
+  of.opening += 1;
+  try {
+    const handle = await open(...args);
+    of.handles.push(handle);
+    const stat = handle.stat.bind(handle);
+    handle.stat = (async () => {
+      if (of.slow) {
+        // As on a slow disk
+        await sleep(100);
+      }
+      return stat();
+    }) as FileHandle["stat"];
+    const create = handle.createReadStream.bind(handle);
+    handle.createReadStream = (
+      ...options: Parameters<FileHandle["createReadStream"]>
+    ): ReturnType<FileHandle["createReadStream"]> => {
+      of.streams += 1;
+      return create(...options);
+    };
+    return handle;
+  } finally {
+    of.opening -= 1;
+  }
 };
 syncBuiltinESMExports();
 
-/** How the `sendFile()` of each request has settled */
-const outcomes: string[] = [];
+/** Records how a `sendFile()` settles */
 const track = (sent: Promise<void>): Promise<void> => {
+  const { outcomes } = current;
   sent.then(
     () => {
       outcomes.push("resolved");
@@ -136,10 +160,17 @@ const get = (path: string): Promise<string> =>
       .end();
   });
 
-/** Whether every handle is closed, within 2 s */
-const closed = async (): Promise<boolean> => {
+/**
+ * Whether every `sendFile()` of a scenario has settled, and every file that
+ * they have opened is closed, within 2 s
+ */
+const settled = async (of: IScenario, requests: number): Promise<boolean> => {
   const deadline = Date.now() + 2000;
-  while (handles.some(({ fd }) => fd !== -1)) {
+  while (
+    of.outcomes.length < requests ||
+    of.opening > 0 ||
+    of.handles.some(({ fd }) => fd !== -1)
+  ) {
     if (Date.now() > deadline) {
       return false;
     }
@@ -150,26 +181,25 @@ const closed = async (): Promise<boolean> => {
 
 const before = descriptors();
 const lines: string[] = [];
-for (const [path, delayed] of [
+for (const [path, slow] of [
   ["/throws", false],
   ["/all", false],
   ["/expired", true],
   ["/flushed", true],
 ] as const) {
-  slow = delayed;
+  current = scenario(slow);
   const statuses = new Set<string>();
   // A file that one request leaves open would show up three times
-  for (let index = 0; index < 3; index += 1) {
+  const requests = 3;
+  for (let index = 0; index < requests; index += 1) {
     statuses.add(await get(path));
   }
-  const all = await closed();
-  const opened = handles.length;
+  const closed = await settled(current, requests);
+  const { outcomes, streams, handles } = current;
+  const left = handles.filter(({ fd }) => fd !== -1).length;
   lines.push(
-    `${path} ${[...statuses].join(",")} ${[...new Set(outcomes)].join(",")} streams=${streams} closed=${all ? opened : "no"}/${opened}`,
+    `${path} ${[...statuses].join(",")} ${[...new Set(outcomes)].join(",")} streams=${streams} ${closed ? "closed" : `open=${left}`}`,
   );
-  handles = [];
-  streams = 0;
-  outcomes.length = 0;
 }
 server.close();
 await sleep(50);

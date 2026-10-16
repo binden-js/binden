@@ -38,10 +38,10 @@ suite("Process safety", () => {
     deepStrictEqual(run("send-file-release.ts", "--expose-gc"), {
       status: 0,
       stdout:
-        "/throws 500 rejected:handler fails streams=0 closed=3/3\n" +
-        "/all 500 rejected:audit fails streams=0 closed=3/3\n" +
-        "/expired 500 rejected:error_handler_timeout streams=0 closed=3/3\n" +
-        "/flushed 200(cut) resolved streams=0 closed=3/3\n" +
+        "/throws 500 rejected:handler fails streams=0 closed\n" +
+        "/all 500 rejected:audit fails streams=0 closed\n" +
+        "/expired 500 rejected:error_handler_timeout streams=0 closed\n" +
+        "/flushed 200(cut) resolved streams=0 closed\n" +
         "fd growth=0 warnings=[]\n",
       stderr: "",
     });
