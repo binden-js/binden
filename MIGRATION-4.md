@@ -208,8 +208,8 @@ behaviours of Node.js:
   `rawListeners()`, `listeners()`, `listenerCount()`, `removeListener()`, `off()` or
   `removeAllListeners()` (e.g. patched on an instance), or when it is not extensible
   (`Object.seal()`; Node.js itself cannot pipe a frozen stream). The class of the source (also of
-  `readable-stream`) is trusted: piping a stream whose class another work has patched runs that
-  code as the work that pipes.
+  `readable-stream`) is trusted: piping a stream that another work has patched (its class, or its
+  own methods, which refuse the pipe once it is set up) runs that code as the work that pipes.
 - **A pipe whose write or end throws fails its work** (e.g. a reason phrase or a `Trailer` that
   Node.js refuses): instead of a destroyed response (or a crash, from its end), the error handler
   replies before the headers, and the connection is closed afterwards; `stream.pipeline()` rejects

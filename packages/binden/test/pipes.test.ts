@@ -1342,7 +1342,7 @@ suite("A pipe into the response", () => {
       });
 
       for (const spoof of [false, true]) {
-        test(`a proxy of a source${spoof ? " whose trap adds a `data` listener" : ""}: refused before any trap runs`, async () => {
+        test(`a proxy of a source${spoof ? " whose trap adds a `data` listener" : ""}: refused before its inspection, its traps run only to unpipe it`, async () => {
           const traps: string[] = [];
           const { reply } = await refusedBy(
             () => null,
