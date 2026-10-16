@@ -202,7 +202,8 @@ suite("Binden", () => {
 
     deepStrictEqual(app.stack, []);
 
-    deepStrictEqual(app.use().stack, []);
+    throws(() => app.use(), new TypeError("Unsupported Middleware/Router"));
+    deepStrictEqual(app.stack, []);
 
     deepStrictEqual(app.use("/path", m1).stack, [[[m1], "/path"]]);
 

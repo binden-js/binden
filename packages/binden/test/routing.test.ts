@@ -104,6 +104,37 @@ suite("Routing", () => {
       deepStrictEqual(stack.stack, []);
     });
 
+    test("`use()` refuses a call without items, or whose first argument is no path", () => {
+      // A stack (for `mount()`) or `undefined` is not a path, and a `use()`
+      // without items adds nothing: neither is silently ignored
+      const stack = new Stack();
+      const use = stack.use.bind(stack) as (...args: unknown[]) => Stack;
+      const invalid: unknown[][] = [
+        [new Stack()],
+        [new Binden()],
+        [new Stack(), new Noop()],
+        // eslint-disable-next-line no-undefined -- the refused argument
+        [undefined],
+        // eslint-disable-next-line no-undefined -- the refused argument
+        [undefined, new Noop()],
+        [null, new Noop()],
+        [{}, new Noop()],
+        [],
+        ["/path"],
+        [/^\/path$/u],
+      ];
+      for (const args of invalid) {
+        throws(
+          () => use(...args),
+          new TypeError("Unsupported Middleware/Router"),
+        );
+      }
+      deepStrictEqual(stack.stack, []);
+      // A path (also an empty one, for every path) or an item comes first
+      const a = new Noop();
+      deepStrictEqual(use("", a).use(a).stack, [[[a, a], null]]);
+    });
+
     test("`stack` lists the patterns of `route()` and `mount()`", () => {
       const a = new Noop();
       const b = new Noop();

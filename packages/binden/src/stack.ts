@@ -123,7 +123,10 @@ export class Stack<State extends object = Record<string, unknown>> {
     });
   }
 
-  /** Adds middlewares and routers for every path */
+  /**
+   * Adds middlewares and routers (at least one) for every path; a stack is
+   * added with `mount()`
+   */
   public use(...items: (IStackItem<State> | IUntypedItem)[]): this;
   /**
    * Adds middlewares and routers for an exact path (a string) or for the
@@ -134,9 +137,15 @@ export class Stack<State extends object = Record<string, unknown>> {
     ...items: (IStackItem<State> | IUntypedItem)[]
   ): this;
   public use(_path: unknown, ...rest: unknown[]): this {
-    const items = isItem(_path) ? [_path, ...rest] : rest;
-    if (!items.length) {
-      return this;
+    const first = isItem(_path);
+    const items = first ? [_path, ...rest] : rest;
+    // A stack (for `mount()`) or `undefined` taken as a path would leave the
+    // call silently ignored, or add its items for every path
+    if (
+      !items.length ||
+      (!first && typeof _path !== "string" && !(_path instanceof RegExp))
+    ) {
+      throw new TypeError("Unsupported Middleware/Router");
     }
     for (const item of items) {
       if (!isItem(item)) {

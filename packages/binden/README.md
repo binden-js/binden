@@ -83,7 +83,7 @@ Middlewares typed for the default state (such as the `Middleware` classes of oth
 
 A `Stack` holds middlewares and routers by path. It has no options: the options of the application apply to every stack mounted in it (a `Binden` is a stack too, but it cannot be mounted).
 
-- `.use()` - add middlewares and routers for every path, for an exact path (a string, compared with the pathname of `context.url`: as received, but with the characters that a URL encodes, such as `"`, `{` or `}`, percent-encoded: `/a%22b` matches the requests for `/a"b` and `/a%22b`, and `/a"b` matches none) or for the paths that a RegExp matches (a RegExp keeps its flags, except `g` and `y`, which would make `test()` stateful)
+- `.use()` - add middlewares and routers for every path, for an exact path (a string, compared with the pathname of `context.url`: as received, but with the characters that a URL encodes, such as `"`, `{` or `}`, percent-encoded: `/a%22b` matches the requests for `/a"b` and `/a%22b`, and `/a"b` matches none) or for the paths that a RegExp matches (a RegExp keeps its flags, except `g` and `y`, which would make `test()` stateful). It throws a `TypeError` without a middleware or router, and for a first argument that is neither one nor a path, such as a stack (added with `.mount()`)
 
 ```typescript
 import { Binden, type Context } from "binden";
