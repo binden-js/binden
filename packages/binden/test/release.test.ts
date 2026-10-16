@@ -4,7 +4,9 @@ import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
 import { connect } from "node:net";
+import { join } from "node:path";
 import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 
 /** A raw connection to a server */
 interface IRaw {
@@ -365,18 +367,21 @@ suite("The request of a response, sent as its body (an echo)", () => {
 
   test("longer than its `Content-Length`, before the headers: the send rejects, and its error is replied on the connection", async () => {
     const outcome = Promise.withResolvers<unknown[]>();
+    const echoed = Promise.withResolvers<Context["request"]>();
     const app = new Binden({ logger: capture().logger }).use(
       async (context: Context) => {
         context.response.setHeader("Content-Length", 3);
         const error = await outcomeOf(context.send(context.request));
         const { socket } = context.request;
-        // Nothing of the send is left on it (no guard either)
+        // Nothing of the send is left on it but its guard, which listens
+        // until the turn after its close (see below)
         outcome.resolve([
           error,
           socket.destroyed,
           context.request.listenerCount("error"),
           context.request.listenerCount("data"),
         ]);
+        echoed.resolve(context.request);
         throw new Error("Replied");
       },
     );
@@ -395,12 +400,46 @@ suite("The request of a response, sent as its body (an echo)", () => {
       deepStrictEqual(await within(outcome.promise), [
         "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
         false,
-        0,
+        1,
         0,
       ]);
+      const request = await within(echoed.promise);
+      await within(
+        (async (): Promise<void> => {
+          while (request.listenerCount("error") > 0) {
+            await sleep(5);
+          }
+        })(),
+      );
+      ok(request.closed);
     } finally {
       raw.close();
       await listening.close();
+    }
+  });
+
+  test("whose error Node.js has scheduled once it has found the listener of the send, without a listener of the application: its guard, which listens before the send removes its own, logs it, and the process does not crash", () => {
+    for (const [mode, expected] of [
+      // A write of the response fails while the request aborts
+      ["write", "Write aborted 0\n"],
+      // Its client goes away once the send has failed
+      ["rst", "ERR_HTTP_CONTENT_LENGTH_MISMATCH 0\n20 ECONNRESET\n"],
+      ["fin", "ERR_HTTP_CONTENT_LENGTH_MISMATCH 0\n20 ECONNRESET\n"],
+    ] as const) {
+      const { status, stdout, stderr } = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          join(import.meta.dirname, "fixtures", "echo-errors.ts"),
+          mode,
+        ],
+        { encoding: "utf8", timeout: 30_000 },
+      );
+      deepStrictEqual(
+        { mode, status, stdout, stderr },
+        { mode, status: 0, stdout: expected, stderr: "" },
+      );
     }
   });
 

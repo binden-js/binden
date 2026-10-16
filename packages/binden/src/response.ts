@@ -3096,14 +3096,15 @@ export class BindenResponse<
        * response that the send has added, once it has settled, so that a
        * source that lives on holds nothing of the response: the guard of the
        * source (see `guard()`) listens before, and reports a late error of it
-       * (e.g. of a destroy by `autoDestroy` that fails after its end). Not
-       * the request of the response, which the send never destroys (see
-       * `#destroys()`), and Node.js never fails without a listener
+       * (e.g. of a destroy by `autoDestroy` that fails after its end). So
+       * does the guard of the request of the response, which the send never
+       * destroys (see `#destroys()`), but whose error Node.js may already
+       * have scheduled once it has found the listener of the send (e.g. of a
+       * client that aborts): whether a source needs a guard does not depend
+       * on whether it may be destroyed
        */
       const unlisten = (): void => {
-        if (this.#destroys(data)) {
-          guard(data, emitterMethods, this.#report(), hasClosed(data));
-        }
+        guard(data, emitterMethods, this.#report(), hasClosed(data));
         for (const [event, listener] of listeners) {
           Reflect.apply(emitterMethods.remove, data, [event, listener]);
         }
