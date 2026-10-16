@@ -419,15 +419,17 @@ describe("Multipart (a parse that starts once the response has ended)", () => {
         headers: { "Content-Type": type, "Content-Length": form.length },
       });
       client.on("error", ignore);
+      // Listened to at once: the reply arrives before the body is sent, and
+      // Node.js dumps a response that nothing listens to (which would also
+      // let the reply finish)
+      const responded = once(client, "response");
       client.flushHeaders();
       await within(started);
       client.end(form);
 
       deepEqual(await within(settled), [["a", "1"]]);
       deepEqual(states, [true, false]);
-      const [response] = (await within(once(client, "response"))) as [
-        IncomingMessage,
-      ];
+      const [response] = (await within(responded)) as [IncomingMessage];
       response.resume();
       // 32 MiB through the loopback: slower on a loaded machine
       await within(once(response, "end"), 30_000);
