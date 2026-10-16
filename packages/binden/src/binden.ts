@@ -105,15 +105,15 @@ export interface IBindenBaseOptions<
    * The time in milliseconds that the `error_handler` has to settle (`5000`):
    * a handler that takes longer, throws or rejects gets an empty
    * `500 Internal Server Error` instead (or the connection is closed, once
-   * the reply has started)
+   * its reply has committed its headers)
    */
   error_handler_timeout?: number | undefined;
   /**
    * The deadline of every request in milliseconds (`0`, the default, for
    * none): once it has passed, `context.signal` is aborted, the stack stops
    * and a `503 Service Unavailable` error (`code: "deadline"`) is replied (or
-   * the connection is closed, once the reply has started). A middleware may
-   * change it with `context.setTimeout()`.
+   * the connection is closed, once the reply has committed its headers). A
+   * middleware may change it with `context.setTimeout()`.
    */
   timeout?: number | undefined;
   /** The logger of the contexts (the default one is set up by `BINDEN_LOG_LEVEL`) */

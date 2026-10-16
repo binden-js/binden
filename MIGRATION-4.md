@@ -148,7 +148,9 @@ process with an unhandled rejection, and one that did not reply left the request
 - a handler that throws, rejects or takes longer gets an empty `500 Internal Server Error`
   (without the headers of the body it may have set), or its connection is closed when its reply
   has committed its headers. Its `send()` of a stream or `sendFile()` that has not is cancelled
-  first, as by a deadline (it rejects with the failure of the handler), and the `500` replaces it.
+  first, as by a deadline (it rejects with the failure of the handler, or with
+  `BindenError(500, { code: "error_handler_timeout" })` once the handler has timed out), and so is
+  one that the stack has left pending: the `500` replaces them.
 
 ```typescript
 import { Binden, BindenError, type Context } from "binden";
@@ -322,6 +324,12 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
   default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A
   `Readable` that has ended is an empty body, and one that has been destroyed rejects at once.
+- A `send()` that is ignored (once the response has ended, or by a work that can no longer change
+  it, e.g. once its deadline has passed) releases a Node.js `Readable` without reading it: it is
+  destroyed (closing the file of a stream), where binden 2.0.4 left it untouched. The request of
+  the response itself (`send(context.request)`) is never destroyed. A `sendFile()` whose response
+  has ended before it sends anything (before it is called, or while it opens its file) resolves
+  without sending anything, where binden 2.0.4 rejected with `ERR_HTTP_HEADERS_SENT`.
 - `send()` (and `context.send()`) rejects with a `TypeError`, before anything is sent, for an
   object that is neither a `Buffer`, a `Uint8Array`, a `Readable` nor a stream-like source: it sent
   its `toString()` (e.g. `[object Object]`, or the text of a `URLSearchParams`). Send a string
