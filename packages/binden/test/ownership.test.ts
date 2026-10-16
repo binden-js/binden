@@ -1109,6 +1109,119 @@ suite("Ownership of the response once the exchange is sealed", () => {
       released.open();
       await within(closed(handles));
     });
+
+    /** How a send has settled: `resolved`, or `rejected` with its reason */
+    const settledAs = (promise: Promise<void>): Promise<unknown[]> =>
+      promise.then(
+        () => ["resolved"],
+        (reason: unknown) => ["rejected", reason],
+      );
+
+    /**
+     * An error handler that fails with a value while its `sendFile()` and its
+     * send of a stream are pending: they reject with it, and the 500 is
+     * replied
+     */
+    const cancelledBy = async (failure: unknown): Promise<void> => {
+      const released = gate();
+      const handles = delay({ opening: released.promise });
+      const settled = Promise.withResolvers<unknown[][]>();
+      await withApp(
+        {
+          error_handler: async (context: Context): Promise<void> => {
+            Promise.all([
+              settledAs(context.response.sendFile(file)),
+              settledAs(context.response.send(silent())),
+            ]).then(settled.resolve, settled.reject);
+            await sleep(10);
+            throw failure;
+          },
+        },
+        (app) => {
+          app.use(() => {
+            throw new Error("A failure");
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual([received.status, received.body], [500, ""]);
+        },
+      );
+      deepStrictEqual(await within(settled.promise), [
+        ["rejected", failure],
+        ["rejected", failure],
+      ]);
+      released.open();
+      await within(closed(handles));
+    };
+
+    for (const [name, failure] of [
+      ["`null`", null],
+      // eslint-disable-next-line no-undefined -- a thrown `undefined`
+      ["`undefined`", undefined],
+      ["an `Error`", new Error("The error handler has failed")],
+    ] as const) {
+      test(`cancelled by an error handler that throws ${name}: it rejects with it, as its send of a stream, and the 500 is replied`, async () => {
+        await cancelledBy(failure);
+      });
+    }
+
+    test("cancelled by a pipe of the stack that fails with `null`: it rejects with it, as its send of a stream, and the 500 is replied", async () => {
+      const released = gate();
+      // Awaited (by `open()`) once the file is being opened
+      const opened = gate();
+      const opening = {
+        then: (
+          resolve: () => void,
+          reject: (reason: unknown) => void,
+        ): Promise<void> => {
+          opened.open();
+          return released.promise.then(resolve, reject);
+        },
+      } as unknown as Promise<void>;
+      const handles = delay({ opening });
+      const settled = Promise.withResolvers<unknown[][]>();
+      const errors: unknown[] = [];
+      await withApp(
+        {
+          error_handler: async (context: Context, error): Promise<void> => {
+            errors.push(error);
+            await context.status(500).send();
+          },
+        },
+        (app) => {
+          app.use(async (context: Context) => {
+            Promise.all([
+              settledAs(context.response.sendFile(file)),
+              settledAs(context.response.send(silent())),
+            ]).then(settled.resolve, settled.reject);
+            const source = new PassThrough();
+            source.pipe(context.response);
+            // In the turn of the pipe: its listener of `end`, before the one
+            // of the pipe (which would end the reply), throws `null`
+            source.prependListener("end", () => {
+              // eslint-disable-next-line @typescript-eslint/only-throw-error -- any thrown value
+              throw null;
+            });
+            // Once the file is being opened
+            await within(opened.promise);
+            source.end();
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual([received.status, received.body], [500, ""]);
+        },
+      );
+      deepStrictEqual(await within(settled.promise), [
+        ["rejected", null],
+        ["rejected", null],
+      ]);
+      deepStrictEqual(errors, [null]);
+      released.open();
+      await within(closed(handles));
+    });
   });
 });
 

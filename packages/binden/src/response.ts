@@ -3065,9 +3065,11 @@ export class BindenResponse<
       };
       /**
        * Settles the send once (`cancelled`: by `[kCancel]()`, which releases
-       * its source afterwards). A source still read then (neither ended nor
-       * destroyed, e.g. once another writer has ended the response) is
-       * released, as it would be once the response has closed.
+       * its source afterwards, and fails it with the reason, whatever it is,
+       * e.g. the `null` that a failed error handler has thrown). A source
+       * still read then (neither ended nor destroyed, e.g. once another
+       * writer has ended the response) is released, as it would be once the
+       * response has closed.
        */
       const settle = (error: Error | null, cancelled = false): void => {
         if (!settled) {
@@ -3077,7 +3079,7 @@ export class BindenResponse<
           if (!cancelled && !data.readableEnded && !data.destroyed) {
             drop();
           }
-          if (error === null) {
+          if (error === null && !cancelled) {
             resolve();
             return;
           } else if (!this.headersSent) {
@@ -3086,8 +3088,9 @@ export class BindenResponse<
           }
           // Abandoned at the deadline (e.g. its source destroyed by a
           // listener of `signal`, before the deadline cancels it), it fails
-          // as a cancelled send
-          reject(operation.active ? error : this.#abandoned(error));
+          // as a cancelled send (whose reason may be anything)
+          const failure = error as Error;
+          reject(operation.active ? failure : this.#abandoned(failure));
         }
       };
       const fail = (error: Error): void => {
@@ -3488,15 +3491,18 @@ export class BindenResponse<
     const key = {};
     let settled = false;
     return new Promise<void>((resolve, reject) => {
-      const settle = (error: Error | null): void => {
+      // As the settlement of `#pipe()`: a cancellation always fails (with a
+      // reason that may be anything)
+      const settle = (error: Error | null, cancelled = false): void => {
         if (!settled) {
           settled = true;
           this.#pending.delete(key);
-          if (error === null) {
+          if (error === null && !cancelled) {
             resolve();
-          } else {
-            reject(error);
+            return;
           }
+          const failure = error as Error;
+          reject(failure);
         }
       };
       // Started at once (see `.started`), until it fails before sending
@@ -3514,7 +3520,7 @@ export class BindenResponse<
             this.setHeader(name, value as OutgoingHttpHeader);
           }
         }
-        settle(reason as Error);
+        settle(reason as Error, true);
       });
       sendFileTo(
         this,
