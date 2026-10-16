@@ -3039,12 +3039,14 @@ export class BindenResponse<
    * The `Content-Length` that the body declares is read once, before anything
    * is written (a compression removes the header): a source that fails,
    * closes before its end, or does not have exactly that length rejects.
-   * Nothing sent yet, the error can still be replied (see `.started`);
-   * otherwise the response is destroyed, so that a truncated body does not
-   * look complete, and more bytes are not read by the client as the next
-   * response of the connection. A source that has already ended is an empty
-   * body; one that has been destroyed before rejects at once, under its
-   * guard (see `guard()`: its destroy may still fail). One that is paused
+   * Nothing sent yet, before the headers are committed, the error can still
+   * be replied (see `.started`); otherwise the response is destroyed, so
+   * that a truncated body (or a head that promises one, e.g. once
+   * `flushHeaders()` has sent it) does not look complete, and more bytes are
+   * not read by the client as the next response of the connection. A source
+   * that has already ended is an empty body; one that has been destroyed
+   * before rejects at once (as a failure), under its guard (see `guard()`:
+   * its destroy may still fail). One that is paused
    * (e.g. by the application, or by an `unpipe()`) is resumed once the
    * listeners of the send are added, as `Readable.prototype.pipe()` does:
    * once the response drains when it needs to.
@@ -3078,6 +3080,11 @@ export class BindenResponse<
       // application) may still fail: its guard listens, as for a stream-like
       // source (see `guard()`)
       guard(data, emitterMethods, this.#report(), hasClosed(data));
+      if (this.headersSent) {
+        // As a send that fails (see `fail` below): the committed head
+        // promises a body that will not come
+        this.destroy();
+      }
       return Promise.reject(BindenResponse.#premature());
     }
     const operation = this.#operation();
@@ -3190,11 +3197,17 @@ export class BindenResponse<
           reject(operation.active ? failure : this.#abandoned(failure));
         }
       };
+      /**
+       * Fails the send: once anything is sent, or the headers are committed
+       * (e.g. by `flushHeaders()`, whose head promises a body), the response
+       * is destroyed, so that the client never takes it for complete, nor
+       * reads the next response of the connection as its body
+       */
       const fail = (error: Error): void => {
         if (settled || stopped) {
           // E.g. the source released below: the response is not changed
           return;
-        } else if (sent > 0) {
+        } else if (sent > 0 || this.headersSent) {
           this.destroy();
         }
         settle(error);
