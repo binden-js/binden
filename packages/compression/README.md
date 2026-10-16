@@ -38,8 +38,13 @@ connection) are those from before, so that the error is replied with a decision 
 The arguments of a `write()` or an `end()` are checked first, as binden checks them, and a refused
 one throws before anything is decided or changed:
 
-- a chunk that Node.js refuses (`null`, or neither a string nor bytes) throws the error of
-  Node.js;
+- a chunk that Node.js refuses (neither a string nor bytes) throws the error of Node.js. As for
+  Node.js, a falsy chunk of `end()` is none: `end(null)`, `end(0)` and `end(false)` are a plain
+  `end()`, while `write(null)` throws. Nothing of the socket is changed either (`end()` of Node.js
+  would leave it corked, and the next reply stalled), also once the response has been replaced
+  (`406`) or ended through its compressor: it throws as for a response that has not ended, rather
+  than the `error` event that Node.js emits for an ended one (a response that the application has
+  ended as it is answers as without a compression);
 - an unknown encoding (or `buffer` for a string) throws `ERR_UNKNOWN_ENCODING`, but for a response
   without a body (to `HEAD`, or with a 1xx, 204 or 304 status), whose chunks Node.js ignores;
 - a string in `hex`, `base64` or `base64url` (the name in any case) is written as the bytes that
