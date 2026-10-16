@@ -815,7 +815,10 @@ export class Binden<
    * mutate the response, and a send whose headers are not committed is
    * cancelled (its file or stream released). A response that has not started
    * then gets a `503` error through the error handler; one that has not
-   * finished is cut by closing the connection.
+   * finished is cut by closing the connection, unless it has ended while it
+   * waits for the response before it on its connection (pipelined): its
+   * reply is complete, and is sent once that one has been (destroying it
+   * would cut that response too, on some versions of Node.js).
    */
   async #deadline(context: Context, exchange: Exchange): Promise<void> {
     const { response } = context;
@@ -831,6 +834,13 @@ export class Binden<
         await this.#errorHandler(context, exchange, error);
       });
     } else if (!response.writableFinished) {
+      if (response.writableEnded && response.socket === null) {
+        // Waits for the response before it (see above)
+        const message =
+          "The deadline has passed once the response was complete. It is sent after the responses before it";
+        context.log.debug(message);
+        return;
+      }
       const message = "The deadline has passed. Destroying the socket";
       context.log.debug(message);
       response[kFramework](() => response.destroy());

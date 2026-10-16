@@ -6,6 +6,7 @@ import {
   type Context,
   Cookie,
   type IBindenOptions,
+  shutdown,
 } from "../index.js";
 import {
   type ICaptured,
@@ -756,5 +757,240 @@ suite("The deadline", () => {
         );
       }
     }
+  });
+});
+
+suite("A complete reply that waits for the response before it", () => {
+  /**
+   * An application whose `/` never replies by itself, and whose `/next` ends
+   * its reply at once (or only writes a part of it), which then waits for the
+   * response of `/` (pipelined before it): whether the response of `/next`
+   * has finished once it is closed
+   */
+  function queued(
+    options: IBindenOptions,
+    complete = true,
+  ): {
+    app: Binden;
+    captured: ICaptured;
+    ended: Promise<null>;
+    closed: Promise<boolean>;
+  } {
+    const captured = capture();
+    const ended = Promise.withResolvers<null>();
+    const closed = Promise.withResolvers<boolean>();
+    const app = new Binden({ ...options, logger: captured.logger }).use(
+      async (context: Context) => {
+        const { response } = context;
+        if (context.url.pathname !== "/next") {
+          await never();
+          return;
+        }
+        context.onCleanup(() => {
+          closed.resolve(response.writableFinished);
+        });
+        const sent = complete ? context.text("next") : never();
+        if (!complete) {
+          response.write("part");
+        }
+        // Without a connection yet
+        ok(response.writableEnded === complete && response.socket === null);
+        ended.resolve(null);
+        await sent;
+      },
+    );
+    return { app, captured, ended: ended.promise, closed: closed.promise };
+  }
+
+  const requests =
+    "GET / HTTP/1.1\r\nHost: a\r\n\r\n" +
+    "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n";
+
+  test("is sent once that response is, after its deadline (on every Node.js)", async () => {
+    const { app, captured, closed } = queued({
+      timeout: 50,
+      access_log: true,
+      error_handler: async ({ response }: Context): Promise<void> => {
+        // The reply of `/` comes once the deadline of `/next` has passed
+        await sleep(40);
+        await response.status(503).send("late");
+      },
+    });
+    const listening = await listen(app);
+    try {
+      const responses = await converse(listening.port, requests);
+      deepStrictEqual(
+        responses.map(({ head, body }) => [head.split("\r\n")[0], body]),
+        [
+          ["HTTP/1.1 503 Service Unavailable", "late"],
+          ["HTTP/1.1 200 OK", "next"],
+        ],
+      );
+      // Finalized once it has been sent
+      deepStrictEqual(await within(closed), true);
+      const logged = captured.records.filter(
+        ({ msg }) => msg === "The request has completed",
+      );
+      deepStrictEqual(
+        logged.map(({ status, aborted }) => [status, aborted]),
+        [
+          [503, true],
+          [200, true],
+        ],
+      );
+      await captured.waitFor(
+        "The deadline has passed once the response was complete. It is sent after the responses before it",
+      );
+    } finally {
+      await listening.close();
+    }
+  });
+
+  test("is not a reply that has only started, which is still cut at its deadline", async () => {
+    const { app, captured, closed } = queued(
+      {
+        timeout: 50,
+        error_handler: async ({
+          request,
+          response,
+        }: Context): Promise<void> => {
+          if (request.url === "/") {
+            await sleep(40);
+            await response.status(503).send("late");
+          }
+        },
+      },
+      false,
+    );
+    const listening = await listen(app);
+    const socket = connect(listening.port, "localhost");
+    try {
+      await once(socket, "connect");
+      let data = "";
+      socket.setEncoding("latin1").on("data", (chunk: string) => {
+        data += chunk;
+      });
+      socket.write(requests);
+      // Destroyed: closed before it has finished (Node.js 24.14 destroys the
+      // connection once it would send it, 24.16 and 26 send what it has
+      // written, and keep the connection open)
+      deepStrictEqual(await within(closed), false);
+      await captured.waitFor("The deadline has passed. Destroying the socket");
+      // The response before it is complete
+      await within(
+        (async (): Promise<void> => {
+          while (!data.includes("\r\n\r\nlate")) {
+            await sleep(5);
+          }
+        })(),
+      );
+      ok(data.startsWith("HTTP/1.1 503 Service Unavailable\r\n"), data);
+    } finally {
+      socket.destroy();
+      await listening.close();
+    }
+  });
+
+  /**
+   * Whether Node.js itself closes a response that waits for another once
+   * their connection has closed (Node.js 24.16 and 26 do, 24.14 never does:
+   * the framework then never learns of it, as before)
+   */
+  async function nativeClosesQueued(): Promise<boolean> {
+    const { promise, resolve } = Promise.withResolvers<boolean>();
+    const server = createServer((request, response) => {
+      if (request.url === "/next") {
+        response.once("close", () => {
+          resolve(true);
+        });
+        response.end("next");
+      }
+    });
+    server.listen(0, "localhost");
+    await once(server, "listening");
+    const socket = connect((server.address() as AddressInfo).port, "localhost");
+    await once(socket, "connect");
+    socket.write(requests);
+    await sleep(50);
+    socket.destroy();
+    setTimeout(resolve, 200, false);
+    try {
+      return await promise;
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  }
+
+  test("is cut when the client goes away, as before", async () => {
+    const closes = await nativeClosesQueued();
+    const { app, captured, ended, closed } = queued({});
+    const listening = await listen(app);
+    try {
+      const socket = connect(listening.port, "localhost");
+      await once(socket, "connect");
+      socket.write(requests);
+      await within(ended);
+      socket.destroy();
+      const message = "The request has been aborted. Destroying the socket";
+      if (closes) {
+        deepStrictEqual(await within(closed), false);
+        await captured.waitFor(message);
+      } else {
+        await sleep(200);
+      }
+      // `/` and `/next`, once Node.js has closed them
+      deepStrictEqual(
+        captured.records
+          .filter(({ msg }) => msg === message)
+          .map(({ reason }) => reason),
+        closes ? ["client_closed", "client_closed"] : ["client_closed"],
+      );
+    } finally {
+      await listening.close();
+    }
+  });
+
+  test("is cut by a shutdown that times out, as before", async () => {
+    const closes = await nativeClosesQueued();
+    const { app, captured, ended, closed } = queued({});
+    const listening = await listen(app);
+    const socket = connect(listening.port, "localhost");
+    await once(socket, "connect");
+    let data = "";
+    socket.setEncoding("latin1").on("data", (chunk: string) => {
+      data += chunk;
+    });
+    socket.write(requests);
+    await within(ended);
+    const closing = shutdown(listening.server, {
+      timeout: 50,
+      cleanup_timeout: 100,
+    }).then(
+      () => null,
+      (error: unknown) => (error as Error).message,
+    );
+    await within(once(socket, "close"));
+    deepStrictEqual(data, "");
+    // Its cleanup waits for a close that Node.js 24.14 never emits
+    deepStrictEqual(
+      await within(closing),
+      closes
+        ? null
+        : "The cleanup of the requests has not completed within 100 ms",
+    );
+    if (closes) {
+      deepStrictEqual(await within(closed), false);
+    }
+    // Both requests, at the end of the time of the shutdown
+    deepStrictEqual(
+      captured.records
+        .filter(
+          ({ msg }) =>
+            msg === "The request has been aborted. Destroying the socket",
+        )
+        .map(({ reason }) => reason),
+      ["shutdown", "shutdown"],
+    );
   });
 });
