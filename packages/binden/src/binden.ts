@@ -604,6 +604,9 @@ export class Binden<
    * stopped (or had completed): once it has been told (see `kRevoke`), the
    * error handler replies to its error, or the connection is closed once the
    * headers have been sent. A deadline that passes meanwhile replies instead.
+   * Nothing replaces the reply of a response that has been destroyed (e.g.
+   * for a pipe that the stack has left to Node.js), but the failure is still
+   * logged, as once the headers have been sent.
    */
   async #pipeFailed(
     context: Context,
@@ -612,11 +615,12 @@ export class Binden<
   ): Promise<void> {
     await exchange.delivered;
     const { response } = context;
-    if (exchange.signal.aborted || Binden.#closed(context)) {
+    if (exchange.signal.aborted) {
       return;
-    } else if (response.headersSent) {
-      const message =
-        "A pipe into the response has failed once its headers were sent. Destroying the socket";
+    } else if (response.headersSent || response.destroyed) {
+      const message = response.headersSent
+        ? "A pipe into the response has failed once its headers were sent. Destroying the socket"
+        : "A pipe into the response has failed once it was destroyed";
       context.log.error(message, this.#failure(context, error, "send"));
       response[kFramework](() => response.destroy());
       return;

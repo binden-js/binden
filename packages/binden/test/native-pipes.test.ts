@@ -743,8 +743,13 @@ suite(
               deepStrictEqual(reasons(captured, unproven), [
                 "the source has its own on()",
               ]);
-              await captured.waitFor(
-                "The response has been destroyed: nothing replaces the reply",
+              // Its failure, which nothing replies to
+              const record = await captured.waitFor(
+                "A pipe into the response has failed once it was destroyed",
+              );
+              deepStrictEqual(
+                [record.level, (record.failure as { type: string }).type],
+                [50, "TypeError"],
               );
               ok(!attempted(captured), captured.output());
             },

@@ -2314,6 +2314,76 @@ suite("A pipe into the response", () => {
       );
     });
 
+    test("of the stack once its response has finished (a listener of the end of its source throws): logged, with the failure", async () => {
+      await withApp(
+        { log_error_details: true },
+        (app) => {
+          app.use(async (context: Context) => {
+            const source = new PassThrough();
+            source.pipe(context.response);
+            // In the turn of the pipe: a listener of the stack
+            source.once("end", () => {
+              throw new Error("A bug in an end listener");
+            });
+            owners.exit(() => {
+              setTimeout(() => {
+                source.end("x");
+              }, 10);
+            });
+            await never();
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual(
+            [reply.status, reply.body, reply.complete],
+            [200, "x", true],
+          );
+          const record = await captured.waitFor(
+            "A pipe into the response has failed once its headers were sent. Destroying the socket",
+          );
+          deepStrictEqual(
+            [record.level, (record.failure as { message: string }).message],
+            [50, "A bug in an end listener"],
+          );
+        },
+      );
+    });
+
+    test("of the stack once the write that throws has destroyed the response (after its headers): logged, with the failure", async () => {
+      await withApp(
+        { log_error_details: true },
+        (app) => {
+          app.use(async (context: Context) => {
+            const { response } = context;
+            response.strictContentLength = true;
+            response.setHeader("Content-Length", "2");
+            response.flushHeaders();
+            const source = new PassThrough();
+            source.pipe(response);
+            owners.exit(() => {
+              setTimeout(() => {
+                // Longer than its `Content-Length`
+                source.end("abc");
+              }, 10);
+            });
+            await never();
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.closed], [200, true]);
+          const record = await captured.waitFor(
+            "A pipe into the response has failed once its headers were sent. Destroying the socket",
+          );
+          deepStrictEqual(
+            [record.level, (record.failure as { code: string }).code],
+            [50, "ERR_HTTP_CONTENT_LENGTH_MISMATCH"],
+          );
+        },
+      );
+    });
+
     test("of the stack once the client has gone away: nothing is replied", async () => {
       const piped = Promise.withResolvers<unknown>();
       await withApp(
