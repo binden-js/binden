@@ -113,11 +113,13 @@ function premature(): Error {
 }
 
 /**
- * Whether a stream-like source has emitted its `close`: `closeEmitted` of
- * its state (e.g. of `readable-stream` 4, but not 2 nor 3, whose state does
- * not tell)
+ * Whether a source has emitted its `close`: `closeEmitted` of its state
+ * (e.g. of a Node.js `Readable`, or of `readable-stream` 4, but not 2 nor 3,
+ * whose state does not tell), for its guard (see `guard()`)
+ *
+ * @internal
  */
-function hasClosed(source: object): boolean {
+export function hasClosed(source: object): boolean {
   const state = Reflect.get(source, "_readableState") as
     { readonly closeEmitted?: unknown } | null | undefined;
   return state?.closeEmitted === true;
@@ -260,10 +262,13 @@ export function releaseStreamLike(
  * or the close would otherwise crash the process without a listener of the
  * application, and is reported as a late error). A source that has ended
  * already is an empty body, and one destroyed before its end closes the
- * readable at once: neither is listened to. The guard of a source (see `guard()`) reports a later error of one
- * that it cancels (also without `destroy()`), or that the application has
- * destroyed (before the send, or by an `end` or a `close` once destroyed,
- * whose destroy may fail after the turn that decides the send).
+ * readable at once: neither is listened to. The guard of a source (see
+ * `guard()`) listens before the listeners of the send are removed, and
+ * reports a later error of one that has ended (whose destroy, e.g. by
+ * `autoDestroy`, may fail after the end), failed or closed, that it cancels
+ * (also without `destroy()`), or that the application has destroyed (before
+ * the send, or by an `end` or a `close` once destroyed, whose destroy may
+ * fail after the turn that decides the send).
  */
 export function readStreamLike(
   source: object,
@@ -305,10 +310,16 @@ export function readStreamLike(
   };
   /**
    * Removes every listener but the one of `error`, which is removed on the
-   * next turn (see above)
+   * next turn (see above). Its guard listens before (`closed`: by its
+   * `close`, see `guard()`), unless it has already, once destroyed (see
+   * `stopped()`): its destroy may still fail (e.g. by `autoDestroy` once it
+   * has ended).
    */
-  const settle = (): void => {
+  const settle = (closed = false): void => {
     settled = true;
+    if (!destroyed) {
+      guard(source, methods, report, closed);
+    }
     release("data", "end", "close");
     setImmediate(() => {
       release("error");
@@ -339,9 +350,9 @@ export function readStreamLike(
       callback(error);
     },
   });
-  /** Fails the readable with an error of the source */
-  const fail = (error: Error): void => {
-    settle();
+  /** Fails the readable with an error of the source (`closed`: by its `close`) */
+  const fail = (error: Error, closed = false): void => {
+    settle(closed);
     readable.destroy(error);
   };
   /**
@@ -363,7 +374,9 @@ export function readStreamLike(
     }
   };
   if (hasEnded(source)) {
+    // Its destroy may still fail (e.g. by `autoDestroy` once it has ended)
     settled = true;
+    guard(source, methods, report, hasClosed(source));
     readable.push(null);
     return readable;
   } else if (isDestroyed(source)) {
@@ -388,7 +401,7 @@ export function readStreamLike(
     if (isDestroyed(source)) {
       stopped(true);
     } else {
-      fail(premature());
+      fail(premature(), true);
     }
   });
   listen("end", () => {
