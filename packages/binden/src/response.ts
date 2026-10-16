@@ -215,6 +215,9 @@ const unowned: IOwnership = {
   debug: (): void => {
     // Nobody to tell
   },
+  warn: (): void => {
+    // Nobody to tell
+  },
 };
 
 /** The listeners of an event of an emitter, as added (e.g. a wrapper of `once()`) */
@@ -747,22 +750,37 @@ export class BindenResponse<
   }
 
   /**
-   * Refuses a pipe (see `#refusal()`): it is unpiped at once (by the method of
-   * the class of the source), and the work that has piped it fails with a
-   * `TypeError` (see `#pipeFailed()`), which closes the response for it (see
-   * `[kRevoke]()`): e.g. a legacy pipe, which has no `unpipe()`, is
-   * dismantled by its `close` listener
+   * Refuses a pipe (see `#refusal()`): the work that has piped it fails at
+   * once with a `TypeError` (see `#pipeFailed()`), which revokes it before
+   * anything runs code of the application, and closes the response for it
+   * (see `[kRevoke]()`). Then it is unpiped (by the method of the class of
+   * the source) in that work, which may no longer mutate the response (e.g.
+   * from a listener of `removeListener` of the source): a failure of that
+   * cleanup is only logged. A legacy pipe, which has no `unpipe()`, is
+   * dismantled by its `close` listener. The pipe of a work that the framework
+   * does not know (e.g. of no request, or of another request) is unpiped as
+   * well, and the response left to its owner.
    */
   #refuse(
     source: EventEmitter,
     owner: object | undefined,
     reason: string,
   ): void {
-    unpipe(source, this);
     const error = new TypeError(
       `The pipe into the response is refused: ${reason}`,
     );
-    this.#pipeFailed(owner, error, null);
+    const failed = this.#pipeFailed(owner, error, null);
+    try {
+      unpipe(source, this);
+    } catch (cleanup: unknown) {
+      const message = "The cleanup of a refused pipe has failed";
+      this.#ownership.debug(message, cleanup);
+    }
+    if (!failed) {
+      const message =
+        "A pipe of a work of no request (or of another) has been refused";
+      this.#ownership.warn(message, reason);
+    }
   }
 
   /**

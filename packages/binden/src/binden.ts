@@ -434,12 +434,19 @@ export class Binden<
           return false;
         } else if (exchange.allows(owner)) {
           fail(error);
+        } else {
+          // E.g. a listener of `end` that it has added to its source
+          const message = "A pipe of an abandoned work has failed";
+          context.log.debug(message, this.#failure(context, error, "send"));
         }
         return true;
       },
       guards: (owner): boolean => works.handlers.has(owner),
       debug: (message, error): void => {
         context.log.debug(message, this.#failure(context, error, "send"));
+      },
+      warn: (message, reason): void => {
+        context.log.warn(message, { reason });
       },
     });
     if (this.#request_id?.echo === true) {

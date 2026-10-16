@@ -98,6 +98,11 @@ export interface IOwnership {
   guards(owner: object): boolean;
   /** Logs a failure that nothing else handles (e.g. of an abandoned work) */
   debug(message: string, error: unknown): void;
+  /**
+   * Logs a refused pipe of a work that it does not know (e.g. of no
+   * request), with the reason: the response is left to its owner
+   */
+  warn(message: string, reason: string): void;
 }
 
 /**

@@ -1115,6 +1115,74 @@ suite("A pipe into the response", () => {
         );
       });
 
+      for (const [name, prepare] of [
+        [
+          "a listener of `removeListener` of the source",
+          (source: PassThrough, response: BindenResponse): void => {
+            source.on("removeListener", () => {
+              response.end("OLD");
+            });
+          },
+        ],
+        [
+          "its own `removeListener()`",
+          (source: PassThrough, response: BindenResponse): void => {
+            const inherited = Reflect.get(
+              PassThrough.prototype,
+              "removeListener",
+            ) as (...args: unknown[]) => unknown;
+            Object.defineProperty(source, "removeListener", {
+              configurable: true,
+              writable: true,
+              value(this: PassThrough, ...args: unknown[]): unknown {
+                response.end("OLD");
+                return Reflect.apply(inherited, this, args);
+              },
+            });
+          },
+        ],
+      ] as const) {
+        test(`the cleanup of its unpipe (${name}) runs once its work has lost the response`, async () => {
+          const { reply, logged } = await refusedBy(prepare);
+          deepStrictEqual(
+            [reply.status, reply.body, reply.complete],
+            [500, "", true],
+          );
+          ok(!reply.raw.includes("OLD"), reply.raw);
+          deepStrictEqual(logged, ["TypeError"]);
+        });
+      }
+
+      test("the cleanup of its unpipe that throws (from a timer) is logged: the reply is the error", async () => {
+        await withApp(
+          {},
+          (app) => {
+            app.use(async (context: Context) => {
+              const source = silent();
+              source.on("removeListener", () => {
+                throw new Error("The cleanup has failed");
+              });
+              // Out of the middleware: what it throws would crash
+              setTimeout(() => {
+                source.pipe(context.response);
+              }, 5);
+              await never();
+            });
+          },
+          async ({ port }, captured) => {
+            const reply = await exchange(port);
+            deepStrictEqual([reply.status, reply.complete], [500, true]);
+            await captured.waitFor("The cleanup of a refused pipe has failed");
+            deepStrictEqual(
+              captured.records
+                .filter(({ msg }) => msg === "The request has failed")
+                .map(({ failure }) => (failure as { type: string }).type),
+              ["TypeError"],
+            );
+          },
+        );
+      });
+
       test("one of two responses of one source: the other gets its exact body, the source lives", async () => {
         const source = silent();
         const feed = feeder(source, ["x", "y"]);
@@ -1398,24 +1466,40 @@ suite("A pipe into the response", () => {
       );
     });
 
-    test("of a work of another request: Node.js decides", async () => {
-      await withApp(
-        {},
-        (app) => {
-          app.use(async (context: Context) => {
-            context.response.on("newListener", () => null);
-            owners.run({ name: "a work of another request" }, () => {
-              silent().pipe(context.response);
+    for (const work of ["another request", "no request"]) {
+      test(`refused, of a work of ${work}: unpiped and logged, the response left to its owner`, async () => {
+        const source = silent();
+        await withApp(
+          {},
+          (app) => {
+            app.use(async (context: Context) => {
+              context.response.on("newListener", () => null);
+              const pipe = (): void => {
+                source.pipe(context.response);
+              };
+              if (work === "no request") {
+                owners.exit(pipe);
+              } else {
+                owners.run({ name: "a work of another request" }, pipe);
+              }
+              await context.status(202).send("sent");
             });
-            await context.status(202).send("sent");
-          });
-        },
-        async ({ port }) => {
-          const reply = await exchange(port);
-          deepStrictEqual([reply.status, reply.body], [202, "sent"]);
-        },
-      );
-    });
+          },
+          async ({ port }, captured) => {
+            const reply = await exchange(port);
+            deepStrictEqual([reply.status, reply.body], [202, "sent"]);
+            const { reason } = await captured.waitFor(
+              "A pipe of a work of no request (or of another) has been refused",
+            );
+            deepStrictEqual(
+              reason,
+              "the response has listeners of its listeners",
+            );
+            deepStrictEqual(source.listenerCount("data"), 0);
+          },
+        );
+      });
+    }
 
     test("of the stack once the error handler runs: only its own work is abandoned", async () => {
       await withApp(
@@ -1466,6 +1550,33 @@ suite("A pipe into the response", () => {
           await captured.waitFor(
             "A pipe of the provided `error_handler` has failed late",
           );
+        },
+      );
+    });
+
+    test("a listener of `end` of its source that the abandoned work has added, which throws, is logged", async () => {
+      const source = silent();
+      const added = Promise.withResolvers<unknown>();
+      await withApp(
+        { timeout: 20 },
+        (app) => {
+          app.use(async (context: Context) => {
+            source.pipe(context.response);
+            // In the turn of the pipe: bound to its work
+            source.once("end", () => {
+              throw new Error("A listener of the application has failed");
+            });
+            added.resolve(null);
+            await never();
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.complete], [503, true]);
+          await within(added.promise);
+          source.resume();
+          source.end();
+          await captured.waitFor("A pipe of an abandoned work has failed");
         },
       );
     });
@@ -1711,6 +1822,7 @@ suite("A pipe into the response", () => {
           fail: () => false,
           guards: () => true,
           debug: () => null,
+          warn: () => null,
         });
         const source = silent();
         const thrown = new Error("Thrown");
