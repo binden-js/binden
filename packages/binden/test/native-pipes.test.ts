@@ -401,7 +401,7 @@ suite(
 
       test("a deadline once its pipe has ended the response, which waits for the one before it: the reply is kept", async () => {
         await withApp(
-          { timeout: 40 },
+          { timeout: 100 },
           (app) => {
             app.use(async (context: Context) => {
               const { request, response } = context;
@@ -409,7 +409,7 @@ suite(
               if (request.url === "/first") {
                 // Replies after the deadline of the request after it
                 context.setTimeout(0);
-                await sleep(100);
+                await sleep(250);
                 await context.send("FIRST");
                 return;
               }
