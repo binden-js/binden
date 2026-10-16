@@ -303,6 +303,18 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   longer gets a default `Content-Type`.
 - The cookies of `response.cookies` are added when the headers are sent by any path (`writeHead()`,
   `write()`, `end()`, a piped stream), not only by `send()`.
+- A `write()` or an `end()` that Node.js throws from once the head is committed (e.g. a body that
+  does not have its `Content-Length` under `strictContentLength`) closes the connection: the
+  response is destroyed before the error is thrown, so that nothing that it has queued is flushed,
+  also for a later `write()` past the length, which Node.js refuses and keeps the response usable.
+  `ERR_HTTP_BODY_NOT_ALLOWED` and the checks of a chunk (`ERR_INVALID_ARG_TYPE`,
+  `ERR_STREAM_NULL_VALUES`, `ERR_UNKNOWN_ENCODING`) leave it usable, as with Node.js. Under
+  `strictContentLength`, a first `write()` past a valid `Content-Length` throws
+  `ERR_HTTP_CONTENT_LENGTH_MISMATCH` before anything is committed, where Node.js 24 and 26 and
+  binden 2.0.4 send the whole chunk (the client reads its excess as the next response).
+- `Content-Length` values that disagree (`["2", "3"]`, two `appendHeader()` calls, or a list such
+  as `2, 3`) now throw a `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`) when the head is committed,
+  where Node.js and binden 2.0.4 sent every line.
 - `send()` with a `1xx` status rejects with a `TypeError` (use `writeEarlyHints()`). A string sent
   with an `encoding` is encoded once: the bytes that it decodes to are sent, with their length. A
   `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
