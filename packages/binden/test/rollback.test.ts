@@ -6,12 +6,15 @@ import {
   type Context,
   Cookie,
 } from "../index.js";
-import { IncomingMessage, createServer } from "node:http";
+import { IncomingMessage, ServerResponse, createServer } from "node:http";
 import { capture, listen, sleep, within } from "./helpers.js";
 import { deepStrictEqual, ok, throws } from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
+import { join } from "node:path";
 import { once } from "node:events";
+import { tmpdir } from "node:os";
 
 /** Writes requests on one connection, and reads everything until the server closes it */
 async function converse(port: number, requests: string): Promise<string> {
@@ -513,6 +516,233 @@ suite("A head that Node.js refuses", () => {
         "GET / HTTP/1.1\r\nHost: a\r\n\r\n",
       );
       deepStrictEqual(outcomes, ["ERR_HTTP_CONTENT_LENGTH_MISMATCH", true, 10]);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+});
+
+suite("An end() that throws", () => {
+  /** Reads everything from one connection until the server closes it, within `ms` */
+  async function read(port: number, data: string, ms: number): Promise<string> {
+    const socket = connect(port, "localhost");
+    await once(socket, "connect");
+    const chunks: Buffer[] = [];
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    const closed = once(socket, "close");
+    socket.write(data);
+    try {
+      await within(closed, ms);
+    } finally {
+      socket.destroy();
+    }
+    return Buffer.concat(chunks).toString("latin1");
+  }
+
+  test("leaves the socket corked as it was: the reply that follows is not held", async () => {
+    const root = await mkdtemp(join(tmpdir(), "binden-uncork-"));
+    // Larger than the buffers of the socket: its pipe waits for `drain`
+    const page = "p".repeat(266_000);
+    await writeFile(join(root, "page.txt"), page);
+    /** Ends that Node.js refuses once it has corked the socket, or that binden refuses before */
+    const ends: Partial<Record<string, (response: BindenResponse) => unknown>> =
+      {
+        // Valid for HTTP/1.1: HTTP/1.0 has no chunks for the trailers
+        trailers: (response) => {
+          response.setHeader("Trailer", "Server-Timing");
+          response.addTrailers({ "Server-Timing": "db;dur=1" });
+          return response.end("x".repeat(100));
+        },
+        object: (response) => response.end({}),
+        number: (response) => response.end(42),
+      };
+    /** Replies after it, which wait for the socket to flush */
+    const replies: Partial<
+      Record<string, (context: Context) => Promise<void>>
+    > = {
+      flush: async ({ response }) => {
+        response.removeHeader("Trailer");
+        response.status(500).setHeader("Content-Type", "text/plain");
+        response.write("part;");
+        await response.flush();
+        response.end("rest");
+      },
+      file: async ({ response }) => {
+        response.removeHeader("Trailer");
+        await response.status(500).sendFile("page.txt", { root });
+      },
+    };
+    const corks: unknown[] = [];
+    const app = new Binden({
+      // Far beyond the time of the client
+      error_handler_timeout: 30_000,
+      error_handler: async (context: Context): Promise<void> => {
+        const [, , reply = ""] = context.url.pathname.split("/");
+        await replies[reply]?.(context);
+      },
+    }).use(({ url, response }: Context) => {
+      const [, end = ""] = url.pathname.split("/");
+      // The response of the connection (no other is before it)
+      const socket = response.socket as Socket;
+      const before = socket.writableCorked;
+      let corked = 0;
+      socket.cork = (): void => {
+        corked += 1;
+        Socket.prototype.cork.call(socket);
+      };
+      try {
+        ends[end]?.(response);
+      } catch (error: unknown) {
+        const { code } = error as { code?: unknown };
+        corks.push([end, code, before, corked], socket.writableCorked);
+        throw error;
+      } finally {
+        Reflect.deleteProperty(socket, "cork");
+      }
+    });
+    const listening = await listen(app);
+    try {
+      for (const end of Object.keys(ends)) {
+        for (const [reply, body] of [
+          ["flush", "part;rest"],
+          ["file", page],
+        ]) {
+          const name = `${end} then ${reply}`;
+          corks.length = 0;
+          const data = await read(
+            listening.port,
+            `GET /${end}/${reply} HTTP/1.0\r\nHost: a\r\n\r\n`,
+            2000,
+          );
+          ok(
+            data.startsWith("HTTP/1.1 500 Internal Server Error\r\n"),
+            `${name}: ${data.slice(0, 200)}`,
+          );
+          ok(data.endsWith(`\r\n\r\n${body}`), `${name}: ${data.length}`);
+          // Corked by Node.js, then uncorked; a chunk that is not one is
+          // refused before Node.js corks the socket
+          const [code, corked] =
+            end === "trailers"
+              ? ["ERR_HTTP_TRAILER_INVALID", 1]
+              : ["ERR_INVALID_ARG_TYPE", 0];
+          deepStrictEqual(corks, [[end, code, 0, corked], 0], name);
+        }
+      }
+    } finally {
+      await listening.close();
+      await rm(root, { recursive: true });
+    }
+  });
+
+  test("of a chunk that is not one, once the response has ended, is left to Node.js", async () => {
+    const results: unknown[] = [];
+    for (const Response of [ServerResponse, BindenResponse]) {
+      const outcomes: unknown[] = [];
+      const server = createServer(
+        { ServerResponse: Response as typeof BindenResponse },
+        (_request: IncomingMessage, response: ServerResponse) => {
+          response.on("error", (error: { code?: unknown }) => {
+            outcomes.push(["error", error.code]);
+          });
+          response.end("ended");
+          try {
+            response.end({}, () => {
+              outcomes.push("called");
+            });
+            outcomes.push("returned");
+          } catch (error: unknown) {
+            outcomes.push(["thrown", (error as { code?: unknown }).code]);
+          }
+        },
+      );
+      server.listen(0, "localhost");
+      await once(server, "listening");
+      try {
+        const data = await converse(
+          (server.address() as AddressInfo).port,
+          "GET / HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        );
+        ok(data.endsWith("\r\n\r\nended"), data);
+        results.push(outcomes);
+      } finally {
+        server.closeAllConnections();
+        server.close();
+      }
+    }
+    const [native, binden] = results;
+    deepStrictEqual(binden, native);
+    deepStrictEqual(native, [
+      "returned",
+      "called",
+      ["error", "ERR_STREAM_WRITE_AFTER_END"],
+    ]);
+  });
+
+  test("keeps the corks of the application", async () => {
+    const corks: unknown[] = [];
+    const app = new Binden().use(({ response }: Context) => {
+      const socket = response.socket as Socket;
+      response.cork();
+      const before = socket.writableCorked;
+      try {
+        response.setHeader("Trailer", "Server-Timing");
+        response.addTrailers({ "Server-Timing": "db;dur=1" });
+        response.end("body");
+      } finally {
+        corks.push(before, socket.writableCorked);
+      }
+    });
+    const listening = await listen(app);
+    try {
+      // The error reply uncorks the socket as it ends (as Node.js does)
+      const data = await read(
+        listening.port,
+        "GET / HTTP/1.0\r\nHost: a\r\n\r\n",
+        2000,
+      );
+      ok(data.startsWith("HTTP/1.1 500 Internal Server Error\r\n"), data);
+      deepStrictEqual(corks, [1, 1]);
+    } finally {
+      await listening.close();
+    }
+  });
+
+  test("of a response that waits for the one before it is the error of Node.js", async () => {
+    const outcomes: unknown[] = [];
+    const server = createServer(
+      { ServerResponse: BindenResponse },
+      (request: IncomingMessage, response: BindenResponse) => {
+        if (request.url === "/first") {
+          setTimeout(() => {
+            response.end("first");
+          }, 50);
+          return;
+        }
+        // No socket yet: nothing has been corked
+        outcomes.push(response.socket);
+        response.setHeader("Content-Length", 4);
+        response.setHeader("Trailer", "X-T");
+        try {
+          response.end("body");
+        } catch (error: unknown) {
+          outcomes.push((error as { code?: unknown }).code);
+        }
+        response.removeHeader("Trailer");
+        response.setHeader("Content-Length", 6).end("second");
+      },
+    );
+    server.listen(0, "localhost");
+    await once(server, "listening");
+    try {
+      const data = await converse(
+        (server.address() as AddressInfo).port,
+        "GET /first HTTP/1.1\r\nHost: a\r\n\r\n" +
+          "GET /second HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+      );
+      ok(data.includes("\r\n\r\nfirstHTTP/1.1 200 OK\r\n"), data);
+      ok(data.endsWith("\r\n\r\nsecond"), data);
+      deepStrictEqual(outcomes, [null, "ERR_HTTP_TRAILER_INVALID"]);
     } finally {
       server.closeAllConnections();
       server.close();

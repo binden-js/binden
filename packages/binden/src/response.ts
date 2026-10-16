@@ -1423,9 +1423,51 @@ export class BindenResponse<
     // Node.js frames the body of its chunk before it commits the head (see
     // `#restoring()`)
     return this.#restoring(() => {
+      this.#chunkOfEnd(args[0]);
       this.#ordered(args, true);
-      return super.end(...(callbacksOf(args) as []));
+      return this.#uncorking(() => super.end(...(callbacksOf(args) as [])));
     });
+  }
+
+  /**
+   * Refuses the chunk of an `end()` that Node.js refuses (truthy, but neither
+   * a string nor bytes) with the error of Node.js, before its `end()` corks
+   * the socket: its `write()` checks the chunk before anything else. Not once
+   * the response has ended, where Node.js emits `ERR_STREAM_WRITE_AFTER_END`.
+   */
+  #chunkOfEnd(chunk: unknown): void {
+    if (
+      truthy(chunk) &&
+      typeof chunk !== "function" &&
+      typeof chunk !== "string" &&
+      !isUint8Array(chunk) &&
+      Reflect.get(this, "finished") !== true
+    ) {
+      super.write(chunk);
+    }
+  }
+
+  /**
+   * Runs `end()` of Node.js, which corks the socket before it frames the body
+   * (and uncorks it once it has ended the response): when it throws (e.g. for
+   * a head that Node.js refuses), the socket is uncorked back to what it was,
+   * so that the reply that follows is not held (e.g. a `flush()` would never
+   * resolve, and a body larger than the socket buffers would wait for a
+   * `drain` that never comes)
+   */
+  #uncorking<T>(fn: () => T): T {
+    const { socket } = this;
+    const corked = socket?.writableCorked ?? 0;
+    try {
+      return fn();
+    } catch (error: unknown) {
+      if (socket !== null) {
+        while (socket.writableCorked > corked) {
+          socket.uncork();
+        }
+      }
+      throw error;
+    }
   }
 
   /** Sends the headers (see `flushHeaders()` of Node.js), unless the response is sealed */
