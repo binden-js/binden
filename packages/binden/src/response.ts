@@ -1,6 +1,7 @@
 import Cookie, { type ICookie } from "./headers/cookie.js";
 import {
   type IFramingState,
+  framingCounters,
   framingFields,
   kRestoreFraming,
   kSaveFraming,
@@ -1089,13 +1090,14 @@ export class BindenResponse<
   }
 
   /**
-   * Runs a call that may commit the head of the response (`writeHead()`, or
-   * an `end()`, which sets the length of its chunk first): when Node.js
-   * refuses the head (e.g. a `Trailer` of a body that is not chunked, once it
-   * has decided to close the connection), the framing state of the response
-   * is the one from before the call (see `IFramingState`), so that the reply
-   * that follows (e.g. of an error) is framed as if the refused head had
-   * never been attempted
+   * Runs a call that may commit the head of the response (`writeHead()`, a
+   * `write()`, which counts the bytes of its chunk first for
+   * `strictContentLength`, or an `end()`, which also sets the length of its
+   * chunk): when Node.js refuses the head (e.g. a `Trailer` of a body that is
+   * not chunked, once it has decided to close the connection), the framing
+   * state of the response is the one from before the call (see
+   * `IFramingState`), so that the reply that follows (e.g. of an error) is
+   * framed as if the refused head had never been attempted
    */
   #restoring<T>(fn: () => T): T {
     if (this.headersSent) {
@@ -1127,7 +1129,10 @@ export class BindenResponse<
     return {
       status: this.#statusCode,
       reason: this.#statusMessage,
-      fields: framingFields.map((name) => [name, Reflect.get(this, name)]),
+      fields: [...framingFields, ...framingCounters].map((key) => [
+        key,
+        Reflect.get(this, key),
+      ]),
       headers: (this as unknown as { getRawHeaderNames(): string[] })
         .getRawHeaderNames()
         .map((name) => [
@@ -1299,8 +1304,12 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return true;
     }
-    this.#ordered(args, false);
-    return super.write(...(callbacksOf(args) as [unknown]));
+    // Node.js counts the bytes of its chunk before it commits the head (see
+    // `#restoring()`)
+    return this.#restoring(() => {
+      this.#ordered(args, false);
+      return super.write(...(callbacksOf(args) as [unknown]));
+    });
   }
 
   /**

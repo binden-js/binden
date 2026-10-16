@@ -113,6 +113,11 @@ suite("A head that Node.js refuses", () => {
         response.setHeader("Content-Length", 4);
         response.setHeader("Date", "Thu, 01 Jan 2026 00:00:00 GMT");
       },
+      // Node.js counts the bytes of a chunk before it commits the head
+      "a strict length": (response) => {
+        response.strictContentLength = true;
+        response.setHeader("Content-Length", 4);
+      },
     };
     const failures: string[] = [];
     const server = createServer(
@@ -251,6 +256,111 @@ suite("A head that Node.js refuses", () => {
             ok(next.endsWith("\r\n\r\nnext"), `${name}: ${next}`);
           }
         }
+      }
+    } finally {
+      await listening.close();
+    }
+  });
+
+  test("the bytes of a refused chunk are not counted for `strictContentLength`", async () => {
+    /** A refused head (a `Trailer` of a body that is not chunked) of each path */
+    const attempts: Record<string, (response: BindenResponse) => unknown> = {
+      end: (response) => response.end("body"),
+      write: (response) => response.write("body"),
+    };
+    const refused: unknown[] = [];
+    const server = createServer(
+      { ServerResponse: BindenResponse },
+      (request: IncomingMessage, response: BindenResponse) => {
+        const attempt = attempts[(request.url ?? "/").slice(1)];
+        if (typeof attempt === "undefined") {
+          response.end("next");
+          return;
+        }
+        response.strictContentLength = true;
+        response.setHeader("Content-Length", 4);
+        response.setHeader("Trailer", "X-T");
+        try {
+          attempt(response);
+        } catch (error: unknown) {
+          refused.push((error as { code?: unknown }).code);
+        }
+        response.removeHeader("Trailer");
+        response.end("body");
+      },
+    );
+    server.listen(0, "localhost");
+    await once(server, "listening");
+    try {
+      const { port } = server.address() as AddressInfo;
+      for (const name of Object.keys(attempts)) {
+        const data = await converse(
+          port,
+          `GET /${name} HTTP/1.1\r\nHost: a\r\n\r\n` +
+            "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        );
+        const [first = "", next = "", ...rest] = data.split(/(?=HTTP\/1\.1 )/u);
+        deepStrictEqual(
+          [first, rest],
+          [
+            "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\nbody",
+            [],
+          ],
+          name,
+        );
+        ok(next.endsWith("\r\n\r\nnext"), `${name}: ${next}`);
+      }
+      deepStrictEqual(refused, [
+        "ERR_HTTP_TRAILER_INVALID",
+        "ERR_HTTP_TRAILER_INVALID",
+      ]);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  test("the error reply of a refused strict chunk has its length, and the next request is answered", async () => {
+    const replies: Record<string, (context: Context) => unknown> = {
+      end: ({ response }) => {
+        response.end("abc");
+      },
+      write: ({ response }) => {
+        response.write("abc");
+      },
+      text: (context) => context.text("abc"),
+    };
+    const app = new Binden().use(async (context: Context) => {
+      const reply = replies[context.url.pathname.slice(1)];
+      if (typeof reply === "undefined") {
+        await context.text("next");
+        return;
+      }
+      const { response } = context;
+      response.strictContentLength = true;
+      response.setHeader("Trailer", "X-T");
+      response.setHeader("Content-Length", 3);
+      await reply(context);
+    });
+    const listening = await listen(app);
+    try {
+      for (const path of Object.keys(replies)) {
+        const data = await converse(
+          listening.port,
+          `GET /${path} HTTP/1.1\r\nHost: a\r\n\r\n` +
+            "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        );
+        const [failed = "", next = "", ...rest] =
+          data.split(/(?=HTTP\/1\.1 )/u);
+        deepStrictEqual(
+          [failed, rest],
+          [
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n",
+            [],
+          ],
+          path,
+        );
+        ok(next.endsWith("\r\n\r\nnext"), `${path}: ${next}`);
       }
     } finally {
       await listening.close();
