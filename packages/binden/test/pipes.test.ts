@@ -2506,6 +2506,11 @@ suite("A pipe into the response", () => {
               "the response has listeners of its listeners",
             );
             deepStrictEqual(source.listenerCount("data"), 0);
+            ok(
+              !messages(captured, 40).includes(
+                "A pipe of a work of no request (or of another) cannot be unpiped (e.g. a legacy pipe): it has been left to Node.js",
+              ),
+            );
           },
         );
       });
@@ -2537,11 +2542,16 @@ suite("A pipe into the response", () => {
             [200, "FOREIGN", true],
           );
           const { reason } = await captured.waitFor(
-            "A pipe of a work of no request (or of another) has been refused",
+            "A pipe of a work of no request (or of another) cannot be unpiped (e.g. a legacy pipe): it has been left to Node.js",
           );
           deepStrictEqual(
             reason,
             "it is not a pipe of Readable.prototype.pipe()",
+          );
+          ok(
+            !messages(captured, 40).includes(
+              "A pipe of a work of no request (or of another) has been refused",
+            ),
           );
         },
       );

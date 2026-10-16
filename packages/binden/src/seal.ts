@@ -140,7 +140,8 @@ export interface IOwnership {
   debug(message: string, error: unknown): void;
   /**
    * Logs a refused pipe of a work that it does not know (e.g. of no
-   * request), with the reason: the response is left to its owner
+   * request), with the reason: the response is left to its owner, and a
+   * pipe that cannot be unpiped (e.g. a legacy one) to Node.js
    */
   warn(message: string, reason: string): void;
   /** Logs (at `debug`) what is done with a pipe, with the reason */

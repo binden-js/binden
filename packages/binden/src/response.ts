@@ -344,16 +344,20 @@ function hasEnded(source: EventEmitter): boolean {
 
 /**
  * Unpipes a source from a destination by the method of its class (never by
- * one of the source itself), if it is still piped into it
+ * one of the source itself), if it is still piped into it: `false` when it
+ * is not (e.g. a legacy pipe of `Stream.prototype.pipe()`, which no state
+ * lists), or its class has no such method
  */
-function unpipe(source: EventEmitter, destination: object): void {
+function unpipe(source: EventEmitter, destination: object): boolean {
   const method: unknown = Reflect.get(
     Object.getPrototypeOf(source) as object,
     "unpipe",
   );
   if (typeof method === "function" && pipesInto(source, destination)) {
     Reflect.apply(method, source, [destination]);
+    return true;
   }
+  return false;
 }
 
 /**
@@ -978,9 +982,12 @@ export class BindenResponse<
    * the source) in that work, which may no longer mutate the response (e.g.
    * from a listener of `removeListener` of the source): a failure of that
    * cleanup is only logged. A legacy pipe, which has no `unpipe()`, is
-   * dismantled by its `close` listener. The pipe of a work that the framework
-   * does not know (e.g. of no request, or of another request) is unpiped as
-   * well, and the response left to its owner.
+   * dismantled by its `close` listener, which runs as that work once it is
+   * told. The pipe of a work that the framework does not know (e.g. of no
+   * request, or of another request), which it does not fail, is unpiped as
+   * well, and the response left to its owner; a legacy one cannot be (nor
+   * closed for such a work): it is left to Node.js, with a warning of its
+   * own.
    */
   #refuse(
     source: EventEmitter,
@@ -991,17 +998,20 @@ export class BindenResponse<
       `The pipe into the response is refused: ${reason}`,
     );
     const failed = this.#pipeFailed(owner, error, null);
+    let unpiped = false;
     try {
-      unpipe(source, this);
+      unpiped = unpipe(source, this);
     } catch (cleanup: unknown) {
       const message = "The cleanup of a refused pipe has failed";
       this.#ownership.debug(message, cleanup);
     }
-    if (!failed) {
-      const message =
-        "A pipe of a work of no request (or of another) has been refused";
-      this.#ownership.warn(message, reason);
+    if (failed) {
+      return;
     }
+    const message = unpiped
+      ? "A pipe of a work of no request (or of another) has been refused"
+      : "A pipe of a work of no request (or of another) cannot be unpiped (e.g. a legacy pipe): it has been left to Node.js";
+    this.#ownership.warn(message, reason);
   }
 
   /**
