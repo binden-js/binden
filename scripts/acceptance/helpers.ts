@@ -116,10 +116,15 @@ export function reasonOf(signal: AbortSignal): string | null {
   return reason instanceof BindenAbortError ? reason.reason : "other";
 }
 
-/** The codes of a write to a connection that the client has closed */
+/**
+ * The codes of a write to a connection that the client has closed (a write
+ * still in a compressor is called back with `ERR_STREAM_DESTROYED` once the
+ * response has closed)
+ */
 const disconnected = new Set([
   "ECONNRESET",
   "EPIPE",
+  "ERR_STREAM_DESTROYED",
   "ERR_STREAM_PREMATURE_CLOSE",
 ]);
 
