@@ -1,5 +1,7 @@
 import {
+  Binden,
   BindenResponse,
+  type Context,
   type IResponseOptions,
   validateResponseOptions,
 } from "../index.js";
@@ -9,9 +11,9 @@ import { PassThrough, Readable } from "node:stream";
 import { Socket, connect } from "node:net";
 import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
+import { listen as listenApp, within } from "./helpers.js";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { within } from "./helpers.js";
 
 /** A response with the dynamic `ETag` */
 class EtagResponse extends BindenResponse {
@@ -334,6 +336,33 @@ suite("BindenResponse (bodies)", () => {
         },
         [10, [range, range]],
       ],
+      // Set again, to the same value: framed since all the same
+      [
+        "the same length set again",
+        (response): void => {
+          response.setHeader("Content-Length", 10);
+        },
+        [10, range],
+      ],
+      // Refused by Node.js: nothing has changed
+      [
+        "a length that Node.js refuses",
+        (response): void => {
+          throws(() => response.setHeader("Content-Length", none as never), {
+            code: "ERR_HTTP_INVALID_HEADER_VALUE",
+          });
+        },
+        [none, none],
+      ],
+      [
+        "a length appended that Node.js refuses",
+        (response): void => {
+          throws(() => response.appendHeader("Content-Length", none as never), {
+            code: "ERR_HTTP_INVALID_HEADER_VALUE",
+          });
+        },
+        [none, none],
+      ],
     ];
     for (const [name, change, expected] of changes) {
       let framing: unknown[] = [];
@@ -404,6 +433,68 @@ suite("BindenResponse (bodies)", () => {
         () => response.type(invalid as string),
         new TypeError(`Invalid media type: ${String(invalid)}`),
       );
+    }
+  });
+});
+
+suite("The framing of a send that fails", () => {
+  test("is removed after a setter that Node.js refuses: the error reply has its own length", async () => {
+    const setters: Record<string, (response: BindenResponse) => unknown> = {
+      set: (response) => response.setHeader("Content-Length", none as never),
+      append: (response) =>
+        response.appendHeader("Content-Length", none as never),
+    };
+    const refused: unknown[] = [];
+    const app = new Binden({
+      error_handler: ({ response }: Context): void => {
+        response.end("ERR");
+      },
+    }).use(async ({ request, response }: Context) => {
+      const setter = setters[(request.url ?? "/").slice(1)];
+      if (typeof setter === "undefined") {
+        response.end("next");
+        return;
+      }
+      const source = new PassThrough();
+      response.setHeader("Content-Length", 10);
+      const pending = response.send(source);
+      try {
+        setter(response);
+      } catch (error: unknown) {
+        refused.push((error as { code?: unknown }).code);
+      }
+      source.destroy();
+      await pending;
+    });
+    const listening = await listenApp(app);
+    try {
+      for (const name of Object.keys(setters)) {
+        const data = await raw(
+          listening.url,
+          `GET /${name} HTTP/1.1\r\nHost: a\r\n\r\n` +
+            "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        );
+        const [failed = "", next = "", ...rest] = data
+          .replaceAll(/\r\nDate: [^\r]*/gu, "")
+          .split(/(?=HTTP\/1\.1 )/u);
+        deepStrictEqual(
+          [failed, rest],
+          [
+            // Removed by the framework (see `removeHeader()`): chunked
+            "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nERR\r\n0\r\n\r\n",
+            [],
+          ],
+          name,
+        );
+        ok(next.startsWith("HTTP/1.1 200 OK\r\n"), `${name}: ${next}`);
+        ok(next.endsWith("\r\n\r\nnext"), `${name}: ${next}`);
+      }
+      deepStrictEqual(refused, [
+        "ERR_HTTP_INVALID_HEADER_VALUE",
+        "ERR_HTTP_INVALID_HEADER_VALUE",
+      ]);
+    } finally {
+      await listening.close();
     }
   });
 });

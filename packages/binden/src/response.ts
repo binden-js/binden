@@ -446,8 +446,8 @@ export class BindenResponse<
   #statusMessage: string | undefined;
   /**
    * The generation of the framing headers of the response, advanced by every
-   * change of them: a send that fails removes its framing only while it is the
-   * latest (see `#pipe()`)
+   * change of them that Node.js has accepted: a send that fails removes its
+   * framing only while it is the latest (see `#pipe()`)
    */
   #framing = 0;
 
@@ -1440,11 +1440,16 @@ export class BindenResponse<
     if (!this.#allows()) {
       return this;
     }
+    super.setHeader(name, BindenResponse.#copy(value));
     this.#reframed(name);
-    return super.setHeader(name, BindenResponse.#copy(value));
+    return this;
   }
 
-  /** Advances the generation of the framing (see `#framing`) when a header changes it */
+  /**
+   * Advances the generation of the framing (see `#framing`) when a header
+   * that frames the body has changed: once Node.js has accepted the change (a
+   * name or a value that it refuses changes nothing), also to the same value
+   */
   #reframed(name: string): void {
     if (framing.has(String(name).toLowerCase())) {
       this.#framing += 1;
@@ -1486,8 +1491,9 @@ export class BindenResponse<
     if (!this.#allows()) {
       return this;
     }
+    super.appendHeader(name, value);
     this.#reframed(name);
-    return super.appendHeader(name, value);
+    return this;
   }
 
   /** Sets headers (see `setHeaders()` of Node.js), unless the response is sealed */
@@ -1509,8 +1515,8 @@ export class BindenResponse<
   /** Removes a header (see `removeHeader()` of Node.js), unless the response is sealed */
   public override removeHeader(name: string): void {
     if (this.#allows()) {
-      this.#reframed(name);
       super.removeHeader(name);
+      this.#reframed(name);
     }
   }
 
