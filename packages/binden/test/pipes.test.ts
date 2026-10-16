@@ -2441,6 +2441,42 @@ suite("A pipe into the response", () => {
       });
     }
 
+    test("a legacy pipe of a work of no request: it cannot be unpiped, it is left to Node.js and logged", async () => {
+      const legacy = new Stream() as Stream & { readable: boolean };
+      legacy.readable = true;
+      await withApp(
+        {},
+        (app) => {
+          app.use(async ({ response }: Context) => {
+            response.type("text/plain");
+            owners.exit(() => {
+              legacy.pipe(response);
+              // Its writes are those of the work that feeds it
+              setTimeout(() => {
+                legacy.emit("data", Buffer.from("FOREIGN"));
+                legacy.emit("end");
+              }, 5);
+            });
+            await once(response, "finish");
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual(
+            [reply.status, reply.body, reply.complete],
+            [200, "FOREIGN", true],
+          );
+          const { reason } = await captured.waitFor(
+            "A pipe of a work of no request (or of another) has been refused",
+          );
+          deepStrictEqual(
+            reason,
+            "it is not a pipe of Readable.prototype.pipe()",
+          );
+        },
+      );
+    });
+
     test("of the stack once the error handler runs: only its own work is abandoned", async () => {
       await withApp(
         {

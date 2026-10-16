@@ -201,7 +201,9 @@ behaviours of Node.js:
   fails with a `TypeError` (`500` before the headers), also through `stream.pipeline()`, which
   pipes such a stream with its own `pipe()`. Wrap such a stream (e.g. of an old stream library)
   with `new Readable().wrap(stream)`, then pipe the wrapper or send it
-  (`context.send(new Readable().wrap(stream))`).
+  (`context.send(new Readable().wrap(stream))`). A legacy pipe of a work of no request (or of
+  another request), which has no `unpipe()`, cannot be dismantled: it is left to Node.js, with a
+  warning, and writes as the work that feeds it.
 - **A pipe that binden cannot attribute is refused** the same way: while the response or the
   source has listeners of `newListener` or `removeListener`, when the source is a `Proxy` or has
   its own listener methods, `emit()`, `pipe()`, `unpipe()`, `pause()`, `resume()`, `read()`,
