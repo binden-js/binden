@@ -147,7 +147,8 @@ process with an unhandled rejection, and one that did not reply left the request
   its reply;
 - a handler that throws, rejects or takes longer gets an empty `500 Internal Server Error`
   (without the headers of the body it may have set), or its connection is closed when its reply
-  has started.
+  has committed its headers. Its `send()` of a stream or `sendFile()` that has not is cancelled
+  first, as by a deadline (it rejects with the failure of the handler), and the `500` replaces it.
 
 ```typescript
 import { Binden, BindenError, type Context } from "binden";

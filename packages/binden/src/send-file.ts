@@ -511,13 +511,31 @@ function setHeaders(
 }
 
 /**
+ * Closes the file of a stream that its send has settled without reading
+ * (e.g. a send that is ignored, or that has failed before it): a failure to
+ * close it is of interest to nobody
+ */
+function release(stream: Readable): void {
+  if (!stream.destroyed) {
+    stream
+      .on("error", () => {
+        // Nobody waits for it
+      })
+      .destroy();
+  }
+}
+
+/**
  * Sends a file (see `BindenResponse.sendFile()`). Its metadata and its content
  * are read from one file handle, so that they belong to the same file (also
  * when the path is replaced), and no more than its size is sent. A `304` is
  * sent by `notModified()`, with the length of the whole file. The file is the
  * body of the status of the response: the preconditions apply to a `2xx` (or a
  * `412`), the ranges to a `200`. Once `stopped()` (the send has been
- * cancelled), the file is not opened, or is closed at once.
+ * cancelled, or may no longer be sent), the file is not opened, or is closed
+ * at once: it is checked after every step that is awaited, and nothing is
+ * awaited between its last check and the send of the stream of the file, which
+ * is destroyed (closing the file) when that send settles without reading it.
  */
 export async function sendFileTo(
   response: BindenResponse,
@@ -535,8 +553,8 @@ export async function sendFileTo(
     return;
   }
   const handle = await openFile(location);
-  // Closed by the stream of its content, or else here
-  let stream: Readable | null = null;
+  // Closed by the stream of its content, once created, or else here
+  let streamed = false;
   try {
     if (stopped()) {
       // Opened late: nothing is sent
@@ -544,8 +562,8 @@ export async function sendFileTo(
     }
     const stats = await handle.stat();
     if (stopped()) {
-      // Cancelled while its metadata was read: closed at once (a send that
-      // is ignored would not release its stream)
+      // Stopped while its metadata was read: closed at once. The last check:
+      // nothing is awaited from here until its stream is sent
       return;
     }
 
@@ -646,21 +664,25 @@ export async function sendFileTo(
 
     // No more than the size that is sent as its length
     const { start, end } = range ?? { start: 0, end: size - 1 };
-    stream = handle.createReadStream({ start, end });
     if (range === null) {
-      await response.setHeader("Content-Length", size).send(stream);
-      return;
+      response.setHeader("Content-Length", size);
+    } else {
+      // A part of the file: the digests of its representation, but not the
+      // digest of the whole content
+      remove(response, contentDigests);
+      const cr = new ContentRange({ size, start, end }).toString();
+      response
+        .set({ "Content-Length": end - start + 1, "Content-Range": cr })
+        .status(206);
     }
-    // A part of the file: the digests of its representation, but not the
-    // digest of the whole content
-    remove(response, contentDigests);
-    const cr = new ContentRange({ size, start, end }).toString();
-    await response
-      .set({ "Content-Length": end - start + 1, "Content-Range": cr })
-      .status(206)
-      .send(stream);
+    // Created only to be sent at once
+    const stream = handle.createReadStream({ start, end });
+    streamed = true;
+    await response.send(stream).finally(() => {
+      release(stream);
+    });
   } finally {
-    if (stream === null) {
+    if (!streamed) {
       await handle.close();
     }
   }

@@ -2743,17 +2743,6 @@ export class BindenResponse<
   }
 
   /**
-   * Sends `304 Not Modified` for a `200` whose body has `length` bytes (see
-   * `sendFile()`, whose headers are not sent yet), unless it is late
-   */
-  #sendNotModified(length: number): Promise<void> {
-    if (!this.#allows()) {
-      return Promise.resolve();
-    }
-    return this.#endNotModified(length);
-  }
-
-  /**
    * Send a JSON value as `application/json`. A value that has no JSON text
    * (`undefined`, a function or a symbol), a `bigint` or a cyclic value
    * rejects with a `TypeError` before the response is started, as does a
@@ -3323,13 +3312,18 @@ export class BindenResponse<
    * (or a `412`) only, the ranges to a `200`. Before the headers are
    * committed, the framework may cancel it (see `[kCancel]()`): it then
    * rejects with the reason at once, its headers and status are those from
-   * before it, and a file opened later is closed.
+   * before it, and a file opened later is closed. So is a file whose send
+   * would be ignored (once the response has ended, or once the work that has
+   * called it may no longer mutate the response, e.g. a failed error
+   * handler): it then resolves without sending anything.
    */
   public sendFile(
     path: URL | string,
     options?: ISendFileOptions,
   ): Promise<void> {
-    if (!this.#allows()) {
+    // The work that sends the file, whose rights it keeps
+    const owner = owners.getStore();
+    if (!this.#allows(owner)) {
       return Promise.resolve();
     }
     const status = this.statusCode;
@@ -3371,8 +3365,11 @@ export class BindenResponse<
         this,
         path,
         options,
-        (length) => this.#sendNotModified(length),
-        () => settled,
+        // Called right after its last check (below): nothing is awaited
+        // in between
+        (length) => this.#endNotModified(length),
+        // Cancelled, or its send would be ignored (see `#send()`)
+        () => settled || this.writableEnded || !this.#allows(owner),
       ).then(
         () => {
           settle(null);

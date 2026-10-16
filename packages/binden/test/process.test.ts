@@ -4,14 +4,19 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 /**
- * Runs a fixture (`test/fixtures`) in a process of its own: a crash (e.g. an
- * unhandled `error` event) is its exit code and output, not a failure of the
- * test runner
+ * Runs a fixture (`test/fixtures`) in a process of its own (with the options
+ * of Node.js, e.g. `--expose-gc`): a crash (e.g. an unhandled `error` event)
+ * is its exit code and output, not a failure of the test runner
  */
-function run(fixture: string): Record<string, unknown> {
+function run(fixture: string, ...options: string[]): Record<string, unknown> {
   const { status, stdout, stderr } = spawnSync(
     process.execPath,
-    ["--import", "tsx", join(import.meta.dirname, "fixtures", fixture)],
+    [
+      ...options,
+      "--import",
+      "tsx",
+      join(import.meta.dirname, "fixtures", fixture),
+    ],
     { encoding: "utf8", timeout: 30_000 },
   );
   return { status, stdout, stderr };
@@ -22,6 +27,22 @@ suite("Process safety", () => {
     deepStrictEqual(run("discarded-source.ts"), {
       status: 0,
       stdout: "200 204 200\n",
+      stderr: "",
+    });
+  });
+
+  test("a file that sendFile() no longer sends is closed, never by the collection of its handle", () => {
+    // An error handler that fails (also through `Promise.all()`) or times out
+    // while the file is opened or its metadata read, and a deadline once the
+    // headers are flushed (which cancels nothing): 3 requests each
+    deepStrictEqual(run("send-file-release.ts", "--expose-gc"), {
+      status: 0,
+      stdout:
+        "/throws 500 rejected:handler fails streams=0 closed=3/3\n" +
+        "/all 500 rejected:audit fails streams=0 closed=3/3\n" +
+        "/expired 500 rejected:error_handler_timeout streams=0 closed=3/3\n" +
+        "/flushed 200(cut) resolved streams=0 closed=3/3\n" +
+        "fd growth=0 warnings=[]\n",
       stderr: "",
     });
   });

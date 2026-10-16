@@ -732,7 +732,7 @@ suite("Ownership of the response once the exchange is sealed", () => {
     );
   });
 
-  suite("`sendFile()` cancelled by a deadline", () => {
+  suite("`sendFile()` cancelled, or whose send is ignored", () => {
     let tmp: string;
     let file: string;
 
@@ -978,6 +978,85 @@ suite("Ownership of the response once the exchange is sealed", () => {
       await Promise.all(resolved);
       await sleep(20);
       deepStrictEqual(handles.length, 0);
+    });
+
+    test("once the response has ended while the metadata of the file is read: it resolves, and the file is closed", async () => {
+      const released = gate();
+      const handles = delay({ stating: released.promise });
+      const outcome = Promise.withResolvers<unknown>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            const sent = reasonOf(context.response.sendFile(file));
+            await within(
+              (async (): Promise<void> => {
+                while (handles.length === 0) {
+                  await sleep(1);
+                }
+              })(),
+            );
+            // Its send would be ignored: as `send()`, it resolves
+            context.response.end("other");
+            released.open();
+            outcome.resolve(await sent);
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual([received.status, received.body], [200, "other"]);
+        },
+      );
+      deepStrictEqual(await within(outcome.promise), null);
+      await within(closed(handles));
+      // Never read
+      deepStrictEqual(streams.length, 0);
+    });
+
+    test("the stream of a send that settles without reading it is destroyed, which closes the file", async () => {
+      const handles = delay({});
+      const outcomes: unknown[] = [];
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            const { response } = context;
+            // Sends that settle without reading the stream (as an ignored
+            // one would), then the reply
+            const sends = [
+              (): Promise<void> => {
+                // Its file fails to close (once closed): nobody waits for it
+                const handle = handles.at(-1) as FileHandle;
+                const close = handle.close.bind(handle);
+                handle.close = async (): Promise<void> => {
+                  await close();
+                  throw new Error("The file has failed to close");
+                };
+                return Promise.resolve();
+              },
+              async (): Promise<void> => {
+                await Promise.reject(new Error("Refused"));
+              },
+            ];
+            for (const fake of sends) {
+              response.send = fake;
+              outcomes.push(await reasonOf(response.sendFile(file)));
+            }
+            Reflect.deleteProperty(response, "send");
+            await context.send("reply");
+          });
+        },
+        async ({ port }) => {
+          deepStrictEqual((await fetch(port)).body, "reply");
+        },
+      );
+      deepStrictEqual(
+        outcomes.map((outcome) => (outcome as Error | null)?.message ?? null),
+        [null, "Refused"],
+      );
+      deepStrictEqual(streams.length, 2);
+      await within(closed(handles));
+      ok(streams.every(({ destroyed }) => destroyed));
     });
 
     test("once the stack has completed", async () => {

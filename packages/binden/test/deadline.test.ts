@@ -20,7 +20,7 @@ import {
 } from "./helpers.js";
 import { type IncomingMessage, createServer, get } from "node:http";
 import { PassThrough, Readable, finished } from "node:stream";
-import { deepStrictEqual, ok, rejects } from "node:assert/strict";
+import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { once } from "node:events";
 import { pipeline } from "node:stream/promises";
@@ -437,7 +437,8 @@ suite("The deadline", () => {
     );
   });
 
-  test("cancels a send that has not committed its headers, which the time out of an error handler cuts", async () => {
+  test("cancels a send that has not committed its headers, as the time out of an error handler does", async () => {
+    let rejection: unknown = null;
     await withApp(
       {
         timeout: 60,
@@ -447,8 +448,10 @@ suite("The deadline", () => {
           error: unknown,
         ): Promise<void> => {
           if (context.url.pathname === "/handler" && !isDeadline(error)) {
-            // Started (see `response.started`): its time out cuts it
-            await context.send(silent());
+            // Started (see `response.started`) until its time out cancels it
+            await context.send(silent()).catch((reason: unknown) => {
+              rejection = reason;
+            });
             return;
           }
           await context.status(isDeadline(error) ? 503 : 500).send("reply");
@@ -473,14 +476,21 @@ suite("The deadline", () => {
         } finally {
           connection.close();
         }
-        const cut = await client(port);
+        // Replaced by the opaque `500`, on a connection that stays open
+        const replaced = await client(port);
         try {
-          await rejects(cut.request("/handler"), /No complete response: ""/u);
-          ok(cut.closed);
+          const { head, body } = await replaced.request("/handler");
+          ok(head.startsWith("HTTP/1.1 500 "), head);
+          deepStrictEqual([body, replaced.closed], ["", false]);
         } finally {
-          cut.close();
+          replaced.close();
         }
       },
+    );
+    ok(rejection instanceof BindenError);
+    deepStrictEqual(
+      [rejection.status, rejection.code],
+      [500, "error_handler_timeout"],
     );
   });
 
