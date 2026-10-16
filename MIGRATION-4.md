@@ -201,11 +201,13 @@ behaviours of Node.js:
   fails with a `TypeError` (`500` before the headers). Wrap such a stream (e.g. of an old stream
   library) with `new Readable().wrap(stream)`, or use `stream.pipeline()`.
 - **A pipe that binden cannot attribute is refused** the same way: while the response or the
-  source has listeners of `newListener` or `removeListener`, when the source has its own
-  listener methods, `emit()`, `pipe()`, `unpipe()`, `rawListeners()`, `listeners()`,
-  `listenerCount()`, `removeListener()`, `off()` or `removeAllListeners()` (e.g. patched on an
-  instance), or when it is not extensible (`Object.seal()`; Node.js itself cannot pipe a frozen
-  stream). The class of the source (also of `readable-stream`) is trusted.
+  source has listeners of `newListener` or `removeListener`, when the source is a `Proxy` or has
+  its own listener methods, `emit()`, `pipe()`, `unpipe()`, `pause()`, `resume()`, `read()`,
+  `rawListeners()`, `listeners()`, `listenerCount()`, `removeListener()`, `off()` or
+  `removeAllListeners()` (e.g. patched on an instance), or when it is not extensible
+  (`Object.seal()`; Node.js itself cannot pipe a frozen stream). The class of the source (also of
+  `readable-stream`) is trusted: piping a stream whose class another work has patched runs that
+  code as the work that pipes.
 - **A pipe whose write or end throws fails its work** (e.g. a reason phrase or a `Trailer` that
   Node.js refuses): instead of a destroyed response (or a crash, from its end), the error handler
   replies before the headers, and the connection is closed afterwards; `stream.pipeline()` rejects

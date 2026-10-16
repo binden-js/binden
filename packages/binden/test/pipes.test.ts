@@ -5,6 +5,7 @@ import {
   type Context,
   type IBindenOptions,
 } from "../index.js";
+import { EventEmitter, once } from "node:events";
 import {
   type ICaptured,
   type IListening,
@@ -20,7 +21,6 @@ import { deepStrictEqual, ok } from "node:assert/strict";
 import { kListen, kOwnership, owners } from "../src/seal.js";
 import { suite, test } from "node:test";
 import { IncomingMessage } from "node:http";
-import { once } from "node:events";
 import { pipeline as pipelineAsync } from "node:stream/promises";
 
 /** Runs `fn` with a listening application (with a captured debug logger) */
@@ -1020,7 +1020,15 @@ suite("A pipe into the response", () => {
         });
       }
 
-      for (const name of ["on", "once", "emit", "pipe"]) {
+      for (const name of [
+        "on",
+        "once",
+        "emit",
+        "pipe",
+        "pause",
+        "resume",
+        "read",
+      ]) {
         test(`a method \`${name}()\` of the source itself`, async () => {
           const { reply } = await refusedBy((source) => {
             const inherited = Reflect.get(PassThrough.prototype, name) as (
@@ -1104,6 +1112,111 @@ suite("A pipe into the response", () => {
         );
         deepStrictEqual([reply.status, reply.complete], [500, true]);
       });
+
+      test("its own `resume()` that adds a `data` listener (called by the pipe before it is adopted)", async () => {
+        const { reply } = await refusedBy((source, response) => {
+          const inherited = Reflect.get(PassThrough.prototype, "resume") as (
+            ...args: unknown[]
+          ) => unknown;
+          let armed = true;
+          Object.defineProperty(source, "resume", {
+            configurable: true,
+            writable: true,
+            value(this: PassThrough, ...args: unknown[]): unknown {
+              if (armed) {
+                armed = false;
+                // As the pipe of Node.js, after its own listener
+                EventEmitter.prototype.on.call(this, "data", () => {
+                  response.write("OLD");
+                });
+              }
+              return Reflect.apply(inherited, this, args);
+            },
+          });
+        });
+        deepStrictEqual(
+          [reply.status, reply.body, reply.complete],
+          [500, "", true],
+        );
+        ok(!reply.raw.includes("OLD"), reply.raw);
+      });
+
+      for (const spoof of [false, true]) {
+        test(`a proxy of a source${spoof ? " whose trap adds a `data` listener" : ""}: refused before any trap runs`, async () => {
+          const traps: string[] = [];
+          const { reply } = await refusedBy(
+            () => null,
+            (source, response) => {
+              let piping = false;
+              const emit = Reflect.get(response, "emit") as (
+                ...args: unknown[]
+              ) => unknown;
+              response.emit = function wrapper(
+                this: BindenResponse,
+                ...args: unknown[]
+              ): boolean {
+                piping = args[0] === "pipe";
+                try {
+                  return Reflect.apply(emit, this, args) as boolean;
+                } finally {
+                  piping = false;
+                }
+              } as never;
+              const trap = (name: string): void => {
+                if (piping) {
+                  traps.push(name);
+                  // Ignored once its work has lost the response
+                  response.setHeader("X-Trap", name);
+                }
+              };
+              const proxy = new Proxy(source, {
+                get(target, key, receiver): unknown {
+                  trap(`get ${String(key)}`);
+                  const value: unknown = Reflect.get(target, key, receiver);
+                  if (spoof && key === "on" && typeof value === "function") {
+                    return function on(
+                      this: PassThrough,
+                      event: string,
+                      listener: () => void,
+                    ): unknown {
+                      Reflect.apply(value, this, [event, listener]);
+                      if (event === "data") {
+                        Reflect.apply(value, this, [
+                          "data",
+                          function ondata(): void {
+                            response.write("OLD");
+                          },
+                        ]);
+                      }
+                      return this;
+                    };
+                  }
+                  return value;
+                },
+                getOwnPropertyDescriptor(
+                  target,
+                  key,
+                ): PropertyDescriptor | undefined {
+                  trap(`getOwnPropertyDescriptor ${String(key)}`);
+                  return Reflect.getOwnPropertyDescriptor(target, key);
+                },
+                getPrototypeOf(target): object | null {
+                  trap("getPrototypeOf");
+                  return Reflect.getPrototypeOf(target);
+                },
+              });
+              proxy.pipe(response);
+            },
+          );
+          deepStrictEqual(
+            [reply.status, reply.body, reply.complete],
+            [500, "", true],
+          );
+          ok(!/OLD|X-Trap/u.test(reply.raw), reply.raw);
+          // Its traps run only to unpipe it, once its work has lost the response
+          ok(traps.includes("getPrototypeOf"), JSON.stringify(traps));
+        });
+      }
 
       test("a source that cannot be patched (not extensible)", async () => {
         const { reply } = await refusedBy((source) => {
@@ -1876,6 +1989,30 @@ suite("A pipe into the response", () => {
         // Refused: unpiped
         deepStrictEqual(source.listenerCount("data"), 0);
       }
+    });
+
+    test("a method set on the source while its window is open is not a patch of the window", () => {
+      const first = detached();
+      const second = detached();
+      const source = silent();
+      source.pipe(first);
+      // Not the patch of the window (which is open until the next tick)
+      const on = Reflect.get(PassThrough.prototype, "on") as (
+        ...args: unknown[]
+      ) => unknown;
+      Object.defineProperty(source, "on", {
+        configurable: true,
+        writable: true,
+        value(this: PassThrough, ...args: unknown[]): unknown {
+          return Reflect.apply(on, this, args);
+        },
+      });
+      source.pipe(second);
+      const { pipes } = Reflect.get(source, "_readableState") as {
+        pipes: unknown[];
+      };
+      // The second pipe is refused: unpiped
+      ok(pipes.length === 1 && pipes[0] === first);
     });
 
     test("the patches of its window are left once replaced, or removed", async () => {

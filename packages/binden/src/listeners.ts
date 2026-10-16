@@ -192,9 +192,16 @@ interface IWindow {
 
 const windows = new WeakMap<object, IWindow>();
 
-/** Whether a source has the patches of an open window */
-export function windowed(source: object): boolean {
-  return windows.has(source);
+/**
+ * Whether a method of a source is the patch of its open window (see
+ * `openWindow()`): not a method that has been set on the source since
+ */
+export function isPatch(source: object, name: string): boolean {
+  const patched = windows.get(source)?.patches.get(name);
+  return (
+    typeof patched !== "undefined" &&
+    Object.getOwnPropertyDescriptor(source, name)?.value === patched
+  );
 }
 
 /**

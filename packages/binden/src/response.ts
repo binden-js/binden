@@ -13,9 +13,9 @@ import {
   bindingOf,
   force,
   forced,
+  isPatch,
   onPipeFailure,
   openWindow,
-  windowed,
 } from "./listeners.js";
 import {
   type IOwnership,
@@ -56,6 +56,7 @@ import {
   validateHeaderValue,
 } from "node:http";
 import { contentDigests, representationDigests } from "./digests.js";
+import { isProxy, isUint8Array } from "node:util/types";
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
@@ -64,7 +65,6 @@ import { Exchange } from "./exchange.js";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
-import { isUint8Array } from "node:util/types";
 import { parseHttpDate } from "./headers/http-date.js";
 
 /** The media type of `response.json()` */
@@ -191,7 +191,8 @@ const parent = ServerResponse.prototype;
 const intrinsic = EventEmitter.prototype;
 
 /**
- * The methods that binden or the pipe of Node.js call on a piped source: a
+ * The methods that binden or the pipe of Node.js call on a piped source
+ * (e.g. `resume()`, which `on("data")` calls before the pipe is adopted): a
  * source that has its own one (other than the patches of an open window, see
  * `openWindow()`) is not adopted (see `BindenResponse.#adopt()`)
  */
@@ -200,6 +201,9 @@ const inspected = [
   "emit",
   "pipe",
   "unpipe",
+  "pause",
+  "resume",
+  "read",
   "rawListeners",
   "listeners",
   "listenerCount",
@@ -610,7 +614,10 @@ export class BindenResponse<
     if (this.#allows(owner)) {
       this.#piped = true;
     }
-    if (source instanceof EventEmitter) {
+    if (isProxy(source)) {
+      // Before any inspection (even `instanceof`), which would run its traps
+      this.#refuse(source as EventEmitter, owner, "the source is a proxy");
+    } else if (source instanceof EventEmitter) {
       this.#adopt(source as EventEmitter, owner);
     }
   }
@@ -724,9 +731,7 @@ export class BindenResponse<
       return "the response has listeners of its listeners";
     }
     const own = inspected.find(
-      (name) =>
-        Object.hasOwn(source, name) &&
-        !(windowed(source) && adderNames.includes(name)),
+      (name) => Object.hasOwn(source, name) && !isPatch(source, name),
     );
     if (typeof own !== "undefined") {
       return `the source has its own ${own}()`;
