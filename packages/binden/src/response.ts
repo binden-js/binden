@@ -3038,15 +3038,29 @@ export class BindenResponse<
        * response that the send has added, once it has settled, so that a
        * source that lives on holds nothing of the response: the guard of the
        * source (see `guard()`) listens before, and reports a late error of it
-       * (e.g. of a destroy by `autoDestroy` that fails after its end)
+       * (e.g. of a destroy by `autoDestroy` that fails after its end). Not
+       * the request of the response, which the send never destroys (see
+       * `#destroys()`), and Node.js never fails without a listener
        */
       const unlisten = (): void => {
-        guard(data, emitterMethods, this.#report(), hasClosed(data));
+        if (this.#destroys(data)) {
+          guard(data, emitterMethods, this.#report(), hasClosed(data));
+        }
         for (const [event, listener] of listeners) {
           Reflect.apply(emitterMethods.remove, data, [event, listener]);
         }
         for (const dispose of [...finishing, ...observers]) {
           dispose();
+        }
+      };
+      /**
+       * Releases the source that the send no longer reads: it is destroyed,
+       * unless it is the request of the response (see `#destroys()`), which
+       * is only left
+       */
+      const drop = (): void => {
+        if (this.#destroys(data)) {
+          data.destroy();
         }
       };
       /**
@@ -3061,7 +3075,7 @@ export class BindenResponse<
           this.#pending.delete(key);
           unlisten();
           if (!cancelled && !data.readableEnded && !data.destroyed) {
-            data.destroy();
+            drop();
           }
           if (error === null) {
             resolve();
@@ -3084,6 +3098,21 @@ export class BindenResponse<
           this.destroy();
         }
         settle(error);
+      };
+      // Destroys the source with the error that fails the send (or releases
+      // it without one, see `drop()`), unless it is the request of the
+      // response (see `#destroys()`): the error fails the send at once
+      // instead, so that it can still be replied before the headers are
+      // committed (once committed, the response is destroyed, and with it the
+      // connection)
+      const destroy = (error?: Error): void => {
+        if (typeof error === "undefined") {
+          drop();
+        } else if (this.#destroys(data)) {
+          data.destroy(error);
+        } else {
+          fail(error);
+        }
       };
       const end = (): void => {
         if (settled) {
@@ -3113,7 +3142,7 @@ export class BindenResponse<
         closed = true;
         // Releases the source (e.g. the file of `sendFile()`)
         if (!data.readableEnded) {
-          data.destroy();
+          destroy();
         }
       });
       observers.add(unclose);
@@ -3145,14 +3174,14 @@ export class BindenResponse<
             try {
               const size = Buffer.byteLength(chunk);
               if (declared !== null && sent + size > declared) {
-                data.destroy(BindenResponse.#mismatch(sent + size, declared));
+                destroy(BindenResponse.#mismatch(sent + size, declared));
                 return;
               }
               const accepted = this.write(chunk, (error?: Error | null) => {
                 if (error) {
                   // Not delivered: the client went away (Node.js 24 may still
                   // emit `finish` once the response is ended)
-                  data.destroy();
+                  destroy();
                   settle(error);
                 } else {
                   flushed += size;
@@ -3171,7 +3200,7 @@ export class BindenResponse<
               }
             } catch (error: unknown) {
               // Not a chunk of bytes (e.g. an object)
-              data.destroy(error as Error);
+              destroy(error as Error);
             }
           });
         })
@@ -3201,7 +3230,7 @@ export class BindenResponse<
           settle(null);
         },
         (error: unknown) => {
-          data.destroy();
+          destroy();
           settle(error as Error);
         },
       );
@@ -3342,9 +3371,13 @@ export class BindenResponse<
    * (never through its own `destroy()`, its `_destroy()` runs) under a guard
    * that the methods of `EventEmitter` install (see `guard()`), one however
    * many sends release it, which reports a late error (e.g. of a file that
-   * fails to close). A failure of the release is logged (`debug`).
+   * fails to close). A failure of the release is logged (`debug`). Never the
+   * request of the response (e.g. an echo, see `#destroys()`).
    */
   #discard(source: Readable): void {
+    if (!this.#destroys(source)) {
+      return;
+    }
     try {
       const state = Reflect.get(source, "_readableState") as
         { readonly closeEmitted?: unknown } | undefined;
@@ -3357,6 +3390,20 @@ export class BindenResponse<
       const message = "The release of a stream has failed";
       this.#ownership.debug(message, error);
     }
+  }
+
+  /**
+   * Whether a source that is not sent, or no longer, may be destroyed: not
+   * the request of the response (e.g. an echo, `send(request)`), whose
+   * `_destroy()` would destroy the socket when its body has not been read to
+   * its end, and with it the reply (e.g. of the error that follows) and the
+   * responses before it on the connection. It is only left (its listeners
+   * stop reading it): once the reply has finished, Node.js reads the rest of
+   * its body, and the reply of the framework closes the connection when that
+   * body has not come in full (see `request.complete`).
+   */
+  #destroys(source: Readable): boolean {
+    return source !== this.req;
   }
 
   /**
