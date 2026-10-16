@@ -319,6 +319,13 @@ const connections = new WeakMap<object, IConnection>();
 /** Whether a value is truthy, as Node.js tests a chunk or an encoding (e.g. `""` is none) */
 const truthy = (value: unknown): boolean => Boolean(value);
 
+/**
+ * The encodings of the strings whose length Node.js only estimates (e.g. of
+ * an invalid one): a string in one of them is written as its bytes (see
+ * `BindenResponse.#normalized()`)
+ */
+const estimated: ReadonlySet<string> = new Set(["base64", "base64url", "hex"]);
+
 /** The headers that frame a body (see `BindenResponse.#framing`) */
 const framing: ReadonlySet<string> = new Set([
   "content-length",
@@ -1304,51 +1311,64 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return true;
     }
+    const written = this.#normalized(args, false);
     // Node.js counts the bytes of its chunk before it commits the head (see
     // `#restoring()`)
     return this.#restoring(() => {
-      this.#ordered(args, false);
-      return super.write(...(callbacksOf(args) as [unknown]));
+      this.#ordered(written, false);
+      return super.write(...(callbacksOf(written) as [unknown]));
     });
   }
 
   /**
-   * Checks the chunk of a write (or of an `end()`) of the body as Node.js
-   * checks it, but before anything is sent: an unknown encoding throws
+   * Whether Node.js writes the chunk of a write (or of an `end()`) of the
+   * body. It ignores a falsy chunk of `end()`, the chunks of a response that
+   * has ended or is destroyed (their callback gets the error), and of one
+   * without a body (e.g. to `HEAD`); it refuses a chunk that is neither a
+   * string nor bytes (e.g. `null`) before it changes anything.
+   */
+  #writes(chunk: unknown, end: boolean): boolean {
+    return !(
+      (end && !truthy(chunk)) ||
+      Reflect.get(this, "finished") === true ||
+      this.destroyed ||
+      (typeof chunk !== "string" && !isUint8Array(chunk)) ||
+      !this.#hasBody()
+    );
+  }
+
+  /**
+   * The encoding of a write (or of an `end()`), as Node.js reads it: a falsy
+   * one (e.g. `undefined`) or a callback in its place is none (`null`)
+   */
+  static #encodingOf(args: readonly unknown[]): unknown {
+    const [, second] = args;
+    return typeof second === "function" || !truthy(second) ? null : second;
+  }
+
+  /**
+   * The arguments of a write (or of an `end()`) of the body, once checked:
+   * the chunk that Node.js writes is checked as Node.js checks it, but before
+   * anything is sent, so that an unknown encoding throws
    * `ERR_UNKNOWN_ENCODING`, which Node.js throws only once the head is
    * committed (or, for a response that waits for the one before it, as it
    * flushes it later, out of any call: the process crashes).
    *
-   * Then keeps the order of a chunk that would commit the head while output
-   * is queued before it (e.g. a `103 Early Hints` of a pipelined request,
-   * which waits for the response before it): Node.js puts the head before
-   * what is queued when the chunk is bytes, or a string in an encoding other
-   * than exactly `utf8`, `latin1` or none (e.g. `utf-8`, `hex`, `base64`), so
-   * that the client would read the informational response as the body. The
-   * head is then committed by an empty `latin1` write (which Node.js queues in
-   * order), framed as Node.js frames that chunk (the only chunk of `end()`
-   * gives the `Content-Length` of a body without one), and the chunk is
-   * written as it is: nothing of it is converted.
+   * A string in an encoding whose length Node.js only estimates (`hex`,
+   * `base64` and `base64url`, in any case) is then the bytes that
+   * `Buffer.from()` decodes, as on Node.js 26 (e.g. without the last digit of
+   * an odd number of hex digits): Node.js would frame the body by the
+   * estimate (e.g. one byte for the invalid `"zz"` in `hex`) but write fewer
+   * bytes, so that the client would read the next response of the connection
+   * as the rest of the body, and Node.js 24 aborts the process when it writes
+   * an odd number of hex digits to the socket. An explicit `Content-Length`
+   * is never changed: `strictContentLength` checks it against these bytes.
    */
-  #ordered(args: readonly unknown[], end: boolean): void {
-    // A callback in place of the chunk is not bytes (see below)
-    const [chunk, second] = args;
-    // As Node.js reads it: a falsy one (e.g. `undefined`) is none
-    const encoding: unknown =
-      typeof second === "function" || !truthy(second) ? null : second;
+  #normalized(args: readonly unknown[], end: boolean): unknown[] {
+    const [chunk, ...rest] = args;
+    const encoding = BindenResponse.#encodingOf(args);
     if (
-      // Ignored by Node.js: a falsy chunk of `end()`, a response that has
-      // ended or is destroyed (the callback gets the error), or without a
-      // body (e.g. to `HEAD`)
-      (end && !truthy(chunk)) ||
-      Reflect.get(this, "finished") === true ||
-      this.destroyed ||
-      // Refused by Node.js before it changes anything (e.g. `null`)
-      (typeof chunk !== "string" && !isUint8Array(chunk)) ||
-      !this.#hasBody()
-    ) {
-      return;
-    } else if (
+      this.#writes(chunk, end) &&
       encoding !== null &&
       !(
         typeof encoding === "string" &&
@@ -1361,6 +1381,33 @@ export class BindenResponse<
         { code: "ERR_UNKNOWN_ENCODING" },
       );
     } else if (
+      typeof chunk === "string" &&
+      chunk !== "" &&
+      typeof encoding === "string" &&
+      estimated.has(encoding.toLowerCase())
+    ) {
+      return [Buffer.from(chunk, encoding as BufferEncoding), ...rest];
+    }
+    return [...args];
+  }
+
+  /**
+   * Keeps the order of a chunk (checked, see `#normalized()`) that would
+   * commit the head while output is queued before it (e.g. a `103 Early
+   * Hints` of a pipelined request, which waits for the response before it):
+   * Node.js puts the head before what is queued when the chunk is bytes, or a
+   * string in an encoding other than exactly `utf8`, `latin1` or none (e.g.
+   * `utf-8`, `ucs2`), so that the client would read the informational
+   * response as the body. The head is then committed by an empty `latin1`
+   * write (which Node.js queues in order), framed as Node.js frames that
+   * chunk (the only chunk of `end()` gives the `Content-Length` of a body
+   * without one), and the chunk is written as it is.
+   */
+  #ordered(args: readonly unknown[], end: boolean): void {
+    const [chunk] = args;
+    const encoding = BindenResponse.#encodingOf(args);
+    if (
+      !this.#writes(chunk, end) ||
       // The state of the send queue of Node.js: the head has been queued, or
       // no output has
       Reflect.get(this, "_headerSent") === true ||
@@ -1378,7 +1425,7 @@ export class BindenResponse<
         "_contentLength",
         typeof chunk === "string"
           ? Buffer.byteLength(chunk, encoding as BufferEncoding)
-          : chunk.byteLength,
+          : (chunk as Uint8Array).byteLength,
       );
     }
     super.write("", "latin1");
@@ -1420,12 +1467,13 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return this;
     }
+    this.#chunkOfEnd(args[0]);
+    const ended = this.#normalized(args, true);
     // Node.js frames the body of its chunk before it commits the head (see
     // `#restoring()`)
     return this.#restoring(() => {
-      this.#chunkOfEnd(args[0]);
-      this.#ordered(args, true);
-      return this.#uncorking(() => super.end(...(callbacksOf(args) as [])));
+      this.#ordered(ended, true);
+      return this.#uncorking(() => super.end(...(callbacksOf(ended) as [])));
     });
   }
 

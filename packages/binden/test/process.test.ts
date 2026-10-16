@@ -52,6 +52,16 @@ suite("Process safety", () => {
     });
   });
 
+  test("a string whose length Node.js estimates is framed by its bytes: also odd hex on Node.js 24", () => {
+    // Odd hex, invalid hex and base64, an empty body, any case, a strict
+    // length: alone, behind another response and after early hints (3 × 10)
+    deepStrictEqual(run("estimated-lengths.ts"), {
+      status: 0,
+      stdout: "30\n",
+      stderr: "",
+    });
+  });
+
   test("a reason phrase or a header that Node.js refuses does not crash the process", () => {
     deepStrictEqual(run("refused-head.ts"), {
       status: 0,

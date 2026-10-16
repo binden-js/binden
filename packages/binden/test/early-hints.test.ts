@@ -243,10 +243,9 @@ suite("Informational responses, then a native write in any encoding", () => {
       },
     );
   };
-  // Node.js 24 aborts the process when it writes an odd hex string to a
-  // socket (an assertion of `StringBytes::StorageSize()`, also without
-  // binden); Node.js 26 drops its last digit, as `Buffer.from()` does
-  const oddHex = Number(process.versions.node.split(".")[0]) >= 26;
+  // Strings that Node.js frames by an estimate of their length (e.g. an odd
+  // number of hex digits, which aborts Node.js 24 as it writes them to a
+  // socket) are not written as Node.js writes them: see `process.test.ts`
   const cases: Record<string, ICase> = {
     "end(string, 'utf-8')": {
       callbacks: 0,
@@ -264,14 +263,6 @@ suite("Informational responses, then a native write in any encoding", () => {
       callbacks: 0,
       reply: (r) => r.end("h\u00e9", "binary"),
     },
-    ...(oddHex
-      ? {
-          "end(odd hex)": {
-            callbacks: 0,
-            reply: (r: ServerResponse): unknown => r.end("68692", "hex"),
-          },
-        }
-      : {}),
     "end(base64, callback)": {
       callbacks: 1,
       reply: (r, cb) => r.end("aGk=", "base64", cb),
@@ -288,6 +279,25 @@ suite("Informational responses, then a native write in any encoding", () => {
       reply: (r, cb) => {
         r.write("6869", "hex", cb);
         r.end(cb);
+      },
+    },
+    "write(HEX) + end()": {
+      callbacks: 0,
+      reply: (r) => {
+        r.write("6869", "HEX" as BufferEncoding);
+        r.end();
+      },
+    },
+    "end(base64url, callback)": {
+      callbacks: 1,
+      reply: (r, cb) => r.end("aGk", "base64url", cb),
+    },
+    // An empty string is no chunk, also in these encodings
+    "end(string) + end('', 'hex', callback)": {
+      callbacks: 1,
+      reply: (r, cb) => {
+        r.end("hi");
+        r.end("", "hex", cb);
       },
     },
     "end()": { callbacks: 0, reply: (r) => r.end() },
