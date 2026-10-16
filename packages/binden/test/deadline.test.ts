@@ -1016,6 +1016,55 @@ suite("A complete reply that waits for the response before it", () => {
     }
   });
 
+  test("is sent once that response is, after a pipe of its stack has failed (on every Node.js)", async () => {
+    const captured = capture();
+    const waiting = Promise.withResolvers<boolean>();
+    const app = new Binden({ logger: captured.logger }).use(
+      async (context: Context) => {
+        const { response } = context;
+        if (context.url.pathname !== "/next") {
+          response.setHeader("Content-Length", 10).write("first");
+          await sleep(60);
+          response.end("-done");
+          return;
+        }
+        const source = new PassThrough();
+        source.pipe(response);
+        // Added in the turn of the pipe: its throw fails the stack, once the
+        // pipe has ended the response, which waits for `/`
+        source.once("end", () => {
+          waiting.resolve(response.writableEnded && response.socket === null);
+          throw new Error("A listener of the end has failed");
+        });
+        source.end("next");
+        await once(response, "close");
+      },
+    );
+    const listening = await listen(app);
+    try {
+      const responses = await converse(
+        listening.port,
+        "GET / HTTP/1.1\r\nHost: a\r\n\r\n" +
+          "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+      );
+      ok(await within(waiting.promise));
+      deepStrictEqual(
+        responses.map(({ head, body }) => [head.split("\r\n")[0], body]),
+        [
+          ["HTTP/1.1 200 OK", "first-done"],
+          ["HTTP/1.1 200 OK", "next"],
+        ],
+      );
+      const { failure } = await captured.waitFor(
+        "A pipe into the response has failed once its reply was complete. It is sent after the responses before it",
+      );
+      const { type, location } = failure as Record<string, unknown>;
+      deepStrictEqual([type, location], ["Error", "send"]);
+    } finally {
+      await listening.close();
+    }
+  });
+
   test("is not a reply that has only started, which is still cut at its deadline", async () => {
     const { app, captured, closed } = queued(
       {

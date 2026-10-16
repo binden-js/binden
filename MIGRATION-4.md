@@ -233,7 +233,8 @@ behaviours of Node.js:
 - **A pipe whose write or end throws fails its work** (e.g. a reason phrase or a `Trailer` that
   Node.js refuses; not a pipe left to Node.js, see **OpenTelemetry** above): instead of a destroyed
   response (or a crash, from its end), the error handler replies before the headers, and the
-  connection is closed afterwards; `stream.pipeline()` rejects with the error. A source piped by an
+  connection is closed afterwards (but a complete reply that waits for the response before it on
+  its connection is sent); `stream.pipeline()` rejects with the error. A source piped by an
   error handler that errors or closes before its end fails the handler at once, as does a destroy of
   the response by its `stream.pipeline()` before the headers (also when one of its streams fails
   from a timer of no request): `500`, not a closed connection.

@@ -614,7 +614,10 @@ export class Binden<
    * A pipe of the stack has failed (see `IOwnership.fail()`), whose stack has
    * stopped (or had completed): once it has been told (see `kRevoke`), the
    * error handler replies to its error, or the connection is closed once the
-   * headers have been sent. A deadline that passes meanwhile replies instead.
+   * headers have been sent, unless the response has ended while it waits for
+   * the response before it on its connection (pipelined): its reply is
+   * complete, and is sent once that one has been, as at the deadline (see
+   * `#deadline()`). A deadline that passes meanwhile replies instead.
    * Nothing replaces the reply of a response that has been destroyed (e.g.
    * for a pipe that the stack has left to Node.js), but the failure is still
    * logged, as once the headers have been sent.
@@ -627,6 +630,15 @@ export class Binden<
     await exchange.delivered;
     const { response } = context;
     if (exchange.signal.aborted) {
+      return;
+    } else if (
+      response.writableEnded &&
+      response.socket === null &&
+      !response.destroyed
+    ) {
+      const message =
+        "A pipe into the response has failed once its reply was complete. It is sent after the responses before it";
+      context.log.error(message, this.#failure(context, error, "send"));
       return;
     } else if (response.headersSent || response.destroyed) {
       const message = response.headersSent
