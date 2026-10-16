@@ -173,7 +173,7 @@ replies `503`, instead of closing the connection; also while the error handler r
 error, whose later reply, failure or time out then changes nothing. A reply that a timed out error handler has
 ended is still sent. The `503` of a deadline, the `500` of a failed error handler and the
 default error reply close the connection (`Connection: close`) when the body of the request has
-not been read in full.
+not been received in full (`request.complete`).
 
 The default error reply is sent with the cookies of the response and the `headers` of a
 `BindenError`, without the headers of the body that it replaces (`Content-Length`,
@@ -184,6 +184,38 @@ and a reply that has ended is left as it is (its request was destroyed).
 The type and language of the body that the error replaces are removed as well: an exposed
 `message` is sent as `text/plain; charset=utf-8` (and `json` as `application/json`), never with
 the `Content-Type` that the route had set (e.g. `text/html`, which used to be kept).
+
+### Pipes and listeners of the response
+
+The work of a request owns its response through what it adds to it, which changes a few
+behaviours of Node.js:
+
+- **An abandoned work sees its response closed early.** When a work loses the response (its
+  deadline, a superseded, timed out or failed error handler, a failed pipe), its `close` listeners
+  on the response (and its `error` listeners, with the error of its failed pipe) run once, on the
+  next tick: an extension of the `close` event of Node.js. Cleanups that it has registered with
+  `response.on("close")` run then, not at the real close; its `stream.pipeline()` and
+  `stream.finished()` of the response settle with `ERR_STREAM_PREMATURE_CLOSE` (or that error).
+  `context.onCleanup()` and the access log still run at the real close.
+- **A legacy `Stream.prototype.pipe()` into the response is refused**: the work that has piped it
+  fails with a `TypeError` (`500` before the headers). Wrap such a stream (e.g. of an old stream
+  library) with `new Readable().wrap(stream)`, or use `stream.pipeline()`.
+- **A pipe that binden cannot attribute is refused** the same way: while the response or the
+  source has listeners of `newListener` or `removeListener`, when the source has its own
+  listener methods, `emit()`, `pipe()`, `unpipe()`, `rawListeners()`, `listeners()`,
+  `listenerCount()`, `removeListener()`, `off()` or `removeAllListeners()` (e.g. patched on an
+  instance), or when it is not extensible (`Object.seal()`; Node.js itself cannot pipe a frozen
+  stream). The class of the source (also of `readable-stream`) is trusted.
+- **A pipe whose write or end throws fails its work** (e.g. a reason phrase or a `Trailer` that
+  Node.js refuses): instead of a destroyed response (or a crash, from its end), the error handler
+  replies before the headers, and the connection is closed afterwards; `stream.pipeline()` rejects
+  with the error. A source piped by an error handler that errors or closes before its end fails
+  the handler at once.
+- A listener added to the source in the turn of its pipe runs as the work that has added it
+  (e.g. one added by a listener of `pipe` of another work gets no rights from the pipe); one added
+  later runs as the work that emits its event.
+- `response.rawListeners()` has the listeners as Node.js has them (the listener itself, or the
+  wrapper of a `once()`), and every listener and callback gets the receiver that Node.js gives it.
 
 ### Routing
 
