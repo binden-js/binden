@@ -58,6 +58,7 @@ import {
   type ISourceReport,
   type IStreamLike,
   type IStreamLikeMethods,
+  decided,
   emitterMethods,
   guard,
   hasClosed,
@@ -3158,6 +3159,10 @@ export class BindenResponse<
       const drop = (error?: Error): void => {
         try {
           if (this.#destroys(data)) {
+            if (typeof error !== "undefined") {
+              // Its guard does not report it again when the source emits it
+              decided(error);
+            }
             data.destroy(error);
           } else if (data.isPaused()) {
             data.resume();

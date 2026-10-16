@@ -146,6 +146,25 @@ function hear(source: object, change: 1 | -1): void {
 }
 
 /**
+ * The errors that sends have failed with, and destroyed their sources with
+ * (see `decided()`): no guard reports them again
+ */
+const decisions = new WeakSet<object>();
+
+/**
+ * Records an error of binden that has decided a send (e.g. a body longer
+ * than its `Content-Length`), which the send destroys its source with once
+ * it has settled: no guard (see `guard()`) reports it when the source emits
+ * it (nor when a stream-like source read through it does). For the packages
+ * of binden only.
+ *
+ * @internal
+ */
+export function decided(error: Error): void {
+  decisions.add(error);
+}
+
+/**
  * How a guard (see `guard()`) adds its listeners to a source, and removes
  * them: by the methods of the source (see `IStreamLikeMethods`), or by
  * `emitterMethods`
@@ -174,7 +193,8 @@ export const emitterMethods: IGuardMethods = Object.freeze({
  * may fail asynchronously, at any time. Installed before the source is
  * paused or destroyed, and before a send removes its own listener of
  * `error`. A guard of its own reports it (see `ISourceReport`), but not an
- * error that a send hears (which fails the send), and holds nothing else
+ * error that a send hears (which fails the send), nor one that a send has
+ * failed with and destroyed it with (see `decided()`), and holds nothing else
  * (never the response, nor the send), so that it may stay on a source that
  * never emits anything: it is never removed by a timer, only on the turn
  * after the `close` of the source (some sources emit their `error` after it,
@@ -194,7 +214,7 @@ export function guard(
     return;
   }
   const failed = (error: unknown): void => {
-    if (!hearing.has(source)) {
+    if (!decisions.has(error as object) && !hearing.has(source)) {
       report(error);
     }
   };
