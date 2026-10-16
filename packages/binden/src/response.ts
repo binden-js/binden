@@ -63,6 +63,7 @@ import {
   IncomingMessage,
   type OutgoingHttpHeader,
   type OutgoingHttpHeaders,
+  OutgoingMessage,
   ServerResponse,
   validateHeaderName,
   validateHeaderValue,
@@ -1595,6 +1596,7 @@ export class BindenResponse<
       return super.write(...(args as [unknown]));
     }
     const written = this.#normalized(args, false);
+    this.#beyond(written);
     // Node.js counts the bytes of its chunk before it commits the head (see
     // `#restoring()`)
     return this.#stopping(() =>
@@ -1603,6 +1605,43 @@ export class BindenResponse<
         return super.write(...(callbacksOf(written) as [unknown]));
       }),
     );
+  }
+
+  /**
+   * Refuses the chunk of a `write()` past the `Content-Length` of a body
+   * under `strictContentLength` while the head is not generated, with the
+   * error of Node.js (`ERR_HTTP_CONTENT_LENGTH_MISMATCH`), before Node.js
+   * gets it: Node.js reads the length from the head that it generates, so
+   * that it checks only the chunks that follow it, and would write all of
+   * the first one, whose excess the client would read as the next response
+   * of the connection. Nothing is committed: the response stays usable (e.g.
+   * for the reply of the error). The chunk is checked as Node.js checks the
+   * others (by a message of its own, whose head cannot be generated): in its
+   * bytes, for a valid `Content-Length` of a body (not to `HEAD`, nor with a
+   * 204 or a 304 status) that is not chunked.
+   */
+  #beyond(args: readonly unknown[]): void {
+    const [chunk] = args;
+    if (
+      this.strictContentLength &&
+      !this.#committed() &&
+      this.#writes(chunk, false) &&
+      !this.hasHeader("Transfer-Encoding")
+    ) {
+      const message = new OutgoingMessage();
+      Reflect.set(message, "strictContentLength", true);
+      // Not checked without a valid length (`null`)
+      Reflect.set(message, "_contentLength", this.#length());
+      const encoding = BindenResponse.#encodingOf(args);
+      try {
+        message.write(chunk, (encoding ?? "utf8") as BufferEncoding);
+      } catch (error: unknown) {
+        // Within the length, the message cannot generate its head
+        if (property(error, "code") === "ERR_HTTP_CONTENT_LENGTH_MISMATCH") {
+          throw error;
+        }
+      }
+    }
   }
 
   /**

@@ -76,9 +76,9 @@ const mismatches: Record<string, (response: ServerResponse) => void> = {
   "end() of a longer body in hex": (response) => {
     response.end("616263", "hex");
   },
-  "write() of a longer body, then end()": (response) => {
-    response.write("abc");
-    response.end();
+  "write() of the body, then end() of more": (response) => {
+    response.write("ab");
+    response.end(injected);
   },
   "write() of a shorter body, then end()": (response) => {
     response.write("a");
@@ -278,6 +278,46 @@ suite(
       deepStrictEqual(
         [data.slice(data.indexOf("\r\n\r\n") + 4), closed],
         ["ab", true],
+      );
+    });
+
+    test("a first write() past the length (which Node.js does not check) throws before Node.js gets it: the error is replied, nothing injected", async () => {
+      const outcomes: unknown[] = [];
+      const served = await serve(
+        {},
+        new Compression({ format: "gzip" }),
+        async (context: Context) => {
+          const { response } = context;
+          if (context.url.pathname === "/next") {
+            await context.text("next");
+            return;
+          }
+          response.strictContentLength = true;
+          response.setHeader("Content-Length", 2);
+          try {
+            response.write(`ab${injected}`);
+          } catch (error: unknown) {
+            outcomes.push(
+              (error as { code?: unknown }).code,
+              response.headersSent,
+              response.destroyed,
+            );
+            throw error;
+          }
+        },
+      );
+      servers.push(served);
+      const { data, closed } = await talk(portOf(served), pipelined);
+
+      ok(!data.includes("INJECTED"), data);
+      ok(
+        data.startsWith("HTTP/1.1 500 Internal Server Error\r\n") &&
+          data.endsWith("\r\n\r\nnext"),
+        data,
+      );
+      deepStrictEqual(
+        [closed, outcomes],
+        [true, ["ERR_HTTP_CONTENT_LENGTH_MISMATCH", false, false]],
       );
     });
 

@@ -36,7 +36,8 @@ destroyed, and the status, the headers and the framing of Node.js (e.g. whether 
 connection) are those from before, so that the error is replied with a decision of its own. A
 body sent as it is goes through the `write()` and `end()` of binden: one that Node.js refuses once
 the head is committed (e.g. a `Content-Length` that `strictContentLength` finds wrong) sends nothing
-more, and closes the connection without a reply of the error, as without a compression.
+more, and closes the connection without a reply of the error, and a first `write()` past such a
+length throws before anything is committed (the error can be replied), as without a compression.
 
 The arguments of a `write()` or an `end()` are checked first, as binden checks them, and a refused
 one throws before anything is decided or changed:

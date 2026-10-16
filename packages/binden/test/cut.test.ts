@@ -106,10 +106,6 @@ const mismatches: Record<string, (response: ServerResponse) => void> = {
   "end() of a longer body in hex": (response) => {
     response.end("616263", "hex");
   },
-  "write() of a longer body, then end()": (response) => {
-    response.write("abc");
-    response.end();
-  },
   "write() of a shorter body, then end()": (response) => {
     response.write("a");
     response.end();
@@ -487,6 +483,203 @@ suite("A write() or an end() that throws once the head is committed", () => {
       );
     } finally {
       await listening.close();
+    }
+  });
+});
+
+suite("The first write() of a body past its strict Content-Length", () => {
+  /** A strict response of `Content-Length: 2` */
+  const strict = (
+    request = new IncomingMessage(new Socket()),
+  ): BindenResponse => {
+    const response = new BindenResponse(request);
+    response.strictContentLength = true;
+    response.setHeader("Content-Length", 2);
+    return response;
+  };
+
+  test("throws the error of Node.js before Node.js gets it: nothing is committed, and the response stays usable", async () => {
+    const outcomes: unknown[] = [];
+    const app = new Binden().use(async ({ response, url }: Context) => {
+      if (url.pathname === "/next") {
+        response.end("next");
+        return;
+      }
+      response.strictContentLength = true;
+      response.setHeader("Content-Length", 2);
+      try {
+        response.write(`ab${injected}`);
+      } catch (error: unknown) {
+        const { code, message } = error as { code?: unknown; message: string };
+        outcomes.push(code, message, response.headersSent, response.destroyed);
+      }
+      // Once Node.js would have flushed it
+      await sleep(10);
+      response.end("ab");
+    });
+    const listening = await listen(app);
+    try {
+      deepStrictEqual(await converse(listening.port, pipelined), {
+        data:
+          "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\nab" +
+          "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnext",
+        closed: true,
+      });
+      deepStrictEqual(outcomes, [
+        "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
+        `Response body's content-length of ${2 + injected.length} byte(s) does not match the content-length of 2 byte(s) set in header`,
+        false,
+        false,
+      ]);
+    } finally {
+      await listening.close();
+    }
+  });
+
+  test("thrown out of the middleware: the error is replied, where Node.js sends the injected response", async () => {
+    const handler = async (
+      request: IncomingMessage,
+      response: ServerResponse,
+    ): Promise<void> => {
+      if (request.url === "/next") {
+        response.end("next");
+        return;
+      }
+      response.strictContentLength = true;
+      response.setHeader("Content-Length", 2);
+      response.write(`ab${injected}`);
+      await sleep(10);
+      response.end();
+    };
+    const node = createServer((request, response) => {
+      handler(request, response).catch(() => {
+        response.destroy();
+      });
+    });
+    const app = new Binden().use(async ({ request, response }: Context) => {
+      await handler(request, response);
+    });
+    const conversations: IConversation[] = [];
+    for (const server of [node, app.createServer()]) {
+      const listening = await serve(server);
+      try {
+        conversations.push(await converse(listening.port, pipelined));
+      } finally {
+        await listening.close();
+      }
+    }
+    const [fromNode, fromBinden] = conversations as [
+      IConversation,
+      IConversation,
+    ];
+    // The gap of Node.js: the excess of its first chunk is a response
+    ok(fromNode.data.endsWith(`\r\n\r\nab${injected}`), fromNode.data);
+    deepStrictEqual(fromBinden, {
+      data:
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n" +
+        "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnext",
+      closed: true,
+    });
+  });
+
+  test("is checked as Node.js checks the chunks that follow the head", () => {
+    const head = new IncomingMessage(new Socket());
+    head.method = "HEAD";
+    /** Writes, then tells what has thrown, and whether the head is committed or the response destroyed */
+    const outcome = (
+      response: BindenResponse,
+      ...args: [unknown, BufferEncoding?]
+    ): unknown[] => {
+      try {
+        response.write(...(args as [unknown]));
+        return [null, response.headersSent, response.destroyed];
+      } catch (error: unknown) {
+        return [
+          (error as { code?: unknown }).code,
+          response.headersSent,
+          response.destroyed,
+        ];
+      }
+    };
+    const refused = "ERR_HTTP_CONTENT_LENGTH_MISMATCH";
+    const cases: [string, () => unknown[], unknown[]][] = [
+      [
+        "past it",
+        (): unknown[] => outcome(strict(), "abc"),
+        [refused, false, false],
+      ],
+      ["of it", (): unknown[] => outcome(strict(), "ab"), [null, true, false]],
+      [
+        "of bytes past it",
+        (): unknown[] => outcome(strict(), new Uint8Array(3)),
+        [refused, false, false],
+      ],
+      // In the bytes of its encoding
+      [
+        "of two bytes in UTF-8",
+        (): unknown[] => outcome(strict(), "é"),
+        [null, true, false],
+      ],
+      [
+        "of three bytes in UTF-8",
+        (): unknown[] => outcome(strict(), "€"),
+        [refused, false, false],
+      ],
+      [
+        "of four bytes in UTF-16",
+        (): unknown[] => outcome(strict(), "ab", "utf16le"),
+        [refused, false, false],
+      ],
+      [
+        "of two bytes in latin1",
+        (): unknown[] => outcome(strict(), "éé", "latin1"),
+        [null, true, false],
+      ],
+      // Not checked by Node.js
+      [
+        "without strictContentLength",
+        (): unknown[] => {
+          const response = strict();
+          response.strictContentLength = false;
+          return outcome(response, "abc");
+        },
+        [null, true, false],
+      ],
+      [
+        "without a valid Content-Length",
+        (): unknown[] =>
+          outcome(strict().setHeader("Content-Length", "2x"), "abc"),
+        [null, true, false],
+      ],
+      [
+        "of a chunked body",
+        (): unknown[] =>
+          outcome(strict().setHeader("Transfer-Encoding", "chunked"), "abc"),
+        [null, true, false],
+      ],
+      [
+        "to HEAD",
+        (): unknown[] => outcome(strict(head), "abc"),
+        [null, true, false],
+      ],
+      [
+        "with 204",
+        (): unknown[] => outcome(strict().status(204), "abc"),
+        [null, true, false],
+      ],
+      // By Node.js itself once the head is committed: destroyed
+      [
+        "once the head is committed",
+        (): unknown[] => {
+          const response = strict();
+          response.flushHeaders();
+          return outcome(response, "abc");
+        },
+        [refused, true, true],
+      ],
+    ];
+    for (const [name, run, expected] of cases) {
+      deepStrictEqual(run(), expected, name);
     }
   });
 });
