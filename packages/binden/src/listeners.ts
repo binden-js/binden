@@ -156,16 +156,57 @@ export function bindingOf(raw: unknown): IBinding | undefined {
  * What a work does when a listener that it has added to a piped source in
  * its window (see `openWindow()`) throws at its `end` (e.g. the `end()` of
  * `pipeline()` into a head that Node.js refuses): `true` once its pipe has
- * failed, by the owner (see `onPipeFailure()`)
+ * failed (see `onPipeFailure()`)
  */
-const failures = new WeakMap<object, (error: unknown) => boolean>();
+export type IPipeFailureHandler = (
+  error: unknown,
+  source: EventEmitter,
+) => boolean;
 
-/** Sets what a pipe failure of a work does (see `failures`) */
+/** What issues the tokens of the works (an exchange, see `Exchange.token()`) */
+export interface ITokenIssuer {
+  /** Whether it has issued a token */
+  issued(token: object): boolean;
+}
+
+/** The failure handler of a work, with the exchange that has set it */
+interface IFailureRoute {
+  readonly issuer: ITokenIssuer;
+  readonly fail: IPipeFailureHandler;
+}
+
+/**
+ * The failure handlers of the works, by their token: set once by the
+ * exchange that has issued the token (with the response of that exchange),
+ * never replaced (e.g. by a pipe of the work into the response of another
+ * request, which does not know it)
+ */
+const failures = new WeakMap<object, IFailureRoute>();
+
+/**
+ * Sets what a pipe failure of a work does (see `IPipeFailureHandler`): once,
+ * by the exchange that has issued its token (ignored otherwise)
+ */
 export function onPipeFailure(
-  owner: object,
-  fail: (error: unknown) => boolean,
+  token: object,
+  issuer: ITokenIssuer,
+  fail: IPipeFailureHandler,
 ): void {
-  failures.set(owner, fail);
+  if (!failures.has(token) && issuer.issued(token)) {
+    failures.set(token, Object.freeze({ issuer, fail }));
+  }
+}
+
+/**
+ * The failure handler of a work, while the exchange that has set it has
+ * issued its token (`null` without one, e.g. for a work of no request)
+ */
+function failureOf(owner: object | undefined): IPipeFailureHandler | null {
+  if (typeof owner === "undefined") {
+    return null;
+  }
+  const route = failures.get(owner);
+  return route?.issuer.issued(owner) === true ? route.fail : null;
 }
 
 /**
@@ -206,8 +247,11 @@ export function isPatch(source: object, name: string): boolean {
 
 /**
  * A patched listener-adding method of a source: it binds every listener to
- * the work that adds it (and catches what a listener of `end` throws for its
- * pipe, see `failures`), then adds it by the method of its class
+ * the work that adds it, then adds it by the method of its class. What a
+ * listener of `end` throws fails the pipe of that work, by the failure
+ * handler of the work as it is when the listener is added (see
+ * `failures`), whatever response has opened the window and whatever work
+ * emits the event.
  */
 function patch(inherited: string, once: boolean): IListener {
   return function patched(
@@ -216,21 +260,20 @@ function patch(inherited: string, once: boolean): IListener {
     listener: unknown,
   ): unknown {
     const owner = owners.getStore();
+    const fail = event === "end" ? failureOf(owner) : null;
     const around: IAround | null =
-      event === "end"
-        ? (call): unknown => {
+      fail === null
+        ? null
+        : (call): unknown => {
             try {
               return call();
             } catch (error: unknown) {
-              // `undefined` (of no request) is never a key
-              const fail = failures.get(owner as object);
-              if (fail?.(error) === true) {
+              if (fail(error, this)) {
                 return null;
               }
               throw error;
             }
-          }
-        : null;
+          };
     const bound = bind(
       listener as IListener,
       owner,

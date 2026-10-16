@@ -50,6 +50,17 @@ export const kFramework: unique symbol = Symbol("binden.framework");
 export const kListen: unique symbol = Symbol("binden.listen");
 
 /**
+ * The key of the internal method that fails a pipe of a work of the exchange
+ * of a response, from the failure handler that the exchange has set for the
+ * work (see `onPipeFailure()`): `response[kPipeFailure](owner, error,
+ * source)`, `true` once the framework handles it (see `IOwnership.fail()`).
+ * Not part of the public API.
+ *
+ * @internal
+ */
+export const kPipeFailure: unique symbol = Symbol("binden.pipe_failure");
+
+/**
  * A failure of a pipe of a work (see `IOwnership.fail()`): the work that it
  * belongs to, and its error
  *

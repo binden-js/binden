@@ -22,7 +22,9 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { PassThrough, Readable } from "node:stream";
 import { deepStrictEqual, ok, throws } from "node:assert/strict";
 import { kFramework, kSeal, owners } from "../src/seal.js";
+import { onPipeFailure, openWindow } from "../src/listeners.js";
 import { suite, test } from "node:test";
+import { Exchange } from "../src/exchange.js";
 import { Socket } from "node:net";
 import { listen as listenHttp } from "./http.js";
 
@@ -210,6 +212,75 @@ suite("Listeners and callbacks of the response", () => {
     }
     // Still bound to its adder by the method of the response
     deepStrictEqual(seen, [owner, null]);
+  });
+
+  test("the failure of a pipe goes to the handler that the exchange of its work has set first", () => {
+    const token = { name: "token" };
+    const other = { name: "a work of no exchange" };
+    let issued = true;
+    let later = false;
+    const issuer = {
+      issued: (candidate: object): boolean =>
+        (candidate === token && issued) || (candidate === other && later),
+    };
+    const calls: unknown[] = [];
+    onPipeFailure(token, issuer, (error, source) => {
+      calls.push([error, source]);
+      return true;
+    });
+    // Set once: never replaced
+    onPipeFailure(token, issuer, () => {
+      calls.push("replaced");
+      return true;
+    });
+    // Not issued by the exchange (yet): not set
+    onPipeFailure(other, issuer, () => {
+      calls.push("other");
+      return true;
+    });
+    const thrown = new Error("Thrown");
+    const fails = (): never => {
+      throw thrown;
+    };
+    /** Emits the `end` of a source to a listener added by a work in its window */
+    const end = (owner: object): unknown => {
+      const source = new PassThrough();
+      ok(openWindow(source));
+      owners.run(owner, () => {
+        source.once("end", fails);
+      });
+      try {
+        source.emit("end");
+        return source;
+      } catch (error: unknown) {
+        return error;
+      }
+    };
+    const source = end(token);
+    deepStrictEqual(calls, [[thrown, source]]);
+    later = true;
+    ok(end(other) === thrown);
+    // Its exchange no longer knows the token: thrown
+    issued = false;
+    ok(end(token) === thrown);
+    deepStrictEqual(calls.length, 1);
+  });
+
+  test("the failure of a pipe of a work whose exchange has no framework is thrown", () => {
+    const response = detached();
+    const token = Exchange.for(response.req, response).token();
+    const source = new PassThrough();
+    ok(openWindow(source));
+    const thrown = new Error("Thrown");
+    owners.run(token, () => {
+      source.once("end", () => {
+        throw thrown;
+      });
+    });
+    throws(
+      () => source.emit("end"),
+      (error: unknown) => error === thrown,
+    );
   });
 
   test("the callback of a write runs as the work that has written", () => {

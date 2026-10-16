@@ -62,6 +62,19 @@ suite("Process safety", () => {
     });
   });
 
+  test("a pipe of a work into the response of another request leaves its failures to its own exchange", () => {
+    deepStrictEqual(run("foreign-pipes.ts"), {
+      status: 0,
+      stdout:
+        "promise+foreign A=500(open): B=200(open):B\n" +
+        "promise A=500(open): B=200(open):B\n" +
+        "callback+foreign A=500(open): B=200(open):B\n" +
+        "callback A=500(open): B=200(open):B\n" +
+        "callback:ERR_INVALID_CHAR callback:ERR_INVALID_CHAR promise:ERR_INVALID_CHAR promise:ERR_INVALID_CHAR\n",
+      stderr: "",
+    });
+  });
+
   test("a reason phrase or a header that Node.js refuses does not crash the process", () => {
     deepStrictEqual(run("refused-head.ts"), {
       status: 0,

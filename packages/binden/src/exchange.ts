@@ -1,4 +1,11 @@
-import { type IPipeFailure, kListen, kRevoke, owners } from "./seal.js";
+import {
+  type IPipeFailure,
+  kListen,
+  kPipeFailure,
+  kRevoke,
+  owners,
+} from "./seal.js";
+import { type ITokenIssuer, onPipeFailure } from "./listeners.js";
 import type { BindenResponse } from "./response.js";
 import type { IncomingMessage } from "node:http";
 
@@ -49,7 +56,7 @@ const exchanges = new WeakMap<IncomingMessage, Exchange>();
  * for them (e.g. a middleware that returns a new context of the same request):
  * its abort signal, deadline, state, `done` flag and cleanup.
  */
-export class Exchange {
+export class Exchange implements ITokenIssuer {
   readonly #response: BindenResponse;
   readonly #controller: AbortController;
   readonly #state: object;
@@ -322,7 +329,17 @@ export class Exchange {
   public token(): object {
     const token = {};
     this.#live.add(token);
+    // A pipe of the work that fails (e.g. the end of its `pipeline()`)
+    // fails it on this response, whatever response it pipes into
+    onPipeFailure(token, this, (error, source) =>
+      this.#response[kPipeFailure](token, error, source),
+    );
     return token;
+  }
+
+  /** Whether a token is of a work of the exchange (see `token()`), also once revoked */
+  public issued(token: object): boolean {
+    return this.#live.has(token) || this.#revoked.has(token);
   }
 
   /**

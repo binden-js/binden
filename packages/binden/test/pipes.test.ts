@@ -294,6 +294,141 @@ suite("A pipe into the response", () => {
         }
       });
 
+      for (const first of ["/a", "/b"]) {
+        test(`one source of the works of two requests (${first} pipes first in the turn): the end of each fails its own work`, async () => {
+          const source = silent();
+          const start = Promise.withResolvers<unknown>();
+          const waiting: string[] = [];
+          const settled: Record<string, unknown> = {};
+          await withApp(
+            {},
+            (app) => {
+              app.use(async (context: Context) => {
+                const { pathname } = context.url;
+                if (pathname === "/a") {
+                  context.response.statusMessage = refused;
+                }
+                waiting.push(pathname);
+                await start.promise;
+                pipelineAsync(source, context.response).then(
+                  () => {
+                    settled[pathname] = null;
+                  },
+                  (error: unknown) => {
+                    settled[pathname] = (error as { code?: string }).code;
+                  },
+                );
+                await never();
+              });
+            },
+            async ({ port }) => {
+              const order = first === "/a" ? ["/a", "/b"] : ["/b", "/a"];
+              const replies: Promise<IRaw>[] = [];
+              for (const path of order) {
+                replies.push(exchange(port, { path }));
+                while (waiting.length < replies.length) {
+                  await sleep(5);
+                }
+              }
+              // Both pipe in the same turn, in that order
+              start.resolve(null);
+              // Its end from a work of no request
+              owners.exit(() => {
+                setTimeout(() => {
+                  source.end();
+                }, 10);
+              });
+              const [one, two] = (await Promise.all(replies)) as [IRaw, IRaw];
+              const [a, b] = first === "/a" ? [one, two] : [two, one];
+              deepStrictEqual([a.status, a.complete], [500, true]);
+              deepStrictEqual([b.status, b.body, b.complete], [200, "", true]);
+              deepStrictEqual(settled, {
+                "/a": "ERR_INVALID_CHAR",
+                "/b": null,
+              });
+            },
+          );
+        });
+      }
+
+      test("one source of a failed work and of an independent destination: the destination gets every chunk", async () => {
+        const source = silent();
+        const feed = feeder(source, ["x", "y"]);
+        const destination = new PassThrough();
+        let collected = "";
+        destination.setEncoding("latin1").on("data", (chunk: string) => {
+          collected += chunk;
+        });
+        const ended = once(destination, "end");
+        owners.exit(() => {
+          source.pipe(destination);
+        });
+        try {
+          await withApp(
+            {},
+            (app) => {
+              app.use(async (context: Context) => {
+                // Its first write fails
+                context.response.statusMessage = refused;
+                source.pipe(context.response);
+                feed.start();
+                await never();
+              });
+            },
+            async ({ port }) => {
+              const reply = await exchange(port);
+              deepStrictEqual([reply.status, reply.complete], [500, true]);
+              await within(ended);
+              deepStrictEqual([collected, source.errored], ["xy", null]);
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+
+      test("a throwing `end` listener that the abandoned work adds to the source from its listener of `pipe` is logged", async () => {
+        const source = silent();
+        const feed = feeder(source, ["REAL"]);
+        try {
+          await withApp(
+            {
+              timeout: 20,
+              error_handler: async (context: Context, error): Promise<void> => {
+                if (!isDeadline(error)) {
+                  return;
+                }
+                context.response.status(503).type("text/plain");
+                source.pipe(context.response);
+                feed.start();
+                await once(context.response, "finish");
+              },
+            },
+            (app) => {
+              app.use(async (context: Context) => {
+                context.response.prependListener("pipe", (piped: Readable) => {
+                  // In the window of the pipe of the error handler
+                  piped.once("end", () => {
+                    throw new Error("A listener of the application has failed");
+                  });
+                });
+                await never();
+              });
+            },
+            async ({ port }, captured) => {
+              const reply = await exchange(port);
+              deepStrictEqual(
+                [reply.status, reply.body, reply.complete],
+                [503, "REAL", true],
+              );
+              await captured.waitFor("A pipe of an abandoned work has failed");
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+
       test("a source that has ended already ends the reply as its owner", async () => {
         await withApp(
           {

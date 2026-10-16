@@ -14,7 +14,6 @@ import {
   force,
   forced,
   isPatch,
-  onPipeFailure,
   openWindow,
 } from "./listeners.js";
 import {
@@ -29,6 +28,7 @@ import {
   kNegotiator,
   kOperation,
   kOwnership,
+  kPipeFailure,
   kRepresentation,
   kRevoke,
   kSeal,
@@ -648,9 +648,6 @@ export class BindenResponse<
       return;
     }
     this.#sourcesOf(owner).add(source);
-    if (typeof owner !== "undefined") {
-      onPipeFailure(owner, (error) => this.#pipeFailed(owner, error, source));
-    }
     // A write of the pipe that throws (e.g. a head that Node.js refuses) is
     // caught by the pipe, which destroys the response with it (see
     // `destroy()`)
@@ -1807,6 +1804,20 @@ export class BindenResponse<
         resolve();
       });
     });
+  }
+
+  /**
+   * Fails a pipe of a work of the exchange of the response (see
+   * `kPipeFailure`)
+   *
+   * @internal
+   */
+  public [kPipeFailure](
+    owner: object,
+    error: unknown,
+    source: EventEmitter,
+  ): boolean {
+    return this.#pipeFailed(owner, error, source);
   }
 
   /**
