@@ -1,9 +1,13 @@
 import { BindenResponse, type Context, Cookie } from "binden";
 import {
+  type IRaw,
   type IReceived,
   type IRequestOptions,
   type IServed,
+  converse,
+  decode,
   fetchRaw,
+  framed,
   none,
   serve,
   text,
@@ -409,6 +413,70 @@ suite("The decision at the header commit", () => {
 
     ok(head.startsWith("HTTP/1.1 102 Processing\r\n"), head);
     ok(!/content-encoding/iu.test(head), head);
+  });
+
+  test("`Content-Length` is read as binden frames the body by it: equal values are that length, an empty array is none", async () => {
+    /** The `Content-Length` of each path (none when `null`), and the size of its body */
+    const lengths: Record<string, readonly [string | string[] | null, number]> =
+      {
+        "/single": ["100", 100],
+        "/equal": [["100", "100"], 100],
+        "/empty": [[], 5000],
+        "/none": [null, 5000],
+      };
+    const url = await start(
+      (context) => {
+        const { response } = context;
+        const [length, size] = lengths[context.url.pathname] ?? [null, 0];
+        context.done = true;
+        response.setHeader("Content-Type", "text/plain");
+        if (length !== null) {
+          response.setHeader("Content-Length", length);
+        }
+        response.write(text(size));
+        response.end();
+      },
+      { format: "gzip", threshold: 1024 },
+    );
+    const decisions: Record<string, unknown> = {};
+    for (const path of Object.keys(lengths)) {
+      const responses = await converse(
+        url,
+        `GET ${path} HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n`,
+      );
+      deepStrictEqual(responses.length, 1, path);
+      const [response] = responses as [IRaw];
+      const coding = /\r\ncontent-encoding: (?<coding>[^\r]*)/u.exec(
+        response.head,
+      )?.groups?.coding;
+      decisions[path] = {
+        coding,
+        vary: /\r\nvary: (?<vary>[^\r]*)/u.exec(response.head)?.groups?.vary,
+        lengths: [
+          ...response.head.matchAll(/\r\ncontent-length: (?<length>[^\r]*)/gu),
+        ].map((match) => match.groups?.length),
+        body: decode(coding, framed(response)).toString(),
+      };
+    }
+    // As for a single value (below the threshold), and as without one
+    const kept = (values: string[], size: number): unknown => ({
+      coding: none,
+      vary: "accept-encoding",
+      lengths: values,
+      body: text(size),
+    });
+    const compressed = {
+      coding: "gzip",
+      vary: "accept-encoding",
+      lengths: [],
+      body: text(5000),
+    };
+    deepStrictEqual(decisions, {
+      "/single": kept(["100"], 100),
+      "/equal": kept(["100", "100"], 100),
+      "/empty": compressed,
+      "/none": compressed,
+    });
   });
 
   test("`flushHeaders()` commits the decision", async () => {

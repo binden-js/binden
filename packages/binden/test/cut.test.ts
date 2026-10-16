@@ -1,5 +1,10 @@
 import { type AddressInfo, Socket, connect } from "node:net";
-import { Binden, BindenResponse, type Context } from "../index.js";
+import {
+  Binden,
+  BindenResponse,
+  type Context,
+  framingLength,
+} from "../index.js";
 import {
   IncomingMessage,
   OutgoingMessage,
@@ -928,6 +933,30 @@ suite("Content-Length values that disagree", () => {
       String(Reflect.get(list, "_header")).includes("Content-Length: 3, 3\r\n"),
     );
     deepStrictEqual(Reflect.get(list, "_contentLength"), Number.NaN);
+  });
+
+  test("and lists declare no length (framingLength(), by which @binden/compression decides as well): equal values are that length, an empty array is none", () => {
+    const cases: [Parameters<typeof framingLength>[0], number | null][] = [
+      ["100", 100],
+      [100, 100],
+      [" 100 ", 100],
+      [["100"], 100],
+      [["100", "100"], 100],
+      [["100", "0100"], 100],
+      [[], null],
+      [new OutgoingMessage().getHeader("Content-Length"), null],
+      [["100", "101"], null],
+      ["100, 100", null],
+      ["100,100", null],
+      [["100", "100, 100"], null],
+      ["-1", null],
+      ["1.5", null],
+      ["abc", null],
+      ["9007199254740992", null],
+    ];
+    for (const [value, length] of cases) {
+      deepStrictEqual(framingLength(value), length, JSON.stringify(value));
+    }
   });
 
   test("given to writeHead() replace the ones set, as Node.js does: only the values of the head are checked", () => {

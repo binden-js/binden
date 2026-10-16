@@ -5,8 +5,10 @@ import {
   type IFramingState,
   framingCounters,
   framingFields,
+  framingLength,
   kRestoreFraming,
   kSaveFraming,
+  lengthRefusal,
 } from "./framing.js";
 import {
   type IListener,
@@ -1470,7 +1472,7 @@ export class BindenResponse<
    * code is left to `writeHead()`, which throws before it changes anything.
    * The `Content-Length` values that the head would have (the ones given, or
    * else the ones set) must be neither a list nor disagree (see
-   * `#disagree()`): every path that commits the head runs `writeHead()`
+   * `lengthRefusal()`): every path that commits the head runs `writeHead()`
    * (also a first `write()`, an `end()` and `flushHeaders()`), which then
    * throws before anything is committed.
    *
@@ -1513,7 +1515,7 @@ export class BindenResponse<
         }
       }
     }
-    const refusal = BindenResponse.#disagree(
+    const refusal = lengthRefusal(
       lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
     );
     if (refusal !== null) {
@@ -1521,35 +1523,6 @@ export class BindenResponse<
         code: "ERR_HTTP_INVALID_HEADER_VALUE",
       });
     }
-  }
-
-  /**
-   * Why the `Content-Length` values of a head are refused, `null` when they
-   * are not: a list (e.g. `2, 3`, also `2, 2`, alone or as an element of an
-   * array), which Node.js cannot read, even of members that agree; or
-   * elements of an array (which Node.js sends a line of each of, and frames
-   * the body by the last) that are not all one same length (each of digits
-   * only), so that a recipient may read either of them (RFC 9110, section
-   * 8.6). Refused by binden before anything is committed (see
-   * `kValidateHead`), where Node.js would send them.
-   */
-  static #disagree(value: unknown): string | null {
-    const elements = BindenResponse.#values(value as OutgoingHttpHeader).map(
-      (element) => trimOws(element),
-    );
-    if (elements.some((element) => element.includes(","))) {
-      return "Content-Length is a list";
-    }
-    const [first = ""] = elements;
-    return elements.length > 1 &&
-      !elements.every(
-        (element) =>
-          /^\d+$/u.test(element) &&
-          Number.isSafeInteger(Number(element)) &&
-          Number(element) === Number(first),
-      )
-      ? "Content-Length values disagree"
-      : null;
   }
 
   /**
@@ -3188,19 +3161,11 @@ export class BindenResponse<
   }
 
   /**
-   * The `Content-Length` of the response, `null` without a valid one: as
-   * Node.js reads it (the last element of an array, which agrees with the
-   * others), unless they are refused (see `#disagree()`)
+   * The `Content-Length` of the response, `null` without a valid one (see
+   * `framingLength()`, which `@binden/compression` reads it by as well)
    */
   #length(): number | null {
-    const value = this.getHeader("Content-Length");
-    if (BindenResponse.#disagree(value) !== null) {
-      return null;
-    }
-    const length = Number(
-      (Array.isArray(value) ? value.at(-1) : value) ?? Number.NaN,
-    );
-    return Number.isSafeInteger(length) && length >= 0 ? length : null;
+    return framingLength(this.getHeader("Content-Length"));
   }
 
   /** The error of a close before the end */

@@ -1,4 +1,5 @@
-import { OutgoingMessage } from "node:http";
+import { type OutgoingHttpHeader, OutgoingMessage } from "node:http";
+import { trimOws } from "./headers/list.js";
 
 /**
  * The fields of Node.js that frame a response, which an attempt to commit
@@ -88,3 +89,54 @@ export const kSaveFraming: unique symbol = Symbol("binden.saveFraming");
  * @internal
  */
 export const kRestoreFraming: unique symbol = Symbol("binden.restoreFraming");
+
+/**
+ * Why the `Content-Length` values of a head are refused, `null` when they
+ * are not: a list (e.g. `2, 3`, also `2, 2`, alone or as an element of an
+ * array), which Node.js cannot read, even of members that agree; or
+ * elements of an array (which Node.js sends a line of each of, and frames
+ * the body by the last) that are not all one same length (each of digits
+ * only), so that a recipient may read either of them (RFC 9110, section
+ * 8.6). `BindenResponse` refuses them before anything is committed (see
+ * `kValidateHead`), where Node.js would send them.
+ */
+export function lengthRefusal(value: unknown): string | null {
+  const elements = (
+    Array.isArray(value) ? value : typeof value === "undefined" ? [] : [value]
+  ).map((element) => trimOws(String(element)));
+  if (elements.some((element) => element.includes(","))) {
+    return "Content-Length is a list";
+  }
+  const [first = ""] = elements;
+  return elements.length > 1 &&
+    !elements.every(
+      (element) =>
+        /^\d+$/u.test(element) &&
+        Number.isSafeInteger(Number(element)) &&
+        Number(element) === Number(first),
+    )
+    ? "Content-Length values disagree"
+    : null;
+}
+
+/**
+ * The length of the body that the `Content-Length` of a response (its value,
+ * see `getHeader()`) declares, as Node.js reads it (the last element of an
+ * array, which agrees with the others), `null` without a valid one: none for
+ * an empty array, nor for values that `BindenResponse` refuses (see
+ * `lengthRefusal()`). binden frames the body by it, and `@binden/compression`
+ * decides by it. For the packages of binden only.
+ *
+ * @internal
+ */
+export function framingLength(
+  value: OutgoingHttpHeader | undefined,
+): number | null {
+  if (lengthRefusal(value) !== null) {
+    return null;
+  }
+  const length = Number(
+    (Array.isArray(value) ? value.at(-1) : value) ?? Number.NaN,
+  );
+  return Number.isSafeInteger(length) && length >= 0 ? length : null;
+}

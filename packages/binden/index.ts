@@ -38,6 +38,7 @@ export {
 export {
   type IFramingState,
   framingFields,
+  framingLength,
   kRestoreFraming,
   kSaveFraming,
 } from "./src/framing.js";

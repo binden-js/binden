@@ -7,6 +7,7 @@ import {
   type IRepresentation,
   type IResponseOperation,
   bodyHeaders,
+  framingLength,
   kListen,
   kNegotiator,
   kOperation,
@@ -121,14 +122,6 @@ function isIdentity(value: number | string | string[]): boolean {
 /** Whether `Cache-Control` has the `no-transform` directive */
 function noTransform(value: number | string | string[] | undefined): boolean {
   return listOf(value).includes("no-transform");
-}
-
-/** The value of `Content-Length` (as binden reads it), or `null` without a valid one */
-function lengthOf(
-  value: number | string | string[] | undefined,
-): number | null {
-  const length = Number(value ?? Number.NaN);
-  return Number.isSafeInteger(length) && length >= 0 ? length : null;
 }
 
 /**
@@ -884,7 +877,7 @@ export class CompressedResponse {
     const response = this.#response;
     // The body that `end()` writes is not the one of the `200` of a `304`
     return this.#decide(
-      lengthOf(response.getHeader("Content-Length")) ??
+      framingLength(response.getHeader("Content-Length")) ??
         (response.statusCode === 304 ? null : size),
     );
   }
@@ -1025,7 +1018,8 @@ export class CompressedResponse {
     const response = this.#response;
     const status = response.statusCode;
     const empty =
-      status !== 304 && lengthOf(response.getHeader("Content-Length")) === 0;
+      status !== 304 &&
+      framingLength(response.getHeader("Content-Length")) === 0;
     if (!empty) {
       this.#remove("Content-Length");
     }
