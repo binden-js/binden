@@ -630,6 +630,42 @@ suite("An end() that throws", () => {
     }
   });
 
+  test("caught by the application leaves the socket to its next reply", async () => {
+    const root = await mkdtemp(join(tmpdir(), "binden-uncork-"));
+    const page = "p".repeat(266_000);
+    await writeFile(join(root, "page.txt"), page);
+    const refused: unknown[] = [];
+    const app = new Binden({ error_handler_timeout: 30_000 }).use(
+      async ({ response }: Context) => {
+        for (const chunk of [{}, 42]) {
+          try {
+            response.end(chunk);
+          } catch (error: unknown) {
+            refused.push((error as { code?: unknown }).code);
+          }
+        }
+        await response.sendFile("page.txt", { root });
+      },
+    );
+    const listening = await listen(app);
+    try {
+      const data = await read(
+        listening.port,
+        "GET / HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        2000,
+      );
+      ok(data.startsWith("HTTP/1.1 200 OK\r\n"), data.slice(0, 200));
+      ok(data.endsWith(`\r\n\r\n${page}`), String(data.length));
+      deepStrictEqual(refused, [
+        "ERR_INVALID_ARG_TYPE",
+        "ERR_INVALID_ARG_TYPE",
+      ]);
+    } finally {
+      await listening.close();
+      await rm(root, { recursive: true });
+    }
+  });
+
   test("of a chunk that is not one, once the response has ended, is left to Node.js", async () => {
     const results: unknown[] = [];
     for (const Response of [ServerResponse, BindenResponse]) {
