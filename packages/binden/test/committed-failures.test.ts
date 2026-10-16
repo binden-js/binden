@@ -103,6 +103,19 @@ suite(
         "Failed",
       ],
       [
+        "a source destroyed with an error that its `_destroy()` swallows (it emits its `close` only)",
+        (): Readable =>
+          new Readable({
+            read(): void {
+              this.destroy(new Error("Swallowed"));
+            },
+            destroy(_error, callback): void {
+              callback(null);
+            },
+          }),
+        "Swallowed",
+      ],
+      [
         "a source destroyed before the send",
         destroyed,
         "ERR_STREAM_PREMATURE_CLOSE",
