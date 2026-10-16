@@ -14,6 +14,7 @@ import { afterEach, suite, test } from "node:test";
 import { Compression } from "../index.js";
 import { Socket } from "node:net";
 import { deepStrictEqual } from "node:assert/strict";
+import { once } from "node:events";
 
 const gzip = { "Accept-Encoding": "gzip" };
 const body = text(4096);
@@ -165,6 +166,77 @@ suite("A chunk that Node.js refuses", () => {
       states.map((state) => (state as unknown[]).slice(0, 2)),
       [...errors, ...errors],
     );
+  });
+
+  test("once the compression has ended the response is its error, as for a response that has not ended", async () => {
+    const calls: [
+      string,
+      (response: BindenResponse | ServerResponse) => unknown,
+    ][] = [
+      ["end(42)", (response): unknown => response.end(42)],
+      ["end({})", (response): unknown => response.end({})],
+      ["write({})", (response): unknown => response.write({})],
+    ];
+    // How the compression ends it: replaced with `406` (by a write, or by
+    // `writeHead()`), or compressed, and ended by the end of its compressor
+    // (also once the response has finished)
+    const starts: [string, string, (response: BindenResponse) => unknown][] = [
+      [
+        "406 by write()",
+        "identity;q=0",
+        (response): unknown => response.write(body),
+      ],
+      [
+        "406 by writeHead()",
+        "identity;q=0",
+        (response): unknown => response.writeHead(200),
+      ],
+      ["compressed", "gzip", (response): unknown => response.end(body)],
+      [
+        "compressed, finished",
+        "gzip",
+        async (response): Promise<void> => {
+          response.end(body);
+          await once(response, "finish");
+        },
+      ],
+    ];
+    for (const [started, accept, begin] of starts) {
+      for (const [name, call] of calls) {
+        const { promise: called, resolve } = Promise.withResolvers<unknown>();
+        const states: unknown[] = [];
+        const url = await start(
+          {},
+          new Compression({ format: "gzip" }),
+          async (context: Context) => {
+            const { response } = context;
+            context.done = true;
+            response.type("text/plain");
+            await begin(response);
+            states.push(refusal(response, () => call(response)).slice(0, 2));
+            // A chunk that Node.js accepts is discarded: only its callback runs
+            response.end("late", () => {
+              resolve("called");
+            });
+          },
+        );
+        const received = await fetchRaw(url, {
+          headers: { "Accept-Encoding": accept },
+        });
+        const label = `${name} (${started})`;
+
+        deepStrictEqual(
+          [...states, await within(called)],
+          [native((response) => call(response)).slice(0, 2), "called"],
+          label,
+        );
+        deepStrictEqual(
+          [received.status, received.body],
+          accept === "gzip" ? [200, body] : [406, ""],
+          label,
+        );
+      }
+    }
   });
 
   test("by `end()` is its error, before any decision; a falsy chunk is none", async () => {

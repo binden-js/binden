@@ -26,6 +26,23 @@ suite("Process safety", () => {
     });
   });
 
+  test("a refused chunk once the compression has ended the response does not crash the process", () => {
+    deepStrictEqual(run("ended-chunk.ts"), {
+      status: 0,
+      stdout: [
+        "/write-end HTTP/1.1 406 Not Acceptable",
+        "/write-end-object HTTP/1.1 406 Not Acceptable",
+        "/write-write HTTP/1.1 406 Not Acceptable",
+        "/head-end HTTP/1.1 406 Not Acceptable",
+        "/head-end-object HTTP/1.1 406 Not Acceptable",
+        "/head-write HTTP/1.1 406 Not Acceptable",
+        "/compressed HTTP/1.1 200 OK",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+
   test("a head that Node.js refuses under a decision does not crash the process", () => {
     deepStrictEqual(run("refused-head.ts"), {
       status: 0,

@@ -24,6 +24,7 @@ import {
 import {
   type OutgoingHttpHeader,
   type OutgoingHttpHeaders,
+  OutgoingMessage,
   STATUS_CODES,
 } from "node:http";
 import { accepts, negotiate } from "./negotiate.js";
@@ -135,6 +136,16 @@ function lengthOf(
  */
 function isChunk(chunk: unknown): chunk is Uint8Array | string {
   return typeof chunk === "string" || isUint8Array(chunk);
+}
+
+/**
+ * Throws the error that `write()` and `end()` of Node.js throw for a chunk
+ * that they refuse (see `isChunk()`), as a response that has not ended
+ * throws it: by `write()` of a message of its own, which checks the chunk
+ * before anything else, so that nothing of the response is changed
+ */
+function refuse(chunk: unknown): never {
+  return new OutgoingMessage().write(chunk) as never;
 }
 
 /**
@@ -448,6 +459,13 @@ export class CompressedResponse {
       ignore(args);
       return response;
     } else if (chunk !== null && !isChunk(chunk)) {
+      if (this.#sink === "discard" || this.#ended) {
+        // Replaced (and ended) by the compression, or ended by the end of its
+        // compressor, whenever it comes: as for a response that has not
+        // ended, rather than the `error` event that Node.js emits once it
+        // has (which crashes the process without a listener)
+        refuse(chunk);
+      }
       return Reflect.apply(this.#end, response, args) as IResponse;
     }
     const encoding = typeof second === "string" ? second : "utf8";
