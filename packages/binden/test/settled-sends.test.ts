@@ -1,15 +1,15 @@
+import { Binden, BindenResponse, type Context } from "../index.js";
+import { EventEmitter, once } from "node:events";
 import { type ITestServer, listen } from "./http.js";
 import { afterEach, suite, test } from "node:test";
+import { capture, listen as listenApp, send, within } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
-import { BindenResponse } from "../index.js";
 import { IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
 import { Socket } from "node:net";
 import { join } from "node:path";
 import { kCancel } from "../src/seal.js";
-import { once } from "node:events";
 import { spawnSync } from "node:child_process";
-import { within } from "./helpers.js";
 
 /** The listeners that a source has of its `data`, `end`, `error` and `close` */
 function counts(source: Readable): number[] {
@@ -229,16 +229,16 @@ suite("A settled send of a Readable", () => {
     deepStrictEqual([status, error, source.destroyed], [500, failure, true]);
   });
 
-  test("once it has failed, a listener that the source keeps beyond its removal (its own once()) changes nothing: the error is replied", async () => {
+  test("once it has failed, a listener that the source keeps beyond its removal (its own on()) changes nothing: the error is replied", async () => {
     const kept: (() => void)[] = [];
     const source = new Counted();
     Object.assign(source, {
-      once(event: string, listener: () => void): Counted {
+      on(event: string, listener: () => void): Counted {
         if (event === "end") {
           kept.push(listener);
           return source;
         }
-        return Readable.prototype.once.call(source, event, listener) as Counted;
+        return Readable.prototype.on.call(source, event, listener) as Counted;
       },
     });
     const failure = new Error("Failed");
@@ -256,6 +256,85 @@ suite("A settled send of a Readable", () => {
       await response.status(500).send();
     });
     deepStrictEqual([status, error, kept.length], [500, failure, 1]);
+  });
+
+  for (const [own, removal] of [
+    ["`off()`", { removeListener: null }],
+    ["neither", { removeListener: null, off: null }],
+  ] as const) {
+    test(`whose own \`removeListener()\` is not a function: its listeners are removed by ${own === "neither" ? "the methods of `EventEmitter` when its own `off()` is not one either" : `its own ${own}`}`, async () => {
+      const response = detached();
+      const source = new Counted();
+      const removed: string[] = [];
+      Object.assign(source, removal);
+      if (own !== "neither") {
+        Object.assign(source, {
+          off(event: string, listener: () => void): Counted {
+            removed.push(event);
+            return EventEmitter.prototype.removeListener.call(
+              source,
+              event,
+              listener,
+            ) as Counted;
+          },
+        });
+      }
+      const reason = new Error("Cancelled");
+      const sent = settle(response.send(source));
+      deepStrictEqual(counts(source).slice(0, 2), [1, 1]);
+      response[kCancel](reason);
+      deepStrictEqual(await within(sent), reason);
+      // Only its guard, until the turn after its close
+      deepStrictEqual(
+        [removed.sort(), counts(source)],
+        [
+          own === "neither" ? [] : ["close", "data", "end", "error"],
+          [0, 0, 1, 1],
+        ],
+      );
+    });
+  }
+
+  test("whose own `removeListener()` throws: each failure is logged at `debug`, and its guard and the listeners of the send that it keeps leave a later error harmless", async () => {
+    const captured = capture();
+    const failure = new Error("Not removed");
+    const source = Readable.from(["abc"]);
+    Object.assign(source, {
+      removeListener(): never {
+        throw failure;
+      },
+    });
+    const outcome = Promise.withResolvers<unknown>();
+    const app = new Binden({ logger: captured.logger }).use(
+      async (context: Context) => {
+        outcome.resolve(await settle(context.send(source)));
+      },
+    );
+    const listening = await listenApp(app);
+    try {
+      const { status, body } = await send(listening.port);
+      deepStrictEqual(
+        [status, body, await within(outcome.promise)],
+        [200, "abc", null],
+      );
+      const message = "The removal of a listener of a stream has failed";
+      deepStrictEqual(
+        captured.records
+          .filter(({ msg }) => msg === message)
+          .map(({ level }) => level),
+        [20, 20, 20, 20],
+      );
+      if (!source.closed) {
+        await once(source, "close");
+      }
+      await nextTurn();
+      // Only those of the send, which ignore what it emits once it has
+      // settled (its guard is removed once it has closed)
+      deepStrictEqual(counts(source), [1, 1, 1, 1]);
+      source.emit("error", new Error("Late"));
+    } finally {
+      await listening.close();
+    }
   });
 
   test("the late errors of the destroy of a source (destroyed by the application before the send, or by autoDestroy once it has ended), without a listener of the application, are logged and do not crash the process", () => {

@@ -4,8 +4,10 @@
 // guard that stays on it (until the turn after its close) holds nothing but
 // the report of a late error. Modes: `sent` (sent in full), `ended` (ended and
 // closed before the send) and `cancelled` (at the deadline, with a destroy
-// that does not complete). Prints whether the responses are collected, and
-// the listeners left on the sources (of `data`, `end`, `error` and `close`).
+// that does not complete). With `bound`, the listeners of each source are
+// bound as the `context.bind()` of OpenTelemetry binds them (see `bind()`).
+// Prints whether the responses are collected, and the listeners left on the
+// sources (of `data`, `end`, `error` and `close`).
 import { Agent, get } from "node:http";
 import { Binden, BindenResponse, type Context } from "../../index.js";
 import type { AddressInfo } from "node:net";
@@ -19,12 +21,53 @@ setTimeout(() => {
   process.exit(2);
 }, 25_000).unref();
 
-const [mode = "sent"] = process.argv.slice(2);
+const [mode = "sent", binding = "unbound"] = process.argv.slice(2);
 const requests = 400;
 const sources: Readable[] = [];
 
+/** A method of an emitter */
+type IMethod = (this: Readable, ...args: unknown[]) => unknown;
+
+/**
+ * Binds the listeners of a source as the `context.bind()` of OpenTelemetry
+ * binds those of an emitter: its own `on()`, `addListener()` and
+ * `prependListener()` add a wrapper of each listener in its place, which
+ * its own `removeListener()` and `off()` find (but `once()` is not patched:
+ * it adds a wrapper of its own through `on()`, which they do not find)
+ */
+function bind(source: Readable): Readable {
+  const wrappers = new Map<string, WeakMap<object, IMethod>>();
+  for (const name of ["on", "addListener", "prependListener"]) {
+    const add = Reflect.get(source, name) as IMethod;
+    Object.defineProperty(source, name, {
+      configurable: true,
+      writable: true,
+      value(this: Readable, event: string, listener: IMethod): unknown {
+        function bound(this: unknown, ...args: unknown[]): unknown {
+          return Reflect.apply(listener, this, args);
+        }
+        const map = wrappers.get(event) ?? new WeakMap<object, IMethod>();
+        wrappers.set(event, map.set(listener, bound));
+        return Reflect.apply(add, this, [event, bound]);
+      },
+    });
+  }
+  for (const name of ["removeListener", "off"]) {
+    const remove = Reflect.get(source, name) as IMethod;
+    Object.defineProperty(source, name, {
+      configurable: true,
+      writable: true,
+      value(this: Readable, event: string, listener: IMethod): unknown {
+        const bound = wrappers.get(event)?.get(listener) ?? listener;
+        return Reflect.apply(remove, this, [event, bound]);
+      },
+    });
+  }
+  return source;
+}
+
 /** The source of a send, as the mode makes it */
-async function sourceOf(): Promise<Readable> {
+async function created(): Promise<Readable> {
   if (mode === "sent") {
     return Readable.from(["x"]);
   } else if (mode === "ended") {
@@ -45,6 +88,12 @@ async function sourceOf(): Promise<Readable> {
       setTimeout(callback, 60_000, error).unref();
     },
   });
+}
+
+/** The source of a send, as the mode makes it (bound with `bound`) */
+async function sourceOf(): Promise<Readable> {
+  const source = await created();
+  return binding === "bound" ? bind(source) : source;
 }
 
 // The report of the guards logs through it

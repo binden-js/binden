@@ -48,14 +48,20 @@ suite("A completed request", () => {
     // `close`), the only listener of its release
     ["cancelled", "cancelled with a destroy that does not complete", "400 400"],
   ] as const) {
-    test(`is not kept by a Readable ${how} that the application keeps: its send leaves none of its listeners`, () => {
-      // 400 sources
-      deepStrictEqual(retained("native-retention.ts", mode), {
-        status: 0,
-        stdout: `collected 0 0 ${guards}\n`,
-        stderr: "",
+    for (const binding of ["unbound", "bound"] as const) {
+      const bound =
+        binding === "bound"
+          ? ", whose listeners are bound as by OpenTelemetry (wrapped by its own `on()`, found by its own `removeListener()`),"
+          : "";
+      test(`is not kept by a Readable ${how}${bound} that the application keeps: its send leaves none of its listeners`, () => {
+        // 400 sources
+        deepStrictEqual(retained("native-retention.ts", mode, binding), {
+          status: 0,
+          stdout: `collected 0 0 ${guards}\n`,
+          stderr: "",
+        });
       });
-    });
+    }
   }
 
   test("that waits for the response before it, sealed, is finalized and collected once its client goes away", () => {

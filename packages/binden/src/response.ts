@@ -446,7 +446,23 @@ interface IObserver {
  */
 interface IListening {
   on(event: string, listener: (...args: never[]) => void): IListening;
-  once(event: string, listener: (...args: never[]) => void): IListening;
+}
+
+/**
+ * The method that removes a listener that a send has added to a Node.js
+ * `Readable` by its own `on()` (see `BindenResponse.#pipe()`): its own
+ * `removeListener()`, or else its own `off()`, which pairs with that `on()`
+ * (e.g. finds the listener that a wrapping `on()` has added in its place),
+ * or else the one of `EventEmitter`
+ */
+function removerOf(source: Readable): (...args: unknown[]) => unknown {
+  for (const name of ["removeListener", "off"]) {
+    const method: unknown = Reflect.get(source, name);
+    if (typeof method === "function") {
+      return method as (...args: unknown[]) => unknown;
+    }
+  }
+  return emitterMethods.remove;
 }
 
 /** The pipe whose adopted `data` listener runs now (see `destroy()`) */
@@ -3045,13 +3061,16 @@ export class BindenResponse<
    * the reason at once, and its source is released.
    *
    * Once the send has settled (sent, failed or cancelled), every listener
-   * that it has added to the source (its once listeners of `end` and `close`
-   * too, which a source that has ended or closed before never runs) and
-   * every observer of the response is removed, so that a source that the
-   * application keeps holds nothing of the response, and the listeners of
-   * the application stay. The guard of the source listens before, and
-   * reports a late error of it (e.g. of a destroy by `autoDestroy` that fails
-   * after its end).
+   * that it has added to the source (by its own `on()`, also of `end` and
+   * `close`, which a source that has ended or closed before never emits) is
+   * removed by its own `removeListener()` (or `off()`), which pairs with
+   * that `on()` (e.g. one that wraps them, such as the `context.bind()` of
+   * OpenTelemetry), and every observer of the response is removed, so that
+   * a source that the application keeps holds nothing of the response, and
+   * the listeners of the application stay. The guard of the source listens
+   * before, and reports a late error of it (e.g. of a destroy by
+   * `autoDestroy` that fails after its end); a removal that throws is
+   * logged (`debug`).
    */
   #pipe(data: Readable): Promise<void> {
     if (!data.readableEnded && data.destroyed) {
@@ -3106,7 +3125,14 @@ export class BindenResponse<
       const unlisten = (): void => {
         guard(data, emitterMethods, this.#report(), hasClosed(data));
         for (const [event, listener] of listeners) {
-          Reflect.apply(emitterMethods.remove, data, [event, listener]);
+          try {
+            Reflect.apply(removerOf(data), data, [event, listener]);
+          } catch (error: unknown) {
+            // Its guard keeps it harmless: once the send has settled, its
+            // listeners change nothing of the response
+            const message = "The removal of a listener of a stream has failed";
+            this.#ownership.debug(message, error);
+          }
         }
         for (const dispose of [...finishing, ...observers]) {
           dispose();
@@ -3220,15 +3246,16 @@ export class BindenResponse<
         }
       });
       observers.add(unclose);
-      /** Adds the listeners of the send to the source, and records them */
+      /**
+       * Adds the listeners of the send to the source by its own `on()`, and
+       * records them, so that its own `removeListener()` removes them (see
+       * `unlisten`): never by `once()`, whose wrapper the `removeListener()`
+       * of a source whose `on()` wraps its listeners (e.g. the
+       * `context.bind()` of OpenTelemetry) would not find
+       */
       const listening: IListening = {
         on: (event, listener) => {
           data.on(event, listener as IListener);
-          listeners.push([event, listener]);
-          return listening;
-        },
-        once: (event, listener) => {
-          data.once(event, listener as IListener);
           listeners.push([event, listener]);
           return listening;
         },
@@ -3274,7 +3301,7 @@ export class BindenResponse<
             }
           });
         })
-        .once("end", () => {
+        .on("end", () => {
           operation.run(end);
         })
         // Every error (also one emitted while the source is destroyed later)
@@ -3283,7 +3310,7 @@ export class BindenResponse<
             fail(error);
           });
         })
-        .once("close", () => {
+        .on("close", () => {
           // Destroyed without an error before its end
           if (!closed && !data.readableEnded && data.errored === null) {
             operation.run(() => {
