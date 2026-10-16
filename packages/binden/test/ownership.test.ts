@@ -1213,6 +1213,74 @@ suite("Ownership of the response once the exchange is sealed", () => {
       });
     }
 
+    /**
+     * The stack leaves a `sendFile()` (whose file is read) and a send of a
+     * stream (whose first chunk has not come) pending, without awaiting them,
+     * and fails: an error handler that fails (`expired`: times out) cancels
+     * them, and its `500` replaces them. Their reasons.
+     */
+    const danglingCancelledBy = async (
+      failure: { error: unknown } | "expired",
+    ): Promise<unknown[][]> => {
+      const released = gate();
+      const handles = delay({ stating: released.promise });
+      const settled = Promise.withResolvers<unknown[][]>();
+      await withApp(
+        {
+          error_handler_timeout: 50,
+          error_handler: async (): Promise<void> => {
+            if (failure === "expired") {
+              await never();
+            } else {
+              await sleep(10);
+              throw failure.error;
+            }
+          },
+        },
+        (app) => {
+          app.use(async (context: Context) => {
+            Promise.all([
+              settledAs(context.response.sendFile(file)),
+              settledAs(context.response.send(silent())),
+            ]).then(settled.resolve, settled.reject);
+            // Once its file is read
+            await sleep(10);
+            throw new Error("The stack has failed");
+          });
+        },
+        async ({ port }) => {
+          const received = await fetch(port);
+          deepStrictEqual([received.status, received.body], [500, ""]);
+        },
+      );
+      const outcomes = await within(settled.promise);
+      released.open();
+      await within(closed(handles));
+      return outcomes;
+    };
+
+    test("left pending by the stack, cancelled by an error handler that fails: it rejects with its failure, as the send of a stream, and the 500 is replied", async () => {
+      const failure = new Error("The error handler has failed");
+      deepStrictEqual(await danglingCancelledBy({ error: failure }), [
+        ["rejected", failure],
+        ["rejected", failure],
+      ]);
+    });
+
+    test("left pending by the stack, cancelled by an error handler that times out: it rejects with its time out, as the send of a stream, and the 500 is replied", async () => {
+      const outcomes = await danglingCancelledBy("expired");
+      deepStrictEqual(
+        outcomes.map(([outcome, reason]) => {
+          ok(reason instanceof BindenError);
+          return [outcome, reason.status, reason.code];
+        }),
+        [
+          ["rejected", 500, "error_handler_timeout"],
+          ["rejected", 500, "error_handler_timeout"],
+        ],
+      );
+    });
+
     test("cancelled by a pipe of the stack that fails with `null`: it rejects with it, as its send of a stream, and the 500 is replied", async () => {
       const released = gate();
       // Awaited (by `open()`) once the file is being opened
