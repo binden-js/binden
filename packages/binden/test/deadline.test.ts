@@ -1065,46 +1065,54 @@ suite("A complete reply that waits for the response before it", () => {
     }
   });
 
-  test("is not a complete reply that has its connection, which a pipe failure of its stack still cuts", async () => {
-    const captured = capture();
-    const size = 8 * 1024 * 1024;
-    const app = new Binden({ logger: captured.logger }).use(
-      async (context: Context) => {
-        const { response } = context;
-        const source = new PassThrough();
-        source.pipe(response);
-        // Once the pipe has ended the response, which the client does not
-        // read yet
-        source.once("end", () => {
-          throw new Error("A listener of the end has failed");
-        });
-        source.end(Buffer.alloc(size, "a"));
-        await once(response, "close");
-      },
-    );
-    const listening = await listen(app);
-    const socket = connect(listening.port, "localhost");
-    try {
-      await once(socket, "connect");
-      socket.pause();
-      socket.write("GET / HTTP/1.1\r\nHost: a\r\n\r\n");
-      await captured.waitFor(
-        "A pipe into the response has failed once its headers were sent. Destroying the socket",
+  test(
+    "is not a complete reply that has its connection, which a pipe failure of its stack still cuts",
+    {
+      // Windows takes a whole write while its send buffer has room: the reply
+      // has finished before the pipe fails, so that there is nothing to cut
+      skip: process.platform === "win32",
+    },
+    async () => {
+      const captured = capture();
+      const size = 8 * 1024 * 1024;
+      const app = new Binden({ logger: captured.logger }).use(
+        async (context: Context) => {
+          const { response } = context;
+          const source = new PassThrough();
+          source.pipe(response);
+          // Once the pipe has ended the response, which the client does not
+          // read yet
+          source.once("end", () => {
+            throw new Error("A listener of the end has failed");
+          });
+          source.end(Buffer.alloc(size, "a"));
+          await once(response, "close");
+        },
       );
-      let received = 0;
-      socket.on("data", (chunk: Buffer) => {
-        received += chunk.length;
-      });
-      socket.resume();
-      // Closed, not kept alive
-      await within(once(socket, "close"));
-      // Truncated, but where the socket takes the whole write (Windows)
-      ok(received < size || process.platform === "win32", `${received}`);
-    } finally {
-      socket.destroy();
-      await listening.close();
-    }
-  });
+      const listening = await listen(app);
+      const socket = connect(listening.port, "localhost");
+      try {
+        await once(socket, "connect");
+        socket.pause();
+        socket.write("GET / HTTP/1.1\r\nHost: a\r\n\r\n");
+        await captured.waitFor(
+          "A pipe into the response has failed once its headers were sent. Destroying the socket",
+        );
+        let received = 0;
+        socket.on("data", (chunk: Buffer) => {
+          received += chunk.length;
+        });
+        socket.resume();
+        // Closed, not kept alive
+        await within(once(socket, "close"));
+        // Truncated
+        ok(received < size, `${received}`);
+      } finally {
+        socket.destroy();
+        await listening.close();
+      }
+    },
+  );
 
   test("is not a reply that has only started, which is still cut at its deadline", async () => {
     const { app, captured, closed } = queued(
