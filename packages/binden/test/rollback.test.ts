@@ -221,13 +221,8 @@ suite("A head that Node.js refuses", () => {
         response.write(big);
         response.end();
       },
-      // The `304` of the dynamic `ETag`
-      "not-modified": async (context) => {
-        context.response.setHeader("Trailer", "X-T");
-        await context.text(big);
-      },
     };
-    const app = new Binden({ etag: true }).use(async (context: Context) => {
+    const app = new Binden().use(async (context: Context) => {
       const reply = replies[context.url.pathname.slice(1)];
       if (typeof reply === "undefined") {
         await context.text("next");
@@ -239,7 +234,7 @@ suite("A head that Node.js refuses", () => {
     try {
       // HTTP/1.1 chunks a body without a length (with its trailers)
       const refused: [string, string[]][] = [
-        ["1.1", ["length", "not-modified"]],
+        ["1.1", ["length"]],
         ["1.0", Object.keys(replies)],
       ];
       for (const [version, paths] of refused) {
@@ -248,7 +243,7 @@ suite("A head that Node.js refuses", () => {
           const keep = version === "1.0" ? "Connection: keep-alive\r\n" : "";
           const data = await converse(
             listening.port,
-            `GET /${path} HTTP/${version}\r\nHost: a\r\n${keep}If-None-Match: *\r\n\r\n` +
+            `GET /${path} HTTP/${version}\r\nHost: a\r\n${keep}\r\n` +
               `GET /next HTTP/${version}\r\nHost: a\r\n${keep}\r\n` +
               "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
           );

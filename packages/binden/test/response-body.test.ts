@@ -410,6 +410,118 @@ suite("BindenResponse (bodies)", () => {
     ok(!response.headersSent);
   });
 
+  test("a reply without a body has no `Trailer`, which Node.js refuses without chunks", async () => {
+    const trailer = (response: BindenResponse): BindenResponse =>
+      response.setHeader("Trailer", "X-T");
+    const stream = (): Readable => Readable.from(["abc"]);
+    const file = import.meta.filename;
+    /** Replies, the method of their request, and the status and the body that they get */
+    const cases: [
+      string,
+      (response: BindenResponse) => Promise<unknown>,
+      string,
+      number,
+      string,
+    ][] = [
+      // Chunked: with its trailers
+      [
+        "stream",
+        async (r): Promise<void> => {
+          trailer(r).addTrailers({ "X-T": "1" });
+          await r.send(stream());
+        },
+        "GET",
+        200,
+        "abc",
+      ],
+      [
+        "stream",
+        async (r): Promise<unknown> => trailer(r).send(stream()),
+        "HEAD",
+        200,
+        "",
+      ],
+      [
+        "empty",
+        async (r): Promise<unknown> => trailer(r).send(),
+        "HEAD",
+        200,
+        "",
+      ],
+      [
+        "bytes",
+        async (r): Promise<unknown> => trailer(r).send("abc"),
+        "HEAD",
+        200,
+        "",
+      ],
+      [
+        "304",
+        async (r): Promise<unknown> => trailer(r).status(304).send(),
+        "GET",
+        304,
+        "",
+      ],
+      [
+        "204 stream",
+        async (r): Promise<unknown> => trailer(r).status(204).send(stream()),
+        "GET",
+        204,
+        "",
+      ],
+      [
+        "205",
+        async (r): Promise<unknown> => trailer(r).status(205).send("abc"),
+        "GET",
+        205,
+        "",
+      ],
+      [
+        "file",
+        async (r): Promise<unknown> => trailer(r).sendFile(file),
+        "HEAD",
+        200,
+        "",
+      ],
+      [
+        "204 file",
+        async (r): Promise<unknown> => trailer(r).status(204).sendFile(file),
+        "GET",
+        204,
+        "",
+      ],
+    ];
+    for (const [name, handler, method, status, body] of cases) {
+      const received = await reply(handler, { method });
+      const key = `${method} ${name}`;
+      deepStrictEqual(
+        [received.status, received.body.toString()],
+        [status, body],
+        key,
+      );
+      deepStrictEqual(
+        received.headers.trailer,
+        status === 200 && method === "GET" ? "X-T" : none,
+        key,
+      );
+    }
+    // The `304` of the dynamic `ETag`, and of a file
+    const headers = { "If-None-Match": "*" };
+    const notModified = [
+      await reply(
+        async (r): Promise<unknown> => trailer(r).send("abc"),
+        { headers },
+        true,
+      ),
+      await reply(async (r): Promise<unknown> => trailer(r).sendFile(file), {
+        headers,
+      }),
+    ];
+    for (const received of notModified) {
+      deepStrictEqual([received.status, received.headers.trailer], [304, none]);
+    }
+  });
+
   test(".type() accepts only parameters of a token and a token or a quoted string", () => {
     const response = new BindenResponse(new IncomingMessage(new Socket()));
     for (const [valid, expected] of [

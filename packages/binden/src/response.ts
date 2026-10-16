@@ -2109,7 +2109,8 @@ export class BindenResponse<
    */
   #endNotModified(length: number): Promise<void> {
     this.statusCode = 304;
-    this.#remove("Transfer-Encoding", ...contentDigests);
+    // Without the trailers of the body (see `#frame()`)
+    this.#remove("Transfer-Encoding", "Trailer", ...contentDigests);
     this.setHeader("Content-Length", length);
     return this.#end();
   }
@@ -2294,13 +2295,20 @@ export class BindenResponse<
    * with the `length` of its body (`null` when it is not known): a stale
    * `Content-Length` or `Transfer-Encoding` (e.g. of a body that an error
    * replaced) would make the client wait for bytes that never come, or read
-   * the next response of the connection as this body.
+   * the next response of the connection as this body. A response without a
+   * body has no `Trailer` either (e.g. one set for the chunked body of `GET`).
    */
   #frame(length: number | null): void {
     const { statusCode } = this;
     if (this.headersSent) {
       return;
-    } else if (statusCode === 205) {
+    } else if (this.#bodiless()) {
+      // Nor the trailers of a body, which Node.js refuses without chunks
+      // (also to `HEAD`, which may omit the fields that only generating the
+      // content determines, RFC 9110, section 9.3.2)
+      this.#remove("Trailer");
+    }
+    if (statusCode === 205) {
       // No content, framed as such (RFC 9110, section 15.3.6)
       this.#remove("Transfer-Encoding");
       this.setHeader("Content-Length", 0);
