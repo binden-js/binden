@@ -1692,18 +1692,47 @@ export class BindenResponse<
    * of the framework. With an error while an adopted pipe writes (see
    * `#adopt()`), it is the `data` listener of the pipe that catches a write
    * that throws (e.g. for a head that Node.js refuses): the pipe fails
-   * instead (see `#pipeFailed()`), so that its work gets the error.
+   * instead (see `#pipeFailed()`), so that its work gets the error. So does
+   * a destroy by an error handler that its pipe guards (see `#guarded()`),
+   * with its error (or `ERR_STREAM_PREMATURE_CLOSE`).
    */
   public override destroy(error?: Error): this {
     const marker = this.#marker;
+    const owner = owners.getStore();
     if (
       marker !== null &&
       typeof error !== "undefined" &&
       this.#pipeFailed(marker.owner, error, marker.source)
     ) {
       return this;
+    } else if (
+      this.#guarded(owner) &&
+      this.#pipeFailed(owner, error ?? BindenResponse.#premature(), null)
+    ) {
+      return this;
     }
     return this.#allows() ? super.destroy(error) : this;
+  }
+
+  /**
+   * Whether a `destroy()` of the current work is a failure of its pipe: the
+   * work of an error handler (see `IOwnership.guards()`) that may mutate
+   * the response, with a pipe of its own that is adopted now, before the
+   * headers are committed (e.g. `pipeline(head, transform, response)`, whose
+   * callbacks run as the handler, destroys the response for a failure of its
+   * head). Never a destroy of the framework, nor of a response that the
+   * transport has closed (e.g. the client has gone away).
+   */
+  #guarded(owner: object | undefined): owner is object {
+    return (
+      typeof owner !== "undefined" &&
+      !this.headersSent &&
+      !this.destroyed &&
+      !forced(this) &&
+      this.#ownership.guards(owner) &&
+      this.#allows(owner) &&
+      (this.#sources.get(owner)?.size ?? 0) > 0
+    );
   }
 
   /**

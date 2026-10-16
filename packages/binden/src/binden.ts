@@ -1002,7 +1002,7 @@ export class Binden<
           unfinished,
           this.#failure(context, error, "error_handler"),
         );
-        response.destroy();
+        response[kFramework](() => response.destroy());
         return;
       }
       const ignored = "The provided `error_handler` has not replied";
@@ -1167,7 +1167,7 @@ export class Binden<
       const started =
         "The request has failed once its response was started. Destroying the socket";
       context.log[level](started, extra);
-      response.destroy();
+      response[kFramework](() => response.destroy());
       return;
     }
     context.log[level]("The request has failed", extra);

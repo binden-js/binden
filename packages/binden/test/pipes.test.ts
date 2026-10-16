@@ -4,6 +4,7 @@ import {
   BindenResponse,
   type Context,
   type IBindenOptions,
+  shutdown,
 } from "../index.js";
 import { EventEmitter, once } from "node:events";
 import {
@@ -15,7 +16,14 @@ import {
   sleep,
   within,
 } from "./helpers.js";
-import { PassThrough, Readable, Stream, finished, pipeline } from "node:stream";
+import {
+  PassThrough,
+  Readable,
+  Stream,
+  Transform,
+  finished,
+  pipeline,
+} from "node:stream";
 import { Socket, connect } from "node:net";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { kListen, kOwnership, owners } from "../src/seal.js";
@@ -1524,6 +1532,332 @@ suite("A pipe into the response", () => {
       });
     },
   );
+
+  suite("of an error handler, destroyed by its own pipe (its failure)", () => {
+    /** A transform that passes its chunks */
+    const passing = (): Transform =>
+      new Transform({
+        transform(chunk: Buffer, _encoding, callback): void {
+          callback(null, chunk);
+        },
+      });
+
+    /**
+     * The reply of an error handler that runs `handle`, for a `409` (or only
+     * for the deadline, with `timeout`, unless `throws`: the stack hangs)
+     */
+    const handled = async (
+      handle: (context: Context, error: unknown) => Promise<void>,
+      options: IBindenOptions = {},
+      throws = typeof options.timeout === "undefined",
+    ): Promise<{ reply: IRaw; captured: ICaptured }> => {
+      let result: { reply: IRaw; captured: ICaptured } | null = null;
+      await withApp(
+        { error_handler_timeout: 2000, ...options, error_handler: handle },
+        (app) => {
+          app.use(async () => {
+            if (throws) {
+              throw new BindenError(409);
+            }
+            await never();
+          });
+        },
+        async ({ port }, captured) => {
+          result = { reply: await exchange(port, { linger: 40 }), captured };
+        },
+      );
+      return result as unknown as { reply: IRaw; captured: ICaptured };
+    };
+
+    for (const form of ["pipe", "pipeline", "pipeline of 3 streams"]) {
+      for (const committed of [false, true]) {
+        for (const error of [true, false]) {
+          test(`its ${form}, whose source ${error ? "fails" : "closes"} ${committed ? "after" : "before"} its first chunk: ${committed ? "the connection is closed" : "500"}`, async () => {
+            const settled = Promise.withResolvers<unknown>();
+            const { reply } = await handled(
+              async (context, failure) => {
+                if (!isDeadline(failure)) {
+                  return;
+                }
+                context.response.status(503);
+                const source = new PassThrough();
+                const { response } = context;
+                if (form === "pipe") {
+                  source.pipe(response);
+                  settled.resolve(null);
+                } else {
+                  const piped =
+                    form === "pipeline"
+                      ? pipelineAsync(source, response)
+                      : pipelineAsync(source, passing(), response);
+                  piped.catch((rejection: unknown) => {
+                    const { code, message } = rejection as Error & {
+                      code?: string;
+                    };
+                    settled.resolve(code ?? message);
+                  });
+                }
+                // Of a work of no request
+                owners.exit(() => {
+                  setTimeout(() => {
+                    if (committed) {
+                      source.write("abc");
+                    }
+                    setTimeout(() => {
+                      if (error) {
+                        source.destroy(new Error("boom"));
+                      } else {
+                        source.destroy();
+                      }
+                    }, 10);
+                  }, 5);
+                });
+                await never();
+              },
+              { timeout: 20 },
+            );
+            if (committed) {
+              deepStrictEqual(
+                [reply.status, reply.complete, reply.closed],
+                [503, false, true],
+              );
+            } else {
+              deepStrictEqual(
+                [reply.status, reply.complete, reply.closed],
+                [500, true, false],
+              );
+              deepStrictEqual(reply.raw.match(/HTTP\/1\.1/gu)?.length, 1);
+            }
+            if (form !== "pipe") {
+              // The original error
+              deepStrictEqual(
+                await within(settled.promise),
+                error ? "boom" : "ERR_STREAM_PREMATURE_CLOSE",
+              );
+            }
+          });
+        }
+      }
+    }
+
+    test("a pipeline of the stack whose source closes before the headers: as Node.js, the response is destroyed", async () => {
+      const settled = Promise.withResolvers<unknown>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            const source = new PassThrough();
+            pipelineAsync(source, passing(), context.response).catch(
+              (error: unknown) => {
+                settled.resolve((error as { code?: string }).code);
+              },
+            );
+            owners.exit(() => {
+              setTimeout(() => {
+                source.destroy();
+              }, 10);
+            });
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.closed], [null, true]);
+          deepStrictEqual(
+            await within(settled.promise),
+            "ERR_STREAM_PREMATURE_CLOSE",
+          );
+        },
+      );
+    });
+
+    test("its pipeline of a head destroyed before: 500", async () => {
+      const settled = Promise.withResolvers<unknown>();
+      const { reply } = await handled(async (context) => {
+        const head = new PassThrough();
+        head.destroy();
+        pipelineAsync(head, passing(), context.response).catch(
+          (failure: unknown) => {
+            settled.resolve((failure as { code?: string }).code);
+          },
+        );
+        await never();
+      });
+      deepStrictEqual(
+        [reply.status, reply.complete, reply.closed],
+        [500, true, false],
+      );
+      deepStrictEqual(
+        await within(settled.promise),
+        "ERR_STREAM_PREMATURE_CLOSE",
+      );
+    });
+
+    for (const which of ["of a work of no request", "of its own, unpiped"]) {
+      test(`a destroy while only a pipe ${which} is adopted: the connection is closed`, async () => {
+        const { reply, captured } = await handled(async (context) => {
+          const { response } = context;
+          const source = new PassThrough();
+          if (which === "of a work of no request") {
+            owners.exit(() => {
+              source.pipe(response);
+            });
+          } else {
+            source.pipe(response, { end: false });
+            source.end();
+            await once(source, "end");
+          }
+          await sleep(5);
+          response.destroy(new Error("Destroyed by the handler"));
+          await never();
+        });
+        deepStrictEqual([reply.status, reply.closed], [null, true]);
+        deepStrictEqual(messages(captured, 50), []);
+      });
+    }
+
+    test("a destroy of the response by the error handler while its pipe is adopted: 500", async () => {
+      const outcome = Promise.withResolvers<unknown>();
+      const { reply } = await handled(async (context) => {
+        const { response } = context;
+        new PassThrough().pipe(response);
+        finished(response, (error) => {
+          outcome.resolve(error?.code);
+        });
+        await sleep(5);
+        response.destroy();
+        await never();
+      });
+      deepStrictEqual(
+        [reply.status, reply.complete, reply.closed],
+        [500, true, false],
+      );
+      deepStrictEqual(
+        await within(outcome.promise),
+        "ERR_STREAM_PREMATURE_CLOSE",
+      );
+    });
+
+    test("a destroy of the response by the error handler once its pipe has committed the headers: not a failure", async () => {
+      const { reply, captured } = await handled(async (context) => {
+        const { response } = context;
+        const source = new PassThrough();
+        source.pipe(response);
+        source.write("abc");
+        await sleep(10);
+        response.destroy();
+        await never();
+      });
+      deepStrictEqual(
+        [reply.status, reply.complete, reply.closed],
+        [200, false, true],
+      );
+      deepStrictEqual(messages(captured, 50), []);
+    });
+
+    test("a destroy of an error handler that has been superseded changes nothing", async () => {
+      const { reply, captured } = await handled(
+        async (context, error) => {
+          if (isDeadline(error)) {
+            await sleep(60);
+            await context.status(503).send("deadline");
+            return;
+          }
+          const { response } = context;
+          pipelineAsync(new PassThrough(), passing(), response).catch(
+            () => null,
+          );
+          // Once the deadline has passed (and its work has been told), with
+          // a pipe of its own
+          await sleep(40);
+          new PassThrough().pipe(response);
+          response.destroy();
+          await never();
+        },
+        { timeout: 20 },
+        true,
+      );
+      deepStrictEqual(
+        [reply.status, reply.body, reply.complete, reply.closed],
+        [503, "deadline", true, false],
+      );
+      ok(
+        !messages(captured, 20).includes(
+          "A pipe of an abandoned work has failed",
+        ),
+      );
+    });
+
+    test("its pipe that the framework destroys (it has not ended its reply): the connection is closed", async () => {
+      const { reply, captured } = await handled(async (context) => {
+        // Settles without ending its reply
+        new PassThrough().pipe(context.response, { end: false });
+        await sleep(5);
+      });
+      deepStrictEqual([reply.status, reply.closed], [null, true]);
+      await captured.waitFor(
+        "The provided `error_handler` has not ended its reply. Destroying the socket",
+      );
+    });
+
+    for (const how of ["the client goes away", "a shutdown"]) {
+      test(`its pipeline once ${how}: the transport closes it, as with Node.js`, async () => {
+        const settled = Promise.withResolvers<unknown>();
+        const piping = Promise.withResolvers<unknown>();
+        await withApp(
+          {
+            error_handler: async (context: Context): Promise<void> => {
+              const { response } = context;
+              // Before the listeners of the pipe: while it is adopted
+              response.on("close", () => {
+                response.destroy();
+              });
+              try {
+                const piped = pipelineAsync(
+                  new PassThrough(),
+                  passing(),
+                  response,
+                );
+                piping.resolve(null);
+                await piped;
+              } catch (failure: unknown) {
+                settled.resolve((failure as { code?: string }).code);
+              }
+            },
+          },
+          (app) => {
+            app.use(() => {
+              throw new BindenError(409);
+            });
+          },
+          async ({ port, server }, captured) => {
+            const socket = connect(port, "localhost");
+            await once(socket, "connect");
+            socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            await within(piping.promise);
+            if (how === "a shutdown") {
+              await shutdown(server, { timeout: 10 });
+            } else {
+              socket.destroy();
+            }
+            deepStrictEqual(
+              await within(settled.promise),
+              "ERR_STREAM_PREMATURE_CLOSE",
+            );
+            await sleep(20);
+            socket.destroy();
+            // Not a failure of the handler (as a failed pipe)
+            ok(
+              !messages(captured, 50).includes(
+                "The provided `error_handler` has failed",
+              ),
+              JSON.stringify(captured.records),
+            );
+          },
+        );
+      });
+    }
+  });
 
   suite("transfer once its work is abandoned", () => {
     /**
