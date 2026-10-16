@@ -204,32 +204,38 @@ behaviours of Node.js:
   (`context.send(new Readable().wrap(stream))`). A legacy pipe of a work of no request (or of
   another request), which has no `unpipe()`, cannot be dismantled: it is left to Node.js, with a
   warning, and writes as the work that feeds it.
-- **A pipe that binden cannot attribute is refused** the same way: while the response or the
-  source has listeners of `newListener` or `removeListener`, when the source is a `Proxy` or has
-  its own listener methods, `emit()`, `pipe()`, `unpipe()`, `pause()`, `resume()`, `read()`,
+- **A pipe that binden cannot attribute is refused** the same way: while the response or the source
+  has listeners of `newListener` or `removeListener`, when the source is a `Proxy` or has its own
+  listener methods, `emit()`, `pipe()`, `unpipe()`, `pause()`, `resume()`, `read()`,
   `rawListeners()`, `listeners()`, `listenerCount()`, `removeListener()`, `off()` or
-  `removeAllListeners()` (e.g. patched on an instance), an accessor of its own of one of them or of
-  `_readableState`, `_writableState`, `_events`, `_eventsCount`, `_maxListeners`, `readableEnded` or
-  `destroyed`, or when it is not extensible
+  `removeAllListeners()` (e.g. patched on an instance; a pipe of the middleware stack whose source
+  has no method of its own but listener methods is left to Node.js instead, see **OpenTelemetry**
+  below), an accessor of its own of one of them or of `_readableState`, `_writableState`, `_events`,
+  `_eventsCount`, `_maxListeners`, `readableEnded` or `destroyed`, or when it is not extensible
   (`Object.seal()`; Node.js itself cannot pipe a frozen stream). The class of the source (also of
-  `readable-stream`) is trusted: piping a stream that another work has patched (its class, or its
-  own methods, which refuse the pipe once it is set up) runs that code as the work that pipes.
+  `readable-stream`) is trusted, with the whole prototype chain of the source, accessors included:
+  only the own properties of the source are checked. Piping a stream that another work has patched
+  (its class, any prototype of its chain, e.g. one inserted with `Object.setPrototypeOf()`, with its
+  methods or accessors, or its own methods, which refuse the pipe once it is set up) runs that code
+  as the work that pipes.
 - **OpenTelemetry**: its `http` instrumentation binds every request and client response to its
   context (`context.bind()`: listener methods of their own). A native pipe of such a stream by a
   middleware (e.g. `request.pipe(response)` or `upstream.pipe(response)`, also through
-  `stream.pipeline()`) is left to Node.js, as without binden; but any revocation of the stack
-  during it (its deadline, or the failure of a pipe of its own) closes the connection instead of
-  replying `503` (or `500`) unless its response has ended, also once the stream has ended (e.g.
-  piped with `{ end: false }`). In an error handler, such a pipe is refused (`500`). Send such a
-  stream with `context.send(stream)` (or pipe `new Readable().wrap(stream)`), which keeps those
-  replies.
+  `stream.pipeline()`) is left to Node.js, as without binden: a write or an end of the response that
+  throws in it is not caught (it is thrown out of the events of the stream, as with Node.js: e.g. an
+  uncaught exception for a head that Node.js refuses), and any revocation of the stack during it
+  (its deadline, or the failure of a pipe of its own) closes the connection instead of replying
+  `503` (or `500`) unless its response has ended, also once the stream has ended (e.g. piped with
+  `{ end: false }`). In an error handler, such a pipe is refused (`500`). Send such a stream with
+  `context.send(stream)` (or pipe `new Readable().wrap(stream)`), which keeps those replies and
+  fails the work for those throws.
 - **A pipe whose write or end throws fails its work** (e.g. a reason phrase or a `Trailer` that
-  Node.js refuses): instead of a destroyed response (or a crash, from its end), the error handler
-  replies before the headers, and the connection is closed afterwards; `stream.pipeline()` rejects
-  with the error. A source piped by an error handler that errors or closes before its end fails
-  the handler at once, as does a destroy of the response by its `stream.pipeline()` before the
-  headers (also when one of its streams fails from a timer of no request): `500`, not a closed
-  connection.
+  Node.js refuses; not a pipe left to Node.js, see **OpenTelemetry** above): instead of a destroyed
+  response (or a crash, from its end), the error handler replies before the headers, and the
+  connection is closed afterwards; `stream.pipeline()` rejects with the error. A source piped by an
+  error handler that errors or closes before its end fails the handler at once, as does a destroy of
+  the response by its `stream.pipeline()` before the headers (also when one of its streams fails
+  from a timer of no request): `500`, not a closed connection.
 - A listener added to the source in the turn of its pipe runs as the work that has added it
   (e.g. one added by a listener of `pipe` of another work gets no rights from the pipe); one added
   later runs as the work that emits its event.
