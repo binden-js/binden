@@ -1,13 +1,14 @@
-import { type AddressInfo, connect } from "node:net";
+import { type AddressInfo, Socket, connect } from "node:net";
 import { Binden, BindenResponse, type Context } from "../index.js";
 import {
-  type IncomingMessage,
+  IncomingMessage,
+  OutgoingMessage,
   type Server,
   ServerResponse,
   createServer,
 } from "node:http";
 import { capture, listen, never, sleep, within } from "./helpers.js";
-import { deepStrictEqual, ok, rejects } from "node:assert/strict";
+import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { kFramework } from "../src/seal.js";
 import { once } from "node:events";
@@ -112,6 +113,10 @@ const mismatches: Record<string, (response: ServerResponse) => void> = {
   "write() of a shorter body, then end()": (response) => {
     response.write("a");
     response.end();
+  },
+  "write() of the body, then end() of more": (response) => {
+    response.write("ab");
+    response.end(injected);
   },
   "a second write() past the length": (response) => {
     response.write("ab");
@@ -343,6 +348,116 @@ suite("A write() or an end() that throws once the head is committed", () => {
       ]);
     } finally {
       await listening.close();
+    }
+  });
+
+  test("for a body that the response may not have (to HEAD, or with 204), caught: an end() sends the reply complete, as Node.js", async () => {
+    // `rejectNonStandardBodyWrites`: Node.js generates the head, then throws
+    // `ERR_HTTP_BODY_NOT_ALLOWED`, having queued nothing more
+    const thrown: unknown[] = [];
+    const handler = (
+      request: IncomingMessage,
+      response: ServerResponse,
+    ): void => {
+      if (request.url === "/next") {
+        response.end("next");
+        return;
+      } else if (request.url?.startsWith("/204") === true) {
+        response.statusCode = 204;
+      }
+      try {
+        if (request.url?.endsWith("end") === true) {
+          response.end("body");
+        } else {
+          response.write("body");
+        }
+      } catch (error: unknown) {
+        thrown.push((error as { code?: unknown }).code, response.headersSent);
+      }
+      response.end();
+    };
+    const options = { rejectNonStandardBodyWrites: true };
+    const app = new Binden().use(({ request, response }: Context) => {
+      handler(request, response);
+    });
+    const conversations: IConversation[][] = [];
+    for (const server of [
+      createServer(options, handler),
+      app.createServer(options),
+    ]) {
+      const listening = await serve(server);
+      const replies: IConversation[] = [];
+      try {
+        for (const target of [
+          "HEAD /",
+          "HEAD /end",
+          "GET /204",
+          "GET /204end",
+        ]) {
+          replies.push(
+            await converse(
+              listening.port,
+              `${target} HTTP/1.1\r\nHost: a\r\n\r\n` +
+                "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+            ),
+          );
+        }
+      } finally {
+        await listening.close();
+      }
+      conversations.push(replies);
+    }
+    const [natively, binden] = conversations as [
+      IConversation[],
+      IConversation[],
+    ];
+    deepStrictEqual(binden, natively);
+    // Complete, and the connection is kept for the next response
+    for (const [index, { data, closed }] of binden.entries()) {
+      ok(
+        data.startsWith(
+          index < 2 ? "HTTP/1.1 200 OK\r\n" : "HTTP/1.1 204 No Content\r\n",
+        ) && data.endsWith("\r\nContent-Length: 4\r\n\r\nnext"),
+        data,
+      );
+      ok(closed);
+    }
+    deepStrictEqual(
+      thrown,
+      Array.from({ length: 8 }, () => [
+        "ERR_HTTP_BODY_NOT_ALLOWED",
+        true,
+      ]).flat(),
+    );
+  });
+
+  test("for a chunk that Node.js refuses before it takes it: the response stays usable", () => {
+    // Such checks of binden itself come first (see above): they would leave
+    // the response as it is, also from Node.js once the head is committed
+    const write = Reflect.get(OutgoingMessage.prototype, "write") as unknown;
+    try {
+      for (const code of [
+        "ERR_HTTP_BODY_NOT_ALLOWED",
+        "ERR_INVALID_ARG_TYPE",
+        "ERR_STREAM_NULL_VALUES",
+        "ERR_UNKNOWN_ENCODING",
+        "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
+      ]) {
+        const response = new BindenResponse(new IncomingMessage(new Socket()));
+        response.flushHeaders();
+        Reflect.set(OutgoingMessage.prototype, "write", (): never => {
+          throw Object.assign(new Error(code), { code });
+        });
+        throws(() => response.write("x"), { code });
+        Reflect.set(OutgoingMessage.prototype, "write", write);
+        deepStrictEqual(
+          response.destroyed,
+          code === "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
+          code,
+        );
+      }
+    } finally {
+      Reflect.set(OutgoingMessage.prototype, "write", write);
     }
   });
 

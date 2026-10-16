@@ -76,6 +76,7 @@ import { Exchange } from "./exchange.js";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
 import { parseHttpDate } from "./headers/http-date.js";
+import { property } from "./property.js";
 
 /** The media type of `response.json()` */
 export const ct_json = "application/json";
@@ -295,6 +296,21 @@ const unowned: IOwnership = {
     // Nobody to tell
   },
 };
+
+/**
+ * The codes of the errors that a `write()` or an `end()` of Node.js throws
+ * once the head is committed which leave every byte that it has queued valid
+ * (see `BindenResponse.#stopping()`): a body that the response may not have
+ * (to `HEAD`, or with a 204 or a 304 status, under the
+ * `rejectNonStandardBodyWrites` option of the server), whose output is only
+ * its head, and the checks of a chunk before Node.js takes it
+ */
+const keeping: ReadonlySet<unknown> = new Set([
+  "ERR_HTTP_BODY_NOT_ALLOWED",
+  "ERR_INVALID_ARG_TYPE",
+  "ERR_STREAM_NULL_VALUES",
+  "ERR_UNKNOWN_ENCODING",
+]);
 
 /** The report of a late error of a source of a response that is not owned */
 function unreported(): void {
@@ -1603,13 +1619,18 @@ export class BindenResponse<
    * the error is thrown, so that neither the cork of `end()` nor the one that
    * Node.js releases on the next tick flushes them, and a response that waits
    * for the one before it is cut once its socket comes (see `destroy()`). The
-   * bytes of an earlier write that has been flushed are not recalled.
+   * bytes of an earlier write that has been flushed are not recalled. An error
+   * that leaves what is queued valid (see `keeping`, e.g.
+   * `ERR_HTTP_BODY_NOT_ALLOWED`, which Node.js throws for a body written to
+   * `HEAD` once it has generated the head, and queued nothing more) leaves the
+   * response usable, as Node.js does: an `end()` that follows sends a
+   * complete reply.
    */
   #stopping<T>(fn: () => T): T {
     try {
       return fn();
     } catch (error: unknown) {
-      if (this.#committed()) {
+      if (this.#committed() && !keeping.has(property(error, "code"))) {
         this[kFramework](() => this.destroy());
       }
       throw error;
