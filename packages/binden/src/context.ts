@@ -158,7 +158,8 @@ export class Context<
 
   /**
    * (Re)starts the deadline of the request from now (`0` removes it): once it
-   * has passed, `signal` is aborted with the `deadline` reason
+   * has passed, `signal` is aborted with the `deadline` reason. A work that
+   * may no longer reply (e.g. an abandoned middleware) changes nothing.
    */
   public setTimeout(ms: number): void {
     this.#exchange.setTimeout(ms);

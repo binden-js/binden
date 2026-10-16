@@ -64,6 +64,8 @@ export class Exchange {
   readonly #revoked = new WeakSet<object>();
   /** Settles once the revoked works have been told (see `kRevoke`) */
   #delivered: Promise<void> = Promise.resolve();
+  /** The token of the middleware stack (see `stack()`), once created */
+  #stack: object | null = null;
   #halting = false;
   #phase: IPhase;
   #sealed: boolean;
@@ -323,6 +325,15 @@ export class Exchange {
     return token;
   }
 
+  /**
+   * The token of the middleware stack (see `token()`), created once: the
+   * deadline is dispatched as its work (see `setTimeout()`)
+   */
+  public stack(): object {
+    this.#stack ??= this.token();
+    return this.#stack;
+  }
+
   /** Runs the reply of the framework: the work it starts may reply (see `may_reply`) */
   public reply<T>(fn: () => T): T {
     const reply = this.token();
@@ -375,9 +386,16 @@ export class Exchange {
   /**
    * (Re)starts the deadline of the request from now: the signal is aborted
    * (`deadline`) once `ms` milliseconds have passed. `0` removes the deadline.
+   * Ignored, without checking `ms`, for a work that may no longer reply
+   * (e.g. a stack that has failed): the deadline is of the work that replaces
+   * it. Its abort runs as the work of the stack (see `stack()`), whatever
+   * work has started the deadline: the abort listeners of the stack, and
+   * what they start, are of the abandoned work (see `kRevoke`).
    */
   public setTimeout(ms: number): void {
-    if (!Number.isInteger(ms)) {
+    if (!this.may_reply) {
+      return;
+    } else if (!Number.isInteger(ms)) {
       throw new TypeError("The timeout is not an integer");
     } else if (ms < 0 || ms > MAX_DELAY) {
       throw new RangeError(`The timeout is not between 0 and ${MAX_DELAY}`);
@@ -388,7 +406,12 @@ export class Exchange {
     if (ms > 0 && !this.#controller.signal.aborted) {
       this.#timer = setTimeout(() => {
         this.#timer = null;
-        this.abort("deadline");
+        const stack = this.#stack;
+        if (stack === null) {
+          this.abort("deadline");
+        } else {
+          owners.run(stack, () => this.abort("deadline"));
+        }
       }, ms);
       this.#timer.unref();
     }

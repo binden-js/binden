@@ -420,7 +420,7 @@ export class Binden<
     // status and cookies of the abandoned work do nothing
     response[kSeal]((owner) => exchange.allows(owner));
     const works: IWorks = {
-      stack: exchange.token(),
+      stack: exchange.stack(),
       handlers: new Set(),
       failures: new Map(),
       handled: false,

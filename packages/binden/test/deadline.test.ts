@@ -14,11 +14,12 @@ import {
   capture,
   listen,
   never,
+  send,
   sleep,
   within,
 } from "./helpers.js";
 import { type IncomingMessage, createServer, get } from "node:http";
-import { PassThrough, Readable } from "node:stream";
+import { PassThrough, Readable, finished } from "node:stream";
 import { deepStrictEqual, ok, rejects } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { once } from "node:events";
@@ -758,6 +759,165 @@ suite("The deadline", () => {
       }
     }
   });
+
+  suite("is changed only by the work that may reply", () => {
+    for (const [name, stack, handler, status] of [
+      [
+        "an early `close` listener of the failed stack removes it",
+        (context: Context): void => {
+          context.response.once("close", () => {
+            context.setTimeout(0);
+          });
+        },
+        null,
+        503,
+      ],
+      [
+        "an early `close` listener of the failed stack restarts it",
+        (context: Context): void => {
+          context.response.once("close", () => {
+            context.setTimeout(1000);
+          });
+        },
+        null,
+        503,
+      ],
+      [
+        "a later continuation of the failed stack removes it",
+        (context: Context): void => {
+          setTimeout(() => {
+            context.setTimeout(0);
+          }, 10);
+        },
+        null,
+        503,
+      ],
+      [
+        "the error handler that replaces the stack removes it",
+        null,
+        (context: Context): void => {
+          context.setTimeout(0);
+        },
+        500,
+      ],
+      [
+        "the error handler that replaces the stack restarts it",
+        null,
+        (context: Context): void => {
+          context.setTimeout(150);
+        },
+        500,
+      ],
+    ] as const) {
+      test(`${name}: ${status === 503 ? "ignored" : "applied"}`, async () => {
+        const checked: string[] = [];
+        await withApp(
+          {
+            timeout: 35,
+            error_handler_timeout: 1000,
+            error_handler: async (context: Context, error): Promise<void> => {
+              if (isDeadline(error)) {
+                await context.status(503).send("deadline");
+                return;
+              }
+              handler?.(context);
+              // Slower than the deadline
+              await sleep(75);
+              await context.status(500).send("handler");
+            },
+          },
+          (app) => {
+            app.use(async (context: Context) => {
+              stack?.(context);
+              context.response.once("close", () => {
+                // Not even checked
+                try {
+                  context.setTimeout(-1);
+                  checked.push("ignored");
+                } catch {
+                  checked.push("checked");
+                }
+              });
+              // Refused: the stack fails at once
+              const source = new PassThrough();
+              source.on("newListener", () => null);
+              source.pipe(context.response);
+              await never();
+            });
+          },
+          async ({ port }) => {
+            const reply = await send(port);
+            deepStrictEqual(
+              [reply.status, reply.body],
+              [status, status === 503 ? "deadline" : "handler"],
+            );
+            deepStrictEqual(checked, ["ignored"]);
+          },
+        );
+      });
+    }
+  });
+
+  for (const path of ["the option `timeout`", "`context.setTimeout()`"]) {
+    test(`runs its abort listeners as the abandoned stack, through ${path}`, async () => {
+      const events: string[] = [];
+      const done = Promise.withResolvers<unknown>();
+      await withApp(
+        {
+          timeout: path === "the option `timeout`" ? 30 : 0,
+          error_handler: async (context: Context, error): Promise<void> => {
+            if (!isDeadline(error)) {
+              return;
+            }
+            await sleep(60);
+            events.push("reply");
+            await context.status(503).send("deadline");
+          },
+        },
+        (app) => {
+          app.use(async (context: Context) => {
+            if (path === "`context.setTimeout()`") {
+              context.setTimeout(30);
+            }
+            const { response } = context;
+            context.signal.addEventListener("abort", () => {
+              // Closed for them early, as for the stack
+              response.on("close", () => {
+                events.push("sync");
+              });
+              setImmediate(() => {
+                response.on("close", () => {
+                  events.push("immediate");
+                });
+              });
+              setTimeout(() => {
+                response.on("close", () => {
+                  events.push("later");
+                });
+                finished(response, (error) => {
+                  events.push(`finished ${String(error?.code)}`);
+                  done.resolve(null);
+                });
+              }, 15);
+            });
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const reply = await send(port);
+          deepStrictEqual([reply.status, reply.body], [503, "deadline"]);
+          await within(done.promise);
+          deepStrictEqual(events, [
+            "sync",
+            "immediate",
+            "later",
+            "finished ERR_STREAM_PREMATURE_CLOSE",
+            "reply",
+          ]);
+        },
+      );
+    });
+  }
 });
 
 suite("A complete reply that waits for the response before it", () => {
