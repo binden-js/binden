@@ -12,6 +12,7 @@ import {
 } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import { Compression } from "../index.js";
+import type { Socket } from "node:net";
 import { deepStrictEqual } from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import zlib from "node:zlib";
@@ -397,10 +398,17 @@ suite("A refused head leaves nothing of the attempt", () => {
         const { response } = context;
         context.done = true;
         response.type("text/plain");
+        // Node.js corks the socket once it has committed the head of a write
+        // (binden checks the chunk and its encoding before, so that no
+        // argument makes Node.js throw after the head any more)
+        (response.socket as Socket).cork = (): void => {
+          throw Object.assign(new Error("After the head"), {
+            code: "E_AFTER_HEAD",
+          });
+        };
         try {
-          // As it is (without `Accept-Encoding`): Node.js sends the head,
-          // then refuses the encoding of the chunk
-          response.write("x", "unknown" as BufferEncoding);
+          // As it is (without `Accept-Encoding`)
+          response.write("x");
         } catch (error: unknown) {
           resolve([
             (error as { code?: unknown }).code,
@@ -417,7 +425,7 @@ suite("A refused head leaves nothing of the attempt", () => {
     );
 
     deepStrictEqual(await within(thrown), [
-      "ERR_UNKNOWN_ENCODING",
+      "E_AFTER_HEAD",
       true,
       "Accept-Encoding",
     ]);

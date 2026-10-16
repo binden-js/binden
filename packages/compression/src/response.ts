@@ -3,11 +3,14 @@ import {
   type BindenResponse,
   ContentType,
   type Context,
+  type IFramingState,
   type IRepresentation,
   type IResponseOperation,
   bodyHeaders,
   kNegotiator,
   kOperation,
+  kRestoreFraming,
+  kSaveFraming,
   kValidateHead,
 } from "binden";
 import {
@@ -64,42 +67,6 @@ type ISink = "as_is" | "compressor" | "discard" | "pending";
 type IResponse = BindenResponse<BindenRequest>;
 
 type ICallback = (error?: Error | null) => void;
-
-/** The names of the headers of a message as they are set (in their order) */
-interface IRawNames {
-  getRawHeaderNames(): string[];
-}
-
-/** A response before an attempt to commit its headers (see `#commit()`) */
-interface IState {
-  /** Its status (its reason phrase is restored by `writeHead()` of binden) */
-  readonly status: number;
-  /** The headers, by their names as set, in their order */
-  readonly headers: readonly (readonly [string, OutgoingHttpHeader])[];
-  /** The values of the fields of `framing` */
-  readonly framing: readonly (readonly [string, unknown])[];
-}
-
-/**
- * The fields of Node.js that frame a response and its connection, which a
- * head that Node.js refuses may have changed already (e.g. `_last`, once it
- * has chosen to close the connection), and which the removal of a header
- * changes (e.g. `_removedContLen`): restored with the headers, so that the
- * reply that follows frames itself as if the attempt never happened
- */
-const framing = [
-  "_contentLength",
-  "_defaultKeepAlive",
-  "_hasBody",
-  "_keepAliveTimeout",
-  "_last",
-  "_removedConnection",
-  "_removedContLen",
-  "_removedTE",
-  "chunkedEncoding",
-  "sendDate",
-  "shouldKeepAlive",
-] as const;
 
 /** A response without a body, whatever the request accepts */
 const AS_IS: IOutcome = { kind: "as_is", vary: false };
@@ -582,16 +549,7 @@ export class CompressedResponse {
    */
   #commit(commit: () => void): void {
     const response = this.#response;
-    // Of every outgoing message (the types have it for a request only)
-    const names = (response as unknown as IRawNames).getRawHeaderNames();
-    const state: IState = {
-      status: response.statusCode,
-      headers: names.map((name) => [
-        name,
-        response.getHeader(name) as OutgoingHttpHeader,
-      ]),
-      framing: framing.map((name) => [name, Reflect.get(response, name)]),
-    };
+    const state = response[kSaveFraming]();
     try {
       commit();
     } catch (error: unknown) {
@@ -605,13 +563,13 @@ export class CompressedResponse {
   /**
    * Restores the response as it was before an attempt to commit its headers
    * (see `#commit()`): the compressor is destroyed (its listener on the
-   * response removed), the decision is pending again, and the status, the
-   * headers (their names, values and order) and the framing fields of
-   * Node.js are those of `state`. Only these: the listeners of the
-   * application and the I/O that the attempt has performed (none before its
-   * head) are never restored.
+   * response removed), the decision is pending again, and the framing state
+   * of the response (its status, its headers and the framing fields of
+   * Node.js, see `kSaveFraming`) is the one saved before. Only these: the
+   * listeners of the application and the I/O that the attempt has performed
+   * (none before its head) are never restored.
    */
-  #rollback(state: IState): void {
+  #rollback(state: IFramingState): void {
     const response = this.#response;
     const compressor = this.#compressor;
     if (compressor !== null) {
@@ -621,19 +579,7 @@ export class CompressedResponse {
     }
     this.#chosen = null;
     this.#sink = "pending";
-    response.statusCode = state.status;
-    for (const name of response.getHeaderNames()) {
-      response.removeHeader(name);
-    }
-    for (const [name, value] of state.headers) {
-      response.setHeader(name, value);
-    }
-    // Last: Node.js sets some of them as headers are removed
-    for (const [name, value] of state.framing) {
-      if (!Object.is(Reflect.get(response, name), value)) {
-        Reflect.set(response, name, value);
-      }
-    }
+    response[kRestoreFraming](state);
   }
 
   /**
