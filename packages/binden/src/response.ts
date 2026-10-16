@@ -55,6 +55,8 @@ import {
   type ISourceReport,
   type IStreamLike,
   type IStreamLikeMethods,
+  emitterMethods,
+  guard,
   readStreamLike,
   releaseStreamLike,
   streamLikeOf,
@@ -313,22 +315,13 @@ const keeping: ReadonlySet<unknown> = new Set([
   "ERR_UNKNOWN_ENCODING",
 ]);
 
-/** A method called with any receiver (see `IStreamLikeMethods`) */
-type IMethodOf = IStreamLikeMethods["on"];
-
-/* eslint-disable @typescript-eslint/unbound-method -- called with the stream as their receiver */
 /**
- * The methods of Node.js that release a `Readable` of a send that is ignored
- * (see `BindenResponse.#releaseIgnored()`): never its own
+ * `Readable.prototype.destroy()`, which releases a `Readable` of a send that
+ * is ignored (see `BindenResponse.#releaseIgnored()`): never its own
  */
-const readableMethods: IStreamLikeMethods = {
-  on: Readable.prototype.on as IMethodOf,
-  pause: Readable.prototype.pause,
-  resume: Readable.prototype.resume,
-  remove: Readable.prototype.removeListener as IMethodOf,
-  destroy: Readable.prototype.destroy as IMethodOf,
-};
-/* eslint-enable @typescript-eslint/unbound-method */
+const destroyReadable = Reflect.get(Readable.prototype, "destroy") as (
+  this: Readable,
+) => unknown;
 
 /** The report of a late error of a source of a response that is not owned */
 function unreported(): void {
@@ -3267,19 +3260,27 @@ export class BindenResponse<
   /**
    * Releases the data of a send that is ignored when it is a Node.js
    * `Readable` (see `#isReadable()`), whose file (or the like) would stay
-   * open: it is destroyed by the method of `Readable`, never by its own,
-   * under a guard (see `releaseStreamLike()`). Anything else (e.g. a
-   * stream-like source, or a `Proxy`) is not touched. A failure of the
-   * release is logged (`debug`): the send is still ignored.
+   * open, unless it has emitted its `close` already: it is destroyed by
+   * `Readable.prototype.destroy()`, under a guard that the methods of
+   * `EventEmitter` install (see `guard()`), never by its own methods.
+   * Anything else (e.g. a stream-like source, or a `Proxy`) is not touched.
+   * A failure of the release is logged (`debug`): the send is still ignored.
    */
   #releaseIgnored(data: unknown): void {
-    if (BindenResponse.#isReadable(data)) {
-      try {
-        releaseStreamLike(data, readableMethods, this.#report());
-      } catch (error: unknown) {
-        const message = "The release of an ignored stream has failed";
-        this.#ownership.debug(message, error);
+    if (!BindenResponse.#isReadable(data)) {
+      return;
+    }
+    try {
+      const state = Reflect.get(data, "_readableState") as
+        { readonly closeEmitted?: unknown } | undefined;
+      if (state?.closeEmitted !== true) {
+        // Its guard listens before it is destroyed
+        guard(data, emitterMethods, this.#report());
+        Reflect.apply(destroyReadable, data, []);
       }
+    } catch (error: unknown) {
+      const message = "The release of an ignored stream has failed";
+      this.#ownership.debug(message, error);
     }
   }
 

@@ -1192,11 +1192,16 @@ suite("send() of a stream-like source that will not be sent", () => {
       const behind: unknown = Object.create(
         untouchable(traps, Readable.prototype),
       );
+      // Closed already: nothing to release, nor any guard to leave on it
+      const closed = new Readable();
+      closed.destroy();
+      await once(closed, "close");
       for (const sent of [
         source,
         untouchable(traps, wrapped),
         proxied,
         behind,
+        closed,
       ]) {
         const outcome = await respond()
           // @ts-expect-error -- not always data that `send()` takes
@@ -1211,6 +1216,10 @@ suite("send() of a stream-like source that will not be sent", () => {
       deepStrictEqual([source.destroyed, source.readableFlowing], [true, null]);
       ok(!wrapped.destroyed);
       ok(!(Reflect.get(proxied, "_readableState") as Readable).destroyed);
+      deepStrictEqual(
+        [closed.listenerCount("error"), closed.listenerCount("close")],
+        [0, 0],
+      );
     }
     deepStrictEqual([read, traps], [[], []]);
   });
