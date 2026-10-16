@@ -222,7 +222,8 @@ is (or `406`).
   finished, as Node.js calls it without a compression (its receiver and its arguments depend on the
   version of Node.js). A response closed early (e.g. the client goes away, or the deadline cuts a
   slow client) destroys the compressor: on the next tick, the callbacks of the writes that it has
-  not taken yet, and of an `end()` that it has not finished, get the error of the response (or
+  not taken yet, and of an `end()` that it has not finished (or that it has given to a response
+  destroyed in the meantime, which Node.js does not call back), get the error of the response (or
   `ERR_STREAM_DESTROYED`), so that a middleware that awaits them resumes. None is called again
   afterwards (e.g. by the compressor that completes the write in progress). A `send()` (or
   `sendFile()`) whose chunk waits in the compressor rejects with that error, as it rejects with the

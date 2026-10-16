@@ -2,6 +2,7 @@ import { type Context, type IMiddleware } from "binden";
 import {
   type IServed,
   fetchRaw,
+  gzips,
   serve,
   sleep,
   text,
@@ -566,6 +567,111 @@ suite("The callbacks of a compressed response that is destroyed", () => {
             ],
           },
         );
+      }
+    }
+  });
+
+  test("of `end()` run once when the response is destroyed as the compressor ends", async () => {
+    // A response that waits for the one before it (no socket yet) closes on
+    // the next tick (before the end of the compressor, since Node.js 24.16),
+    // another one once its socket has closed (after the end)
+    const first = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    for (const before of ["", first]) {
+      const calls: ICall[] = [];
+      const { promise: closed, resolve } = Promise.withResolvers<null>();
+      await gzips(async (created) => {
+        const served = await serve(
+          {},
+          new Compression({ format: "gzip", threshold: 0 }),
+          async (context: Context) => {
+            const { response } = context;
+            if (context.url.pathname === "/") {
+              await sleep(200);
+              response.end();
+              return;
+            }
+            context.done = true;
+            response.type("text/plain");
+            response.write(text(64));
+            // Compressed
+            await sleep(20);
+            // The last compressed bytes: the compressor emits its end on the
+            // next tick
+            created.at(-1)?.once("data", () => {
+              response.destroy();
+            });
+            response.end(recorder(calls, response)("end"));
+            await once(response, "close");
+            resolve(null);
+          },
+        );
+        servers.push(served);
+        sockets.push(await slowClient(served.url, "gzip", before));
+        await within(closed);
+        await calledBack(calls, 1);
+        await sleep(50);
+      });
+
+      deepStrictEqual(
+        { before, calls },
+        {
+          before,
+          calls: [["end", "stack", "none", ["ERR_STREAM_DESTROYED"]]],
+        },
+      );
+    }
+  });
+
+  test("of `end()` run once when the end of the response destroys it", async () => {
+    for (const order of ["destroyed", "ended"]) {
+      const calls: ICall[] = [];
+      const { promise: closed, resolve } = Promise.withResolvers<null>();
+      const served = await serve(
+        {},
+        (context: Context) => {
+          // E.g. an instrumentation of `end()`, under the compression: the
+          // response is destroyed by the end of the compressed response,
+          // before (or once) Node.js takes its callbacks
+          const { response } = context;
+          const end = response.end.bind(response) as (
+            ...args: unknown[]
+          ) => Context["response"];
+          response.end = (...args: unknown[]): Context["response"] => {
+            if (order === "destroyed") {
+              response.destroy();
+              return end(...args);
+            }
+            const ended = end(...args);
+            response.destroy();
+            return ended;
+          };
+        },
+        new Compression({ format: "gzip", threshold: 0 }),
+        async (context: Context) => {
+          const { response } = context;
+          context.done = true;
+          response.type("text/plain");
+          response.end(text(64), recorder(calls, response)("end"));
+          await once(response, "close");
+          resolve(null);
+        },
+      );
+      servers.push(served);
+      await fetchRaw(served.url, { headers: gzip }).catch(() => null);
+      await within(closed);
+      await calledBack(calls, 1);
+      await sleep(50);
+
+      // Destroyed before: with the error once it has closed. Afterwards: as
+      // Node.js calls it (by the version of Node.js), and not again
+      deepStrictEqual(
+        { order, calls: calls.map(([name, owner]) => [name, owner]) },
+        { order, calls: [["end", "stack"]] },
+      );
+      if (order === "destroyed") {
+        deepStrictEqual(calls, [
+          ["end", "stack", "none", ["ERR_STREAM_DESTROYED"]],
+        ]);
       }
     }
   });

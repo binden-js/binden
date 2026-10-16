@@ -321,7 +321,8 @@ function owned(callback: ICallback, operation: IResponseOperation): ICallback {
 
 /**
  * A callback that runs at most once: it is kept in `pending` until it is
- * called, and every later call is ignored (see `#abandon()`)
+ * called, and every later call is ignored (e.g. by the compressor once it has
+ * been called with an error, see `#abandon()`)
  */
 function pendingOnce(callback: ICallback, pending: Set<ICallback>): ICallback {
   function once(this: unknown, ...args: unknown[]): void {
@@ -387,7 +388,9 @@ export class CompressedResponse {
    * end of the response (see `owned()`): of a compressed response, which
    * the end of the response by the compressor gets (see `#start()`), and of
    * the first `end()` of a replaced one, called as the end of the
-   * replacement is (see `#onReplaced()`). `null` once they have been given.
+   * replacement is (see `#onReplaced()`). `null` once they have been given,
+   * but to a destroyed response, which keeps them until it has closed (see
+   * `#start()`).
    */
   #ending: ICallback[] | null = [];
   /**
@@ -1103,6 +1106,31 @@ export class CompressedResponse {
     const response = this.#response;
     const operation = this.#operation as IResponseOperation;
     const compressor = createCompressor(coding, this.#settings.compressors);
+    const ended = (): void => {
+      // Not cleared yet: the close of the response, which clears them, also
+      // removes this listener (see `#destroy`)
+      const ending = this.#ending as ICallback[];
+      // The callbacks of `end()` are those of the end of the response (the
+      // first one), and of the `end()` calls that follow it: Node.js calls
+      // them as it calls those of an uncompressed response, once each
+      const handed = new Set<ICallback>();
+      const given = ending.map((callback) => pendingOnce(callback, handed));
+      this.#ending = null;
+      const [first, ...after] = given;
+      operation.run(() => {
+        this.#end(...(typeof first === "undefined" ? [] : [first]));
+        for (const callback of after) {
+          this.#end(callback);
+        }
+      });
+      if (response.destroyed) {
+        // Destroyed before its end (or by it), but not closed yet: Node.js
+        // does not call back the end of a destroyed response, they get the
+        // error once it has closed (see `#destroy`), unless it has called
+        // them first
+        this.#ending = given;
+      }
+    };
     compressor
       .on("data", (chunk: Buffer) => {
         this.#produced += chunk.length;
@@ -1128,20 +1156,12 @@ export class CompressedResponse {
       .on("error", () => {
         operation.run(() => response.destroy());
       })
-      .once("end", () => {
-        // The callbacks of `end()` are those of the end of the response (the
-        // first one), and of the `end()` calls that follow it: Node.js calls
-        // them as it calls those of an uncompressed response
-        const [ending, ...after] = this.#ending as ICallback[];
-        this.#ending = null;
-        operation.run(() => {
-          this.#end(...(typeof ending === "undefined" ? [] : [ending]));
-          for (const callback of after) {
-            this.#end(callback);
-          }
-        });
-      });
+      .once("end", ended);
     this.#destroy = (): void => {
+      // Closed: an end of the compressor that comes afterwards (scheduled
+      // before it has been destroyed) has nothing more to end, and its
+      // callbacks are called back here
+      compressor.off("end", ended);
       // Its pending writes fail (and `flush()` rejects by itself)
       this.#abandon(compressor);
       // Not ended by the compressor: the callbacks of `end()` get the error,
