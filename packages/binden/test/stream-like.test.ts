@@ -373,7 +373,15 @@ for (const [library, create] of libraries) {
                 producer.blocked && recorded.pauses > 0 && source.isPaused(),
               5000,
             );
-            const pending = producer.written;
+            // Until the buffers of the source are full (a stream of
+            // readable-stream may still drain its writable side into its
+            // readable one once paused)
+            let pending = -1;
+            for (let tries = 0; pending !== producer.written; tries += 1) {
+              ok(tries < 50, "the source never stops taking chunks");
+              pending = producer.written;
+              await sleep(100);
+            }
             await sleep(50);
             // Paused: it takes nothing more
             deepStrictEqual(
