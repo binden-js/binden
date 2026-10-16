@@ -754,10 +754,10 @@ suite("The callbacks of a response that is gone before the decision", () => {
           response.type("text/plain");
           const written = recorder(calls, response)("write");
           try {
-            const closed = once(response, "close");
             start(null);
             if (gone === "client") {
-              await closed;
+              // Listened to before the client goes away (see `started`)
+              await once(response, "close");
             } else if (gone === "destroy") {
               response.destroy();
             }
