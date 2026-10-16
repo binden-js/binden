@@ -1552,13 +1552,48 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return true;
     }
+    const [chunk] = args;
+    if (typeof chunk !== "string" && !isUint8Array(chunk)) {
+      // Refused by Node.js before anything else (e.g. `null`), whatever the
+      // state of the response
+      return super.write(...(args as [unknown]));
+    }
     const written = this.#normalized(args, false);
     // Node.js counts the bytes of its chunk before it commits the head (see
     // `#restoring()`)
-    return this.#restoring(() => {
-      this.#ordered(written, false);
-      return super.write(...(callbacksOf(written) as [unknown]));
-    });
+    return this.#stopping(() =>
+      this.#restoring(() => {
+        this.#ordered(written, false);
+        return super.write(...(callbacksOf(written) as [unknown]));
+      }),
+    );
+  }
+
+  /**
+   * Runs a `write()` or an `end()` of Node.js, whose chunk and encoding have
+   * been checked (a chunk that is not one, or an unknown encoding, throws
+   * before anything is changed, see `#normalized()`): when it throws once the
+   * head is committed (before the call, or by it), nothing more of the
+   * response is sent. Node.js may have written the head and the chunk into
+   * the socket that it has corked before it throws (e.g. a body longer or
+   * shorter than the `Content-Length` that `strictContentLength` checks):
+   * flushing them would send a head that the body contradicts, whose excess
+   * the client would read as the next response of the connection. The
+   * response is destroyed at once, with the rights of the framework, before
+   * the error is thrown, so that neither the cork of `end()` nor the one that
+   * Node.js releases on the next tick flushes them, and a response that waits
+   * for the one before it is cut once its socket comes (see `destroy()`). The
+   * bytes of an earlier write that has been flushed are not recalled.
+   */
+  #stopping<T>(fn: () => T): T {
+    try {
+      return fn();
+    } catch (error: unknown) {
+      if (this.#committed()) {
+        this[kFramework](() => this.destroy());
+      }
+      throw error;
+    }
   }
 
   /**
@@ -1712,10 +1747,12 @@ export class BindenResponse<
     const ended = this.#normalized(args, true);
     // Node.js frames the body of its chunk before it commits the head (see
     // `#restoring()`)
-    return this.#restoring(() => {
-      this.#ordered(ended, true);
-      return this.#uncorking(() => super.end(...(callbacksOf(ended) as [])));
-    });
+    return this.#stopping(() =>
+      this.#restoring(() => {
+        this.#ordered(ended, true);
+        return this.#uncorking(() => super.end(...(callbacksOf(ended) as [])));
+      }),
+    );
   }
 
   /**
@@ -1738,11 +1775,12 @@ export class BindenResponse<
 
   /**
    * Runs `end()` of Node.js, which corks the socket before it frames the body
-   * (and uncorks it once it has ended the response): when it throws (e.g. for
-   * a head that Node.js refuses), the socket is uncorked back to what it was,
-   * so that the reply that follows is not held (e.g. a `flush()` would never
-   * resolve, and a body larger than the socket buffers would wait for a
-   * `drain` that never comes)
+   * (and uncorks it once it has ended the response): when it throws for a
+   * head that Node.js refuses (which stays uncommitted), the socket is
+   * uncorked back to what it was, so that the reply that follows is not held
+   * (e.g. a `flush()` would never resolve, and a body larger than the socket
+   * buffers would wait for a `drain` that never comes). Never once the head
+   * is committed: what the socket holds is not sent (see `#stopping()`).
    */
   #uncorking<T>(fn: () => T): T {
     const { socket } = this;
@@ -1750,7 +1788,7 @@ export class BindenResponse<
     try {
       return fn();
     } catch (error: unknown) {
-      if (socket !== null) {
+      if (socket !== null && !this.#committed()) {
         while (socket.writableCorked > corked) {
           socket.uncork();
         }
