@@ -5,6 +5,7 @@ import {
   kRestoreFraming,
   kSaveFraming,
 } from "./framing.js";
+import { type IListener, bind, bindingOf, force, forced } from "./listeners.js";
 import {
   type IRedirectOptions,
   type IRedirectStatus,
@@ -167,17 +168,34 @@ function isStrictMediaType(media_type: string): boolean {
 /** A character that a reason phrase cannot have (as Node.js checks it) */
 const invalidReason = /[^\t\x20-\x7E\x80-\xFF]/u;
 
-/** A listener of an event, or a callback (e.g. of `write()`) */
-type IListener = (...args: unknown[]) => unknown;
-
-/** Removes a listener that has run once (see `BindenResponse.#bind()`) */
-interface IOnce {
-  readonly emitter: EventEmitter;
-  readonly event: string | symbol;
-}
-
 /** The methods of `EventEmitter` that a response replaces (see its static block) */
 const parent = ServerResponse.prototype;
+
+/** The listeners of an event of an emitter, as added (e.g. a wrapper of `once()`) */
+function rawListenersOf(emitter: EventEmitter, event: string): IListener[] {
+  return EventEmitter.prototype.rawListeners.call(
+    emitter,
+    event,
+  ) as IListener[];
+}
+
+/**
+ * The arguments of a method of Node.js whose callback runs as the work that
+ * has called it (see `bind()`): Node.js calls it once the socket has written,
+ * as whoever has flushed it then
+ */
+function callbacksOf(args: readonly unknown[]): unknown[] {
+  const owner = owners.getStore();
+  const bound: unknown[] = [];
+  for (const arg of args) {
+    bound.push(
+      typeof arg === "function"
+        ? bind(arg as IListener, owner, "callback", null)
+        : arg,
+    );
+  }
+  return bound;
+}
 
 /**
  * The properties of Node.js that frame a response (its connection and its
@@ -318,8 +336,6 @@ export class BindenResponse<
   >();
   /** The checks of the owners that may mutate the response (see `[kSeal]()`) */
   readonly #seals: ((owner: object | undefined) => boolean)[] = [];
-  /** Set while the framework mutates the response (see `[kFramework]()`) */
-  #forced = 0;
   #rights?: IRights;
   /** How a library chooses the representation of the body (see `[kNegotiator]()`) */
   #negotiator: IRepresentationNegotiator | null = null;
@@ -361,8 +377,27 @@ export class BindenResponse<
         },
       },
     });
+    function rawListeners(
+      this: BindenResponse,
+      event: string | symbol,
+    ): IListener[] {
+      return rawListenersOf(this, event as string).map((raw) => {
+        const binding = bindingOf(raw);
+        return binding && !binding.once ? binding.listener : raw;
+      });
+    }
+    function emit(
+      this: BindenResponse,
+      event: string | symbol,
+      ...args: unknown[]
+    ): boolean {
+      if (event === "pipe") {
+        this.#piping(args[0]);
+      }
+      return parent.emit.call(this, event, ...args);
+    }
     // The listeners added by the application run as the work that has added
-    // them (see `#bind()`), never as whoever emits their event. Replaced at
+    // them (see `bind()`), never as whoever emits their event. Replaced at
     // run time only: the types are those of Node.js.
     const add = (
       name: "addListener" | "on" | "prependListener",
@@ -373,10 +408,10 @@ export class BindenResponse<
       listener: IListener,
     ) => BindenResponse) =>
       function listen(this: BindenResponse, event, listener) {
-        const owner = owners.getStore();
-        const bound = this.#bind(
+        const bound = bind(
           listener,
-          owner,
+          owners.getStore(),
+          "user",
           once ? { emitter: this, event } : null,
         );
         return parent[name].call(this, event, bound) as BindenResponse;
@@ -393,6 +428,11 @@ export class BindenResponse<
         configurable: true,
         value: add("prependListener", true),
       },
+      // As Node.js: the listener itself, but the wrapper of a `once()`
+      rawListeners: { configurable: true, value: rawListeners },
+      // A source piped into the response is adopted before any listener of
+      // `pipe` runs (see `#adopt()`)
+      emit: { configurable: true, value: emit },
     });
     // Nor how it is framed: whether it sends a `Date`, keeps its connection
     // open (or says that it closes it), chunks its body (also by default) or
@@ -429,62 +469,19 @@ export class BindenResponse<
   public constructor(...args: [request: Request, options?: unknown]) {
     // node:http passes its options as well
     super(...(args as [Request]));
-    // `Readable.pipe()` emits `pipe` on its destination synchronously, in the
-    // work that pipes: a listener of the response itself, as it is emitted
-    super.on("pipe", (source: unknown) => {
-      const owner = owners.getStore();
-      if (this.#allows(owner)) {
-        this.#piped = true;
-      }
-      this.#adopt(source, owner);
-    });
   }
 
   /**
-   * A listener (or a callback) that runs as the work of `owner` (`undefined`
-   * for any other work), whose rights it keeps (and only those: never the
-   * rights of the framework, which may emit its event), with its arguments and
-   * `this`. Its `listener` is the original, which `removeListener()` and
-   * `listeners()` find (as for a `once()` of Node.js). With `once`, it removes
-   * itself from its emitter before it runs, once.
+   * A source is piped into the response (`pipe` of `Readable.pipe()`, emitted
+   * synchronously in the work that pipes): it starts the response of a work
+   * that may mutate it, and is adopted (see `#adopt()`)
    */
-  #bind(
-    listener: IListener,
-    owner: object | undefined,
-    once: IOnce | null,
-  ): IListener {
-    if (typeof listener !== "function") {
-      // Refused by Node.js as it is
-      return listener;
+  #piping(source: unknown): void {
+    const owner = owners.getStore();
+    if (this.#allows(owner)) {
+      this.#piped = true;
     }
-    let fired = false;
-    const bound = Object.assign(
-      (...args: unknown[]): unknown => {
-        if (once !== null) {
-          if (fired) {
-            return null;
-          }
-          fired = true;
-          once.emitter.removeListener(once.event, bound);
-        }
-        return this.#as(owner, () => Reflect.apply(listener, this, args));
-      },
-      { listener },
-    );
-    return bound;
-  }
-
-  /** Runs a function as the work of `owner`, without the rights of the framework */
-  #as<T>(owner: object | undefined, fn: () => T): T {
-    const forced = this.#forced;
-    this.#forced = 0;
-    try {
-      return typeof owner === "undefined"
-        ? owners.exit(fn)
-        : owners.run(owner, fn);
-    } finally {
-      this.#forced = forced;
-    }
+    this.#adopt(source, owner);
   }
 
   /**
@@ -495,6 +492,7 @@ export class BindenResponse<
    * timer of another one). Its other listeners are left as they are: piping
    * gives no rights to another writer.
    */
+  // eslint-disable-next-line class-methods-use-this -- a step of `#piping()`
   #adopt(source: unknown, owner: object | undefined): void {
     if (!(source instanceof EventEmitter)) {
       return;
@@ -512,9 +510,10 @@ export class BindenResponse<
         source.removeListener(event, listener);
         source.on(
           event,
-          this.#bind(
+          bind(
             original,
             owner,
+            "source",
             original === listener
               ? null
               : { emitter: source as EventEmitter, event },
@@ -938,7 +937,7 @@ export class BindenResponse<
       return true;
     }
     this.#ordered(args, false);
-    return super.write(...(this.#callbacks(args) as [unknown]));
+    return super.write(...(callbacksOf(args) as [unknown]));
   }
 
   /**
@@ -1031,24 +1030,6 @@ export class BindenResponse<
   }
 
   /**
-   * The arguments of a method of Node.js whose callback runs as the work that
-   * has called it (see `#bind()`): Node.js calls it once the socket has
-   * written, as whoever has flushed it then
-   */
-  #callbacks(args: readonly unknown[]): unknown[] {
-    const owner = owners.getStore();
-    const bound: unknown[] = [];
-    for (const arg of args) {
-      bound.push(
-        typeof arg === "function"
-          ? this.#bind(arg as IListener, owner, null)
-          : arg,
-      );
-    }
-    return bound;
-  }
-
-  /**
    * Ends the response (see `end()` of Node.js). Once the response is sealed,
    * the abandoned work does not end it: its callback is called
    * (asynchronously, without an error).
@@ -1071,7 +1052,7 @@ export class BindenResponse<
     // `#restoring()`)
     return this.#restoring(() => {
       this.#ordered(args, true);
-      return super.end(...(this.#callbacks(args) as []));
+      return super.end(...(callbacksOf(args) as []));
     });
   }
 
@@ -1197,7 +1178,7 @@ export class BindenResponse<
       BindenResponse.#ignore([callback]);
       return;
     }
-    super.writeContinue(...(this.#callbacks([callback]) as []));
+    super.writeContinue(...(callbacksOf([callback]) as []));
   }
 
   /**
@@ -1209,7 +1190,7 @@ export class BindenResponse<
       BindenResponse.#ignore([callback]);
       return;
     }
-    super.writeProcessing(...(this.#callbacks([callback]) as []));
+    super.writeProcessing(...(callbacksOf([callback]) as []));
   }
 
   /**
@@ -1224,7 +1205,7 @@ export class BindenResponse<
       BindenResponse.#ignore([callback]);
       return;
     }
-    super.writeEarlyHints(hints, ...(this.#callbacks([callback]) as []));
+    super.writeEarlyHints(hints, ...(callbacksOf([callback]) as []));
   }
 
   /**
@@ -1247,7 +1228,7 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return;
     }
-    super.writeInformation(...(this.#callbacks(args) as [number]));
+    super.writeInformation(...(callbacksOf(args) as [number]));
   }
 
   /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
@@ -1321,12 +1302,7 @@ export class BindenResponse<
    * @internal
    */
   public [kFramework]<T>(fn: () => T): T {
-    this.#forced += 1;
-    try {
-      return fn();
-    } finally {
-      this.#forced -= 1;
-    }
+    return force(this, fn);
   }
 
   /**
@@ -1361,7 +1337,7 @@ export class BindenResponse<
    * mutates it
    */
   #allows(owner: object | undefined = owners.getStore()): boolean {
-    if (this.#forced > 0) {
+    if (forced(this)) {
       return true;
     }
     for (const allows of this.#seals) {

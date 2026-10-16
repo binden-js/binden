@@ -5,14 +5,26 @@ import {
   type Context,
   type IBindenOptions,
 } from "../index.js";
-import { type IListening, listen, never, send, sleep } from "./helpers.js";
+import {
+  EventEmitter,
+  once as eventOnce,
+  getEventListeners,
+} from "node:events";
+import {
+  type IListening,
+  listen,
+  never,
+  send,
+  sleep,
+  within,
+} from "./helpers.js";
+import { IncomingMessage, ServerResponse } from "node:http";
 import { PassThrough, Readable } from "node:stream";
 import { deepStrictEqual, ok, throws } from "node:assert/strict";
 import { kFramework, kSeal, owners } from "../src/seal.js";
 import { suite, test } from "node:test";
-import { EventEmitter } from "node:events";
-import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
+import { listen as listenHttp } from "./http.js";
 
 /** A response without a connection: nothing is actually sent */
 function detached(): BindenResponse {
@@ -66,11 +78,8 @@ suite("Listeners and callbacks of the response", () => {
     response.on("x", a).addListener("x", b).prependListener("x", c);
     deepStrictEqual(response.listeners("x"), [c, a, b]);
     deepStrictEqual(added, [a, b, c]);
-    ok(
-      response
-        .rawListeners("x")
-        .every((raw, index) => raw !== [c, a, b][index]),
-    );
+    // As Node.js: the listeners themselves (not their binding)
+    deepStrictEqual(response.rawListeners("x"), [c, a, b]);
     response.emit("x", 1, 2);
     deepStrictEqual(calls.splice(0), [
       ["c", true, 1, 2],
@@ -304,5 +313,207 @@ suite("A stream piped into the response", () => {
     response.emit("pipe", null);
     response.emit("pipe", new EventEmitter());
     ok(response.started);
+  });
+});
+
+/** A listener that records its calls */
+type IRecorded = (this: unknown, ...args: unknown[]) => void;
+
+/**
+ * What a sequence of operations on the listeners of a response does (the
+ * one of R1's review), by identity: its listeners by name, a wrapper of one
+ * as `wrapper(name)`, and the receiver of each call
+ */
+async function scenario(response: ServerResponse): Promise<unknown[]> {
+  const out: unknown[] = [];
+  const other = new EventEmitter();
+  const names = new Map<unknown, string>();
+  const receiver = (self: unknown): string => {
+    if (self === response) {
+      return "response";
+    }
+    return self === other ? "other" : typeof self;
+  };
+  const record = (name: string): IRecorded => {
+    function recorded(this: unknown, ...args: unknown[]): void {
+      out.push([name, receiver(this), ...args]);
+    }
+    names.set(recorded, name);
+    return recorded;
+  };
+  const id = (fn: unknown): string => {
+    const name = names.get(fn);
+    if (typeof name !== "undefined") {
+      return name;
+    }
+    const inner = (fn as { listener?: unknown }).listener;
+    return names.has(inner) ? `wrapper(${String(names.get(inner))})` : "other";
+  };
+  const a = record("a");
+  const b = record("b");
+  const c = record("c");
+  response.on("removeListener", (event: unknown, listener: unknown) => {
+    if (typeof event === "string" && event.startsWith("t")) {
+      out.push(["removeListener", event, id(listener)]);
+    }
+  });
+  response.on("newListener", (event: unknown, listener: unknown) => {
+    if (typeof event === "string" && event.startsWith("t")) {
+      out.push(["newListener", event, id(listener)]);
+    }
+  });
+  out.push([
+    "returns",
+    response.on("t1", a) === response,
+    response.once("t1", b) === response,
+    response.prependOnceListener("t1", c) === response,
+  ]);
+  out.push(["listeners", response.listeners("t1").map(id)]);
+  out.push(["raw", response.rawListeners("t1").map(id)]);
+  out.push([
+    "count",
+    response.listenerCount("t1"),
+    response.listenerCount("t1", a),
+    response.listenerCount("t1", b),
+  ]);
+  out.push(["emit", response.emit("t1", 1), response.emit("t1", 2)]);
+  // The same listener twice, removed once (the last added)
+  response.on("t2", a).once("t2", a).removeListener("t2", a);
+  out.push(["t2", response.rawListeners("t2").map(id)]);
+  response.emit("t2", "x");
+  // The wrapper of a `once()` called directly runs once, removed
+  response.once("t3", b);
+  (response.rawListeners("t3")[0] as IRecorded)("direct");
+  out.push(["t3", response.listenerCount("t3")]);
+  response.emit("t3", "no");
+  // A raw listener added to another emitter (e.g. by a proxy)
+  response.on("t4", a).prependListener("t4", c).once("t4", b);
+  for (const raw of response.rawListeners("t4") as IRecorded[]) {
+    other.on("t4", raw);
+  }
+  other.emit("t4", "copied");
+  out.push(["t4", other.listenerCount("t4"), response.listenerCount("t4")]);
+  response.on("t5", a).once("t5", b).removeAllListeners("t5");
+  out.push(["t5", response.listenerCount("t5")]);
+  setImmediate(() => response.emit("t6", "v6"));
+  out.push(["events.once", await eventOnce(response, "t6")]);
+  out.push(["getEventListeners", getEventListeners(response, "t1").map(id)]);
+  // A listener that throws: the next ones do not run
+  response.on("t8", () => {
+    throw new Error("Thrown");
+  });
+  response.on("t8", a);
+  try {
+    response.emit("t8");
+  } catch (error: unknown) {
+    out.push(["t8", (error as Error).message]);
+  }
+  // Removed while the event is emitted (Node.js emits to a copy)
+  const removed = record("removed");
+  response.on("t10", (): void => {
+    response.removeListener("t10", removed);
+  });
+  response.once("t10", removed);
+  response.emit("t10", "r1");
+  response.emit("t10", "r2");
+  // A wrapper of `once()` that adds itself again
+  let count = 0;
+  const again = (): void => {
+    count += 1;
+    out.push(["again", count]);
+    if (count < 3) {
+      response.once("t11", again);
+    }
+  };
+  names.set(again, "again");
+  response.once("t11", again);
+  for (let index = 0; index < 4; index += 1) {
+    response.emit("t11");
+  }
+  // Removed by the listener itself, once added by `prependOnceListener()`
+  response.prependOnceListener("t14", a).off("t14", a);
+  out.push(["t14", response.emit("t14")]);
+  return out;
+}
+
+suite("Listeners and callbacks compared with a native response", () => {
+  test("their identities, receivers and events are those of Node.js", async () => {
+    const native = await scenario(
+      new ServerResponse(new IncomingMessage(new Socket())),
+    );
+    const binden = await scenario(detached());
+    deepStrictEqual(binden, native);
+    // The scenario covers the wrappers of `once()`
+    ok(JSON.stringify(native).includes("wrapper(b)"));
+  });
+
+  test("the callbacks of `write()` and `end()` get the receiver that Node.js gives them", async () => {
+    const receivers = async (
+      Response: typeof BindenResponse,
+    ): Promise<string[]> => {
+      const server = await listenHttp({ Response, plain: true });
+      try {
+        const seen: string[] = [];
+        const handled = server.handle(
+          (request, response) =>
+            new Promise<void>((resolve) => {
+              const kind = (self: unknown): string => {
+                if (self === response) {
+                  return "response";
+                } else if (self === request.socket) {
+                  return "socket";
+                }
+                return typeof self === "undefined"
+                  ? "undefined"
+                  : `other ${Object.prototype.toString.call(self)}`;
+              };
+              function written(this: unknown): void {
+                seen.push(`write ${kind(this)}`);
+              }
+              function encoded(this: unknown): void {
+                seen.push(`write(encoding) ${kind(this)}`);
+              }
+              function ended(this: unknown): void {
+                seen.push(`end ${kind(this)}`);
+                resolve();
+              }
+              response.write("a", written);
+              response.write("b", "latin1", encoded);
+              response.end("c", ended);
+            }),
+        );
+        await server.request();
+        await handled;
+        return seen.sort();
+      } finally {
+        await server.close();
+      }
+    };
+    const native = await receivers(ServerResponse as typeof BindenResponse);
+    deepStrictEqual(await receivers(BindenResponse), native);
+    deepStrictEqual(native.length, 3);
+  });
+
+  test("a listener added to a piped source gets the source, as with Node.js", async () => {
+    const receiverOf = async (response: ServerResponse): Promise<boolean> => {
+      const source = new PassThrough();
+      const { promise, resolve } = Promise.withResolvers<boolean>();
+      function received(this: unknown): void {
+        resolve(this === source);
+      }
+      response.prependListener("pipe", (piped: EventEmitter) => {
+        piped.on("data", received);
+      });
+      source.pipe(response);
+      source.write("x");
+      return within(promise);
+    };
+    deepStrictEqual(
+      [
+        await receiverOf(new ServerResponse(new IncomingMessage(new Socket()))),
+        await receiverOf(detached()),
+      ],
+      [true, true],
+    );
   });
 });
