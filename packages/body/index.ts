@@ -9,7 +9,7 @@ import {
   serializers,
 } from "binden";
 import { Duplex, Transform, Writable, finished, pipeline } from "node:stream";
-import { type IZstdFrameCount, ZstdDecoding } from "./src/zstd.js";
+import { type IZstdBudget, ZstdDecoding } from "./src/zstd.js";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { addAbortListener } from "node:events";
 
@@ -85,8 +85,9 @@ export interface IBodyParserOptions<T = unknown> extends IMiddlewareParams {
   verify_encoded?: boolean | undefined;
   /**
    * Whether the `zstd` content coding is decoded (`false`): the API of
-   * Node.js is experimental. A request has at most 1024 `zstd` frames (more
-   * get a `413 Content Too Large` of code `zstd_frames`).
+   * Node.js is experimental. A request has at most 1024 `zstd` frames and
+   * 64 MiB of their decoders (more get a `413 Content Too Large` of code
+   * `zstd_frames`).
    */
   zstd?: boolean | undefined;
 }
@@ -96,9 +97,9 @@ type IDecoding = Duplex & { readonly bytesWritten: number };
 
 /**
  * A decoder of a content coding, created once every coding is known to be
- * supported: the `zstd` frames of a request count in one `count`
+ * supported: the `zstd` codings of a request share one `budget`
  */
-type IDecoder = (count: IZstdFrameCount) => IDecoding;
+type IDecoder = (budget: IZstdBudget) => IDecoding;
 
 /** The outcome of a callback of the options that has settled */
 type IOutcome<R> =
@@ -549,7 +550,7 @@ export class BodyParser<T = unknown> extends Middleware {
     } else if (encoding === "br") {
       return (): IDecoding => createBrotliDecompress();
     } else if (encoding === "zstd" && this.#zstd) {
-      return (count): IDecoding => new ZstdDecoding(count);
+      return (budget): IDecoding => new ZstdDecoding(budget);
     }
     return null;
   }
@@ -574,9 +575,9 @@ export class BodyParser<T = unknown> extends Middleware {
     const stages: Duplex[] = [wire];
     const trailing: (() => boolean)[] = [];
     // Over every `zstd` coding of the body
-    const count: IZstdFrameCount = { frames: 0 };
+    const budget: IZstdBudget = { frames: 0, memory: 0 };
     for (const create of decoders) {
-      const decoder = create(count);
+      const decoder = create(budget);
       stages.push(
         guard(decoder, trailing),
         decoder,

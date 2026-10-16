@@ -147,8 +147,8 @@ memory per `zstd` coding (its frames are decoded one at a time).
 
 Concatenated `gzip` members are one body, and so are concatenated `zstd` frames (RFC 8878), on
 every supported version of Node.js: the parser finds the frames itself, and decodes them one after
-the other, each data frame by a decoder of its own, which gets the bytes of that frame only once
-they have been read. Once the decoder of a frame has ended, before the next frame is decoded, the
+the other, each data frame by a decoder of its own (but an empty one), which gets the bytes of that
+frame only once they have been read. Once the decoder of a frame has ended, before the next frame is decoded, the
 size of its content is checked against the `Frame_Content_Size` that the frame declares, if it
 declares one: a different size is a `400`, however the body is split (and a frame that produces
 more than it declares fails at once). Skippable frames are ignored, and a truncated frame is a
@@ -162,6 +162,17 @@ frames would cost much more than its size: the next frame gets `413 Content Too 
 `BindenError` of code `zstd_frames`), before the decoder gets any byte of the chunk where it
 starts. A compressed body is usually one frame; a client that compresses a stream may write a
 frame per flush, which must stay within the limit.
+
+Its **decoders are limited to 64 MiB** too, over all its `zstd` codings: a decoder allocates the
+window of its frame (or its declared content size when smaller) and its buffers, so that a small
+body of frames that each declare a large window would cost much more memory and garbage collection
+than its size. Each frame that needs a decoder is charged its window, or its `Frame_Content_Size`
+when smaller, and at least 256 KiB: a request has at most 256 decoders (e.g. of frames of a few
+bytes each), and 8 of frames that declare a window of 8 MiB and no size. The next one gets the same
+`413` (`zstd_frames`), before its decoder gets any byte. An empty frame (whose blocks are all empty,
+of a declared size of 0 if any) needs no decoder and is not charged: the parser checks it as a
+decoder would (its reserved bit, no dictionary, a window within 8 MiB, its blocks, and a checksum
+that is that of no content).
 
 ## Custom `parse`
 
@@ -272,7 +283,7 @@ with an empty body.
 | Corrupt compressed data (also data after the end of a coding, no byte at all, or a `zstd` frame not of its declared size), bytes that are not valid in the charset | `400 Bad Request`              |
 | A client that goes away                                                                                                                                            | `400 Bad Request` (`aborted`)  |
 | A limit is exceeded (`limit`, `encoded_limit`, `parameter_limit`)                                                                                                  | `413 Content Too Large`        |
-| More than 1024 `zstd` frames in a request                                                                                                                          | `413` (`zstd_frames`)          |
+| More than 1024 `zstd` frames in a request, or more than 64 MiB of their decoders                                                                                   | `413` (`zstd_frames`)          |
 | An unknown or unsupported content coding, more than two codings, an unknown charset                                                                                | `415 Unsupported Media Type`   |
 | A content type that is not selected                                                                                                                                | skipped (the body is not read) |
 | A `BindenError` of `parse` or `verify`                                                                                                                             | that error                     |

@@ -276,7 +276,10 @@ received (a larger `Content-Length` is refused before the body is read). A body 
 `413 Content Too Large`, and a form with more than `parameter_limit` (1000) parameters too. With
 `zstd: true`, a request has at most 1024 `zstd` frames (data, empty and skippable ones, over all its
 `zstd` codings), whatever its size and the version of Node.js: each frame is a step of the decoding,
-and the next one gets `413` with the code `zstd_frames`.
+and the next one gets `413` with the code `zstd_frames`. Its decoders are charged at most 64 MiB:
+each frame but an empty one has a decoder, which is charged its window (or its declared content
+size when smaller) and at least 256 KiB, so that a request has at most 256 decoders (8 of the
+largest window, 8 MiB), and the next one gets the same `413`.
 
 ```typescript
 import { BodyParser } from "@binden/body";
