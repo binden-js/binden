@@ -45,8 +45,8 @@ suite("A completed request", () => {
     ["sent", "sent in full", "0 0"],
     ["ended", "that has ended and closed before the send", "0 0"],
     // Its destroy does not complete: its guard stays (its `error` and its
-    // `close`), and the listener of its release
-    ["cancelled", "cancelled with a destroy that does not complete", "800 400"],
+    // `close`), the only listener of its release
+    ["cancelled", "cancelled with a destroy that does not complete", "400 400"],
   ] as const) {
     test(`is not kept by a Readable ${how} that the application keeps: its send leaves none of its listeners`, () => {
       // 400 sources

@@ -319,8 +319,8 @@ const keeping: ReadonlySet<unknown> = new Set([
 ]);
 
 /**
- * `Readable.prototype.destroy()`, which releases a `Readable` of a send that
- * is ignored (see `BindenResponse.#releaseIgnored()`): never its own
+ * `Readable.prototype.destroy()`, which releases a `Readable` that is not
+ * sent (see `BindenResponse.#discard()`): never its own
  */
 const destroyReadable = Reflect.get(Readable.prototype, "destroy") as (
   this: Readable,
@@ -3102,7 +3102,7 @@ export class BindenResponse<
       };
       this.#pending.set(key, (reason: unknown, release: (() => void)[]) => {
         release.push(() => {
-          BindenResponse.#discard(data);
+          this.#discard(data);
         });
         // The framing of the body that is not sent
         this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
@@ -3135,11 +3135,11 @@ export class BindenResponse<
           operation.run(() => {
             if (settled || !operation.active) {
               // Cancelled, or its owner may no longer write
-              BindenResponse.#discard(data);
+              this.#discard(data);
               return;
             } else if (this.writableEnded) {
               stopped = true;
-              BindenResponse.#discard(data);
+              this.#discard(data);
               return;
             }
             try {
@@ -3285,7 +3285,7 @@ export class BindenResponse<
     kind: IStreamLikeMethods | "readable" | "value" | null,
   ): void {
     if (kind === "readable") {
-      BindenResponse.#discard(data as Readable);
+      this.#discard(data as Readable);
     } else if (kind !== null && kind !== "value") {
       releaseStreamLike(data as object, kind, this.#report());
     }
@@ -3303,27 +3303,12 @@ export class BindenResponse<
   /**
    * Releases the data of a send that is ignored when it is a Node.js
    * `Readable` (see `#isReadable()`), whose file (or the like) would stay
-   * open, unless it has emitted its `close` already: it is destroyed by
-   * `Readable.prototype.destroy()`, under a guard that the methods of
-   * `EventEmitter` install (see `guard()`), never by its own methods.
-   * Anything else (e.g. a stream-like source, or a `Proxy`) is not touched.
-   * A failure of the release is logged (`debug`): the send is still ignored.
+   * open (see `#discard()`): the send is still ignored. Anything else (e.g. a
+   * stream-like source, or a `Proxy`) is not touched.
    */
   #releaseIgnored(data: unknown): void {
-    if (!BindenResponse.#isReadable(data)) {
-      return;
-    }
-    try {
-      const state = Reflect.get(data, "_readableState") as
-        { readonly closeEmitted?: unknown } | undefined;
-      if (state?.closeEmitted !== true) {
-        // Its guard listens before it is destroyed
-        guard(data, emitterMethods, this.#report());
-        Reflect.apply(destroyReadable, data, []);
-      }
-    } catch (error: unknown) {
-      const message = "The release of an ignored stream has failed";
-      this.#ownership.debug(message, error);
+    if (BindenResponse.#isReadable(data)) {
+      this.#discard(data);
     }
   }
 
@@ -3349,13 +3334,29 @@ export class BindenResponse<
     return false;
   }
 
-  /** Destroys a source that will not be sent, whose errors are no longer of interest */
-  static #discard(source: Readable): void {
-    source
-      .on("error", () => {
-        // E.g. its file failed to close: nobody waits for it
-      })
-      .destroy();
+  /**
+   * Releases a Node.js `Readable` that is not sent, or no longer (to a
+   * response without a body, for an informational status, once its send is
+   * ignored, cancelled, or stopped by another writer), unless it has emitted
+   * its `close` already: it is destroyed by `Readable.prototype.destroy()`
+   * (never through its own `destroy()`, its `_destroy()` runs) under a guard
+   * that the methods of `EventEmitter` install (see `guard()`), one however
+   * many sends release it, which reports a late error (e.g. of a file that
+   * fails to close). A failure of the release is logged (`debug`).
+   */
+  #discard(source: Readable): void {
+    try {
+      const state = Reflect.get(source, "_readableState") as
+        { readonly closeEmitted?: unknown } | undefined;
+      if (state?.closeEmitted !== true) {
+        // Its guard listens before it is destroyed
+        guard(source, emitterMethods, this.#report());
+        Reflect.apply(destroyReadable, source, []);
+      }
+    } catch (error: unknown) {
+      const message = "The release of a stream has failed";
+      this.#ownership.debug(message, error);
+    }
   }
 
   /**

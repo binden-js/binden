@@ -1333,7 +1333,7 @@ suite("send() of a stream-like source that will not be sent", () => {
       deepStrictEqual([status, body.toString()], [200, "ended"]);
       deepStrictEqual(await within(outcomes.promise), ["resolved", "resolved"]);
       await captured.waitFor("A stream-like source has failed once released");
-      await captured.waitFor("The release of an ignored stream has failed");
+      await captured.waitFor("The release of a stream has failed");
     } finally {
       await listening.close();
     }
