@@ -19,6 +19,7 @@ import { deepStrictEqual, ok, rejects } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { kSeal } from "../src/seal.js";
 import { spawnSync } from "node:child_process";
 
 const require = createRequire(import.meta.url);
@@ -157,6 +158,30 @@ function fetchBytes(
   });
 }
 
+/** Sends a `GET` on a new connection, and reads what it receives until the connection closes */
+function fetchRaw(port: number): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const socket = connect(port, "localhost");
+    let data = "";
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`Not closed within 5000 ms: ${data}`));
+    }, 5000);
+    socket
+      .setEncoding("latin1")
+      .on("data", (chunk: string) => {
+        data += chunk;
+      })
+      // E.g. a reset once the response is cut
+      .on("error", () => null)
+      .once("close", () => {
+        clearTimeout(timer);
+        resolve(data);
+      })
+      .write("GET / HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n");
+  });
+}
+
 /** Runs an application with a middleware until the client is done */
 async function withApp(
   options: IBindenOptions,
@@ -173,6 +198,26 @@ async function withApp(
 
 /** `undefined`, which the linter does not let the tests write */
 const none = ({} as { value?: undefined }).value;
+
+/**
+ * Runs a fixture (`test/fixtures`) in a process of its own, with these flags
+ * of Node.js: a crash (e.g. an unhandled `error` event) is its exit code and
+ * output, not a failure of the test runner
+ */
+function fixture(name: string, ...flags: string[]): Record<string, unknown> {
+  const { status, stdout, stderr } = spawnSync(
+    process.execPath,
+    [
+      ...flags,
+      "--no-warnings",
+      "--import",
+      "tsx",
+      join(import.meta.dirname, "fixtures", name),
+    ],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  return { status, stdout, stderr };
+}
 
 /** Waits until a condition holds: it fails (and stops polling) once `ms` have passed */
 async function until(condition: () => boolean, ms = 2000): Promise<void> {
@@ -345,7 +390,7 @@ for (const [library, create] of libraries) {
       );
     });
 
-    test("destroys the source with the reason of the deadline, and removes its listeners", async () => {
+    test("destroys the source with the reason of the deadline, and removes its listeners (its guard once it has closed)", async () => {
       const source = create();
       const reason = errorOf(source);
       const recorded = spy(source);
@@ -358,10 +403,17 @@ for (const [library, create] of libraries) {
           const received = await fetchBytes(port);
           deepStrictEqual(received.status, 503);
           await until(() => destroyed(source) && reason() !== null);
-          await nextTurn();
+          await until(() => recorded.left().length === 0);
           deepStrictEqual((reason() as BindenAbortError).reason, "deadline");
-          deepStrictEqual(recorded.left(), []);
-          deepStrictEqual(recorded.added.length, 4);
+          // Of the send, and of its guard
+          deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
+            "close",
+            "close",
+            "data",
+            "end",
+            "error",
+            "error",
+          ]);
         },
       );
     });
@@ -478,11 +530,9 @@ for (const [library, create] of libraries) {
         },
       ],
     ] as const) {
-      // A `PassThrough` of `readable-stream` 2 emits its `end` once
-      // destroyed: an empty body, as through a pipe
-      const ends =
-        how === "closes before its end" && library === "readable-stream 2";
-      test(`${ends ? "ends" : "rejects"} when the source ${how}, and removes its listeners`, async () => {
+      // Also a `PassThrough` of `readable-stream` 2, which emits its `end`
+      // once destroyed: not its end
+      test(`rejects when the source ${how}, and removes its listeners`, async () => {
         const source = create();
         // The error of the application, which `readable-stream` 2 emits
         // once closed
@@ -505,15 +555,11 @@ for (const [library, create] of libraries) {
             const received = await fetchBytes(port);
             deepStrictEqual(
               [received.status, received.body.toString()],
-              [ends ? 200 : 500, ""],
+              [500, ""],
             );
             deepStrictEqual(
               (rejected as { code?: unknown } | null)?.code,
-              ends
-                ? none
-                : how === "fails"
-                  ? "E_FAILED"
-                  : "ERR_STREAM_PREMATURE_CLOSE",
+              how === "fails" ? "E_FAILED" : "ERR_STREAM_PREMATURE_CLOSE",
             );
             await nextTurn();
             deepStrictEqual(recorded.left(), []);
@@ -522,12 +568,65 @@ for (const [library, create] of libraries) {
       });
     }
 
+    // `readable-stream` 2 emits its `end` and its `close` once destroyed,
+    // then the error of its destroy: neither is its end
+    for (const [when, first] of [
+      ["before its first chunk", false],
+      ["once its first chunk is sent", true],
+    ] as const) {
+      for (const failure of first ? [true, false] : [true]) {
+        test(`rejects when the source is destroyed ${failure ? "with an error" : "without an error"} ${when}: ${first ? "the connection is closed" : "the error is replied"}, never a complete body`, async () => {
+          const source = create();
+          const recorded = spy(source);
+          const error = Object.assign(new Error("Destroyed"), {
+            code: "E_DESTROYED",
+          });
+          let rejected: unknown = null;
+          await withApp(
+            {},
+            async (context: Context) => {
+              if (first) {
+                source.write("first;");
+              }
+              setTimeout(() => {
+                source.destroy(failure ? error : none);
+              }, 20);
+              await context.send(source).catch((reason: unknown) => {
+                rejected = reason;
+                throw reason;
+              });
+            },
+            async ({ port }) => {
+              const received = await fetchRaw(port);
+              if (first) {
+                // Cut after its chunk: without the last chunk
+                ok(received.startsWith("HTTP/1.1 200 OK\r\n"), received);
+                ok(received.endsWith("\r\n\r\n6\r\nfirst;\r\n"), received);
+              } else {
+                ok(
+                  received.startsWith("HTTP/1.1 500 Internal Server Error\r\n"),
+                  received,
+                );
+              }
+              await until(() => rejected !== null);
+              deepStrictEqual(
+                (rejected as { code?: unknown }).code,
+                failure ? "E_DESTROYED" : "ERR_STREAM_PREMATURE_CLOSE",
+              );
+              await nextTurn();
+              deepStrictEqual(recorded.left(), []);
+            },
+          );
+        });
+      }
+    }
+
     for (const [method, status] of [
       ["HEAD", 200],
       ["GET", 204],
       ["GET", 304],
     ] as const) {
-      test(`sends no body to ${method} with ${status}: the source is destroyed without being read`, async () => {
+      test(`sends no body to ${method} with ${status}: the source is destroyed without being read, guarded until it has closed`, async () => {
         const source = create();
         source.write("unread");
         const recorded = spy(source);
@@ -543,7 +642,12 @@ for (const [library, create] of libraries) {
               [status, ""],
             );
             await until(() => destroyed(source));
-            deepStrictEqual(recorded.added, []);
+            await until(() => recorded.left().length === 0);
+            // Only by its guard
+            deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
+              "close",
+              "error",
+            ]);
           },
         );
       });
@@ -564,6 +668,31 @@ class Emitting extends EventEmitter {
     this.calls.push("resume");
     return this;
   }
+}
+
+/** A stream-like source whose `destroy()` emits nothing (it is not required to) */
+class Silent extends Emitting {
+  public destroy(): this {
+    this.calls.push("destroy");
+    return this;
+  }
+}
+
+/** The listeners that a source has of its `data`, `end`, `error` and `close` */
+function counts(source: EventEmitter): number[] {
+  return ["data", "end", "error", "close"].map((event) =>
+    source.listenerCount(event),
+  );
+}
+
+/** The message of a late error of a released source (see `ISourceReport`) */
+const released = "A stream-like source has failed once released";
+
+/** The messages of the late errors of released sources that a logger has logged */
+function reported(captured: ReturnType<typeof capture>): unknown[] {
+  return captured.records
+    .filter(({ msg }) => msg === released)
+    .map(({ failure }) => (failure as { message?: unknown }).message);
 }
 
 suite("send() of a stream-like source", () => {
@@ -595,6 +724,113 @@ suite("send() of a stream-like source", () => {
           [0, 0, 0, 0],
         );
         deepStrictEqual(removed.sort(), ["close", "data", "end", "error"]);
+      },
+    );
+  });
+
+  test("whose destroy() emits nothing: once cancelled, the listeners of the send are removed at once, and only its guard stays, which reports a late error", async () => {
+    const source = new Silent();
+    const captured = capture();
+    const sent = Promise.withResolvers<unknown>();
+    await withApp(
+      { logger: captured.logger, log_error_details: true, timeout: 50 },
+      async (context: Context) => {
+        sent.resolve(
+          await context.send(source).then(
+            () => null,
+            (error: unknown) => error,
+          ),
+        );
+      },
+      async ({ port }) => {
+        deepStrictEqual((await fetchBytes(port)).status, 503);
+        const reason = await within(sent.promise);
+        deepStrictEqual((reason as BindenAbortError).reason, "deadline");
+        deepStrictEqual(source.calls, ["resume", "destroy"]);
+        // Its guard: of `error` and `close`
+        deepStrictEqual(counts(source), [0, 0, 1, 1]);
+        source.emit("error", new Error("Late"));
+        await captured.waitFor(released);
+        deepStrictEqual(reported(captured), ["Late"]);
+        // Until the turn after its close
+        source.emit("close");
+        deepStrictEqual(counts(source), [0, 0, 1, 1]);
+        await nextTurn();
+        deepStrictEqual(source.eventNames(), []);
+      },
+    );
+  });
+
+  test("shared by sends that release it or are cancelled: one guard", async () => {
+    const source = new Silent();
+    await withApp(
+      { timeout: 20 },
+      async (context: Context) => {
+        // Released by `HEAD`, cancelled by the deadline otherwise
+        await context.send(source);
+      },
+      async ({ port }) => {
+        for (let round = 0; round < 5; round += 1) {
+          const [head, get] = [
+            await fetchBytes(port, { method: "HEAD" }),
+            await fetchBytes(port),
+          ];
+          deepStrictEqual([head.status, get.status], [200, 503]);
+        }
+        deepStrictEqual(counts(source), [0, 0, 1, 1]);
+        deepStrictEqual(
+          source.calls.filter((call) => call === "destroy").length,
+          10,
+        );
+      },
+    );
+  });
+
+  test("to HEAD: its guard reports an error emitted after its close within the turn, and is removed once (a removal that throws is reported)", async () => {
+    const captured = capture();
+    const removed: string[] = [];
+    // Closed twice, then an error
+    const closing = Object.assign(new Emitting(), {
+      destroy(): void {
+        closing.emit("close");
+        closing.emit("close");
+        process.nextTick(() => {
+          closing.emit("error", new Error("After close"));
+        });
+      },
+      removeListener(event: string, listener: () => void): Emitting {
+        removed.push(event);
+        return EventEmitter.prototype.removeListener.call(
+          closing,
+          event,
+          listener,
+        ) as Emitting;
+      },
+    });
+    const stuck = Object.assign(new Emitting(), {
+      destroy(): void {
+        stuck.emit("close");
+      },
+      removeListener(): never {
+        throw new Error("Cannot remove");
+      },
+    });
+    await withApp(
+      { logger: captured.logger, log_error_details: true },
+      async (context: Context) => {
+        await context.send(context.url.pathname === "/stuck" ? stuck : closing);
+      },
+      async ({ port }) => {
+        for (const path of ["/", "/stuck"]) {
+          const received = await fetchBytes(port, { method: "HEAD", path });
+          deepStrictEqual(received.status, 200);
+        }
+        await nextTurn();
+        deepStrictEqual(reported(captured), ["After close", "Cannot remove"]);
+        deepStrictEqual(
+          [closing.eventNames(), removed],
+          [[], ["error", "close"]],
+        );
       },
     );
   });
@@ -639,6 +875,60 @@ suite("send() of a stream-like source", () => {
     );
   });
 
+  test("an end or a close once destroyed is not its end: the error emitted within the turn rejects", async () => {
+    for (const [flag, event] of [
+      ["destroyed", "end"],
+      ["_destroyed", "close"],
+    ] as const) {
+      const source = new Emitting();
+      let rejected: unknown = null;
+      await withApp(
+        {},
+        async (context: Context) => {
+          setTimeout(() => {
+            Object.assign(source, { [flag]: true });
+            source.emit(event);
+            process.nextTick(() => {
+              const error = new Error("Destroyed");
+              source.emit("error", Object.assign(error, { code: "E_GONE" }));
+            });
+          }, 10);
+          await context.send(source).catch((error: unknown) => {
+            rejected = error;
+            throw error;
+          });
+        },
+        async ({ port }) => {
+          deepStrictEqual((await fetchBytes(port)).status, 500);
+          deepStrictEqual((rejected as { code?: unknown }).code, "E_GONE");
+          await nextTurn();
+          deepStrictEqual(source.eventNames(), [], flag);
+        },
+      );
+    }
+  });
+
+  test("destroyed, then cancelled within the turn: it is not destroyed again, only guarded", async () => {
+    const source = new Silent();
+    const readable = readStreamLike(
+      source,
+      streamLikeOf(source) as IStreamLikeMethods,
+      () => new Error("Cancelled"),
+      () => null,
+    );
+    const failure = once(readable, "error");
+    readable.resume();
+    Object.assign(source, { destroyed: true });
+    source.emit("end");
+    readable.destroy(new Error("Cancelled"));
+    deepStrictEqual(((await failure)[0] as Error).message, "Cancelled");
+    await nextTurn();
+    // Neither destroyed nor paused
+    deepStrictEqual(source.calls, []);
+    // Its guard, until it closes
+    deepStrictEqual(counts(source), [0, 0, 1, 1]);
+  });
+
   test("removes each of its listeners once", async () => {
     const source = new Emitting();
     const removed: string[] = [];
@@ -653,6 +943,7 @@ suite("send() of a stream-like source", () => {
       source,
       streamLikeOf(source) as IStreamLikeMethods,
       () => new Error("Cancelled"),
+      () => null,
     );
     readable.on("error", () => null).resume();
     // Its `error` listener is removed on the next turn, and at once by an
@@ -688,53 +979,155 @@ suite("send() of a stream-like source", () => {
   });
 });
 
+/**
+ * An object whose every inspection is recorded and throws (e.g. a getter of
+ * `on` that throws): `send()` must not read it
+ */
+function untouchable(traps: string[]): object {
+  const handler: ProxyHandler<object> = {};
+  for (const trap of [
+    "get",
+    "has",
+    "getPrototypeOf",
+    "getOwnPropertyDescriptor",
+    "ownKeys",
+  ] as const) {
+    handler[trap] = (): never => {
+      traps.push(trap);
+      throw new Error(`The source has been read (${trap})`);
+    };
+  }
+  return new Proxy({}, handler);
+}
+
 suite("send() of a stream-like source that will not be sent", () => {
-  /** Responses that do not send it */
-  const responses: Record<string, () => BindenResponse> = {
-    "once the response has ended": () => {
+  test("with an informational status: destroys it (or pauses one without destroy()) without reading it, guarded until it has closed", async () => {
+    const [, create] = libraries[2] as readonly [string, () => ISource];
+    const source = create();
+    const recorded = spy(source);
+    const emitting = new Emitting();
+    for (const sent of [source, emitting]) {
+      const response = new BindenResponse(new IncomingMessage(new Socket()));
+      await rejects(response.status(103).send(sent), TypeError);
+    }
+    ok(destroyed(source));
+    await until(() => recorded.left().length === 0);
+    deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
+      "close",
+      "error",
+    ]);
+    deepStrictEqual(emitting.calls, ["pause"]);
+    deepStrictEqual(emitting.eventNames(), []);
+    // Without the framework: its error is not reported, nor thrown
+    const failing = Object.assign(new Emitting(), {
+      destroy(): void {
+        failing.emit("error", new Error("Failed to close"));
+      },
+    });
+    const response = new BindenResponse(new IncomingMessage(new Socket()));
+    await rejects(response.status(103).send(failing), TypeError);
+    // Its guard, until it closes
+    deepStrictEqual(counts(failing), [0, 0, 1, 1]);
+  });
+
+  test("once the response has ended, or by a work that may no longer mutate it: resolves without touching it", async () => {
+    const [, create] = libraries[2] as readonly [string, () => ISource];
+    const traps: string[] = [];
+    const ended = (): BindenResponse => {
       const response = new BindenResponse(new IncomingMessage(new Socket()));
       response.end();
       return response;
-    },
-    "with an informational status": () =>
-      new BindenResponse(new IncomingMessage(new Socket())).status(103),
-  };
-
-  for (const [name, respond] of Object.entries(responses)) {
-    test(`${name}: destroys it (or pauses one without destroy()) without listening to it`, async () => {
-      const [, create] = libraries[2] as readonly [string, () => ISource];
+    };
+    const revoked = (): BindenResponse => {
+      const response = new BindenResponse(new IncomingMessage(new Socket()));
+      response[kSeal](() => false);
+      return response;
+    };
+    for (const respond of [ended, revoked]) {
       const source = create();
       const recorded = spy(source);
       const emitting = new Emitting();
-      for (const sent of [source, emitting]) {
-        await respond()
-          .send(sent)
-          .catch(() => null);
+      for (const sent of [source, emitting, untouchable(traps)]) {
+        // @ts-expect-error -- an object that `send()` must not read
+        await respond().send(sent);
       }
-      ok(destroyed(source));
-      deepStrictEqual(recorded.added, []);
-      deepStrictEqual(emitting.calls, ["pause"]);
-      deepStrictEqual(emitting.eventNames(), []);
-    });
-  }
+      ok(!destroyed(source));
+      deepStrictEqual(
+        [recorded.added, recorded.pauses, emitting.calls],
+        [[], 0, []],
+      );
+    }
+    deepStrictEqual(traps, []);
+  });
+
+  test("once the deadline has passed: a late send resolves without touching it", async () => {
+    const traps: string[] = [];
+    const late = Promise.withResolvers<unknown>();
+    await withApp(
+      { timeout: 20 },
+      async (context: Context) => {
+        await once(context.signal, "abort");
+        await sleep(10);
+        late.resolve(
+          await context.response
+            .send(
+              // @ts-expect-error -- an object that `send()` must not read
+              untouchable(traps),
+            )
+            .then(
+              () => "resolved",
+              (error: unknown) => error,
+            ),
+        );
+      },
+      async ({ port }) => {
+        deepStrictEqual((await fetchBytes(port)).status, 503);
+        deepStrictEqual(await within(late.promise), "resolved");
+        deepStrictEqual(traps, []);
+      },
+    );
+  });
 
   test("its errors once it has closed or been cancelled do not crash the process", () => {
     // A `PassThrough` of `readable-stream` 2 destroyed with an error (its
-    // `end`, then the error), a source that emits `close` then an error, and
-    // the reason of the deadline (also emitted once a destroy completes later)
-    const { status, stdout, stderr } = spawnSync(
-      process.execPath,
-      [
-        "--import",
-        "tsx",
-        join(import.meta.dirname, "fixtures", "stream-like-errors.ts"),
-      ],
-      { encoding: "utf8", timeout: 30_000 },
-    );
-    deepStrictEqual(
-      { status, stdout, stderr },
-      { status: 0, stdout: "200 500 503 503\n0 0 0 0\n", stderr: "" },
-    );
+    // `end` and its `close`, then the error, which is replied), a source that
+    // emits `close` then an error, and the reason of the deadline (also
+    // emitted once a destroy completes later)
+    deepStrictEqual(fixture("stream-like-errors.ts"), {
+      status: 0,
+      stdout: "500 500 503 503\n0 0 0 0\n",
+      stderr: "",
+    });
+  });
+
+  test("the late errors of its destroy, without a listener of the application, are logged and do not crash the process", () => {
+    // Released to `HEAD`, with 204, 304 and 103, its destroy failing at once;
+    // ignored once the response has ended (not destroyed); an error after
+    // its close; and destroys that fail 2 s later (released to `HEAD`, and
+    // cancelled at the deadline)
+    deepStrictEqual(fixture("stream-like-release.ts"), {
+      status: 0,
+      stdout:
+        "200 204 304 500 200 200 200 503\n" +
+        `${[
+          ...Array.from({ length: 4 }, () => "Failed to close after 0 ms"),
+          "Failed once closed",
+          "Failed to close after 2000 ms",
+          "Failed to close after 2000 ms",
+        ].join(", ")}\n` +
+        "0 0 0 0 0 0 0 0\n",
+      stderr: "",
+    });
+  });
+
+  test("cancelled, whose destroy() emits nothing, does not keep its response: only its guard stays", () => {
+    // 400 sources: no listener of their sends (`data`, `end`), and a guard
+    // each (`error`, `close`)
+    deepStrictEqual(fixture("stream-like-retention.ts", "--expose-gc"), {
+      status: 0,
+      stdout: "collected 0 0 400 400\n",
+      stderr: "",
+    });
   });
 });
 

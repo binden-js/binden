@@ -809,7 +809,12 @@ suite("Ownership of the response once the exchange is sealed", () => {
 
     /** Resolves once every handle is closed */
     const closed = async (handles: FileHandle[]): Promise<void> => {
+      // Not polled forever: a file that stays open fails the test
+      const deadline = Date.now() + 2000;
       while (handles.length === 0 || handles.some(({ fd }) => fd !== -1)) {
+        if (Date.now() > deadline) {
+          throw new Error("A file is still open");
+        }
         await sleep(5);
       }
     };
@@ -857,8 +862,8 @@ suite("Ownership of the response once the exchange is sealed", () => {
       );
       ok(rejection instanceof BindenAbortError);
       deepStrictEqual(handles.length, 1);
-      // Opened late: it is not read
-      deepStrictEqual(streams.length, phase === "opening" ? 0 : 1);
+      // Opened or stated late: it is not read (no stream of it)
+      deepStrictEqual(streams.length, 0);
     };
 
     test("while the file is opened, concurrently with the reply of the error handler", async () => {

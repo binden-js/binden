@@ -146,6 +146,13 @@ export interface IOwnership {
   warn(message: string, reason: string): void;
   /** Logs (at `debug`) what is done with a pipe, with the reason */
   note(message: string, reason: string): void;
+  /**
+   * Logs (at `debug`) a late error of a stream-like source that is not sent,
+   * or no longer (e.g. its `destroy()` fails asynchronously): a function of
+   * its own scope, which holds neither the request nor the response, since
+   * the source may keep it as long as it lives (none: not reported)
+   */
+  readonly released?: ((error: unknown) => void) | undefined;
 }
 
 /**

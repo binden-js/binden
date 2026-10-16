@@ -756,8 +756,8 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     ok(!response.headersSent);
     deepStrictEqual(response.getHeaderNames(), []);
     deepStrictEqual(response.statusCode, 200);
-    // Released
-    ok(source.destroyed);
+    // Neither read nor released: left to the work that has it
+    deepStrictEqual([source.destroyed, source.readableFlowing], [false, null]);
   });
 
   test("[kSeal]() (while it is late)", async () => {

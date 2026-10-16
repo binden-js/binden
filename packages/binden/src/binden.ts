@@ -434,7 +434,12 @@ export class Binden<
     };
     this.#works.set(exchange, works);
     exchange.onLateFailure(
-      Binden.#lateReport(this.#logger, context.id, this.#details),
+      Binden.#lateReport(
+        this.#logger,
+        context.id,
+        this.#details,
+        "A pipe of a work has failed once its request had completed",
+      ),
     );
     response[kOwnership]({
       fail: (owner, error): boolean => {
@@ -467,6 +472,12 @@ export class Binden<
       note: (message, reason): void => {
         context.log.debug(message, { reason });
       },
+      released: Binden.#lateReport(
+        this.#logger,
+        context.id,
+        this.#details,
+        "A stream-like source has failed once released",
+      ),
     });
     if (this.#request_id?.echo === true) {
       // Every reply sends it back, also the error replies of the framework
@@ -490,20 +501,20 @@ export class Binden<
   }
 
   /**
-   * How a late failure of a pipe of a work of a request is logged (see
-   * `Exchange.onLateFailure()`): once the request has completed, what is
-   * left of its works (e.g. a listener of `end` that one has left on a
-   * shared source) is logged at `debug`, by a function of its own scope,
-   * which holds neither the request nor its context
+   * How a late failure of a request is logged with the message, at `debug`,
+   * by a function of its own scope, which holds neither the request nor its
+   * context: once the request has completed, what is left of its works (see
+   * `Exchange.onLateFailure()`, e.g. a listener of `end` that one has left on
+   * a shared source), and a late error of a stream-like source that it has
+   * released (see `IOwnership.released`)
    */
   static #lateReport(
     logger: ILogger,
     id: string,
     details: boolean,
+    message: string,
   ): (error: unknown) => void {
     return (error): void => {
-      const message =
-        "A pipe of a work has failed once its request had completed";
       logger.child({ trace_id: id }).debug(message, {
         failure: snapshot(error, { location: "send", request_id: id, details }),
       });

@@ -52,6 +52,7 @@ import {
   tagOf,
 } from "./send-file.js";
 import {
+  type ISourceReport,
   type IStreamLike,
   type IStreamLikeMethods,
   readStreamLike,
@@ -294,6 +295,11 @@ const unowned: IOwnership = {
     // Nobody to tell
   },
 };
+
+/** The report of a late error of a source of a response that is not owned */
+function unreported(): void {
+  // Nobody to tell
+}
 
 /** The listeners of an event of an emitter, as added (e.g. a wrapper of `once()`) */
 function rawListenersOf(emitter: EventEmitter, event: string): IListener[] {
@@ -2442,14 +2448,15 @@ export class BindenResponse<
 
   /** `send()`, which may throw before it has changed the response */
   #send(data: unknown, encoding?: BufferEncoding): Promise<void> {
+    if (this.writableEnded || !this.#allows()) {
+      // Ignored: nothing of the data is read (e.g. a getter of an object of
+      // a work that may no longer mutate the response), nor released
+      return Promise.resolve();
+    }
     // What is sent (see `#kind()`): the methods of a stream-like source are
     // read once
     const kind = BindenResponse.#kind(data);
-    if (this.writableEnded || !this.#allows()) {
-      // Nothing of it will be sent: release it (e.g. its file)
-      BindenResponse.#release(data, kind);
-      return Promise.resolve();
-    } else if (kind === null) {
+    if (kind === null) {
       // Before anything is changed: never its `toString()` (e.g. `[object
       // Object]`), nor a source that cannot be read with backpressure or
       // released (its methods are not called)
@@ -2467,7 +2474,7 @@ export class BindenResponse<
       );
     } else if (BindenResponse.#informational(this.statusCode)) {
       // Not a final response: the client would wait for the final one
-      BindenResponse.#release(data, kind);
+      this.#release(data, kind);
       return Promise.reject(
         new TypeError(
           `Status code ${this.statusCode} is informational (use writeEarlyHints())`,
@@ -2478,7 +2485,7 @@ export class BindenResponse<
     if (kind !== "value") {
       if (this.#bodiless()) {
         // Nothing of the source would be sent: it is not read at all
-        BindenResponse.#release(data, kind);
+        this.#release(data, kind);
         // The representation and the framing of the length that it declares
         // (unknown without one, not empty), without a stale `Transfer-Encoding`
         this[kRepresentation](this.#length());
@@ -2489,8 +2496,11 @@ export class BindenResponse<
       return this.#pipe(
         kind === "readable"
           ? (data as Readable)
-          : readStreamLike(data as object, kind, () =>
-              this.#abandoned(BindenResponse.#premature()),
+          : readStreamLike(
+              data as object,
+              kind,
+              () => this.#abandoned(BindenResponse.#premature()),
+              this.#report(),
             ),
       );
     }
@@ -3109,16 +3119,28 @@ export class BindenResponse<
     return data === null ? null : streamLikeOf(data);
   }
 
-  /** Releases a source (a `Readable`, or a stream-like one) that will not be sent */
-  static #release(
+  /**
+   * Releases a source (a `Readable`, or a stream-like one) that will not be
+   * sent: a late error of a stream-like one is reported (see `#report()`)
+   */
+  #release(
     data: unknown,
     kind: IStreamLikeMethods | "readable" | "value" | null,
   ): void {
     if (kind === "readable") {
       BindenResponse.#discard(data as Readable);
     } else if (kind !== null && kind !== "value") {
-      releaseStreamLike(data as object, kind);
+      releaseStreamLike(data as object, kind, this.#report());
     }
+  }
+
+  /**
+   * How a late error of a stream-like source that is not sent, or no longer,
+   * is reported (see `ISourceReport`): by the framework (see
+   * `IOwnership.released`), or not at all
+   */
+  #report(): ISourceReport {
+    return this.#ownership.released ?? unreported;
   }
 
   /** Destroys a source that will not be sent, whose errors are no longer of interest */

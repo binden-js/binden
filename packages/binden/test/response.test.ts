@@ -291,7 +291,7 @@ suite("BindenResponse", () => {
     ok(response.ok);
   });
 
-  test(".send() (`writableEnded === true` releases a `Readable`)", async () => {
+  test(".send() (`writableEnded === true` resolves without touching a `Readable`)", async () => {
     const source = createReadStream(filePath);
     const settled = new Promise<unknown>((resolve) => {
       server.once("request", (_request, response) => {
@@ -303,8 +303,9 @@ suite("BindenResponse", () => {
     await (await fetch(url)).text();
 
     deepStrictEqual(await settled, null);
-    // Its file is closed
-    ok(source.destroyed);
+    // Neither read nor released: left to the work that has it
+    deepStrictEqual([source.destroyed, source.readableFlowing], [false, null]);
+    source.destroy();
   });
 
   test(".send() (with encoding)", async () => {

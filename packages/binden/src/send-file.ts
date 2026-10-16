@@ -543,6 +543,11 @@ export async function sendFileTo(
       return;
     }
     const stats = await handle.stat();
+    if (stopped()) {
+      // Cancelled while its metadata was read: closed at once (a send that
+      // is ignored would not release its stream)
+      return;
+    }
 
     if (!stats.isFile()) {
       throw location.contained
