@@ -686,6 +686,67 @@ suite("A pipe into the response", () => {
       }
     });
 
+    test("an accessor of its own that it has set on a shared source refuses the pipe of the new owner: no byte of it", async () => {
+      const source = silent();
+      const feed = feeder(source, ["REAL"]);
+      try {
+        await withApp(
+          {
+            timeout: 20,
+            error_handler: async (context: Context, error): Promise<void> => {
+              if (!isDeadline(error)) {
+                return;
+              }
+              context.response.status(503).type("text/plain");
+              source.pipe(context.response);
+              feed.start();
+              await once(context.response, "finish");
+            },
+          },
+          (app) => {
+            app.use(async (context: Context) => {
+              const { response } = context;
+              const state: unknown = Reflect.get(source, "_readableState");
+              let armed = true;
+              // Read by `on("data")` of Node.js once it has added the
+              // listener of the pipe of the new owner
+              Object.defineProperty(source, "_readableState", {
+                configurable: true,
+                enumerable: true,
+                get(this: PassThrough): unknown {
+                  if (
+                    armed &&
+                    EventEmitter.prototype.listenerCount.call(this, "data") ===
+                      1
+                  ) {
+                    armed = false;
+                    EventEmitter.prototype.on.call(this, "data", () => {
+                      response.write("OLD");
+                    });
+                  }
+                  return state;
+                },
+                set(): void {
+                  // Ignored
+                },
+              });
+              await never();
+            });
+          },
+          async ({ port }) => {
+            const reply = await exchange(port);
+            deepStrictEqual(
+              [reply.status, reply.body, reply.complete],
+              [500, "", true],
+            );
+            ok(!reply.raw.includes("OLD"), reply.raw);
+          },
+        );
+      } finally {
+        feed.stop();
+      }
+    });
+
     test("its pipe whose own `close` listener is gone is unpiped all the same", async () => {
       const source = silent();
       await withApp(
@@ -1415,6 +1476,51 @@ suite("A pipe into the response", () => {
           ok(!/OLD|X-Trap/u.test(reply.raw), reply.raw);
           // Its traps run only to unpipe it, once its work has lost the response
           ok(traps.includes("getPrototypeOf"), JSON.stringify(traps));
+        });
+      }
+
+      for (const name of [
+        "_readableState",
+        "_events",
+        "_eventsCount",
+        "readableEnded",
+        "on",
+      ]) {
+        test(`an accessor \`${name}\` of the source itself (a getter that adds a \`data\` listener)`, async () => {
+          const { reply } = await refusedBy((source, response) => {
+            const value: unknown = Reflect.get(source, name);
+            let armed = true;
+            Object.defineProperty(source, name, {
+              configurable: true,
+              enumerable: true,
+              get(this: PassThrough): unknown {
+                // The table itself (its getter would run again)
+                const table = (
+                  name === "_events" ? value : Reflect.get(this, "_events")
+                ) as Record<string, unknown>;
+                const { data } = table;
+                if (armed && typeof data === "function") {
+                  armed = false;
+                  // After the listener of the pipe, as if it were its own
+                  table.data = [
+                    data,
+                    (): void => {
+                      response.write("OLD");
+                    },
+                  ];
+                }
+                return value;
+              },
+              set(): void {
+                // Ignored
+              },
+            });
+          });
+          deepStrictEqual(
+            [reply.status, reply.body, reply.complete],
+            [500, "", true],
+          );
+          ok(!reply.raw.includes("OLD"), reply.raw);
         });
       }
 
@@ -2271,6 +2377,7 @@ suite("A pipe into the response", () => {
           async ({ port }, captured) => {
             const reply = await exchange(port);
             deepStrictEqual([reply.status, reply.body], [202, "sent"]);
+
             const { reason } = await captured.waitFor(
               "A pipe of a work of no request (or of another) has been refused",
             );

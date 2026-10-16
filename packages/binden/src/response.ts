@@ -214,6 +214,36 @@ const inspected = [
   "removeAllListeners",
 ];
 
+/**
+ * The properties of a piped source that Node.js reads as it pipes it (its
+ * state, its listener table and the inspected methods), and binden as it
+ * adopts the pipe: an accessor of the source itself (e.g. a getter of
+ * `_readableState` that adds a listener after the one of the pipe) would
+ * run code of another work during the pipe (see `#refusal()`)
+ */
+const read: readonly string[] = [
+  "_readableState",
+  "_writableState",
+  "_events",
+  "_eventsCount",
+  "_maxListeners",
+  "readableEnded",
+  "destroyed",
+  ...inspected,
+];
+
+/**
+ * The first property that Node.js or binden read on a piped source (see
+ * `read`) that the source has as an accessor of its own (none on a source
+ * that is not a proxy runs its code)
+ */
+function accessorOf(source: object): string | undefined {
+  return read.find((name) => {
+    const descriptor = Object.getOwnPropertyDescriptor(source, name);
+    return typeof descriptor !== "undefined" && !("value" in descriptor);
+  });
+}
+
 /** How a response handles the works that own it without the framework (see `kOwnership`) */
 const unowned: IOwnership = {
   fail: (): boolean => false,
@@ -763,8 +793,9 @@ export class BindenResponse<
    * Why a pipe cannot be adopted (`null` when it can): code other than the
    * class of the source may have added a listener during the pipe (a
    * listener of `newListener` or `removeListener` of the source or of the
-   * response, or a method of the source itself that the pipe calls), or it is
-   * not a pipe of `Readable.prototype.pipe()` (e.g. the legacy
+   * response, or a method or an accessor of the source itself that the pipe
+   * calls or reads, see `read`), or it is not a pipe of
+   * `Readable.prototype.pipe()` (e.g. the legacy
    * `Stream.prototype.pipe()`), whose last `data` listener and `end` wrapper
    * it has just added. The source is inspected by the methods of every
    * emitter, never by its own ones.
@@ -778,6 +809,10 @@ export class BindenResponse<
       return "the source has listeners of its listeners";
     } else if (listens(this)) {
       return "the response has listeners of its listeners";
+    }
+    const accessor = accessorOf(source);
+    if (typeof accessor !== "undefined") {
+      return `the source has an accessor of its own (${accessor})`;
     }
     const own = inspected.find(
       (name) => Object.hasOwn(source, name) && !isPatch(source, name),

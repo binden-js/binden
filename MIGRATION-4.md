@@ -206,7 +206,9 @@ behaviours of Node.js:
   source has listeners of `newListener` or `removeListener`, when the source is a `Proxy` or has
   its own listener methods, `emit()`, `pipe()`, `unpipe()`, `pause()`, `resume()`, `read()`,
   `rawListeners()`, `listeners()`, `listenerCount()`, `removeListener()`, `off()` or
-  `removeAllListeners()` (e.g. patched on an instance), or when it is not extensible
+  `removeAllListeners()` (e.g. patched on an instance), an accessor of its own of one of them or of
+  `_readableState`, `_writableState`, `_events`, `_eventsCount`, `_maxListeners`, `readableEnded` or
+  `destroyed`, or when it is not extensible
   (`Object.seal()`; Node.js itself cannot pipe a frozen stream). The class of the source (also of
   `readable-stream`) is trusted: piping a stream that another work has patched (its class, or its
   own methods, which refuse the pipe once it is set up) runs that code as the work that pipes.
