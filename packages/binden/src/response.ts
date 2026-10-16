@@ -541,23 +541,24 @@ export class BindenResponse<
         }
         return result;
       };
+    // Writable, as the methods of Node.js: an instrumentation may wrap them
+    // on a response (its wrapper calls them)
+    const method = (value: unknown): PropertyDescriptor => ({
+      configurable: true,
+      writable: true,
+      value,
+    });
     Object.defineProperties(this.prototype, {
-      addListener: { configurable: true, value: add("addListener", false) },
-      on: { configurable: true, value: add("on", false) },
-      once: { configurable: true, value: add("on", true) },
-      prependListener: {
-        configurable: true,
-        value: add("prependListener", false),
-      },
-      prependOnceListener: {
-        configurable: true,
-        value: add("prependListener", true),
-      },
+      addListener: method(add("addListener", false)),
+      on: method(add("on", false)),
+      once: method(add("on", true)),
+      prependListener: method(add("prependListener", false)),
+      prependOnceListener: method(add("prependListener", true)),
       // As Node.js: the listener itself, but the wrapper of a `once()`
-      rawListeners: { configurable: true, value: rawListeners },
+      rawListeners: method(rawListeners),
       // A source piped into the response is adopted before any listener of
       // `pipe` runs (see `#adopt()`)
-      emit: { configurable: true, value: emit },
+      emit: method(emit),
     });
     // Nor how it is framed: whether it sends a `Date`, keeps its connection
     // open (or says that it closes it), chunks its body (also by default) or

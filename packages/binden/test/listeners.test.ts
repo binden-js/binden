@@ -168,6 +168,50 @@ suite("Listeners and callbacks of the response", () => {
     ok(!response.hasHeader("X-Listener"));
   });
 
+  test("its methods may be wrapped on a response, as those of Node.js (e.g. by an instrumentation)", () => {
+    const names = [
+      "on",
+      "addListener",
+      "once",
+      "prependListener",
+      "prependOnceListener",
+      "emit",
+      "rawListeners",
+    ] as const;
+    const owner = { name: "owner" };
+    const seen: unknown[] = [];
+    for (const response of [
+      detached(),
+      new ServerResponse(new IncomingMessage(new Socket())),
+    ]) {
+      const wrapped: string[] = [];
+      for (const name of names) {
+        const original = Reflect.get(response, name) as (
+          ...args: unknown[]
+        ) => unknown;
+        // An assignment in strict code (a module): it throws when refused
+        response[name] = function wrapper(
+          this: ServerResponse,
+          ...args: unknown[]
+        ): unknown {
+          wrapped.push(name);
+          return Reflect.apply(original, this, args);
+        } as never;
+        ok(Object.hasOwn(response, name));
+      }
+      owners.run(owner, () => {
+        response.on("x", () => {
+          seen.push(owners.getStore() ?? null);
+        });
+      });
+      response.emit("x");
+      deepStrictEqual(response.rawListeners("x").length, 1);
+      deepStrictEqual(wrapped, ["on", "emit", "rawListeners"]);
+    }
+    // Still bound to its adder by the method of the response
+    deepStrictEqual(seen, [owner, null]);
+  });
+
   test("the callback of a write runs as the work that has written", () => {
     const response = detached();
     const owner = { name: "owner" };

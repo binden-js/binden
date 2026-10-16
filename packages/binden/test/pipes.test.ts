@@ -191,6 +191,24 @@ function messages(captured: ICaptured, level: number): unknown[] {
 /** A head that Node.js refuses (an invalid reason phrase) */
 const refused = "bad\n";
 
+/**
+ * Wraps `on()` and `emit()` on a response, as an instrumentation does (e.g.
+ * with `shimmer`): the wrappers call the methods of the response
+ */
+function instrument(response: BindenResponse): void {
+  for (const name of ["on", "emit"] as const) {
+    const original = Reflect.get(response, name) as (
+      ...args: unknown[]
+    ) => unknown;
+    response[name] = function wrapper(
+      this: BindenResponse,
+      ...args: unknown[]
+    ): unknown {
+      return Reflect.apply(original, this, args);
+    } as never;
+  }
+}
+
 suite("A pipe into the response", () => {
   suite(
     "adopted (its owner writes and ends it, whatever work feeds it)",
@@ -1509,6 +1527,137 @@ suite("A pipe into the response", () => {
       });
     }
   });
+
+  suite(
+    "with `on()` and `emit()` of the response wrapped by a middleware (an instrumentation)",
+    () => {
+      test("`pipeline()` of an error handler, fed by a work of no request, ends the reply", async () => {
+        const source = silent();
+        const feed = feeder(source, ["REAL", "!"]);
+        try {
+          await withApp(
+            {
+              timeout: 20,
+              error_handler: async (context: Context, error): Promise<void> => {
+                if (!isDeadline(error)) {
+                  return;
+                }
+                context.response.status(503).type("text/plain");
+                const piped = pipelineAsync(source, context.response);
+                feed.start();
+                await piped;
+              },
+            },
+            (app) => {
+              app.use(async (context: Context) => {
+                instrument(context.response);
+                await never();
+              });
+            },
+            async ({ port }, captured) => {
+              const reply = await exchange(port);
+              deepStrictEqual(
+                [reply.status, reply.body, reply.complete, reply.closed],
+                [503, "REAL!", true, false],
+              );
+              deepStrictEqual(messages(captured, 50), []);
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+
+      test("a listener that the abandoned work adds to the source writes nothing", async () => {
+        const source = silent();
+        const feed = feeder(source, ["REAL"]);
+        try {
+          await withApp(
+            {
+              timeout: 20,
+              error_handler: async (context: Context, error): Promise<void> => {
+                if (!isDeadline(error)) {
+                  return;
+                }
+                context.response.status(503).type("text/plain");
+                source.pipe(context.response);
+                feed.start();
+                await once(context.response, "finish");
+              },
+            },
+            (app) => {
+              app.use(async (context: Context) => {
+                instrument(context.response);
+                context.response.prependListener("pipe", (piped: Readable) => {
+                  piped.on("data", () => {
+                    context.response.write("OLD");
+                  });
+                });
+                await never();
+              });
+            },
+            async ({ port }) => {
+              const reply = await exchange(port);
+              deepStrictEqual(
+                [reply.status, reply.body, reply.complete],
+                [503, "REAL", true],
+              );
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+
+      test("a pipe whose write throws fails its work", async () => {
+        await withApp(
+          {},
+          (app) => {
+            app.use(async (context: Context) => {
+              instrument(context.response);
+              context.response.statusMessage = refused;
+              Readable.from(["body"]).pipe(context.response);
+              await never();
+            });
+          },
+          async ({ port }) => {
+            const reply = await exchange(port, { linger: 50 });
+            deepStrictEqual([reply.status, reply.complete], [500, true]);
+            deepStrictEqual(reply.raw.match(/HTTP\/1\.1/gu)?.length, 1);
+          },
+        );
+      });
+
+      test("the pipe of the stack is unpiped at its deadline", async () => {
+        const source = silent();
+        await withApp(
+          {
+            timeout: 20,
+            error_handler: async (context: Context, error): Promise<void> => {
+              if (!isDeadline(error)) {
+                return;
+              }
+              await context.status(503).send(`${source.listenerCount("data")}`);
+            },
+          },
+          (app) => {
+            app.use(async (context: Context) => {
+              instrument(context.response);
+              source.pipe(context.response);
+              await never();
+            });
+          },
+          async ({ port }) => {
+            const reply = await exchange(port);
+            deepStrictEqual(
+              [reply.status, reply.body, reply.complete],
+              [503, "0", true],
+            );
+          },
+        );
+      });
+    },
+  );
 
   suite("into a response without the framework (Node.js decides)", () => {
     test("refused: it is unpiped, and nothing else", () => {
