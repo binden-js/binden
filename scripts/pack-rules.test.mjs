@@ -264,11 +264,7 @@ describe("scripts/pack-rules.mjs", () => {
         ["dist/index.js.map", "a%25.ts", "dist/a%.ts"],
         ["dist/index.js.map", "./a/../b/./c.ts", "dist/b/c.ts"],
         ["dist/a b/%.js.map", "../%23.ts", "dist/#.ts"],
-        [
-          "dist/a?#.js",
-          "./a?#.js.map".replace("?#", "%3F%23"),
-          "dist/a?#.js.map",
-        ],
+        ["dist/a?#.js", "./a%3F%23.js.map", "dist/a?#.js.map"],
       ]) {
         equal(resolveInside(from, target), path, target);
       }
