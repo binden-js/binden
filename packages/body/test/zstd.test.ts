@@ -47,6 +47,8 @@ interface IHeader {
   dictionary?: number;
   /** `Frame_Content_Size_flag` */
   content?: number;
+  /** `Frame_Content_Size` (by default, the size of the content) */
+  declared?: bigint;
 }
 
 /** The header of a block: its size, its type and whether it is the last one */
@@ -70,10 +72,10 @@ function contentOf(block: IBlock): string {
  */
 function frame(
   blocks: readonly IBlock[],
-  { single = true, dictionary = 0, content = 0 }: IHeader = {},
+  { single = true, dictionary = 0, content = 0, declared }: IHeader = {},
 ): Buffer {
   const text = blocks.map(contentOf).join("");
-  const size = Buffer.byteLength(text);
+  const size = Number(declared ?? Buffer.byteLength(text));
   const descriptor = (content << 6) | (single ? 0x20 : 0) | dictionary;
   const parts: Buffer[] = [MAGIC, Buffer.from([descriptor])];
   if (!single) {
@@ -90,7 +92,7 @@ function frame(
   } else if (field.length === 4) {
     field.writeUInt32LE(size);
   } else if (field.length === 8) {
-    field.writeBigUInt64LE(BigInt(size));
+    field.writeBigUInt64LE(declared ?? BigInt(size));
   }
   parts.push(field);
   blocks.forEach((block, index) => {
@@ -205,7 +207,7 @@ const content = crafted.map(([, text]) => text).join("");
 
 suite("BodyParser (zstd)", () => {
   test("concatenated frames are one body, wherever the chunks end", async () => {
-    // In one chunk: Node.js 24 decodes only the first frame of a write
+    // In one chunk (each frame is given to a decoder of its own)
     deepStrictEqual(await post(all), parsed(content));
     // Every frame, block and field split, the magic numbers included
     for (const size of [1, 2, 3, 5, 7, 13]) {
@@ -388,6 +390,93 @@ suite("BodyParser (zstd)", () => {
       }
     },
   );
+
+  test("a frame whose content is not of its declared size is a 400, in one write and in chunks", async () => {
+    const parser = new BodyParser({ zstd: true });
+    // Ended by an empty block, whose end the decoder of Node.js does not
+    // check against the declared size when it gets the frame in pieces
+    const sized = (text: string, header: IHeader): Buffer =>
+      frame([{ raw: text }, { raw: "" }], { single: false, ...header });
+    const unsized = frame([{ raw: "xyz" }], { single: false });
+    for (const [name, body] of [
+      // R3's reproduction (RFC 8878 offsets a size of 2 bytes by 256)
+      [
+        "declares 300 bytes, has 3",
+        sized("abc", { content: 1, declared: 300n }),
+      ],
+      [
+        "declares 256 bytes, has 600",
+        sized("a".repeat(600), { content: 1, declared: 256n }),
+      ],
+      // Sizes that compensate each other: [3, 2] declared, [2, 3] decoded
+      [
+        "compensating sizes",
+        Buffer.concat([
+          sized("ab", { content: 2, declared: 3n }),
+          sized("cde", { content: 2, declared: 2n }),
+        ]),
+      ],
+      [
+        "compensating sizes, the other way",
+        Buffer.concat([
+          sized("abc", { content: 2, declared: 2n }),
+          sized("de", { content: 2, declared: 3n }),
+        ]),
+      ],
+      [
+        "after a frame without a size",
+        Buffer.concat([unsized, sized("ab", { content: 2, declared: 3n })]),
+      ],
+      [
+        "before a frame without a size",
+        Buffer.concat([sized("ab", { content: 2, declared: 3n }), unsized]),
+      ],
+      // A size of 8 bytes is read whole: its low 4 bytes are 3
+      [
+        "8 bytes: 2^32 + 3",
+        sized("abc", { content: 3, declared: 2n ** 32n + 3n }),
+      ],
+      [
+        "8 bytes: far above any limit",
+        sized("abc", { content: 3, declared: 2n ** 64n - 1n }),
+      ],
+      // Whose window is its declared size
+      [
+        "8 bytes: a single segment far above any limit",
+        frame([{ raw: "abc" }], { content: 3, declared: 2n ** 63n }),
+      ],
+    ] as const) {
+      for (const size of [body.length, 4, 1]) {
+        deepStrictEqual(
+          await post(chunked(...pieces(body, size)), "zstd", parser),
+          refused,
+          `${name}: ${size} bytes per chunk`,
+        );
+      }
+      deepStrictEqual(await post(body, "zstd", parser), refused, name);
+    }
+    for (const [body, text] of [
+      [frame([{ raw: "abc" }]), "abc"],
+      [sized("x".repeat(300), { content: 1 }), "x".repeat(300)],
+      [
+        Buffer.concat([
+          sized("ab", { content: 2 }),
+          unsized,
+          sized("cde", { content: 2 }),
+        ]),
+        "abxyzcde",
+      ],
+      [sized("abc", { content: 3 }), "abc"],
+    ] as const) {
+      for (const size of [body.length, 4, 1]) {
+        deepStrictEqual(
+          await post(chunked(...pieces(body, size)), "zstd", parser),
+          parsed(text),
+          `${text}: ${size} bytes per chunk`,
+        );
+      }
+    }
+  });
 
   test("the reading of a frame stops at the deadline", async () => {
     const { promise: settled, resolve: settle } =

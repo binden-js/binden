@@ -143,15 +143,17 @@ an empty body.
 `zstd: true` decodes `zstd` too. Its API is experimental in Node.js, and a `zstd` decoder
 allocates the window that a frame declares, whatever `limit` is: the parser refuses a window larger
 than 8 MiB (`400 Bad Request`, as RFC 9659 allows), so a `zstd` body may still take up to 8 MiB of
-memory per decoder.
+memory per `zstd` coding (its frames are decoded one at a time).
 
 Concatenated `gzip` members are one body, and so are concatenated `zstd` frames (RFC 8878), on
-every supported version of Node.js: the parser finds the frames itself, and a single decoder gets
-them only once they have been read. It gets whole chunks when the decoder of Node.js decodes
-concatenated frames (Node.js 26), and one frame at a time otherwise (the decoder of Node.js 24
-stops after the first frame of what it gets, and accepts a truncated one). Skippable frames are
-ignored, and a truncated frame is a `400`. `limit` counts the content of all the frames,
-`encoded_limit` and `verify_encoded` the body as received, skippable frames included.
+every supported version of Node.js: the parser finds the frames itself, and decodes them one after
+the other, each data frame by a decoder of its own, which gets the bytes of that frame only once
+they have been read. Once the decoder of a frame has ended, before the next frame is decoded, the
+size of its content is checked against the `Frame_Content_Size` that the frame declares, if it
+declares one: a different size is a `400`, however the body is split (and a frame that produces
+more than it declares fails at once). Skippable frames are ignored, and a truncated frame is a
+`400`. `limit` counts the content of all the frames, `encoded_limit` and `verify_encoded` the body
+as received, skippable frames included.
 
 A request has at most **1024 `zstd` frames**, on every supported version of Node.js: its data,
 empty and skippable frames, over all its `zstd` codings (e.g. both codings of
@@ -264,18 +266,18 @@ with an empty body.
 
 ## Errors
 
-| Situation                                                                                                                 | Reply                          |
-| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Invalid JSON (for the default `parse`), whitespace only, not an object or an array (`strict`), `undefined` from `parse`   | `400 Bad Request`              |
-| Corrupt compressed data (also data after the end of a coding, or no byte at all), bytes that are not valid in the charset | `400 Bad Request`              |
-| A client that goes away                                                                                                   | `400 Bad Request` (`aborted`)  |
-| A limit is exceeded (`limit`, `encoded_limit`, `parameter_limit`)                                                         | `413 Content Too Large`        |
-| More than 1024 `zstd` frames in a request                                                                                 | `413` (`zstd_frames`)          |
-| An unknown or unsupported content coding, more than two codings, an unknown charset                                       | `415 Unsupported Media Type`   |
-| A content type that is not selected                                                                                       | skipped (the body is not read) |
-| A `BindenError` of `parse` or `verify`                                                                                    | that error                     |
-| Any other failure of `parse` or `verify`, a `type` function that fails, a body that something else has read               | `500 Internal Server Error`    |
-| A parser that starts once the response has finished                                                                       | `500 Internal Server Error`    |
+| Situation                                                                                                                                                          | Reply                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| Invalid JSON (for the default `parse`), whitespace only, not an object or an array (`strict`), `undefined` from `parse`                                            | `400 Bad Request`              |
+| Corrupt compressed data (also data after the end of a coding, no byte at all, or a `zstd` frame not of its declared size), bytes that are not valid in the charset | `400 Bad Request`              |
+| A client that goes away                                                                                                                                            | `400 Bad Request` (`aborted`)  |
+| A limit is exceeded (`limit`, `encoded_limit`, `parameter_limit`)                                                                                                  | `413 Content Too Large`        |
+| More than 1024 `zstd` frames in a request                                                                                                                          | `413` (`zstd_frames`)          |
+| An unknown or unsupported content coding, more than two codings, an unknown charset                                                                                | `415 Unsupported Media Type`   |
+| A content type that is not selected                                                                                                                                | skipped (the body is not read) |
+| A `BindenError` of `parse` or `verify`                                                                                                                             | that error                     |
+| Any other failure of `parse` or `verify`, a `type` function that fails, a body that something else has read                                                        | `500 Internal Server Error`    |
+| A parser that starts once the response has finished                                                                                                                | `500 Internal Server Error`    |
 
 The parser never logs the body itself: its logs have the reason of the refusal, and the type,
 known `code` and status of an error.
