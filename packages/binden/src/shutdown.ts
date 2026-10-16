@@ -1,10 +1,10 @@
 import { type EventEmitter, errorMonitor } from "node:events";
+import { kFramework, kListen } from "./seal.js";
 import type { BindenResponse } from "./response.js";
 import type { Exchange } from "./exchange.js";
 import type { Server as HttpServer } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import type { Socket } from "node:net";
-import { kFramework } from "./seal.js";
 import { validateDelay } from "./delay.js";
 
 /** A server that `shutdown()` closes */
@@ -156,7 +156,7 @@ export function track(
     });
     registration.kept.delete(previous);
   }
-  response.once("close", () => {
+  response[kListen]("close", () => {
     if (registration.closing) {
       // Once the connection is idle (e.g. kept alive after its response)
       setImmediate(() => {

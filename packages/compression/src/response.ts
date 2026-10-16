@@ -7,6 +7,7 @@ import {
   type IRepresentation,
   type IResponseOperation,
   bodyHeaders,
+  kListen,
   kNegotiator,
   kOperation,
   kRestoreFraming,
@@ -858,7 +859,8 @@ export class CompressedResponse {
         );
         if (!accepted) {
           compressor.pause();
-          response.once("drain", () => {
+          // Of the transfer, not of a work: never called early (see `kListen`)
+          response[kListen]("drain", () => {
             compressor.resume();
           });
         }
@@ -876,7 +878,10 @@ export class CompressedResponse {
       // Its pending writes fail (and `flush()` rejects by itself)
       compressor.destroy();
     };
-    response.once("close", this.#destroy);
+    // The real close only: an abandoned work that sees its response closed
+    // early (see `kListen`) does not cut what the compressor has accepted
+    // (removed by its function, see `#rollback()`)
+    response[kListen]("close", this.#destroy);
     return compressor;
   }
 

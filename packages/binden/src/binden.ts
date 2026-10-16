@@ -28,7 +28,16 @@ import {
   split,
 } from "./route.js";
 import { type IMiddleware, Middleware } from "./middleware.js";
-import { bodyHeaders, kCancel, kFramework, kOperation, kSeal } from "./seal.js";
+import {
+  bodyHeaders,
+  kCancel,
+  kFramework,
+  kListen,
+  kOperation,
+  kOwnership,
+  kSeal,
+  owners,
+} from "./seal.js";
 import { isClosing, register, track } from "./shutdown.js";
 import { pathOf, property } from "./property.js";
 import { BindenError } from "./error.js";
@@ -393,6 +402,11 @@ export class Binden<
     // of the framework mutates the response: the sends, writes, headers,
     // status and cookies of the abandoned work do nothing
     response[kSeal]((owner) => exchange.allows(owner));
+    response[kOwnership]({
+      debug: (message, error): void => {
+        context.log.debug(message, this.#failure(context, error, "send"));
+      },
+    });
     if (this.#request_id?.echo === true) {
       // Every reply sends it back, also the error replies of the framework
       response.setHeader(this.#request_id.header, request.id);
@@ -432,7 +446,9 @@ export class Binden<
     let stopped = false;
     try {
       if (failure === null) {
-        await this.#handle(run, exchange);
+        // The stack has a token of its own (see `owners`)
+        const stack = exchange.token();
+        await owners.run(stack, () => this.#handle(run, exchange));
       }
     } catch (error: unknown) {
       if (error === ABORTED) {
@@ -468,7 +484,9 @@ export class Binden<
       { once: true },
     );
     if (failure) {
-      await this.#errorHandler(context, exchange, failure.error);
+      const { error } = failure;
+      // Its run has a token of its own (see `Exchange.reply()`)
+      await exchange.reply(() => this.#errorHandler(context, exchange, error));
     }
   }
 
@@ -708,6 +726,8 @@ export class Binden<
     // Sealed already (see `Exchange.abort()`): only this reply is allowed
     exchange.seal();
     response[kCancel](exchange.signal.reason);
+    // The abandoned works see their response closed first (see `kRevoke`)
+    await exchange.delivered;
     if (!response.started) {
       const error = new BindenError(503, { code: "deadline" });
       await exchange.reply(async () => {
@@ -808,6 +828,8 @@ export class Binden<
           const extra = this.#failure(context, outcome.error, "error_handler");
           context.log.error(failed, extra);
         }
+        // It sees its response closed first (see `kRevoke`)
+        await exchange.delivered;
         if (response.writableEnded) {
           // Its reply is complete: what is left of it (e.g. under
           // backpressure) is still sent
@@ -1244,7 +1266,7 @@ export class Binden<
       return result;
     };
 
-    response.once("close", () => {
+    response[kListen]("close", () => {
       const duration = performance.now() - start;
       context.log[level]("The request has completed", {
         method: request.method,

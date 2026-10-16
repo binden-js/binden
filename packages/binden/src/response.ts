@@ -7,24 +7,28 @@ import {
 } from "./framing.js";
 import { type IListener, bind, bindingOf, force, forced } from "./listeners.js";
 import {
-  type IRedirectOptions,
-  type IRedirectStatus,
-  isRedirectStatus,
-  redirectLocation,
-} from "./redirect.js";
-import {
+  type IOwnership,
   type IRepresentation,
   type IRepresentationNegotiator,
   type IResponseOperation,
   kCancel,
   kFramework,
+  kListen,
   kNegotiator,
   kOperation,
+  kOwnership,
   kRepresentation,
+  kRevoke,
   kSeal,
   kValidateHead,
   owners,
 } from "./seal.js";
+import {
+  type IRedirectOptions,
+  type IRedirectStatus,
+  isRedirectStatus,
+  redirectLocation,
+} from "./redirect.js";
 import {
   type ISendFileOptions,
   preconditionsOf,
@@ -171,12 +175,44 @@ const invalidReason = /[^\t\x20-\x7E\x80-\xFF]/u;
 /** The methods of `EventEmitter` that a response replaces (see its static block) */
 const parent = ServerResponse.prototype;
 
+/** The methods of `EventEmitter` of every emitter (e.g. of a piped source) */
+const intrinsic = EventEmitter.prototype;
+
+/** How a response handles the works that own it without the framework (see `kOwnership`) */
+const unowned: IOwnership = {
+  debug: (): void => {
+    // Nobody to tell
+  },
+};
+
 /** The listeners of an event of an emitter, as added (e.g. a wrapper of `once()`) */
 function rawListenersOf(emitter: EventEmitter, event: string): IListener[] {
-  return EventEmitter.prototype.rawListeners.call(
-    emitter,
-    event,
-  ) as IListener[];
+  return intrinsic.rawListeners.call(emitter, event) as IListener[];
+}
+
+/**
+ * Whether a source is piped into a destination by `Readable.prototype.pipe()`
+ * (its state lists it)
+ */
+function pipesInto(source: EventEmitter, destination: object): boolean {
+  const { _readableState: state } = source as {
+    _readableState?: { pipes?: unknown };
+  };
+  return Array.isArray(state?.pipes) && state.pipes.includes(destination);
+}
+
+/**
+ * Unpipes a source from a destination by the method of its class (never by
+ * one of the source itself), if it is still piped into it
+ */
+function unpipe(source: EventEmitter, destination: object): void {
+  const method: unknown = Reflect.get(
+    Object.getPrototypeOf(source) as object,
+    "unpipe",
+  );
+  if (typeof method === "function" && pipesInto(source, destination)) {
+    Reflect.apply(method, source, [destination]);
+  }
 }
 
 /**
@@ -336,6 +372,15 @@ export class BindenResponse<
   >();
   /** The checks of the owners that may mutate the response (see `[kSeal]()`) */
   readonly #seals: ((owner: object | undefined) => boolean)[] = [];
+  /** How the framework handles the works that own the response (see `[kOwnership]()`) */
+  #ownership: IOwnership = unowned;
+  /**
+   * The works that may no longer mutate the response (see `[kRevoke]()`):
+   * whether they have been told so
+   */
+  readonly #revoked = new Map<object, boolean>();
+  /** The sources that each work has piped into the response (see `#adopt()`) */
+  readonly #sources = new Map<object | undefined, Set<EventEmitter>>();
   #rights?: IRights;
   /** How a library chooses the representation of the body (see `[kNegotiator]()`) */
   #negotiator: IRepresentationNegotiator | null = null;
@@ -393,6 +438,8 @@ export class BindenResponse<
     ): boolean {
       if (event === "pipe") {
         this.#piping(args[0]);
+      } else if (event === "unpipe") {
+        this.#unpiped(args[0]);
       }
       return parent.emit.call(this, event, ...args);
     }
@@ -408,13 +455,18 @@ export class BindenResponse<
       listener: IListener,
     ) => BindenResponse) =>
       function listen(this: BindenResponse, event, listener) {
+        const owner = owners.getStore();
         const bound = bind(
           listener,
-          owners.getStore(),
+          owner,
           "user",
           once ? { emitter: this, event } : null,
         );
-        return parent[name].call(this, event, bound) as BindenResponse;
+        const result = parent[name].call(this, event, bound) as BindenResponse;
+        if (event === "close") {
+          this.#late(owner, bound);
+        }
+        return result;
       };
     Object.defineProperties(this.prototype, {
       addListener: { configurable: true, value: add("addListener", false) },
@@ -481,7 +533,9 @@ export class BindenResponse<
     if (this.#allows(owner)) {
       this.#piped = true;
     }
-    this.#adopt(source, owner);
+    if (source instanceof EventEmitter) {
+      this.#adopt(source as EventEmitter, owner);
+    }
   }
 
   /**
@@ -490,13 +544,11 @@ export class BindenResponse<
    * `end` listener, unless it has ended already) run as the work that has
    * piped it, whose rights they keep, whatever work pushes its chunks (e.g. a
    * timer of another one). Its other listeners are left as they are: piping
-   * gives no rights to another writer.
+   * gives no rights to another writer. Kept to be unpiped once the work may
+   * no longer mutate the response (see `[kRevoke]()`).
    */
-  // eslint-disable-next-line class-methods-use-this -- a step of `#piping()`
-  #adopt(source: unknown, owner: object | undefined): void {
-    if (!(source instanceof EventEmitter)) {
-      return;
-    }
+  #adopt(source: EventEmitter, owner: object | undefined): void {
+    this.#sourcesOf(owner).add(source);
     const events =
       (source as Partial<Readable>).readableEnded === true
         ? ["data"]
@@ -514,12 +566,75 @@ export class BindenResponse<
             original,
             owner,
             "source",
-            original === listener
-              ? null
-              : { emitter: source as EventEmitter, event },
+            original === listener ? null : { emitter: source, event },
           ),
         );
       }
+    }
+  }
+
+  /** The sources piped by a work (see `#adopt()`) */
+  #sourcesOf(owner: object | undefined): Set<EventEmitter> {
+    let sources = this.#sources.get(owner);
+    if (typeof sources === "undefined") {
+      sources = new Set();
+      this.#sources.set(owner, sources);
+    }
+    return sources;
+  }
+
+  /** A source is unpiped: it is no longer kept to be unpiped (see `#deliver()`) */
+  #unpiped(source: unknown): void {
+    for (const sources of this.#sources.values()) {
+      sources.delete(source as EventEmitter);
+    }
+  }
+
+  /**
+   * A `close` listener of a work that has been told already that it may no
+   * longer mutate the response (see `[kRevoke]()`): it runs on the next tick,
+   * once, unless removed before
+   */
+  #late(owner: object | undefined, bound: IListener): void {
+    if (typeof owner !== "undefined" && this.#revoked.get(owner) === true) {
+      process.nextTick(() => {
+        if (rawListenersOf(this, "close").includes(bound)) {
+          intrinsic.removeListener.call(this, "close", bound);
+          this.#safely(bound, []);
+        }
+      });
+    }
+  }
+
+  /**
+   * Tells a work that it may no longer mutate the response: its `close`
+   * listeners run once (and are removed), as their own work, as if the
+   * response had been closed; the sources that it has piped and that are
+   * still piped are then unpiped. Never the listeners of another work, nor
+   * those of the framework, which get the real `close`.
+   */
+  #deliver(owner: object): void {
+    const own = rawListenersOf(this, "close").filter((raw) => {
+      const binding = bindingOf(raw);
+      return binding?.kind === "user" && binding.owner === owner;
+    });
+    for (const listener of own) {
+      intrinsic.removeListener.call(this, "close", listener);
+      this.#safely(listener, []);
+    }
+    for (const source of this.#sources.get(owner) ?? []) {
+      unpipe(source, this);
+    }
+    this.#sources.delete(owner);
+  }
+
+  /** Runs a listener of an abandoned work: its failure is only logged */
+  #safely(listener: IListener, args: unknown[]): void {
+    try {
+      Reflect.apply(listener, this, args);
+    } catch (error: unknown) {
+      const message = "A listener of an abandoned work has failed";
+      this.#ownership.debug(message, error);
     }
   }
 
@@ -1268,6 +1383,49 @@ export class BindenResponse<
   }
 
   /**
+   * Sets how the framework handles the works that own the response (see
+   * `IOwnership`)
+   *
+   * @internal
+   */
+  public [kOwnership](ownership: IOwnership): void {
+    this.#ownership = ownership;
+  }
+
+  /**
+   * Works may no longer mutate the response (see `kRevoke`): they are told so
+   * on the next tick, after what they do now (e.g. the listeners that
+   * `pipeline()` adds once it has piped, see `#deliver()`)
+   *
+   * @internal
+   */
+  public [kRevoke](revoked: readonly object[]): Promise<void> {
+    for (const owner of revoked) {
+      this.#revoked.set(owner, false);
+    }
+    return new Promise<void>((resolve) => {
+      process.nextTick(() => {
+        for (const owner of revoked) {
+          this.#revoked.set(owner, true);
+          this.#deliver(owner);
+        }
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * Adds a listener of the framework (see `kListen`), which runs once
+   *
+   * @internal
+   */
+  public [kListen](event: string, listener: () => void): void {
+    const owner = owners.getStore();
+    const once = { emitter: this, event };
+    parent.on.call(this, event, bind(listener, owner, "service", once));
+  }
+
+  /**
    * Cancels the sends in progress (of a stream, or of a file), unless the
    * headers have been committed: each rejects with the reason, its source is
    * released, and the headers that it has set are removed, so that another
@@ -1724,7 +1882,8 @@ export class BindenResponse<
         this.off("close", fail).off("error", fail);
         reject(error ?? BindenResponse.#premature());
       };
-      this.once("close", fail).once("error", fail);
+      this[kListen]("close", fail);
+      this[kListen]("error", fail);
       // Its callback runs once the writes before it are flushed
       this.write("", (error?: Error | null) => {
         this.off("close", fail).off("error", fail);
@@ -1900,7 +2059,7 @@ export class BindenResponse<
         settle(reason as Error);
       });
 
-      this.once("close", () => {
+      this[kListen]("close", () => {
         closed = true;
         // Releases the source (e.g. the file of `sendFile()`)
         if (!data.readableEnded) {
@@ -1940,7 +2099,7 @@ export class BindenResponse<
               sent += size;
               if (!accepted) {
                 data.pause();
-                this.once("drain", () => {
+                this[kListen]("drain", () => {
                   data.resume();
                 });
               }
@@ -2082,7 +2241,7 @@ export class BindenResponse<
         ],
       );
       for (const [event, listener] of listeners) {
-        this.once(event, listener);
+        this[kListen](event, listener);
       }
     });
   }

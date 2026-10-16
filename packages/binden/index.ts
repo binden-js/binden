@@ -26,6 +26,7 @@ export {
   type IRepresentationNegotiator,
   type IResponseOperation,
   bodyHeaders,
+  kListen,
   kNegotiator,
   kOperation,
   kRepresentation,

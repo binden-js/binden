@@ -1,5 +1,6 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { owners } from "./seal.js";
+import { kListen, kRevoke, owners } from "./seal.js";
+import type { BindenResponse } from "./response.js";
+import type { IncomingMessage } from "node:http";
 
 /** Why the work of a request has been abandoned */
 export type IAbortReason = "client_closed" | "deadline" | "shutdown";
@@ -49,13 +50,19 @@ const exchanges = new WeakMap<IncomingMessage, Exchange>();
  * its abort signal, deadline, state, `done` flag and cleanup.
  */
 export class Exchange {
-  readonly #response: ServerResponse;
+  readonly #response: BindenResponse;
   readonly #controller: AbortController;
   readonly #state: object;
   readonly #cleanups: (() => unknown)[];
   readonly #finished: Promise<void>;
   readonly #report: IExchangeReport;
   readonly #aborted: Promise<void>;
+  /** The tokens of the works that may mutate the response (see `token()`) */
+  readonly #live = new Set<object>();
+  /** The tokens of the works that may no longer mutate it */
+  readonly #revoked = new WeakSet<object>();
+  /** Settles once the revoked works have been told (see `kRevoke`) */
+  #delivered: Promise<void> = Promise.resolve();
   #phase: IPhase;
   #sealed: boolean;
   #reply: object | null;
@@ -67,7 +74,7 @@ export class Exchange {
   #route: string | null;
 
   private constructor(
-    response: ServerResponse,
+    response: BindenResponse,
     { state = {}, report }: IExchangeOptions,
   ) {
     this.#response = response;
@@ -95,9 +102,9 @@ export class Exchange {
     this.#route = null;
 
     // `close` follows `finish`, unless the connection is closed before the
-    // response is complete
+    // response is complete: the real one (never the one of an abandoned work)
     this.#finished = new Promise<void>((resolve) => {
-      response.once("close", () => {
+      response[kListen]("close", () => {
         if (!response.writableFinished) {
           this.abort("client_closed");
         }
@@ -112,7 +119,7 @@ export class Exchange {
    */
   public static for(
     request: IncomingMessage,
-    response: ServerResponse,
+    response: BindenResponse,
     options: IExchangeOptions = {},
   ): Exchange {
     const found = exchanges.get(request);
@@ -249,27 +256,57 @@ export class Exchange {
   }
 
   /**
-   * Whether the work of an owner (see `owners`: a reply, or `undefined` for
-   * any other work) may reply: anything before the exchange is sealed, then
-   * only the latest `reply()`
+   * Whether the work of an owner (see `owners`: a token of the exchange, or
+   * `undefined` for a work of no request) may reply: anything but a revoked
+   * token before the exchange is sealed, then only the latest `reply()`
    */
   public allows(owner: object | undefined): boolean {
+    if (typeof owner !== "undefined" && this.#revoked.has(owner)) {
+      return false;
+    }
     return !this.#sealed || (this.#reply !== null && owner === this.#reply);
   }
 
   /**
    * From now on only the framework replies (e.g. once the deadline has
-   * passed): the work of the middlewares, and of any earlier `reply()`, may
-   * no longer reply
+   * passed): the works of the exchange (its stack, and any earlier
+   * `reply()`) may no longer reply, and are told so (see `kRevoke`)
    */
   public seal(): void {
     this.#sealed = true;
     this.#reply = null;
+    const tokens = [...this.#live];
+    this.#live.clear();
+    for (const token of tokens) {
+      this.#revoked.add(token);
+    }
+    if (tokens.length > 0) {
+      const delivered = this.#response[kRevoke](tokens);
+      this.#delivered = this.#delivered.then(() => delivered);
+    }
+  }
+
+  /**
+   * Settles once the works revoked so far have been told so (see
+   * `kRevoke`): the work that replaces them starts afterwards (never rejects)
+   */
+  public get delivered(): Promise<void> {
+    return this.#delivered;
+  }
+
+  /**
+   * A token of a work of the exchange (e.g. its middleware stack): the work
+   * run with it (see `owners`) may reply until it is revoked
+   */
+  public token(): object {
+    const token = {};
+    this.#live.add(token);
+    return token;
   }
 
   /** Runs the reply of the framework: the work it starts may reply (see `may_reply`) */
   public reply<T>(fn: () => T): T {
-    const reply = {};
+    const reply = this.token();
     this.#reply = reply;
     return owners.run(reply, fn);
   }

@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
- * The owner of the current asynchronous work: the reply of the framework that
- * has started it (see `Exchange.reply()`), `undefined` for any other work
- * (e.g. of the middlewares). Not part of the public API.
+ * The owner of the current asynchronous work: the token of the work of a
+ * request that has started it (its middleware stack, or a run of its error
+ * handler, see `Exchange.token()`), `undefined` for a work of no request.
+ * Not part of the public API.
  *
  * @internal
  */
@@ -35,6 +36,50 @@ export const kCancel: unique symbol = Symbol("binden.cancel");
  * @internal
  */
 export const kFramework: unique symbol = Symbol("binden.framework");
+
+/**
+ * The key of the internal method that adds a listener of the framework (or a
+ * library of binden) to a response, which runs once:
+ * `response[kListen](event, listener)`. It is not a listener of a work of the
+ * application: it never runs before the event (see `kRevoke`), and it runs as
+ * the work that has added it, without the rights of the framework. Not part of
+ * the public API.
+ *
+ * @internal
+ */
+export const kListen: unique symbol = Symbol("binden.listen");
+
+/**
+ * The key of the internal method that tells a response that works may no
+ * longer mutate it: `response[kRevoke](owners)`. At once, their mutations are
+ * ignored; on the next tick, `close` is delivered to the listeners that each
+ * work has added to the response (and only to them: the response is closed
+ * for the abandoned work), and its sources still piped are unpiped. Resolves
+ * once delivered. Not part of the public API.
+ *
+ * @internal
+ */
+export const kRevoke: unique symbol = Symbol("binden.revoke");
+
+/**
+ * How the framework handles the works that own a response (see
+ * `kOwnership`). Not part of the public API.
+ *
+ * @internal
+ */
+export interface IOwnership {
+  /** Logs a failure that nothing else handles (e.g. of an abandoned work) */
+  debug(message: string, error: unknown): void;
+}
+
+/**
+ * The key of the internal method that sets how the framework handles the
+ * works that own a response: `response[kOwnership](ownership)`. Not part of
+ * the public API.
+ *
+ * @internal
+ */
+export const kOwnership: unique symbol = Symbol("binden.ownership");
 
 /**
  * The key of the method of `BindenResponse` that starts an operation of a
