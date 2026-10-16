@@ -692,6 +692,18 @@ suite("The first write() of a body past its strict Content-Length", () => {
           outcome(strict().setHeader("Content-Length", "2x"), "abc"),
         [null, true, false],
       ],
+      // Node.js sends no `Content-Length` line
+      [
+        "of an empty array",
+        (): unknown[] => {
+          const response = strict().setHeader("Content-Length", []);
+          return [
+            ...outcome(response, "abc"),
+            String(Reflect.get(response, "_header")).includes("Content-"),
+          ];
+        },
+        [null, true, false, false],
+      ],
       [
         "of a chunked body",
         (): unknown[] =>
