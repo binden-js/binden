@@ -236,10 +236,12 @@ behaviours of Node.js:
   Node.js refuses; not a pipe left to Node.js, see **OpenTelemetry** above): instead of a destroyed
   response (or a crash, from its end), the error handler replies before the headers, and the
   connection is closed afterwards (but a complete reply that waits for the response before it on
-  its connection is sent); `stream.pipeline()` rejects with the error. A source piped by an
-  error handler that errors or closes before its end fails the handler at once, as does a destroy of
-  the response by its `stream.pipeline()` before the headers (also when one of its streams fails
-  from a timer of no request): `500`, not a closed connection.
+  its connection is sent); `stream.pipeline()` rejects with the error, and so does every pending
+  `send()` of a stream or `sendFile()` that has not committed the headers (it is cancelled, as by a
+  deadline, also one that the stack has left pending). A source piped by an error handler that
+  errors or closes before its end fails the handler at once, as does a destroy of the response by
+  its `stream.pipeline()` before the headers (also when one of its streams fails from a timer of no
+  request): `500`, not a closed connection.
 - A listener added to the source in the turn of its pipe runs as the work that has added it
   (e.g. one added by a listener of `pipe` of another work gets no rights from the pipe); one added
   later runs as the work that emits its event.
@@ -329,7 +331,15 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   destroyed (closing the file of a stream), where binden 2.0.4 left it untouched. The request of
   the response itself (`send(context.request)`) is never destroyed. A `sendFile()` whose response
   has ended before it sends anything (before it is called, or while it opens its file) resolves
-  without sending anything, where binden 2.0.4 rejected with `ERR_HTTP_HEADERS_SENT`.
+  without sending anything, where binden 2.0.4 rejected with `ERR_HTTP_HEADERS_SENT` (or with the
+  error of its `stat()`).
+- `send()` takes a Node.js `Readable` over: it is destroyed without being read when nothing of it
+  would be sent (to `HEAD`, with a `204`, `205` or `304` status, and with a `1xx` status, which
+  rejects), and once the client goes away, also when the stream is shared (e.g. one `PassThrough`
+  sent to several responses: the others lose it too), where binden 2.0.4 piped it (reading it for
+  a response without a body) and only unpiped it from a response that the client had left. Send
+  each response a stream of its own (e.g. a `PassThrough` that the shared stream is piped into).
+  The request of the response itself is only no longer read.
 - `send()` (and `context.send()`) rejects with a `TypeError`, before anything is sent, for an
   object that is neither a `Buffer`, a `Uint8Array`, a `Readable` nor a stream-like source: it sent
   its `toString()` (e.g. `[object Object]`, or the text of a `URLSearchParams`). Send a string
