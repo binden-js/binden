@@ -11,6 +11,11 @@ import {
   getEventListeners,
 } from "node:events";
 import {
+  type ILateFailures,
+  onPipeFailure,
+  openWindow,
+} from "../src/listeners.js";
+import {
   type IListening,
   listen,
   never,
@@ -22,7 +27,6 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { PassThrough, Readable } from "node:stream";
 import { deepStrictEqual, ok, throws } from "node:assert/strict";
 import { kFramework, kSeal, owners } from "../src/seal.js";
-import { onPipeFailure, openWindow } from "../src/listeners.js";
 import { suite, test } from "node:test";
 import { Exchange } from "../src/exchange.js";
 import { Socket } from "node:net";
@@ -217,27 +221,53 @@ suite("Listeners and callbacks of the response", () => {
   test("the failure of a pipe goes to the handler that the exchange of its work has set first", () => {
     const token = { name: "token" };
     const other = { name: "a work of no exchange" };
-    let issued = true;
     let later = false;
     const issuer = {
       issued: (candidate: object): boolean =>
-        (candidate === token && issued) || (candidate === other && later),
+        candidate === token || (candidate === other && later),
     };
     const calls: unknown[] = [];
-    onPipeFailure(token, issuer, (error, source) => {
-      calls.push([error, source]);
-      return true;
-    });
+    const late: ILateFailures = {
+      report: (error): void => {
+        calls.push(["late", error]);
+      },
+    };
+    const route = onPipeFailure(
+      token,
+      issuer,
+      (error, source) => {
+        calls.push([error, source]);
+        return true;
+      },
+      late,
+    );
+    ok(route !== null);
     // Set once: never replaced
-    onPipeFailure(token, issuer, () => {
-      calls.push("replaced");
-      return true;
-    });
+    deepStrictEqual(
+      onPipeFailure(
+        token,
+        issuer,
+        () => {
+          calls.push("replaced");
+          return true;
+        },
+        late,
+      ),
+      null,
+    );
     // Not issued by the exchange (yet): not set
-    onPipeFailure(other, issuer, () => {
-      calls.push("other");
-      return true;
-    });
+    deepStrictEqual(
+      onPipeFailure(
+        other,
+        issuer,
+        () => {
+          calls.push("other");
+          return true;
+        },
+        late,
+      ),
+      null,
+    );
     const thrown = new Error("Thrown");
     const fails = (): never => {
       throw thrown;
@@ -257,13 +287,59 @@ suite("Listeners and callbacks of the response", () => {
       }
     };
     const source = end(token);
-    deepStrictEqual(calls, [[thrown, source]]);
+    deepStrictEqual(calls.splice(0), [[thrown, source]]);
     later = true;
     ok(end(other) === thrown);
-    // Its exchange no longer knows the token: thrown
-    issued = false;
-    ok(end(token) === thrown);
-    deepStrictEqual(calls.length, 1);
+    // A listener added before its exchange has finished, and one added
+    // after: late, reported and never thrown
+    const before = new PassThrough();
+    ok(openWindow(before));
+    owners.run(token, () => {
+      before.once("end", fails);
+    });
+    route.fail = null;
+    before.emit("end");
+    ok(end(token) instanceof PassThrough);
+    deepStrictEqual(calls.splice(0), [
+      ["late", thrown],
+      ["late", thrown],
+    ]);
+    // Without a report: still handled
+    late.report = null;
+    ok(end(token) instanceof PassThrough);
+    deepStrictEqual(calls, []);
+  });
+
+  test("the failure of a pipe of a work whose exchange has finished is late", async () => {
+    const response = detached();
+    const exchange = Exchange.for(response.req, response);
+    const token = exchange.token();
+    const reported: unknown[] = [];
+    exchange.onLateFailure((error) => {
+      reported.push(error);
+    });
+    const thrown = new Error("Thrown");
+    const source = new PassThrough();
+    ok(openWindow(source));
+    owners.run(token, () => {
+      source.once("end", () => {
+        throw thrown;
+      });
+    });
+    response.emit("close");
+    await within(exchange.finished);
+    // And a token issued once it has finished
+    const issued = exchange.token();
+    const after = new PassThrough();
+    ok(openWindow(after));
+    owners.run(issued, () => {
+      after.once("end", () => {
+        throw thrown;
+      });
+    });
+    source.emit("end");
+    after.emit("end");
+    deepStrictEqual(reported, [thrown, thrown]);
   });
 
   test("the failure of a pipe of a work whose exchange has no framework is thrown", () => {

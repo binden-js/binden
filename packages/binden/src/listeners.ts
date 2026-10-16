@@ -170,14 +170,30 @@ export interface ITokenIssuer {
   issued(token: object): boolean;
 }
 
-/** The failure handler of a work, with the exchange that has set it */
-interface IFailureRoute {
-  readonly issuer: ITokenIssuer;
-  readonly fail: IPipeFailureHandler;
+/**
+ * What a late failure of a pipe of a work does (see `IFailureRoute`): it is
+ * reported (e.g. logged at `debug`), by a report that does not hold the
+ * request (its exchange, response or context)
+ */
+export interface ILateFailures {
+  report: ((error: unknown) => void) | null;
 }
 
 /**
- * The failure handlers of the works, by their token: set once by the
+ * The route of the pipe failures of a work (see `onPipeFailure()`): its
+ * handler while the exchange that has issued its token runs, which the
+ * exchange clears (`null`) once it has finished, so that what still holds
+ * the token or a listener of the work (e.g. a timer created in its context,
+ * or a listener left on a shared source) no longer holds the request. A
+ * failure through a cleared route is late: it is reported, never thrown.
+ */
+export interface IFailureRoute {
+  fail: IPipeFailureHandler | null;
+  readonly late: ILateFailures;
+}
+
+/**
+ * The failure routes of the works, by their token: set once by the
  * exchange that has issued the token (with the response of that exchange),
  * never replaced (e.g. by a pipe of the work into the response of another
  * request, which does not know it)
@@ -185,29 +201,46 @@ interface IFailureRoute {
 const failures = new WeakMap<object, IFailureRoute>();
 
 /**
- * Sets what a pipe failure of a work does (see `IPipeFailureHandler`): once,
- * by the exchange that has issued its token (ignored otherwise)
+ * Sets what a pipe failure of a work does (see `IPipeFailureHandler`), and
+ * what it does once the exchange has finished (`late`): once, by the
+ * exchange that has issued its token, which gets the route to clear it (see
+ * `IFailureRoute`). `null` otherwise (nothing is set).
  */
 export function onPipeFailure(
   token: object,
   issuer: ITokenIssuer,
   fail: IPipeFailureHandler,
-): void {
-  if (!failures.has(token) && issuer.issued(token)) {
-    failures.set(token, Object.freeze({ issuer, fail }));
+  late: ILateFailures,
+): IFailureRoute | null {
+  if (failures.has(token) || !issuer.issued(token)) {
+    return null;
   }
+  const route: IFailureRoute = { fail, late };
+  failures.set(token, route);
+  return route;
+}
+
+/** The failure route of a work (`null` without one, e.g. for a work of no request) */
+function routeOf(owner: object | undefined): IFailureRoute | null {
+  return typeof owner === "undefined" ? null : (failures.get(owner) ?? null);
 }
 
 /**
- * The failure handler of a work, while the exchange that has set it has
- * issued its token (`null` without one, e.g. for a work of no request)
+ * What a listener of `end` of a work does with what it throws (see
+ * `patch()`): fails the pipe of the work by its route (`true` once handled,
+ * thrown otherwise), or, once the route is cleared, reports it as late
  */
-function failureOf(owner: object | undefined): IPipeFailureHandler | null {
-  if (typeof owner === "undefined") {
-    return null;
+function failed(
+  route: IFailureRoute,
+  error: unknown,
+  source: EventEmitter,
+): boolean {
+  const { fail } = route;
+  if (fail === null) {
+    route.late.report?.(error);
+    return true;
   }
-  const route = failures.get(owner);
-  return route?.issuer.issued(owner) === true ? route.fail : null;
+  return fail(error, source);
 }
 
 /**
@@ -250,9 +283,9 @@ export function isPatch(source: object, name: string): boolean {
  * A patched listener-adding method of a source: it binds every listener to
  * the work that adds it, then adds it by the method of its class. What a
  * listener of `end` throws fails the pipe of that work, by the failure
- * handler of the work as it is when the listener is added (see
- * `failures`), whatever response has opened the window and whatever work
- * emits the event.
+ * route of the work (see `failures`), whatever response has opened the
+ * window and whatever work emits the event: the listener holds the route,
+ * never the request itself.
  */
 function patch(inherited: string, once: boolean): IListener {
   return function patched(
@@ -261,15 +294,15 @@ function patch(inherited: string, once: boolean): IListener {
     listener: unknown,
   ): unknown {
     const owner = owners.getStore();
-    const fail = event === "end" ? failureOf(owner) : null;
+    const route = event === "end" ? routeOf(owner) : null;
     const around: IAround | null =
-      fail === null
+      route === null
         ? null
         : (call): unknown => {
             try {
               return call();
             } catch (error: unknown) {
-              if (fail(error, this)) {
+              if (failed(route, error, this)) {
                 return null;
               }
               throw error;

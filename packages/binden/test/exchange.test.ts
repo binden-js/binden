@@ -439,6 +439,17 @@ suite("Exchange", () => {
     response.end();
   });
 
+  test("its tokens stay issued once revoked, those of another exchange never are", async () => {
+    const [request, response] = await exchange();
+    const exchangeOf = Exchange.for(request, response);
+    const token = exchangeOf.token();
+    ok(exchangeOf.issued(token));
+    exchangeOf.seal();
+    ok(exchangeOf.issued(token));
+    ok(!exchangeOf.issued({}));
+    response.end();
+  });
+
   test("abort() aborts once", async () => {
     const [request, response] = await exchange();
     const exchangeOf = Exchange.for(request, response);

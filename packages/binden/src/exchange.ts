@@ -1,11 +1,16 @@
 import {
+  type IFailureRoute,
+  type ILateFailures,
+  type ITokenIssuer,
+  onPipeFailure,
+} from "./listeners.js";
+import {
   type IPipeFailure,
   kListen,
   kPipeFailure,
   kRevoke,
   owners,
 } from "./seal.js";
-import { type ITokenIssuer, onPipeFailure } from "./listeners.js";
 import type { BindenResponse } from "./response.js";
 import type { IncomingMessage } from "node:http";
 
@@ -69,6 +74,14 @@ export class Exchange implements ITokenIssuer {
   readonly #live = new Set<object>();
   /** The tokens of the works that may no longer mutate it */
   readonly #revoked = new WeakSet<object>();
+  /**
+   * The failure routes of the tokens that it has issued (see `token()`):
+   * cleared once it finishes, so that what keeps a token (e.g. a timer
+   * created in the context of its work) no longer keeps the exchange
+   */
+  readonly #routes: IFailureRoute[] = [];
+  /** What a late failure of a pipe of its works does (see `onLateFailure()`) */
+  readonly #late: ILateFailures = { report: null };
   /** Settles once the revoked works have been told (see `kRevoke`) */
   #delivered: Promise<void> = Promise.resolve();
   /** The token of the middleware stack (see `stack()`), once created */
@@ -330,11 +343,31 @@ export class Exchange implements ITokenIssuer {
     const token = {};
     this.#live.add(token);
     // A pipe of the work that fails (e.g. the end of its `pipeline()`)
-    // fails it on this response, whatever response it pipes into
-    onPipeFailure(token, this, (error, source) =>
-      this.#response[kPipeFailure](token, error, source),
-    );
+    // fails it on this response, whatever response it pipes into (a new
+    // token always gets its route)
+    const route = onPipeFailure(
+      token,
+      this,
+      (error, source) => this.#response[kPipeFailure](token, error, source),
+      this.#late,
+    ) as IFailureRoute;
+    if (this.#phase === "running") {
+      this.#routes.push(route);
+    } else {
+      // Its exchange has finished already: a failure of its pipes is late
+      route.fail = null;
+    }
     return token;
+  }
+
+  /**
+   * Sets how a late failure of a pipe of a work of the exchange (once it has
+   * finished, see `finished`) is reported (e.g. logged at `debug`): the
+   * report must not hold the request (e.g. its context), which would then be
+   * kept as long as anything keeps a token of its works
+   */
+  public onLateFailure(report: (error: unknown) => void): void {
+    this.#late.report = report;
   }
 
   /** Whether a token is of a work of the exchange (see `token()`), also once revoked */
@@ -451,6 +484,10 @@ export class Exchange implements ITokenIssuer {
   async #finish(): Promise<void> {
     this.#phase = "finalizing";
     this.#clearTimer();
+    // Its works may no longer fail it: a later failure of their pipes is late
+    for (const route of this.#routes.splice(0)) {
+      route.fail = null;
+    }
     for (let cleanup = this.#cleanups.pop(); cleanup;) {
       try {
         await cleanup();

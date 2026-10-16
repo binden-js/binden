@@ -433,6 +433,9 @@ export class Binden<
       handled: false,
     };
     this.#works.set(exchange, works);
+    exchange.onLateFailure(
+      Binden.#lateReport(this.#logger, context.id, this.#details),
+    );
     response[kOwnership]({
       fail: (owner, error): boolean => {
         const fail = works.failures.get(owner);
@@ -475,6 +478,27 @@ export class Binden<
       // The process must not crash
       this.#unexpected(context, error);
     });
+  }
+
+  /**
+   * How a late failure of a pipe of a work of a request is logged (see
+   * `Exchange.onLateFailure()`): once the request has completed, what is
+   * left of its works (e.g. a listener of `end` that one has left on a
+   * shared source) is logged at `debug`, by a function of its own scope,
+   * which holds neither the request nor its context
+   */
+  static #lateReport(
+    logger: ILogger,
+    id: string,
+    details: boolean,
+  ): (error: unknown) => void {
+    return (error): void => {
+      const message =
+        "A pipe of a work has failed once its request had completed";
+      logger.child({ trace_id: id }).debug(message, {
+        failure: snapshot(error, { location: "send", request_id: id, details }),
+      });
+    };
   }
 
   /**

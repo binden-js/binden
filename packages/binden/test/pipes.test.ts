@@ -2215,7 +2215,53 @@ suite("A pipe into the response", () => {
           await within(added.promise);
           source.resume();
           source.end();
-          await captured.waitFor("A pipe of an abandoned work has failed");
+          // Once its request has completed
+          await captured.waitFor(
+            "A pipe of a work has failed once its request had completed",
+          );
+        },
+      );
+    });
+
+    test("a listener of `end` that a completed work has left on a source, which throws, is logged", async () => {
+      const source = silent();
+      const cleaned = Promise.withResolvers<unknown>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            context.onCleanup(() => {
+              cleaned.resolve(null);
+            });
+            source.pipe(context.response);
+            // In the turn of the pipe: bound to its work
+            source.once("end", () => {
+              throw new Error("A listener of the application has failed");
+            });
+            source.unpipe(context.response);
+            await context.response.text("ok");
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual(
+            [reply.status, reply.body, reply.complete],
+            [200, "ok", true],
+          );
+          await within(cleaned.promise);
+          source.resume();
+          source.end();
+          const { level, failure } = await captured.waitFor(
+            "A pipe of a work has failed once its request had completed",
+          );
+          deepStrictEqual(
+            [level, (failure as { location: string }).location],
+            [20, "send"],
+          );
+          ok(
+            !captured.records.some(({ level: logged }) => Number(logged) > 30),
+            captured.output(),
+          );
         },
       );
     });
