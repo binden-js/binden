@@ -403,7 +403,9 @@ suite("Streaming through the compressor", () => {
       const response = await respond(url);
       response.destroy();
 
-      deepStrictEqual(await within(settled), "ERR_STREAM_PREMATURE_CLOSE");
+      // With the error of its write that the compressor has not taken, as
+      // without a compression (which gets the error of the socket)
+      deepStrictEqual(await within(settled), "ERR_STREAM_DESTROYED");
     },
   );
 

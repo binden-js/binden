@@ -293,10 +293,13 @@ function writeAfterEnd(): Error {
   });
 }
 
-/** The error of an `end()` whose response is destroyed before it has ended */
-function destroyed(): Error {
+/**
+ * The error of a `write()` or an `end()` whose response is destroyed before
+ * it has been written, or has ended
+ */
+function destroyed(method: "end" | "write"): Error {
   return Object.assign(
-    new Error("Cannot call end after a stream was destroyed"),
+    new Error(`Cannot call ${method} after a stream was destroyed`),
     { code: "ERR_STREAM_DESTROYED" },
   );
 }
@@ -314,6 +317,20 @@ function owned(callback: ICallback, operation: IResponseOperation): ICallback {
       Reflect.apply(callback, this, args);
     });
   };
+}
+
+/**
+ * A callback that runs at most once: it is kept in `pending` until it is
+ * called, and every later call is ignored (see `#abandon()`)
+ */
+function pendingOnce(callback: ICallback, pending: Set<ICallback>): ICallback {
+  function once(this: unknown, ...args: unknown[]): void {
+    if (pending.delete(once)) {
+      Reflect.apply(callback, this, args);
+    }
+  }
+  pending.add(once);
+  return once;
 }
 
 /** A callback that gives `fn` the receiver and the arguments that it is called with */
@@ -373,6 +390,12 @@ export class CompressedResponse {
    * replacement is (see `#onReplaced()`). `null` once they have been given.
    */
   #ending: ICallback[] | null = [];
+  /**
+   * The callbacks of the compressed writes that the compressor has not
+   * called back yet (see `pendingOnce()`), which get an error once it is
+   * destroyed (see `#abandon()`)
+   */
+  readonly #writing = new Set<ICallback>();
   /**
    * How Node.js has called back the end of a replacement: its receiver and
    * its arguments (see `#replace()`), `null` until it has
@@ -607,9 +630,14 @@ export class CompressedResponse {
       return false;
     }
     // Decoded by the compressor as `Buffer.from()` decodes it (see
-    // `normalized()`), and called back by it, once
+    // `normalized()`), and called back by it once, or with an error once it
+    // is destroyed first (see `#abandon()`)
     return callback
-      ? compressor.write(chunk, encoding, owned(callback, operation))
+      ? compressor.write(
+          chunk,
+          encoding,
+          pendingOnce(owned(callback, operation), this.#writing),
+        )
       : compressor.write(chunk, encoding);
   }
 
@@ -771,19 +799,20 @@ export class CompressedResponse {
 
   /**
    * Restores the response as it was before an attempt to commit its headers
-   * (see `#commit()`): the compressor is destroyed (its listener on the
-   * response removed), the decision is pending again, and the framing state
-   * of the response (its status, its headers and the framing fields of
-   * Node.js, see `kSaveFraming`) is the one saved before. Only these: the
-   * listeners of the application and the I/O that the attempt has performed
-   * (none before its head) are never restored.
+   * (see `#commit()`): the compressor, which has taken no write, is destroyed
+   * (see `#abandon()`, its listener on the response removed), the decision
+   * is pending again, and the framing state of the response (its status, its
+   * headers and the framing fields of Node.js, see `kSaveFraming`) is the
+   * one saved before. Only these: the listeners of the application and the
+   * I/O that the attempt has performed (none before its head) are never
+   * restored.
    */
   #rollback(state: IFramingState): void {
     const response = this.#response;
     const compressor = this.#compressor;
     if (compressor !== null) {
       response[kUnlisten]("close", this.#destroy as () => void);
-      compressor.destroy();
+      this.#abandon(compressor);
       this.#compressor = null;
     }
     this.#chosen = null;
@@ -1114,13 +1143,13 @@ export class CompressedResponse {
       });
     this.#destroy = (): void => {
       // Its pending writes fail (and `flush()` rejects by itself)
-      compressor.destroy();
+      this.#abandon(compressor);
       // Not ended by the compressor: the callbacks of `end()` get the error,
       // as Node.js calls those of a response destroyed before it has finished
       const ending = this.#ending ?? [];
       this.#ending = null;
       for (const callback of ending) {
-        process.nextTick(callback, response.errored ?? destroyed());
+        process.nextTick(callback, response.errored ?? destroyed("end"));
       }
     };
     // The real close only: an abandoned work that sees its response closed
@@ -1128,6 +1157,27 @@ export class CompressedResponse {
     // (removed by `kUnlisten`, see `#rollback()`)
     response[kListen]("close", this.#destroy);
     return compressor;
+  }
+
+  /**
+   * Destroys the compressor (once the response has closed, see `#destroy`,
+   * or by a rollback, before any write): the callbacks of the writes that it
+   * has not called back get the error of the response (or
+   * `ERR_STREAM_DESTROYED`) on the next tick, once each, as the work that has
+   * called `write()` and without a receiver, as Node.js calls those of a
+   * stream destroyed before it has written them. A destroyed compressor never
+   * calls the one of the write that it is compressing (nor of those after
+   * it) once the response is full, and may call it later without an error
+   * otherwise: such a call is ignored (see `pendingOnce()`). They are
+   * scheduled before the compressor is destroyed, which would call those
+   * that it has buffered with an error of its own.
+   */
+  #abandon(compressor: ICompressor): void {
+    const { errored } = this.#response;
+    for (const callback of this.#writing) {
+      process.nextTick(callback, errored ?? destroyed("write"));
+    }
+    compressor.destroy();
   }
 
   /**

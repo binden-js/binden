@@ -7,11 +7,14 @@ import {
   text,
   within,
 } from "./helpers.js";
+import { type Socket, connect } from "node:net";
 import { afterEach, suite, test } from "node:test";
 import { Compression } from "../index.js";
 import { deepStrictEqual } from "node:assert/strict";
+import { once } from "node:events";
 // The owners of the works (internal to binden), which the callbacks keep
 import { owners } from "../../binden/dist/src/seal.js";
+import { randomBytes } from "node:crypto";
 
 const gzip = { "Accept-Encoding": "gzip" };
 
@@ -254,5 +257,316 @@ suite("The callbacks of `write()` and `end()`", () => {
 
     // As for an `end()` of a response that has been destroyed
     deepStrictEqual(calls, []);
+  });
+});
+
+/** The codings of the compressors */
+const codings = ["gzip", "br", "deflate", "zstd"] as const;
+
+/**
+ * The options of a test whose response is backed up by a client that reads
+ * nothing: Windows takes a whole write while its send buffer has room, so
+ * that the compressor may never wait for the response
+ */
+const backedUpBySlowClient = {
+  skip: process.platform === "win32",
+  timeout: 60_000,
+};
+
+/**
+ * Sends a request that accepts `coding` (after `before`, e.g. a request that
+ * the response waits for) on a new connection that is never read (a slow
+ * client): the connection, which the test closes
+ */
+async function slowClient(
+  url: string,
+  coding: string,
+  before = "",
+): Promise<Socket> {
+  const socket = connect(Number(new URL(url).port), "localhost");
+  socket.on("error", () => null);
+  await within(once(socket, "connect"));
+  socket.pause();
+  socket.write(
+    `${before}GET /next HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: ${coding}\r\n\r\n`,
+  );
+  return socket;
+}
+
+/**
+ * Resolves once the writes of a response wait for its `drain`: the client
+ * reads nothing, and the compressor is paused (rejects after 5 s)
+ */
+async function full(response: Context["response"]): Promise<void> {
+  const deadline = Date.now() + 5000;
+  while (!response.writableNeedDrain) {
+    if (Date.now() > deadline) {
+      throw new Error("The response has not been backed up");
+    }
+    await sleep(5);
+  }
+}
+
+/**
+ * A recorded callback (see `recorder()`) that also settles a promise: it
+ * resolves, or rejects with the error that it is called with
+ */
+function settling(
+  recorded: () => void,
+  resolve: () => void,
+  reject: (error: unknown) => void,
+): (error?: Error | null) => void {
+  return function settled(this: unknown, ...args: unknown[]): void {
+    Reflect.apply(recorded, this, args);
+    const [error] = args as [Error | null | undefined];
+    if (error) {
+      reject(error);
+    } else {
+      resolve();
+    }
+  };
+}
+
+/** The code of an error (as the tests compare it) */
+function codeOf(error: unknown): unknown {
+  return (error as { code?: unknown }).code;
+}
+
+suite("The callbacks of a compressed response that is destroyed", () => {
+  const servers: IServed[] = [];
+  const sockets: Socket[] = [];
+
+  afterEach(async () => {
+    for (const socket of sockets.splice(0)) {
+      socket.destroy();
+    }
+    await Promise.all(servers.splice(0).map(async (served) => served.close()));
+  });
+
+  test(
+    "of a large write that the middleware awaits run once with the error when the client resets",
+    backedUpBySlowClient,
+    async () => {
+      for (const coding of codings) {
+        const calls: ICall[] = [];
+        const steps: unknown[] = [];
+        const { promise: backedUp, resolve: backed } =
+          Promise.withResolvers<null>();
+        const { promise: settled, resolve: settle } =
+          Promise.withResolvers<null>();
+        const served = await serve(
+          {},
+          new Compression({ format: coding, threshold: 0 }),
+          async (context: Context) => {
+            const { response } = context;
+            context.done = true;
+            response.type("text/plain");
+            const written = recorder(calls, response)("write");
+            try {
+              // Incompressible: it waits in the compressor, which the
+              // response has paused
+              await new Promise<void>((resolve, reject) => {
+                response.write(
+                  randomBytes(8 * 1024 * 1024),
+                  settling(written, resolve, reject),
+                );
+                backed(full(response).then(() => null));
+              });
+              steps.push("written");
+            } catch (error: unknown) {
+              steps.push(codeOf(error));
+            } finally {
+              steps.push("finally");
+              settle(null);
+            }
+          },
+        );
+        servers.push(served);
+        const socket = await slowClient(served.url, coding);
+        sockets.push(socket);
+        await within(backedUp);
+        socket.resetAndDestroy();
+        await within(settled);
+        // None runs twice
+        await sleep(50);
+
+        deepStrictEqual(
+          { coding, calls, steps },
+          {
+            coding,
+            calls: [["write", "stack", "none", ["ERR_STREAM_DESTROYED"]]],
+            steps: ["ERR_STREAM_DESTROYED", "finally"],
+          },
+        );
+      }
+    },
+  );
+
+  test(
+    "of many writes and of the end run once each, in order, when the client resets",
+    backedUpBySlowClient,
+    async () => {
+      for (const coding of codings) {
+        const calls: ICall[] = [];
+        let finallies = 0;
+        const { promise: backedUp, resolve: backed } =
+          Promise.withResolvers<null>();
+        const { promise: settled, resolve: settle } =
+          Promise.withResolvers<null>();
+        const served = await serve(
+          {},
+          new Compression({ format: coding, threshold: 0 }),
+          async (context: Context) => {
+            const { response } = context;
+            context.done = true;
+            response.type("text/plain");
+            const record = recorder(calls, response);
+            try {
+              for (let index = 0; index < 256; index += 1) {
+                response.write(randomBytes(64 * 1024), record(`${index}`));
+              }
+              response.end(record("end"));
+              backed(full(response).then(() => null));
+              await once(response, "close");
+            } finally {
+              finallies += 1;
+              settle(null);
+            }
+          },
+        );
+        servers.push(served);
+        const socket = await slowClient(served.url, coding);
+        sockets.push(socket);
+        await within(backedUp);
+        socket.resetAndDestroy();
+        await within(settled);
+        await calledBack(calls, 257);
+        await sleep(50);
+
+        // The writes that the compressor has taken, then the others and the
+        // end with the error
+        const failed = calls.findIndex(([, , , [error]]) => error !== null);
+        deepStrictEqual(
+          { coding, finallies, calls },
+          {
+            coding,
+            finallies: 1,
+            calls: [...Array.from(Array(256).keys(), String), "end"].map(
+              (name, index): ICall => [
+                name,
+                "stack",
+                "none",
+                [index < failed ? null : "ERR_STREAM_DESTROYED"],
+              ],
+            ),
+          },
+        );
+        // Some writes are still in the compressor
+        deepStrictEqual(failed < 256, true);
+      }
+    },
+  );
+
+  test(
+    "of the writes that the middleware awaits run once with the error when its deadline cuts a slow client",
+    backedUpBySlowClient,
+    async () => {
+      for (const coding of codings) {
+        const calls: ICall[] = [];
+        const steps: unknown[] = [];
+        const { promise: settled, resolve: settle } =
+          Promise.withResolvers<null>();
+        const served = await serve(
+          { app: { timeout: 200 } },
+          new Compression({ format: coding, threshold: 0 }),
+          async (context: Context) => {
+            const { response } = context;
+            response.type("text/plain");
+            const record = recorder(calls, response);
+            try {
+              for (let index = 0; index < 64; index += 1) {
+                const written = record(`${index}`);
+                await new Promise<void>((resolve, reject) => {
+                  response.write(
+                    randomBytes(256 * 1024),
+                    settling(written, resolve, reject),
+                  );
+                });
+              }
+              steps.push("written");
+            } catch (error: unknown) {
+              steps.push(codeOf(error));
+            } finally {
+              steps.push("finally");
+              settle(null);
+            }
+          },
+        );
+        servers.push(served);
+        sockets.push(await slowClient(served.url, coding));
+        await within(settled);
+        await sleep(50);
+
+        // Each one once the one before has been called back: the last one
+        // with the error
+        deepStrictEqual(
+          { coding, calls, steps },
+          {
+            coding,
+            calls: calls.map(([name], index): ICall => [
+              name,
+              "stack",
+              "none",
+              [index < calls.length - 1 ? null : "ERR_STREAM_DESTROYED"],
+            ]),
+            steps: ["ERR_STREAM_DESTROYED", "finally"],
+          },
+        );
+      }
+    },
+  );
+
+  test("of a write that the compressor is compressing run once with the error of the response", async () => {
+    for (const coding of codings) {
+      for (const reason of [null, "ECONNRESET"]) {
+        const calls: ICall[] = [];
+        const served = await serve(
+          {},
+          new Compression({ format: coding, threshold: 0 }),
+          (context: Context) => {
+            const { response } = context;
+            context.done = true;
+            response.type("text/plain");
+            response.write(
+              randomBytes(1024 * 1024),
+              recorder(calls, response)("write"),
+            );
+            // While the compressor compresses it, without backpressure: it
+            // calls it back once it has (without an error) afterwards
+            response.destroy(
+              ...(reason === null
+                ? []
+                : [Object.assign(new Error("gone"), { code: reason })]),
+            );
+          },
+        );
+        servers.push(served);
+        await fetchRaw(served.url, {
+          headers: { "Accept-Encoding": coding },
+        }).catch(() => null);
+        await calledBack(calls, 1);
+        await sleep(100);
+
+        deepStrictEqual(
+          { coding, calls },
+          {
+            coding,
+            calls: [
+              ["write", "stack", "none", [reason ?? "ERR_STREAM_DESTROYED"]],
+            ],
+          },
+        );
+      }
+    }
   });
 });

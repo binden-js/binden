@@ -713,8 +713,9 @@ suite("Conditional requests of compressed responses", () => {
         await once(response, "data");
         sent.destroy();
 
+        // With the error of its write that the compressor has not taken
         deepStrictEqual(await within(outcome), [
-          "ERR_STREAM_PREMATURE_CLOSE",
+          "ERR_STREAM_DESTROYED",
           "client_closed",
           false,
         ]);
