@@ -12,6 +12,7 @@ import {
 import { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, suite, test } from "node:test";
 import { Compression } from "../index.js";
+import { Readable } from "node:stream";
 import { Socket } from "node:net";
 import { deepStrictEqual } from "node:assert/strict";
 import { once } from "node:events";
@@ -237,6 +238,93 @@ suite("A chunk that Node.js refuses", () => {
         );
       }
     }
+  });
+
+  test("by `end()` leaves the socket as it found it: the reply that follows is sent at once", async () => {
+    // Streamed as it is: more than the buffers of the socket hold
+    const large = text(1 << 20);
+    // By path: how the response is written before the refused `end()`, and
+    // the `Accept-Encoding` of the request
+    const cases: [string, string, unknown][] = [
+      ["/pending", "gzip", {}],
+      ["/pending-stream", "identity", {}],
+      ["/as-is", "identity", 42],
+      ["/compressed", "gzip", {}],
+    ];
+    for (const [path, accept, chunk] of cases) {
+      const corked: unknown[] = [];
+      const url = await start(
+        {},
+        new Compression({ format: "gzip" }),
+        async (context: Context) => {
+          const { response } = context;
+          context.done = true;
+          response.type("text/plain");
+          const socket = response.socket as Socket;
+          if (path === "/as-is" || path === "/compressed") {
+            response.write(body);
+          }
+          const before = socket.writableCorked;
+          corked.push(refusal(response, () => response.end(chunk))[0]);
+          // Corked by Node.js for the write before it, until the next tick
+          corked.push(socket.writableCorked - before);
+          if (path === "/pending-stream") {
+            await response.send(Readable.from([large]));
+            return;
+          }
+          // Once the socket has written the chunks before it
+          await response.flush();
+          response.end(" end");
+        },
+      );
+      const received = await fetchRaw(url, {
+        headers: { "Accept-Encoding": accept },
+      });
+
+      deepStrictEqual(
+        [...corked, received.status, received.body.length],
+        [
+          "ERR_INVALID_ARG_TYPE",
+          0,
+          200,
+          path === "/pending-stream"
+            ? large.length
+            : path === "/pending"
+              ? 4
+              : body.length + 4,
+        ],
+        path,
+      );
+    }
+  });
+
+  test("by `end()` of a response that the application has ended as it is: as without a compression", async () => {
+    const outcomes: unknown[][] = [];
+    for (const compressed of [true, false]) {
+      const outcome: unknown[] = [];
+      const { promise: done, resolve } = Promise.withResolvers<unknown>();
+      const middlewares: IMiddleware[] = [
+        (context: Context): void => {
+          const { response } = context;
+          context.done = true;
+          response.on("error", (error: Error & { code?: unknown }) => {
+            resolve(error.code);
+          });
+          response.type("text/plain").end(body);
+          outcome.push(refusal(response, () => response.end({})).slice(0, 2));
+        },
+      ];
+      const url = await start(
+        {},
+        ...(compressed ? [new Compression({ threshold: 0 })] : []),
+        ...middlewares,
+      );
+      const received = await fetchRaw(url);
+      outcome.push(await within(done), received.status, received.body);
+      outcomes.push(outcome);
+    }
+
+    deepStrictEqual(outcomes[0], outcomes[1]);
   });
 
   test("by `end()` is its error, before any decision; a falsy chunk is none", async () => {

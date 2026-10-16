@@ -448,8 +448,10 @@ export class CompressedResponse {
   /**
    * `end()`: the decision is taken first (with the size of its chunk), unless
    * it has been. As for Node.js, a chunk that is falsy (e.g. `0`) is none,
-   * and a chunk that it refuses (neither a string nor bytes) is left to the
-   * response, which throws its error before it changes anything.
+   * and a chunk that it refuses (neither a string nor bytes) throws its error
+   * before anything is changed, the cork of the socket by `end()` of Node.js
+   * as well (see `refuse()`): unless the application has ended the response
+   * as it is, which Node.js answers as without a compression.
    */
   #onEnd(args: unknown[]): IResponse {
     const response = this.#response;
@@ -459,13 +461,17 @@ export class CompressedResponse {
       ignore(args);
       return response;
     } else if (chunk !== null && !isChunk(chunk)) {
-      if (this.#sink === "discard" || this.#ended) {
-        // Replaced (and ended) by the compression, or ended by the end of its
-        // compressor, whenever it comes: as for a response that has not
-        // ended, rather than the `error` event that Node.js emits once it
-        // has (which crashes the process without a listener)
+      if (this.#sink !== "as_is" || !response.writableEnded) {
+        // Before `end()` of Node.js, which corks the socket first (and leaves
+        // it corked when it throws: the next reply would stall). Also once
+        // the compression has replaced (and ended) the response, or the
+        // application has ended it through the compressor, whenever its end
+        // comes: as for a response that has not ended, rather than the
+        // `error` event that Node.js emits once it has (which crashes the
+        // process without a listener)
         refuse(chunk);
       }
+      // Ended by the application as it is: as without a compression
       return Reflect.apply(this.#end, response, args) as IResponse;
     }
     const encoding = typeof second === "string" ? second : "utf8";
