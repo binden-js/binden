@@ -1,5 +1,11 @@
 import Cookie, { type ICookie } from "./headers/cookie.js";
 import {
+  type IFramingState,
+  framingFields,
+  kRestoreFraming,
+  kSaveFraming,
+} from "./framing.js";
+import {
   type IRedirectOptions,
   type IRedirectStatus,
   isRedirectStatus,
@@ -704,45 +710,94 @@ export class BindenResponse<
       }
       return super.writeHead(statusCode, fields);
     };
-    if (this.headersSent || this.cookies.size === 0) {
-      return this.#restoring(() => write(given));
-    }
+    return this.#restoring(() => {
+      if (this.headersSent || this.cookies.size === 0) {
+        return write(given);
+      }
+      // Not sent when Node.js refuses the head (e.g. an invalid status code):
+      // the next attempt adds them
+      const [explicit, rest] = BindenResponse.#takeSetCookie(given);
+      const values = [...this.cookies].map((cookie) => cookie.toString());
+      this.setHeader("Set-Cookie", [
+        ...(explicit ?? BindenResponse.#values(this.getHeader("Set-Cookie"))),
+        ...values,
+      ]);
+      return write(rest);
+    });
+  }
 
-    const previous = this.getHeader("Set-Cookie");
-    const [explicit, rest] = BindenResponse.#takeSetCookie(given);
-    const values = [...this.cookies].map((cookie) => cookie.toString());
-    this.setHeader("Set-Cookie", [
-      ...(explicit ?? BindenResponse.#values(previous)),
-      ...values,
-    ]);
+  /**
+   * Runs a call that may commit the head of the response (`writeHead()`, or
+   * an `end()`, which sets the length of its chunk first): when Node.js
+   * refuses the head (e.g. a `Trailer` of a body that is not chunked, once it
+   * has decided to close the connection), the framing state of the response
+   * is the one from before the call (see `IFramingState`), so that the reply
+   * that follows (e.g. of an error) is framed as if the refused head had
+   * never been attempted
+   */
+  #restoring<T>(fn: () => T): T {
+    if (this.headersSent) {
+      return fn();
+    }
+    const state = this[kSaveFraming]();
     try {
-      return this.#restoring(() => write(rest));
+      return fn();
     } catch (error: unknown) {
-      // Not sent (e.g. an invalid status code): the next attempt adds them
-      if (typeof previous === "undefined") {
-        this.removeHeader("Set-Cookie");
-      } else {
-        this.setHeader("Set-Cookie", previous);
+      // Not when it has committed the head (e.g. a failure of a later write)
+      if (!this.#committed()) {
+        this[kRestoreFraming](state);
       }
       throw error;
     }
   }
 
+  /** Whether the head of the response has been committed (see `headersSent`) */
+  #committed(): boolean {
+    return this.headersSent;
+  }
+
   /**
-   * Runs `writeHead()` of Node.js: when it throws (e.g. for a `Trailer` of a
-   * body that is not chunked), the status and the reason phrase of the
-   * response are those from before it
+   * Saves the framing state of the response (see `IFramingState`)
+   *
+   * @internal
    */
-  #restoring(fn: () => this): this {
-    const code = this.#statusCode;
-    const message = this.#statusMessage;
-    try {
-      return fn();
-    } catch (error: unknown) {
-      this.#statusCode = code;
-      this.#statusMessage = message;
-      throw error;
-    }
+  public [kSaveFraming](): IFramingState {
+    return {
+      status: this.#statusCode,
+      reason: this.#statusMessage,
+      fields: framingFields.map((name) => [name, Reflect.get(this, name)]),
+      headers: (this as unknown as { getRawHeaderNames(): string[] })
+        .getRawHeaderNames()
+        .map((name) => [
+          name,
+          this.getHeader(name) as number | string | string[],
+        ]),
+      generation: this.#framing,
+    };
+  }
+
+  /**
+   * Restores a framing state saved by `[kSaveFraming]()`, with the rights of
+   * the framework: the headers, then the fields (removing a header sets some
+   * of them), the status and the reason phrase
+   *
+   * @internal
+   */
+  public [kRestoreFraming](state: IFramingState): void {
+    this[kFramework](() => {
+      for (const name of this.getHeaderNames()) {
+        super.removeHeader(name);
+      }
+      for (const [name, value] of state.headers) {
+        super.setHeader(name, BindenResponse.#copy(value));
+      }
+      for (const [name, value] of state.fields) {
+        Reflect.set(this, name, value);
+      }
+    });
+    this.#statusCode = state.status;
+    this.#statusMessage = state.reason;
+    this.#framing = state.generation;
   }
 
   /**
@@ -1012,8 +1067,12 @@ export class BindenResponse<
       BindenResponse.#ignore(args);
       return this;
     }
-    this.#ordered(args, true);
-    return super.end(...(this.#callbacks(args) as []));
+    // Node.js frames the body of its chunk before it commits the head (see
+    // `#restoring()`)
+    return this.#restoring(() => {
+      this.#ordered(args, true);
+      return super.end(...(this.#callbacks(args) as []));
+    });
   }
 
   /** Sends the headers (see `flushHeaders()` of Node.js), unless the response is sealed */

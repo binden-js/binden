@@ -316,6 +316,18 @@ suite("BindenResponse (bodies)", () => {
         [10, range],
       ],
       [
+        // Framed as if it had never been attempted
+        "a head that Node.js refuses",
+        (response): void => {
+          throws(
+            () =>
+              response.writeHead(206, { "Content-Length": 10, Trailer: "X-T" }),
+            { code: "ERR_HTTP_TRAILER_INVALID" },
+          );
+        },
+        [none, none],
+      ],
+      [
         "a range appended",
         (response): void => {
           response.appendHeader("Content-Range", range);

@@ -31,6 +31,12 @@ export {
   kRepresentation,
   kValidateHead,
 } from "./src/seal.js";
+export {
+  type IFramingState,
+  framingFields,
+  kRestoreFraming,
+  kSaveFraming,
+} from "./src/framing.js";
 export type { IRedirectOptions, IRedirectStatus } from "./src/redirect.js";
 export type { ISendFileOptions } from "./src/send-file.js";
 export * from "./src/router.js";
