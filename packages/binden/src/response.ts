@@ -1965,7 +1965,8 @@ export class BindenResponse<
    * of the framework that it has then (see `[kListen]()`): also when a
    * listener throws, which is thrown once they have run. An `error` that the
    * response has no listener of, but observers, is not thrown (as when they
-   * were listeners).
+   * were listeners): only its `errorMonitor` listeners get it before them,
+   * and one of them that throws is thrown once they have run as well.
    */
   #emit(event: string | symbol, args: unknown[]): boolean {
     const observers = this.#observers.get(event);
@@ -1973,22 +1974,17 @@ export class BindenResponse<
       return parent.emit.call(this, event, ...args);
     }
     const snapshot = [...observers];
-    if (
-      event === "error" &&
-      intrinsic.listenerCount.call(this, "error") === 0
-    ) {
-      parent.emit.call(this, errorMonitor, ...args);
-    } else {
-      try {
-        parent.emit.call(this, event, ...args);
-      } catch (error: unknown) {
-        const failure = this.#observe(event, snapshot, args);
-        if (failure !== null) {
-          const message = "An observer of the response has failed";
-          this.#ownership.debug(message, failure.error);
-        }
-        throw error;
+    const monitored =
+      event === "error" && intrinsic.listenerCount.call(this, "error") === 0;
+    try {
+      parent.emit.call(this, monitored ? errorMonitor : event, ...args);
+    } catch (error: unknown) {
+      const failure = this.#observe(event, snapshot, args);
+      if (failure !== null) {
+        const message = "An observer of the response has failed";
+        this.#ownership.debug(message, failure.error);
       }
+      throw error;
     }
     const failure = this.#observe(event, snapshot, args);
     if (failure !== null) {

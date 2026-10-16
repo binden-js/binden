@@ -206,6 +206,89 @@ suite("The observers of the framework on a response", () => {
     ok(response instanceof EventEmitter);
   });
 
+  suite(
+    "an `errorMonitor` listener that throws, without an `error` listener",
+    () => {
+      test("`send()` of a stream still rejects with the error, then the monitor is thrown", async () => {
+        const response = detached();
+        const source = new Readable({
+          read(): void {
+            // Pushes nothing
+          },
+        });
+        const sent = response.send(source).then(
+          () => "resolved",
+          (error: unknown) => (error as Error).message,
+        );
+        const monitor = new Error("The monitor has failed");
+        response.on(errorMonitor, () => {
+          throw monitor;
+        });
+        throws(
+          () => response.emit("error", new Error("The send has failed")),
+          (error: unknown) => error === monitor,
+        );
+        deepStrictEqual(await within(sent), "The send has failed");
+      });
+
+      test("`flush()` still rejects with the error, then the monitor is thrown", async () => {
+        const response = detached();
+        const flushed = response.flush().then(
+          () => "resolved",
+          (error: unknown) => (error as Error).message,
+        );
+        const monitor = new Error("The monitor has failed");
+        response.on(errorMonitor, () => {
+          throw monitor;
+        });
+        throws(
+          () => response.emit("error", new Error("The flush has failed")),
+          (error: unknown) => error === monitor,
+        );
+        deepStrictEqual(await within(flushed), "The flush has failed");
+      });
+
+      test("an observer that fails as well is logged: the monitor is thrown", () => {
+        const response = detached();
+        const logged: unknown[] = [];
+        response[kOwnership]({
+          fail: () => false,
+          guards: () => false,
+          debug: (message, error) => {
+            logged.push([message, (error as Error).message]);
+          },
+          warn: () => null,
+        });
+        response[kListen]("error", () => {
+          throw new Error("An observer has failed");
+        });
+        const monitor = new Error("The monitor has failed");
+        response.on(errorMonitor, () => {
+          throw monitor;
+        });
+        throws(
+          () => response.emit("error", new Error("An error")),
+          (error: unknown) => error === monitor,
+        );
+        deepStrictEqual(logged, [
+          ["An observer of the response has failed", "An observer has failed"],
+        ]);
+      });
+
+      test("without an observer, the error is thrown as by Node.js", () => {
+        const response = detached();
+        const seen: unknown[] = [];
+        response.on(errorMonitor, (error: Error) => {
+          seen.push(error.message);
+        });
+        throws(() => response.emit("error", new Error("unhandled")), {
+          message: "unhandled",
+        });
+        deepStrictEqual(seen, ["unhandled"]);
+      });
+    },
+  );
+
   for (const removed of ["close", "every event"]) {
     test(`the application removes the listeners of ${removed}: the cleanups, the access log and the shutdown still run`, async () => {
       const cleaned = Promise.withResolvers<unknown>();
