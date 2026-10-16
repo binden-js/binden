@@ -186,12 +186,14 @@ re-run all the jobs of the workflow, so that the `package` job packs them again:
 failed job alone checks the same archives.
 
 The npm that publishes is the npm that runs the scripts: the one of `npm run` or `npm exec` (which
-set `npm_execpath`), otherwise the first `npm` on the `PATH` (on Windows, the npm that comes with
-Node.js). Its `tar` is loaded from its installation ([`scripts/npm.mjs`](scripts/npm.mjs)). When
-that `npm` is not an npm installation (e.g. a version-manager shim, not a link to the CLI of npm),
-the scripts that read archives refuse to run (`scripts/release.mjs pack` and `publish` before
-anything else) instead of reading them with the `tar` of another npm, such as the one that comes
-with Node.js: run them through `npm run` or `npm exec` then.
+set `npm_execpath`), otherwise the `npm` that a shell runs, the first regular executable file of
+the `PATH`, by its real path (on Windows, the npm that comes with Node.js). Its `tar` is loaded from
+that same installation ([`scripts/npm.mjs`](scripts/npm.mjs)). When the `npm` of the `PATH` is not
+an npm installation (e.g. a version-manager shim, not a link to the CLI of npm), the scripts refuse
+to run it, and with any npm that is not one, the scripts that read archives refuse to run
+(`scripts/release.mjs pack` and `publish` before anything else) instead of reading them with the
+`tar` of another npm, such as the one that comes with Node.js: run them through `npm run` or
+`npm exec` then.
 
 Nothing is committed back to `main`, as
 [recommended by semantic-release](https://semantic-release.gitbook.io/semantic-release/support/faq):

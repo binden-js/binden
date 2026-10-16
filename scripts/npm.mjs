@@ -2,8 +2,17 @@
 // (`npm_execpath`, which `npx` sets as well), or on Windows the one next to
 // Node.js. There, `npm` is `npm.cmd`, which `execFile()` cannot run without a
 // shell (https://nodejs.org/api/child_process.html#spawning-bat-and-cmd-files-on-windows).
-import { delimiter, dirname, join } from "node:path";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+// Elsewhere, without `npm_execpath`, it is the `npm` that a shell would run (the
+// first regular executable file of the PATH), by its real path. The CLI that runs
+// and the tar that reads its archives (`npmTar()`) come from one resolution.
+import {
+  accessSync,
+  constants,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 
@@ -12,24 +21,6 @@ function bundled() {
   return process.platform === "win32"
     ? join(dirname(process.execPath), "node_modules", "npm")
     : join(dirname(dirname(process.execPath)), "lib", "node_modules", "npm");
-}
-
-function cli() {
-  const { npm_execpath: execpath } = process.env;
-  if (execpath) {
-    return execpath;
-  }
-  return process.platform === "win32"
-    ? join(bundled(), "bin", "npm-cli.js")
-    : null;
-}
-
-/** Same as `execFileSync("npm", args, options)` */
-export function npm(args, options = {}) {
-  const path = cli();
-  return path === null
-    ? execFileSync("npm", args, options)
-    : execFileSync(process.execPath, [path, ...args], options);
 }
 
 // The npm installation of a CLI (`<npm>/bin/npm-cli.js`, or a link to it), or null
@@ -46,11 +37,68 @@ function installation(path) {
   }
 }
 
-// The `npm` that `execFileSync("npm")` runs: the first one on the PATH
+// The `npm` that execvp() runs, with its real path: the first one on the PATH that
+// is a regular executable file (an empty entry is the current directory), or null.
+// Without a PATH, none (not the default path of execvp(), such as /usr/bin:/bin)
 function onPath() {
-  const dirs = (process.env.PATH ?? "").split(delimiter);
-  const found = dirs.find((dir) => dir !== "" && existsSync(join(dir, "npm")));
-  return typeof found === "undefined" ? null : join(found, "npm");
+  const { PATH } = process.env;
+  for (const entry of typeof PATH === "string" ? PATH.split(delimiter) : []) {
+    const path = resolve(entry, "npm");
+    try {
+      if (statSync(path).isFile()) {
+        accessSync(path, constants.X_OK);
+        return { path, real: realpathSync(path) };
+      }
+    } catch {
+      // Missing, or not executable: execvp() tries the next entry
+    }
+  }
+  return null;
+}
+
+let resolution = null;
+
+// The npm that runs, resolved once: the command and the leading arguments that run
+// its CLI (no command for a PATH entry that is not an npm installation, whose real
+// path may not run as npm), and its installation (null when it is not one)
+function resolved() {
+  if (resolution === null) {
+    const { npm_execpath: execpath } = process.env;
+    if (execpath || process.platform === "win32") {
+      const cli = execpath || join(bundled(), "bin", "npm-cli.js");
+      const dir = installation(cli);
+      resolution = { cli, command: process.execPath, prefix: [cli], dir };
+    } else {
+      const found = onPath();
+      const dir = found === null ? null : installation(found.real);
+      resolution = {
+        cli: found?.path ?? null,
+        command: dir === null ? null : found.real,
+        prefix: [],
+        dir,
+      };
+    }
+  }
+  return resolution;
+}
+
+function refuse({ cli }) {
+  return new Error(
+    `The npm CLI (${cli ?? "none on the PATH"}) is not an npm installation, whose tar must read the archives: run this script with npm (\`npm run\` or \`npm exec\`, which set npm_execpath)`,
+  );
+}
+
+/**
+ * Same as `execFileSync("npm", args, options)`, with the npm of `npmTar()`. Without
+ * `npm_execpath`, outside Windows, the npm of the PATH is refused when it is not an
+ * npm installation (e.g. a version-manager shim).
+ */
+export function npm(args, options = {}) {
+  const { command, prefix } = resolved();
+  if (command === null) {
+    throw refuse(resolved());
+  }
+  return execFileSync(command, [...prefix, ...args], options);
 }
 
 let tar = null;
@@ -64,12 +112,9 @@ let tar = null;
  */
 export function npmTar() {
   if (tar === null) {
-    const path = cli() ?? onPath();
-    const dir = path === null ? null : installation(path);
+    const { dir } = resolved();
     if (dir === null) {
-      throw new Error(
-        `The npm CLI (${path ?? "none on the PATH"}) is not an npm installation, whose tar must read the archives: run this script with npm (\`npm run\` or \`npm exec\`, which set npm_execpath)`,
-      );
+      throw refuse(resolved());
     }
     tar = createRequire(join(dir, "package.json"))("tar");
   }
