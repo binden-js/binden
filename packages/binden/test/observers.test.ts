@@ -135,6 +135,7 @@ suite("The observers of the framework on a response", () => {
     response[kOwnership]({
       fail: () => false,
       guards: () => false,
+      replier: () => null,
       debug: (message, error) => {
         logged.push([message, (error as Error).message]);
       },
@@ -254,6 +255,7 @@ suite("The observers of the framework on a response", () => {
         response[kOwnership]({
           fail: () => false,
           guards: () => false,
+          replier: () => null,
           debug: (message, error) => {
             logged.push([message, (error as Error).message]);
           },

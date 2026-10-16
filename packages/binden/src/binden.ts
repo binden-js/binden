@@ -452,6 +452,11 @@ export class Binden<
         return true;
       },
       guards: (owner): boolean => works.handlers.has(owner),
+      // Not once the connection terminates (e.g. the abort listeners of a
+      // shutdown destroy the streams of the error handler)
+      replier(): object | null {
+        return exchange.terminating ? null : exchange.current_reply;
+      },
       debug: (message, error): void => {
         context.log.debug(message, this.#failure(context, error, "send"));
       },

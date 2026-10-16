@@ -1644,6 +1644,150 @@ suite("A pipe into the response", () => {
       }
     }
 
+    for (const kind of ["thrown", "deadline"] as const) {
+      for (const style of ["promise", "callback"] as const) {
+        for (const streams of [2, 3]) {
+          for (const error of [true, false]) {
+            for (const committed of [false, true]) {
+              test(`its ${style} pipeline of ${streams} streams (${kind === "thrown" ? "a thrown error" : "a deadline"}), whose head ${error ? "fails" : "closes"} from a work of no request ${committed ? "after" : "before"} the first chunk: ${committed ? "the connection is closed" : "500"}`, async () => {
+                const settled = Promise.withResolvers<unknown>();
+                const { reply, captured } = await handled(
+                  async (context, failure) => {
+                    if (kind === "deadline" && !isDeadline(failure)) {
+                      return;
+                    }
+                    const { response } = context;
+                    response.status(502).type("text/plain");
+                    const head = new PassThrough();
+                    const done = (rejection?: unknown): void => {
+                      const { code, message } = (rejection ?? {
+                        message: "resolved",
+                      }) as Error & { code?: string };
+                      settled.resolve(code ?? message);
+                    };
+                    const callback = (rejection: Error | null): void => {
+                      done(rejection);
+                    };
+                    if (style === "promise") {
+                      (streams === 2
+                        ? pipelineAsync(head, response)
+                        : pipelineAsync(head, passing(), response)
+                      ).then(() => {
+                        done();
+                      }, done);
+                    } else if (streams === 2) {
+                      pipeline(head, response, callback);
+                    } else {
+                      pipeline(head, passing(), response, callback);
+                    }
+                    // Of a work of no request: the destroy of the response by
+                    // the pipeline runs as that work
+                    owners.exit(() => {
+                      setTimeout(() => {
+                        if (committed) {
+                          head.write("abc");
+                        }
+                        setTimeout(() => {
+                          if (error) {
+                            head.destroy(new Error("boom"));
+                          } else {
+                            head.destroy();
+                          }
+                        }, 10);
+                      }, 5);
+                    });
+                    await settled.promise;
+                  },
+                  kind === "deadline" ? { timeout: 20 } : {},
+                );
+                if (committed) {
+                  deepStrictEqual(
+                    [reply.status, reply.complete, reply.closed],
+                    [502, false, true],
+                  );
+                } else {
+                  deepStrictEqual(
+                    [reply.status, reply.body, reply.complete, reply.closed],
+                    [500, "", true, false],
+                  );
+                  deepStrictEqual(reply.raw.match(/HTTP\/1\.1/gu)?.length, 1);
+                  // The failure of its pipe
+                  await captured.waitFor(
+                    "The provided `error_handler` has failed",
+                  );
+                }
+                deepStrictEqual(
+                  await within(settled.promise),
+                  error ? "boom" : "ERR_STREAM_PREMATURE_CLOSE",
+                );
+              });
+            }
+          }
+        }
+      }
+    }
+
+    for (const when of ["shutdown", "client"] as const) {
+      test(`a destroy of no work ${when === "shutdown" ? "from an abort listener of a shutdown (its connection still open)" : "as its client goes away (before the framework knows)"}: not a failure of its pipe`, async () => {
+        const seen = Promise.withResolvers<unknown>();
+        const captured = capture();
+        const app = new Binden({
+          logger: captured.logger,
+          error_handler: async (context: Context): Promise<void> => {
+            const { request, response } = context;
+            pipelineAsync(new PassThrough(), passing(), response).catch(
+              () => null,
+            );
+            const destroy = (): void => {
+              const alive = !request.socket.destroyed;
+              owners.exit(() => {
+                response.destroy(new Error("Terminated"));
+              });
+              seen.resolve([alive, response.destroyed]);
+            };
+            if (when === "shutdown") {
+              context.signal.addEventListener("abort", destroy);
+            } else {
+              request.once("aborted", destroy);
+            }
+            await never();
+          },
+        }).use(() => {
+          throw new BindenError(409);
+        });
+        const listening = await listen(app);
+        const socket = connect(listening.port, "localhost");
+        try {
+          await once(socket, "connect");
+          socket.on("error", () => null);
+          socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+          await sleep(30);
+          if (when === "shutdown") {
+            const closing = shutdown(listening.server, {
+              timeout: 20,
+              cleanup_timeout: 500,
+            });
+            // Destroyed at once, not replied
+            deepStrictEqual(await within(seen.promise), [true, true]);
+            await within(closing);
+          } else {
+            socket.destroy();
+            deepStrictEqual(await within(seen.promise), [false, true]);
+          }
+          ok(
+            !messages(captured, 50).includes(
+              "The provided `error_handler` has failed",
+            ),
+          );
+        } finally {
+          socket.destroy();
+          if (listening.server.listening) {
+            await listening.close();
+          }
+        }
+      });
+    }
+
     test("a pipeline of the stack whose source closes before the headers: as Node.js, the response is destroyed", async () => {
       const settled = Promise.withResolvers<unknown>();
       await withApp(
@@ -2642,6 +2786,7 @@ suite("A pipe into the response", () => {
             return true;
           },
           guards: () => true,
+          replier: () => null,
           debug: () => null,
           warn: () => null,
         });
@@ -2847,6 +2992,7 @@ suite("A pipe into the response", () => {
         response[kOwnership]({
           fail: () => false,
           guards: () => true,
+          replier: () => null,
           debug: () => null,
           warn: () => null,
         });

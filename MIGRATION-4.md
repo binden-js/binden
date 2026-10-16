@@ -214,7 +214,9 @@ behaviours of Node.js:
   Node.js refuses): instead of a destroyed response (or a crash, from its end), the error handler
   replies before the headers, and the connection is closed afterwards; `stream.pipeline()` rejects
   with the error. A source piped by an error handler that errors or closes before its end fails
-  the handler at once.
+  the handler at once, as does a destroy of the response by its `stream.pipeline()` before the
+  headers (also when one of its streams fails from a timer of no request): `500`, not a closed
+  connection.
 - A listener added to the source in the turn of its pipe runs as the work that has added it
   (e.g. one added by a listener of `pipe` of another work gets no rights from the pipe); one added
   later runs as the work that emits its event.

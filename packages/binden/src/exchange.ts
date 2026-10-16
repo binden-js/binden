@@ -237,6 +237,14 @@ export class Exchange implements ITokenIssuer {
   }
 
   /**
+   * The token of the work of the latest `reply()` (see `reply()`), until
+   * the exchange is sealed again: `null` otherwise
+   */
+  public get current_reply(): object | null {
+    return this.#reply;
+  }
+
+  /**
    * Whether the connection of the request terminates: it has closed (see
    * `#terminate()`), or the server shuts down (see `abort()`), also while
    * the abort listeners run, before its socket is destroyed

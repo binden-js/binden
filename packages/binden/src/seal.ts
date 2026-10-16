@@ -120,6 +120,14 @@ export interface IOwnership {
    * leave waiting)
    */
   guards(owner: object): boolean;
+  /**
+   * The work that replies now (the token of the latest reply of the
+   * framework, e.g. a run of the error handler), whose adopted pipe a
+   * destroy of no work fails (see `BindenResponse.destroy()`): `null`
+   * without one, or once the connection terminates (it has closed, or the
+   * server shuts down)
+   */
+  replier(): object | null;
   /** Logs a failure that nothing else handles (e.g. of an abandoned work) */
   debug(message: string, error: unknown): void;
   /**

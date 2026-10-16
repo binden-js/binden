@@ -218,6 +218,7 @@ const inspected = [
 const unowned: IOwnership = {
   fail: (): boolean => false,
   guards: (): boolean => false,
+  replier: (): null => null,
   debug: (): void => {
     // Nobody to tell
   },
@@ -1708,11 +1709,12 @@ export class BindenResponse<
    * that throws (e.g. for a head that Node.js refuses): the pipe fails
    * instead (see `#pipeFailed()`), so that its work gets the error. So does
    * a destroy by an error handler that its pipe guards (see `#guarded()`),
-   * with its error (or `ERR_STREAM_PREMATURE_CLOSE`).
+   * with its error (or `ERR_STREAM_PREMATURE_CLOSE`), and a destroy of no
+   * work while it replies (see `#replier()`).
    */
   public override destroy(error?: Error): this {
     const marker = this.#marker;
-    const owner = owners.getStore();
+    const owner = owners.getStore() ?? this.#replier();
     if (
       marker !== null &&
       typeof error !== "undefined" &&
@@ -1737,9 +1739,10 @@ export class BindenResponse<
    * head). Never a destroy of the framework, nor of a response that the
    * transport has closed (e.g. the client has gone away).
    */
-  #guarded(owner: object | undefined): owner is object {
+  #guarded(owner: object | null | undefined): owner is object {
     return (
-      typeof owner !== "undefined" &&
+      typeof owner === "object" &&
+      owner !== null &&
       !this.headersSent &&
       !this.destroyed &&
       !forced(this) &&
@@ -1747,6 +1750,20 @@ export class BindenResponse<
       this.#allows(owner) &&
       (this.#sources.get(owner)?.size ?? 0) > 0
     );
+  }
+
+  /**
+   * The work that a destroy of no work stands for (see `destroy()`): the
+   * work that replies now (see `IOwnership.replier()`), while the connection
+   * of the response is alive (`null` otherwise, e.g. the client has gone
+   * away). E.g. `pipeline(head, transform, response)` of an error handler
+   * destroys the response as the work that has emitted the failure of its
+   * head (a timer of no request): it is a failure of the pipe of the error
+   * handler (see `#guarded()`).
+   */
+  #replier(): object | null {
+    const { socket } = this.req as { socket: { destroyed?: unknown } | null };
+    return socket?.destroyed === true ? null : this.#ownership.replier();
   }
 
   /**
