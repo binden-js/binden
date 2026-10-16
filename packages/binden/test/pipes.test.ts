@@ -14,10 +14,10 @@ import {
   sleep,
   within,
 } from "./helpers.js";
-import { PassThrough, finished } from "node:stream";
+import { PassThrough, Readable, Stream, finished, pipeline } from "node:stream";
 import { Socket, connect } from "node:net";
 import { deepStrictEqual, ok } from "node:assert/strict";
-import { kListen, owners } from "../src/seal.js";
+import { kListen, kOwnership, owners } from "../src/seal.js";
 import { suite, test } from "node:test";
 import { IncomingMessage } from "node:http";
 import { once } from "node:events";
@@ -181,7 +181,217 @@ function feeder(
   };
 }
 
+/** The messages of the records of a captured logger, at a level */
+function messages(captured: ICaptured, level: number): unknown[] {
+  return captured.records
+    .filter((record) => record.level === level)
+    .map(({ msg }) => msg);
+}
+
+/** A head that Node.js refuses (an invalid reason phrase) */
+const refused = "bad\n";
+
 suite("A pipe into the response", () => {
+  suite(
+    "adopted (its owner writes and ends it, whatever work feeds it)",
+    () => {
+      test("`pipeline()` of an error handler, fed by a work of no request, ends the reply", async () => {
+        const source = silent();
+        const feed = feeder(source, ["REAL", "!"]);
+        try {
+          await withApp(
+            {
+              timeout: 20,
+              error_handler_timeout: 2000,
+              error_handler: async (context: Context, error): Promise<void> => {
+                if (!isDeadline(error)) {
+                  return;
+                }
+                context.response.status(503).type("text/plain");
+                const piped = pipelineAsync(source, context.response);
+                feed.start();
+                await piped;
+              },
+            },
+            (app) => {
+              app.use(async () => {
+                await never();
+              });
+            },
+            async ({ port }, captured) => {
+              const reply = await exchange(port);
+              deepStrictEqual(
+                [reply.status, reply.body, reply.complete, reply.closed],
+                [503, "REAL!", true, false],
+              );
+              deepStrictEqual(messages(captured, 50), []);
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+
+      test("a listener that another work adds to the source in the same turn writes nothing", async () => {
+        const source = silent();
+        const feed = feeder(source, ["REAL"]);
+        try {
+          await withApp(
+            {
+              timeout: 20,
+              error_handler: async (context: Context, error): Promise<void> => {
+                if (!isDeadline(error)) {
+                  return;
+                }
+                context.response.status(503).type("text/plain");
+                source.pipe(context.response);
+                feed.start();
+                await new Promise<void>((resolve) => {
+                  context.response.once("finish", resolve);
+                });
+              },
+            },
+            (app) => {
+              app.use(async (context: Context) => {
+                // Of the abandoned work: prepended, it runs before the
+                // listeners of the pipe
+                context.response.prependListener("pipe", (piped: Readable) => {
+                  piped.on("data", () => {
+                    context.response.write("OLD");
+                  });
+                });
+                await never();
+              });
+            },
+            async ({ port }) => {
+              const reply = await exchange(port);
+              deepStrictEqual(
+                [reply.status, reply.body, reply.complete],
+                [503, "REAL", true],
+              );
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+
+      test("a source that has ended already ends the reply as its owner", async () => {
+        await withApp(
+          {
+            timeout: 20,
+            error_handler: async (context: Context, error): Promise<void> => {
+              if (!isDeadline(error)) {
+                return;
+              }
+              const ended = new PassThrough();
+              ended.end();
+              ended.resume();
+              await once(ended, "end");
+              context.response.status(503);
+              ended.pipe(context.response);
+              await once(context.response, "finish");
+            },
+          },
+          (app) => {
+            app.use(async () => {
+              await never();
+            });
+          },
+          async ({ port }) => {
+            const reply = await exchange(port);
+            deepStrictEqual(
+              [reply.status, reply.body, reply.complete],
+              [503, "", true],
+            );
+          },
+        );
+      });
+
+      test("with `{ end: false }`, the owner ends the reply itself", async () => {
+        const source = silent();
+        const feed = feeder(source, ["a", "b"]);
+        try {
+          await withApp(
+            {
+              timeout: 20,
+              error_handler: async (context: Context, error): Promise<void> => {
+                if (!isDeadline(error)) {
+                  return;
+                }
+                context.response.status(503).type("text/plain");
+                source.pipe(context.response, { end: false });
+                feed.start();
+                await once(source, "end");
+                context.response.end("c");
+              },
+            },
+            (app) => {
+              app.use(async () => {
+                await never();
+              });
+            },
+            async ({ port }) => {
+              const reply = await exchange(port);
+              deepStrictEqual(
+                [reply.status, reply.body, reply.complete],
+                [503, "abc", true],
+              );
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+
+      test("two responses pipe one source in one turn: both bodies are exact", async () => {
+        const source = silent();
+        const feed = feeder(source, ["x", "y"]);
+        const start = Promise.withResolvers<unknown>();
+        const count = { waiting: 0, piped: 0 };
+        try {
+          await withApp(
+            {},
+            (app) => {
+              app.use(async (context: Context) => {
+                count.waiting += 1;
+                await start.promise;
+                source.pipe(context.response);
+                count.piped += 1;
+                if (count.piped === 2) {
+                  // The patches of the window, until the end of the turn
+                  ok(Object.hasOwn(source, "on"));
+                  feed.start();
+                }
+                await once(context.response, "finish");
+              });
+            },
+            async ({ port }) => {
+              const replies = Promise.all([exchange(port), exchange(port)]);
+              while (count.waiting < 2) {
+                await sleep(5);
+              }
+              // Both pipe in the same turn
+              start.resolve(null);
+              const [first, second] = await replies;
+              deepStrictEqual(count.piped, 2);
+              deepStrictEqual(
+                [first.body, second.body, first.complete, second.complete],
+                ["xy", "xy", true, true],
+              );
+              // Restored: the methods of its class
+              ok(
+                !Object.hasOwn(source, "on") && !Object.hasOwn(source, "once"),
+              );
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+    },
+  );
+
   suite("of an abandoned work (its response is closed for it)", () => {
     for (const [name, end] of [
       [
@@ -460,6 +670,474 @@ suite("A pipe into the response", () => {
     });
   });
 
+  suite("that fails (its owner fails with its error)", () => {
+    test("of the stack, before the headers: the error handler replies, and the deadline still applies", async () => {
+      const seen: unknown[] = [];
+      await withApp(
+        {
+          timeout: 100,
+          error_handler: async (context: Context, error): Promise<void> => {
+            if (isDeadline(error)) {
+              seen.push((context.signal.reason as { reason?: string }).reason);
+              await context.status(503).send("deadline");
+              return;
+            }
+            seen.push(error instanceof TypeError, context.signal.aborted);
+            // Slower than the deadline: it takes the reply over
+            await sleep(300);
+            await context.status(502).send("late");
+          },
+        },
+        (app) => {
+          app.use(async (context: Context) => {
+            // Refused (see below): its pipe fails at once
+            context.response.on("newListener", () => null);
+            Readable.from(["body"]).pipe(context.response);
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port, { linger: 350 });
+          deepStrictEqual(
+            [reply.status, reply.body, reply.complete, reply.closed],
+            [503, "deadline", true, false],
+          );
+          ok(!reply.raw.includes("late"), reply.raw);
+          deepStrictEqual(seen, [true, false, "deadline"]);
+        },
+      );
+    });
+
+    for (const [form, streams] of [
+      ["promise", 2],
+      ["promise", 3],
+      ["callback", 2],
+      ["callback", 3],
+    ] as const) {
+      test(`refused while \`pipeline()\` (${form}, ${streams} streams) is created: it settles with the error, one reply`, async () => {
+        const settled = Promise.withResolvers<unknown>();
+        await withApp(
+          {},
+          (app) => {
+            app.use(async (context: Context) => {
+              const { response } = context;
+              // Code that the pipe would run while it adds its listeners
+              response.on("newListener", () => null);
+              const chain =
+                streams === 2
+                  ? [silent(), response]
+                  : [silent(), new PassThrough(), response];
+              if (form === "promise") {
+                pipelineAsync(chain).then(
+                  () => {
+                    settled.resolve(null);
+                  },
+                  (error: unknown) => {
+                    settled.resolve(error);
+                  },
+                );
+              } else {
+                pipeline(chain, (error) => {
+                  settled.resolve(error ?? null);
+                });
+              }
+              await never();
+            });
+          },
+          async ({ port }, captured) => {
+            const reply = await exchange(port, { linger: 50 });
+            deepStrictEqual(
+              [reply.status, reply.complete, reply.closed],
+              [500, true, false],
+            );
+            deepStrictEqual(reply.raw.match(/HTTP\/1\.1/gu)?.length, 1);
+            const error = (await within(settled.promise)) as Error;
+            ok(error instanceof TypeError, String(error));
+            ok(error.message.includes("refused"), error.message);
+            const failures = captured.records
+              .filter(({ msg }) => msg === "The request has failed")
+              .map(({ failure }) => (failure as { type: string }).type);
+            deepStrictEqual(failures, ["TypeError"]);
+          },
+        );
+      });
+    }
+
+    test("of a middleware that has settled meanwhile: the next middleware does not run", async () => {
+      const ran = { next: false };
+      await withApp(
+        {},
+        (app) => {
+          app
+            .use((context: Context) => {
+              // Settled before its pipe fails (not `async`)
+              const settled = Promise.resolve();
+              // Refused: its pipe fails at once
+              context.response.on("newListener", () => null);
+              silent().pipe(context.response);
+              return settled;
+            })
+            .use(() => {
+              ran.next = true;
+            });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+          deepStrictEqual(ran, { next: false });
+        },
+      );
+    });
+
+    test("an `error` that its listener emits again reaches no other work, nor throws", async () => {
+      const received: string[] = [];
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            const { response } = context;
+            // Of a work of no request
+            owners.exit(() => {
+              response.on("error", () => {
+                received.push("other");
+              });
+            });
+            response.on("error", (error: Error) => {
+              received.push("own");
+              response.emit("error", error);
+            });
+            response.statusMessage = refused;
+            Readable.from(["body"]).pipe(response);
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+          deepStrictEqual(received, ["own"]);
+        },
+      );
+    });
+
+    test("of an error handler, whose source fails before its end: it fails at once", async () => {
+      const source = silent();
+      await withApp(
+        {
+          error_handler_timeout: 5000,
+          error_handler: async (context: Context): Promise<void> => {
+            context.response.status(409);
+            source.pipe(context.response);
+            owners.exit(() => {
+              setTimeout(() => {
+                source.destroy(new Error("The source has failed"));
+              }, 10);
+            });
+            await never();
+          },
+        },
+        (app) => {
+          app.use(() => {
+            throw new BindenError(409);
+          });
+        },
+        async ({ port }, captured) => {
+          const started = Date.now();
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+          ok(Date.now() - started < 1000);
+          ok(
+            messages(captured, 50).includes(
+              "The provided `error_handler` has failed",
+            ),
+          );
+        },
+      );
+    });
+
+    test("of an error handler, whose source closes before its end: it fails at once", async () => {
+      const source = silent();
+      await withApp(
+        {
+          error_handler_timeout: 5000,
+          error_handler: async (context: Context): Promise<void> => {
+            source.pipe(context.response);
+            owners.exit(() => {
+              setTimeout(() => {
+                source.destroy();
+              }, 10);
+            });
+            await never();
+          },
+        },
+        (app) => {
+          app.use(() => {
+            throw new BindenError(409);
+          });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+        },
+      );
+    });
+
+    test("`pipeline()` of an error handler, whose head fails from a work of no request", async () => {
+      const head = silent();
+      await withApp(
+        {
+          timeout: 20,
+          error_handler_timeout: 5000,
+          error_handler: async (context: Context, error): Promise<void> => {
+            if (!isDeadline(error)) {
+              return;
+            }
+            context.response.status(503).type("text/plain");
+            const piped = pipelineAsync(
+              head,
+              new PassThrough(),
+              context.response,
+            );
+            owners.exit(() => {
+              setTimeout(() => {
+                head.write("partial");
+                head.destroy(new Error("The head has failed"));
+              }, 10);
+            });
+            await piped;
+          },
+        },
+        (app) => {
+          app.use(async () => {
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const started = Date.now();
+          const reply = await exchange(port);
+          ok(reply.status === 500 || reply.closed, reply.raw);
+          ok(!reply.complete || reply.status === 500, reply.raw);
+          ok(Date.now() - started < 1000);
+        },
+      );
+    });
+  });
+
+  suite(
+    "refused (its owner fails), when code other than its source may have run",
+    () => {
+      /** Pipes a source fed by a work of no request into the response, refused by `prepare` */
+      const refusedBy = async (
+        prepare: (source: PassThrough, response: BindenResponse) => void,
+        pipe: (source: PassThrough, response: BindenResponse) => void = (
+          source,
+          response,
+        ): void => {
+          source.pipe(response);
+        },
+      ): Promise<{ reply: IRaw; logged: unknown[] }> => {
+        const source = silent();
+        const feed = feeder(source, ["REAL"]);
+        try {
+          let result: { reply: IRaw; logged: unknown[] } | null = null;
+          await withApp(
+            {},
+            (app) => {
+              app.use(async (context: Context) => {
+                context.response.type("text/plain");
+                prepare(source, context.response);
+                pipe(source, context.response);
+                feed.start();
+                await never();
+              });
+            },
+            async ({ port }, captured) => {
+              const reply = await exchange(port, { linger: 60 });
+              result = {
+                reply,
+                logged: captured.records
+                  .filter(({ msg }) => msg === "The request has failed")
+                  .map(({ failure }) => (failure as { type: string }).type),
+              };
+            },
+          );
+          return result as unknown as { reply: IRaw; logged: unknown[] };
+        } finally {
+          feed.stop();
+        }
+      };
+
+      test("a listener of `newListener` of the response that adds a `data` listener to the source", async () => {
+        const { reply, logged } = await refusedBy((source, response) => {
+          response.on("newListener", (event: unknown) => {
+            if (event === "unpipe") {
+              // Named as the one of the pipe of Node.js
+              const ondata = (): void => {
+                response.write("SPOOF");
+              };
+              source.on("data", ondata);
+            }
+          });
+        });
+        deepStrictEqual(
+          [reply.status, reply.body, reply.complete],
+          [500, "", true],
+        );
+        ok(!reply.raw.includes("SPOOF") && !reply.raw.includes("REAL"));
+        deepStrictEqual(logged, ["TypeError"]);
+      });
+
+      test("a listener of `removeListener` of the response", async () => {
+        const { reply } = await refusedBy((_source, response) => {
+          response.on("removeListener", () => null);
+        });
+        deepStrictEqual([reply.status, reply.complete], [500, true]);
+      });
+
+      for (const event of ["newListener", "removeListener"]) {
+        test(`a listener of \`${event}\` of the source`, async () => {
+          const { reply } = await refusedBy((source) => {
+            source.on(event, () => null);
+          });
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+        });
+      }
+
+      for (const name of ["on", "once", "emit", "pipe"]) {
+        test(`a method \`${name}()\` of the source itself`, async () => {
+          const { reply } = await refusedBy((source) => {
+            const inherited = Reflect.get(PassThrough.prototype, name) as (
+              ...args: unknown[]
+            ) => unknown;
+            Object.defineProperty(source, name, {
+              configurable: true,
+              writable: true,
+              value(this: PassThrough, ...args: unknown[]): unknown {
+                return Reflect.apply(inherited, this, args);
+              },
+            });
+          });
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+        });
+      }
+
+      for (const name of ["rawListeners", "unpipe", "removeListener"]) {
+        test(`a method \`${name}()\` of the source itself, which binden never calls`, async () => {
+          const calls: string[] = [];
+          const { reply } = await refusedBy((source) => {
+            const inherited = Reflect.get(PassThrough.prototype, name) as (
+              ...args: unknown[]
+            ) => unknown;
+            Object.defineProperty(source, name, {
+              configurable: true,
+              writable: true,
+              value(this: PassThrough, ...args: unknown[]): unknown {
+                // Node.js calls it from the pipe that it dismantles (its
+                // `cleanup()`), as it would without binden
+                const { stack = "" } = new Error("Called");
+                calls.push(/\bat cleanup\b/u.test(stack) ? "cleanup" : "other");
+                return Reflect.apply(inherited, this, args);
+              },
+            });
+          });
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+          ok(
+            calls.every((call) => call === "cleanup"),
+            JSON.stringify(calls),
+          );
+        });
+      }
+
+      test("a legacy `Stream.prototype.pipe()` (with no `unpipe()`), dismantled", async () => {
+        const legacy = new Stream() as Stream & { readable: boolean };
+        legacy.readable = true;
+        const { reply } = await refusedBy(
+          () => null,
+          (_source, response) => {
+            legacy.pipe(response);
+            owners.exit(() => {
+              setTimeout(() => {
+                legacy.emit("data", Buffer.from("LEGACY"));
+                legacy.emit("end");
+              }, 10);
+            });
+          },
+        );
+        deepStrictEqual(
+          [reply.status, reply.body, reply.complete],
+          [500, "", true],
+        );
+        ok(!reply.raw.includes("LEGACY"));
+        deepStrictEqual(legacy.listenerCount("data"), 0);
+      });
+
+      test("a legacy `Stream.prototype.pipe()` of a source that has ended", async () => {
+        const ended = new PassThrough();
+        ended.end();
+        ended.resume();
+        await once(ended, "end");
+        const { reply } = await refusedBy(
+          () => null,
+          (_source, response) => {
+            const legacy = Reflect.get(Stream.prototype, "pipe") as (
+              destination: BindenResponse,
+            ) => unknown;
+            Reflect.apply(legacy, ended, [response]);
+          },
+        );
+        deepStrictEqual([reply.status, reply.complete], [500, true]);
+      });
+
+      test("a source that cannot be patched (not extensible)", async () => {
+        const { reply } = await refusedBy((source) => {
+          Object.preventExtensions(source);
+        });
+        deepStrictEqual(
+          [reply.status, reply.body, reply.complete],
+          [500, "", true],
+        );
+      });
+
+      test("one of two responses of one source: the other gets its exact body, the source lives", async () => {
+        const source = silent();
+        const feed = feeder(source, ["x", "y"]);
+        const count = { piped: 0 };
+        try {
+          await withApp(
+            {},
+            (app) => {
+              app.use(async (context: Context) => {
+                if (context.url.pathname === "/refused") {
+                  context.response.on("newListener", () => null);
+                }
+                source.pipe(context.response);
+                count.piped += 1;
+                await once(context.response, "finish");
+              });
+            },
+            async ({ port }) => {
+              const refusedReply = exchange(port, { path: "/refused" });
+              const accepted = exchange(port);
+              while (count.piped < 2) {
+                await sleep(5);
+              }
+              const failed = await refusedReply;
+              deepStrictEqual([failed.status, failed.body], [500, ""]);
+              ok(!source.destroyed);
+              feed.start();
+              const reply = await accepted;
+              deepStrictEqual(
+                [reply.status, reply.body, reply.complete],
+                [200, "xy", true],
+              );
+            },
+          );
+        } finally {
+          feed.stop();
+        }
+      });
+    },
+  );
+
   suite("transfer once its work is abandoned", () => {
     /**
      * Reads the response of a request on a connection that is not read for
@@ -567,5 +1245,392 @@ suite("A pipe into the response", () => {
         );
       },
     );
+  });
+
+  suite("its failures once the outcome of its work is decided", () => {
+    test("of the stack that has completed, before the headers: the error handler replies", async () => {
+      await withApp(
+        {},
+        (app) => {
+          app.use((context: Context) => {
+            const source = silent();
+            context.response.statusMessage = refused;
+            source.pipe(context.response);
+            owners.exit(() => {
+              setTimeout(() => {
+                source.write("late");
+              }, 10);
+            });
+            // Completed, the response started by the pipe
+          });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+        },
+      );
+    });
+
+    test("of the stack that has completed, once the headers are sent: the connection is closed", async () => {
+      await withApp(
+        {},
+        (app) => {
+          app.use((context: Context) => {
+            const source = new PassThrough({ objectMode: true });
+            context.response.flushHeaders();
+            source.pipe(context.response);
+            owners.exit(() => {
+              setTimeout(() => {
+                // Not bytes: its write throws
+                source.write(42);
+              }, 10);
+            });
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.closed], [200, true]);
+          await captured.waitFor(
+            "A pipe into the response has failed once its headers were sent. Destroying the socket",
+          );
+        },
+      );
+    });
+
+    test("of the stack once the client has gone away: nothing is replied", async () => {
+      const piped = Promise.withResolvers<unknown>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            context.response.flushHeaders();
+            await once(context.response, "close");
+            // Once the stack has stopped
+            await sleep(10);
+            context.response.on("newListener", () => null);
+            silent().pipe(context.response);
+            piped.resolve(null);
+          });
+        },
+        async ({ port }, captured) => {
+          const socket = connect(port, "localhost");
+          await once(socket, "connect");
+          socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+          await once(socket, "data");
+          socket.destroy();
+          await within(piped.promise);
+          await sleep(20);
+          deepStrictEqual(messages(captured, 50), []);
+        },
+      );
+    });
+
+    test("of the stack as the client goes away: nothing is replied", async () => {
+      const piped = Promise.withResolvers<unknown>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            context.response.flushHeaders();
+            await once(context.response, "close");
+            // Before the stack has stopped
+            context.response.on("newListener", () => null);
+            silent().pipe(context.response);
+            piped.resolve(null);
+          });
+        },
+        async ({ port }, captured) => {
+          const socket = connect(port, "localhost");
+          await once(socket, "connect");
+          socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+          await once(socket, "data");
+          socket.destroy();
+          await within(piped.promise);
+          await sleep(20);
+          deepStrictEqual(messages(captured, 50), []);
+        },
+      );
+    });
+
+    test("of the stack that has completed, whose error reply fails unexpectedly: the connection is closed", async () => {
+      await withApp(
+        {},
+        (app) => {
+          app.use((context: Context) => {
+            const source = silent();
+            // The default reply then fails: it removes the `ETag` of the body
+            context.setHeader("ETag", `"tag"`);
+            context.response.removeHeader = (): never => {
+              throw new Error("Unexpected");
+            };
+            context.response.statusMessage = refused;
+            source.pipe(context.response);
+            owners.exit(() => {
+              setTimeout(() => {
+                source.write("late");
+              }, 10);
+            });
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.closed], [null, true]);
+          await captured.waitFor("The request has failed");
+        },
+      );
+    });
+
+    test("of a work of another request: Node.js decides", async () => {
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            context.response.on("newListener", () => null);
+            owners.run({ name: "a work of another request" }, () => {
+              silent().pipe(context.response);
+            });
+            await context.status(202).send("sent");
+          });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.body], [202, "sent"]);
+        },
+      );
+    });
+
+    test("of the stack once the error handler runs: only its own work is abandoned", async () => {
+      await withApp(
+        {
+          error_handler: async (context: Context): Promise<void> => {
+            await sleep(40);
+            await context.status(409).send("handler");
+          },
+        },
+        (app) => {
+          app.use((context: Context) => {
+            setTimeout(() => {
+              context.response.on("newListener", () => null);
+              silent().pipe(context.response);
+            }, 10);
+            throw new Error("A failure");
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.body], [409, "handler"]);
+          await captured.waitFor(
+            "A pipe of the stack has failed once it had failed",
+          );
+        },
+      );
+    });
+
+    test("of an error handler that has settled: only its own work is abandoned", async () => {
+      await withApp(
+        {
+          error_handler: async (context: Context): Promise<void> => {
+            await context.status(409).send("handler");
+            setTimeout(() => {
+              context.response.on("newListener", () => null);
+              silent().pipe(context.response);
+            }, 10);
+          },
+        },
+        (app) => {
+          app.use(() => {
+            throw new Error("A failure");
+          });
+        },
+        async ({ port }, captured) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.body], [409, "handler"]);
+          await captured.waitFor(
+            "A pipe of the provided `error_handler` has failed late",
+          );
+        },
+      );
+    });
+
+    test("whose `end()` throws (from `pipeline()`): its work fails", async () => {
+      const settled = Promise.withResolvers<unknown>();
+      await withApp(
+        {},
+        (app) => {
+          app.use(async (context: Context) => {
+            context.response.statusMessage = refused;
+            pipeline(Readable.from([]), context.response, (error) => {
+              settled.resolve(error);
+            });
+            await never();
+          });
+        },
+        async ({ port }) => {
+          const reply = await exchange(port);
+          deepStrictEqual([reply.status, reply.complete], [500, true]);
+          deepStrictEqual(
+            ((await within(settled.promise)) as { code?: string }).code,
+            "ERR_INVALID_CHAR",
+          );
+        },
+      );
+    });
+
+    for (const kind of ["error handler", "stack"]) {
+      test(`the \`close\` listeners of a failed ${kind} run before the reply that replaces it`, async () => {
+        const sent: boolean[] = [];
+        const pipeAndWait = async (context: Context): Promise<void> => {
+          context.response.on("close", () => {
+            sent.push(context.response.headersSent);
+          });
+          // Then in a continuation, whose ticks come after it
+          await sleep(1);
+          // Refused: its work fails
+          context.response.on("newListener", () => null);
+          silent().pipe(context.response);
+          await never();
+        };
+        await withApp(
+          kind === "stack" ? {} : { error_handler: pipeAndWait },
+          (app) => {
+            app.use(async (context: Context) => {
+              if (kind === "stack") {
+                await pipeAndWait(context);
+              }
+              throw new BindenError(409);
+            });
+          },
+          async ({ port }) => {
+            const reply = await exchange(port);
+            deepStrictEqual([reply.status, reply.complete], [500, true]);
+            deepStrictEqual(sent, [false]);
+          },
+        );
+      });
+    }
+  });
+
+  suite("into a response without the framework (Node.js decides)", () => {
+    test("refused: it is unpiped, and nothing else", () => {
+      const response = detached();
+      const source = silent();
+      response.on("newListener", () => null);
+      source.pipe(response);
+      const { pipes } = Reflect.get(source, "_readableState") as {
+        pipes: unknown[];
+      };
+      deepStrictEqual([source.listenerCount("data"), pipes.length], [0, 0]);
+      // A legacy pipe, which has no `unpipe()`: left as it is
+      const legacy = new Stream();
+      legacy.pipe(response);
+      deepStrictEqual(legacy.listenerCount("data"), 1);
+    });
+
+    test("whose write throws: Node.js destroys the response", async () => {
+      const response = detached();
+      response.on("error", () => null);
+      const source = new PassThrough({ objectMode: true });
+      source.pipe(response);
+      source.write(42);
+      // Node.js 24.14 emits no `close` without a socket
+      for (let tick = 0; tick < 10 && !response.destroyed; tick += 1) {
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+      }
+      ok(response.destroyed);
+    });
+
+    test("whose end throws: it is thrown, as by Node.js", () => {
+      const response = detached();
+      response.statusMessage = refused;
+      const source = silent();
+      source.pipe(response);
+      let thrown: unknown = null;
+      try {
+        source.emit("end");
+      } catch (error: unknown) {
+        thrown = error;
+      }
+      deepStrictEqual((thrown as { code?: string }).code, "ERR_INVALID_CHAR");
+    });
+
+    for (const owner of [null, { name: "a work of no framework" }]) {
+      test(`a listener of \`end\` added in the window that throws: it is thrown (${owner === null ? "no work" : "a work"})`, () => {
+        const response = detached();
+        response[kOwnership]({
+          fail: () => false,
+          guards: () => true,
+          debug: () => null,
+        });
+        const source = silent();
+        const thrown = new Error("Thrown");
+        const run = (fn: () => void): void => {
+          if (owner === null) {
+            owners.exit(fn);
+          } else {
+            owners.run(owner, fn);
+          }
+        };
+        run(() => {
+          source.pipe(response);
+          source.once("end", () => {
+            throw thrown;
+          });
+        });
+        let caught: unknown = null;
+        try {
+          source.emit("end");
+        } catch (error: unknown) {
+          caught = error;
+        }
+        ok(caught === thrown);
+      });
+    }
+
+    test("of a class whose listeners are not those of `Readable.prototype.pipe()`", () => {
+      // Its `on()` wraps the `data` listener, its `once()` does not wrap
+      const on = Reflect.get(PassThrough.prototype, "on") as (
+        ...args: unknown[]
+      ) => unknown;
+      class Wrapping extends PassThrough {}
+      class Plain extends PassThrough {}
+      Object.defineProperty(Wrapping.prototype, "on", {
+        value(this: PassThrough, event: unknown, listener: () => void) {
+          const wrapped = Object.assign(listener.bind(this), { listener });
+          return Reflect.apply(on, this, [
+            event,
+            event === "data" ? wrapped : listener,
+          ]);
+        },
+      });
+      Object.defineProperty(Plain.prototype, "once", {
+        value(this: PassThrough, event: unknown, listener: () => void) {
+          return Reflect.apply(on, this, [event, listener]);
+        },
+      });
+      for (const source of [new Wrapping(), new Plain()]) {
+        const response = detached();
+        source.pipe(response);
+        // Refused: unpiped
+        deepStrictEqual(source.listenerCount("data"), 0);
+      }
+    });
+
+    test("the patches of its window are left once replaced, or removed", async () => {
+      const response = detached();
+      const replaced = silent();
+      const removed = silent();
+      const own = (): null => null;
+      replaced.pipe(response);
+      removed.pipe(response);
+      Object.defineProperty(replaced, "on", { value: own, configurable: true });
+      Reflect.deleteProperty(removed, "on");
+      await new Promise((resolve) => {
+        process.nextTick(resolve);
+      });
+      ok((replaced.on as unknown) === own && !Object.hasOwn(replaced, "once"));
+      ok(!Object.hasOwn(removed, "on") && !Object.hasOwn(removed, "once"));
+    });
   });
 });

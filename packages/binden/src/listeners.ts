@@ -29,6 +29,9 @@ export interface IOnce {
   readonly event: string | symbol;
 }
 
+/** Runs a call of a bound listener (e.g. to catch what it throws) */
+export type IAround = (call: () => unknown) => unknown;
+
 const bindings = new WeakMap<IListener, IBinding>();
 
 /** The objects that the framework mutates now, with its rights (see `force()`) */
@@ -128,13 +131,16 @@ export function bind(
   owner: object | undefined,
   kind: IKind,
   once: IOnce | null,
+  around: IAround | null = null,
 ): IListener {
   if (typeof listener !== "function") {
     // Refused by Node.js as it is
     return listener;
   }
-  const run = (receiver: unknown, args: unknown[]): unknown =>
-    as(owner, () => Reflect.apply(listener, receiver, args));
+  const run = (receiver: unknown, args: unknown[]): unknown => {
+    const call = (): unknown => Reflect.apply(listener, receiver, args);
+    return as(owner, around === null ? call : (): unknown => around(call));
+  };
   const bound = once === null ? wrap(run) : wrapOnce(run, once);
   Object.assign(bound, { listener });
   bindings.set(bound, { owner, kind, listener, once: once !== null });
@@ -144,4 +150,147 @@ export function bind(
 /** How a listener has been bound (`undefined` for one that has not been) */
 export function bindingOf(raw: unknown): IBinding | undefined {
   return bindings.get(raw as IListener);
+}
+
+/**
+ * What a work does when a listener that it has added to a piped source in
+ * its window (see `openWindow()`) throws at its `end` (e.g. the `end()` of
+ * `pipeline()` into a head that Node.js refuses): `true` once its pipe has
+ * failed, by the owner (see `onPipeFailure()`)
+ */
+const failures = new WeakMap<object, (error: unknown) => boolean>();
+
+/** Sets what a pipe failure of a work does (see `failures`) */
+export function onPipeFailure(
+  owner: object,
+  fail: (error: unknown) => boolean,
+): void {
+  failures.set(owner, fail);
+}
+
+/**
+ * The listener-adding methods of a source, patched while its window is open
+ * (see `openWindow()`): by the method of its class that each calls, and
+ * whether it adds a listener that runs once
+ */
+const adders = [
+  ["on", "on", false],
+  ["addListener", "addListener", false],
+  ["once", "on", true],
+  ["prependListener", "prependListener", false],
+  ["prependOnceListener", "prependListener", true],
+] as const;
+
+/** The names of the listener-adding methods of a source (see `adders`) */
+export const adderNames: readonly string[] = adders.map(([name]) => name);
+
+/** The patches of a source whose window is open, and how many windows share them */
+interface IWindow {
+  count: number;
+  readonly patches: ReadonlyMap<string, IListener>;
+}
+
+const windows = new WeakMap<object, IWindow>();
+
+/** Whether a source has the patches of an open window */
+export function windowed(source: object): boolean {
+  return windows.has(source);
+}
+
+/**
+ * A patched listener-adding method of a source: it binds every listener to
+ * the work that adds it (and catches what a listener of `end` throws for its
+ * pipe, see `failures`), then adds it by the method of its class
+ */
+function patch(inherited: string, once: boolean): IListener {
+  return function patched(
+    this: EventEmitter,
+    event: unknown,
+    listener: unknown,
+  ): unknown {
+    const owner = owners.getStore();
+    const around: IAround | null =
+      event === "end"
+        ? (call): unknown => {
+            try {
+              return call();
+            } catch (error: unknown) {
+              // `undefined` (of no request) is never a key
+              const fail = failures.get(owner as object);
+              if (fail?.(error) === true) {
+                return null;
+              }
+              throw error;
+            }
+          }
+        : null;
+    const bound = bind(
+      listener as IListener,
+      owner,
+      "source",
+      once ? { emitter: this, event: event as string | symbol } : null,
+      around,
+    );
+    const method = Reflect.get(
+      Object.getPrototypeOf(this) as object,
+      inherited,
+    ) as IListener;
+    return Reflect.apply(method, this, [event, bound]);
+  };
+}
+
+/** Removes the patches of a source that are still its own methods */
+function restore(
+  source: object,
+  patches: ReadonlyMap<string, IListener>,
+): void {
+  for (const [name, value] of patches) {
+    if (Object.getOwnPropertyDescriptor(source, name)?.value === value) {
+      Reflect.deleteProperty(source, name);
+    }
+  }
+}
+
+/** Closes a window of a source (see `openWindow()`) */
+function closeWindow(source: EventEmitter, window: IWindow): void {
+  window.count -= 1;
+  if (window.count === 0) {
+    windows.delete(source);
+    restore(source, window.patches);
+  }
+}
+
+/**
+ * Opens the window of a source that is piped now: until the end of the
+ * current turn (a `process.nextTick()` queued now), its listener-adding
+ * methods bind every listener added to it to the work that adds it (e.g. the
+ * `end` of `pipeline()`, or a listener of another work). Patched on the
+ * source itself, never on a prototype; the windows of one source share the
+ * patches, removed by the last one (unless replaced meanwhile). `false` when
+ * the source cannot be patched (e.g. it is not extensible).
+ */
+export function openWindow(source: EventEmitter): boolean {
+  let window = windows.get(source);
+  if (typeof window === "undefined") {
+    const patches = new Map<string, IListener>();
+    for (const [name, inherited, once] of adders) {
+      const value = patch(inherited, once);
+      if (
+        !Reflect.defineProperty(source, name, {
+          configurable: true,
+          writable: true,
+          value,
+        })
+      ) {
+        restore(source, patches);
+        return false;
+      }
+      patches.set(name, value);
+    }
+    window = { count: 0, patches };
+    windows.set(source, window);
+  }
+  window.count += 1;
+  process.nextTick(closeWindow, source, window);
+  return true;
 }

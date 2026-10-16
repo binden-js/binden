@@ -50,12 +50,24 @@ export const kFramework: unique symbol = Symbol("binden.framework");
 export const kListen: unique symbol = Symbol("binden.listen");
 
 /**
+ * A failure of a pipe of a work (see `IOwnership.fail()`): the work that it
+ * belongs to, and its error
+ *
+ * @internal
+ */
+export interface IPipeFailure {
+  readonly owner: object;
+  readonly error: unknown;
+}
+
+/**
  * The key of the internal method that tells a response that works may no
- * longer mutate it: `response[kRevoke](owners)`. At once, their mutations are
- * ignored; on the next tick, `close` is delivered to the listeners that each
- * work has added to the response (and only to them: the response is closed
- * for the abandoned work), and its sources still piped are unpiped. Resolves
- * once delivered. Not part of the public API.
+ * longer mutate it: `response[kRevoke](owners, failure)`. At once, their
+ * mutations are ignored; on the next tick, the `error` of the failure (to its
+ * owner only) then `close` are delivered to the listeners that each work has
+ * added to the response (and only to them: the response is closed for the
+ * abandoned work), and its sources still piped are unpiped. Resolves once
+ * delivered. Not part of the public API.
  *
  * @internal
  */
@@ -68,6 +80,20 @@ export const kRevoke: unique symbol = Symbol("binden.revoke");
  * @internal
  */
 export interface IOwnership {
+  /**
+   * A pipe of a work into the response has failed (e.g. a write of its source
+   * has thrown for a head that Node.js refuses): `true` once the framework
+   * handles it, `false` for a work that it does not know (e.g. of no request),
+   * which is left to Node.js. Called synchronously: the work loses its rights
+   * at once (see `kRevoke`).
+   */
+  fail(owner: object, error: unknown): boolean;
+  /**
+   * Whether a source piped by the work fails it when it errors or closes
+   * before its end (e.g. the work of an error handler, which Node.js would
+   * leave waiting)
+   */
+  guards(owner: object): boolean;
   /** Logs a failure that nothing else handles (e.g. of an abandoned work) */
   debug(message: string, error: unknown): void;
 }

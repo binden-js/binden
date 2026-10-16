@@ -1,4 +1,4 @@
-import { kListen, kRevoke, owners } from "./seal.js";
+import { type IPipeFailure, kListen, kRevoke, owners } from "./seal.js";
 import type { BindenResponse } from "./response.js";
 import type { IncomingMessage } from "node:http";
 
@@ -57,12 +57,14 @@ export class Exchange {
   readonly #finished: Promise<void>;
   readonly #report: IExchangeReport;
   readonly #aborted: Promise<void>;
+  readonly #halted = Promise.withResolvers<never>();
   /** The tokens of the works that may mutate the response (see `token()`) */
   readonly #live = new Set<object>();
   /** The tokens of the works that may no longer mutate it */
   readonly #revoked = new WeakSet<object>();
   /** Settles once the revoked works have been told (see `kRevoke`) */
   #delivered: Promise<void> = Promise.resolve();
+  #halting = false;
   #phase: IPhase;
   #sealed: boolean;
   #reply: object | null;
@@ -86,6 +88,7 @@ export class Exchange {
       this.#controller.signal.addEventListener(
         "abort",
         () => {
+          this.halt();
           resolve();
         },
         { once: true },
@@ -270,18 +273,34 @@ export class Exchange {
   /**
    * From now on only the framework replies (e.g. once the deadline has
    * passed): the works of the exchange (its stack, and any earlier
-   * `reply()`) may no longer reply, and are told so (see `kRevoke`)
+   * `reply()`) may no longer reply, and are told so (see `kRevoke`), with the
+   * failure of a pipe of one of them, if any
    */
-  public seal(): void {
+  public seal(failure: IPipeFailure | null = null): void {
     this.#sealed = true;
     this.#reply = null;
-    const tokens = [...this.#live];
-    this.#live.clear();
+    this.#revoke([...this.#live], failure);
+  }
+
+  /**
+   * One work of the exchange may no longer reply (e.g. a pipe of the stack
+   * that fails once the error handler runs), and is told so (see `kRevoke`):
+   * the others keep their rights
+   */
+  public revoke(failure: IPipeFailure): void {
+    if (this.#live.has(failure.owner)) {
+      this.#revoke([failure.owner], failure);
+    }
+  }
+
+  /** Revokes works of the exchange: they are told so on the next tick */
+  #revoke(tokens: object[], failure: IPipeFailure | null): void {
     for (const token of tokens) {
+      this.#live.delete(token);
       this.#revoked.add(token);
     }
     if (tokens.length > 0) {
-      const delivered = this.#response[kRevoke](tokens);
+      const delivered = this.#response[kRevoke](tokens, failure);
       this.#delivered = this.#delivered.then(() => delivered);
     }
   }
@@ -309,6 +328,25 @@ export class Exchange {
     const reply = this.token();
     this.#reply = reply;
     return owners.run(reply, fn);
+  }
+
+  /**
+   * The middleware stack stops (e.g. a pipe of it has failed), although the
+   * signal is not aborted (the deadline still applies)
+   */
+  public halt(): void {
+    this.#halting = true;
+    (this.#halted.resolve as () => void)();
+  }
+
+  /** Settles once the stack stops: the signal is aborted, or `halt()` (never rejects) */
+  public get halted(): Promise<void> {
+    return this.#halted.promise;
+  }
+
+  /** Whether the stack stops (see `halted`) */
+  public get has_halted(): boolean {
+    return this.#halting;
   }
 
   /** Settles once the response is closed and every cleanup has run */

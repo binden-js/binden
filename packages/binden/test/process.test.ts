@@ -42,6 +42,16 @@ suite("Process safety", () => {
     });
   });
 
+  test("a pipe whose write or end throws fails its work: one reply, no crash", () => {
+    deepStrictEqual(run("pipe-failures.ts"), {
+      status: 0,
+      stdout:
+        "500(open) 500(open) 500(open) 500(open) 500(open) 200(closed) 200(closed)\n" +
+        "committed-pipeline:ERR_INVALID_ARG_TYPE empty-pipeline:ERR_INVALID_CHAR pipeline:ERR_INVALID_CHAR\n",
+      stderr: "",
+    });
+  });
+
   test("a reason phrase or a header that Node.js refuses does not crash the process", () => {
     deepStrictEqual(run("refused-head.ts"), {
       status: 0,

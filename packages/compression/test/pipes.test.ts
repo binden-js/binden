@@ -1,9 +1,11 @@
 import { type IServed, dechunk, exchange, serve } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
+import { deepStrictEqual, ok } from "node:assert/strict";
 import { Compression } from "../index.js";
 import type { Context } from "binden";
-import { ok } from "node:assert/strict";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import zlib from "node:zlib";
 
 suite("A pipe into a compressed response", () => {
@@ -11,6 +13,26 @@ suite("A pipe into a compressed response", () => {
 
   afterEach(async () => {
     await Promise.all(servers.splice(0).map(async (served) => served.close()));
+  });
+
+  test("whose head Node.js refuses fails its work: one `500`, no crash", () => {
+    const { status, stdout, stderr } = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        join(import.meta.dirname, "fixtures", "pipe-failure.ts"),
+      ],
+      { encoding: "utf8", timeout: 30_000 },
+    );
+    deepStrictEqual(
+      { status, stdout, stderr },
+      {
+        status: 0,
+        stdout: "500(open) 500(open)\npipeline:ERR_INVALID_CHAR\n",
+        stderr: "",
+      },
+    );
   });
 
   test(

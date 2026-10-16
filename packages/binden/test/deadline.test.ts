@@ -403,6 +403,38 @@ suite("The deadline", () => {
     );
   });
 
+  test("stops the stack whose middleware settles from a listener of the abort", async () => {
+    let next = false;
+    await withApp(
+      { timeout: 20 },
+      (app) => {
+        app
+          .use(
+            (context: Context) =>
+              new Promise<void>((resolve) => {
+                context.signal.addEventListener("abort", () => {
+                  resolve();
+                });
+              }),
+          )
+          .use(() => {
+            next = true;
+          });
+      },
+      async ({ port }) => {
+        const connection = await client(port);
+        try {
+          const { head } = await connection.request("/");
+          ok(head.startsWith("HTTP/1.1 503 "), head);
+        } finally {
+          connection.close();
+        }
+        await sleep(20);
+        ok(!next);
+      },
+    );
+  });
+
   test("cancels a send that has not committed its headers, which the time out of an error handler cuts", async () => {
     await withApp(
       {

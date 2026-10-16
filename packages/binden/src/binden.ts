@@ -174,6 +174,21 @@ interface IRun {
   context: Context;
 }
 
+/**
+ * The works of a request that own its response (see `owners`): its
+ * middleware stack, then the runs of its error handler
+ */
+interface IWorks {
+  /** The token of the middleware stack */
+  readonly stack: object;
+  /** The tokens of the runs of the error handler */
+  readonly handlers: Set<object>;
+  /** What a failure of a pipe of a work does (see `IOwnership.fail()`), by its token */
+  readonly failures: Map<object, (error: unknown) => void>;
+  /** Whether the error handler has started: the outcome of the stack is decided */
+  handled: boolean;
+}
+
 /** The methods of the guarded routers that have refused a request */
 type IAllow = Set<string>;
 
@@ -209,6 +224,8 @@ export class Binden<
   readonly #Request: typeof BindenRequest;
   readonly #Response: typeof BindenResponse;
   readonly #request_id: IRequestOptions["request_id"];
+  /** The works of the requests (see `IWorks`), by their exchange */
+  readonly #works = new WeakMap<Exchange, IWorks>();
 
   /**
    * An application with its options (see `IBindenOptions`), checked: an
@@ -402,7 +419,25 @@ export class Binden<
     // of the framework mutates the response: the sends, writes, headers,
     // status and cookies of the abandoned work do nothing
     response[kSeal]((owner) => exchange.allows(owner));
+    const works: IWorks = {
+      stack: exchange.token(),
+      handlers: new Set(),
+      failures: new Map(),
+      handled: false,
+    };
+    this.#works.set(exchange, works);
     response[kOwnership]({
+      fail: (owner, error): boolean => {
+        const fail = works.failures.get(owner);
+        if (typeof fail === "undefined") {
+          // Not a work of this request
+          return false;
+        } else if (exchange.allows(owner)) {
+          fail(error);
+        }
+        return true;
+      },
+      guards: (owner): boolean => works.handlers.has(owner),
       debug: (message, error): void => {
         context.log.debug(message, this.#failure(context, error, "send"));
       },
@@ -421,12 +456,10 @@ export class Binden<
     // gets 503: the stack does not run
     const handled = isClosing(server)
       ? this.#closing(context)
-      : this.#run(context, exchange, failure);
+      : this.#run(context, exchange, works, failure);
     handled.catch((error: unknown) => {
-      // Unexpected (every failure is handled): the process must not crash
-      const message = "The request has failed";
-      context.log.error(message, this.#failure(context, error, "send"));
-      response[kFramework](() => response.destroy());
+      // The process must not crash
+      this.#unexpected(context, error);
     });
   }
 
@@ -439,29 +472,60 @@ export class Binden<
   async #run(
     first: Context,
     exchange: Exchange,
+    works: IWorks,
     initial: { error: unknown } | null,
   ): Promise<void> {
     const run: IRun = { context: first };
     let failure = initial;
-    let stopped = false;
+    // A pipe of the stack that fails (see `IOwnership.fail()`): the stack may
+    // no longer mutate the response, and stops; its later result is ignored
+    const outcome: { piped: { error: unknown } | null } = { piped: null };
+    let running = true;
+    const { promise: halted, resolve: halt } = Promise.withResolvers<null>();
+    works.failures.set(works.stack, (error) => {
+      if (works.handled) {
+        // Its outcome is decided already: only its own work is abandoned
+        exchange.revoke({ owner: works.stack, error });
+        const message = "A pipe of the stack has failed once it had failed";
+        const { context } = run;
+        context.log.debug(message, this.#failure(context, error, "send"));
+        return;
+      }
+      works.handled = true;
+      exchange.seal({ owner: works.stack, error });
+      exchange.halt();
+      outcome.piped = { error };
+      if (running) {
+        halt(null);
+      } else {
+        const { context } = run;
+        this.#pipeFailed(context, exchange, error).catch((unexpected) => {
+          this.#unexpected(context, unexpected);
+        });
+      }
+    });
     try {
       if (failure === null) {
-        // The stack has a token of its own (see `owners`)
-        const stack = exchange.token();
-        await owners.run(stack, () => this.#handle(run, exchange));
+        await Promise.race([
+          owners.run(works.stack, () => this.#handle(run, exchange)),
+          halted,
+        ]);
       }
     } catch (error: unknown) {
-      if (error === ABORTED) {
-        stopped = true;
-      } else {
+      // Stopped (`ABORTED`): once aborted, or once a pipe has failed
+      if (error !== ABORTED) {
         failure = { error };
       }
     }
+    running = false;
 
     const { context } = run;
     const { signal } = exchange;
-    if (stopped || (failure && signal.aborted)) {
-      // A failure once aborted is a consequence (e.g. of the client going away)
+    const { piped } = outcome;
+    if (signal.aborted) {
+      // Stopped, or completed meanwhile: a failure once aborted is a
+      // consequence (e.g. of the client going away), and a deadline that has
+      // passed replies (its listener below would come too late)
       await this.#aborted(context, exchange);
       return;
     }
@@ -474,20 +538,52 @@ export class Binden<
         const { reason } = signal as { reason: BindenAbortError };
         if (reason.reason === "deadline") {
           this.#deadline(context, exchange).catch((error: unknown) => {
-            // Unexpected (every failure is handled)
-            const message = "The request has failed";
-            context.log.error(message, this.#failure(context, error, "send"));
-            context.response[kFramework](() => context.response.destroy());
+            this.#unexpected(context, error);
           });
         }
       },
       { once: true },
     );
-    if (failure) {
+    if (piped !== null) {
+      await this.#pipeFailed(context, exchange, piped.error);
+    } else if (failure) {
       const { error } = failure;
-      // Its run has a token of its own (see `Exchange.reply()`)
       await exchange.reply(() => this.#errorHandler(context, exchange, error));
     }
+  }
+
+  /**
+   * A pipe of the stack has failed (see `IOwnership.fail()`), whose stack has
+   * stopped (or had completed): once it has been told (see `kRevoke`), the
+   * error handler replies to its error, or the connection is closed once the
+   * headers have been sent. A deadline that passes meanwhile replies instead.
+   */
+  async #pipeFailed(
+    context: Context,
+    exchange: Exchange,
+    error: unknown,
+  ): Promise<void> {
+    await exchange.delivered;
+    const { response } = context;
+    if (exchange.signal.aborted) {
+      return;
+    } else if (response.headersSent) {
+      const message =
+        "A pipe into the response has failed once its headers were sent. Destroying the socket";
+      context.log.error(message, this.#failure(context, error, "send"));
+      response[kFramework](() => response.destroy());
+      return;
+    }
+    // The sends of the stack have written nothing
+    response[kCancel](error);
+    await exchange.reply(() => this.#errorHandler(context, exchange, error));
+  }
+
+  /** An unexpected failure (every failure is handled): the connection is closed */
+  #unexpected(context: Context, error: unknown): void {
+    const message = "The request has failed";
+    context.log.error(message, this.#failure(context, error, "send"));
+    context.response[kFramework](() => context.response.destroy());
   }
 
   /**
@@ -791,16 +887,42 @@ export class Binden<
     exchange: Exchange,
     error: unknown,
   ): Promise<void> {
+    // The outcome of the stack is decided (see `IWorks`)
+    const works = this.#works.get(exchange) as IWorks;
+    works.handled = true;
     if (this.#error_handler) {
       const message = "Passing error to the provided `error_handler`";
       context.log.trace(message, this.#failure(context, error, "middleware"));
 
+      // Its run has its own token (see `Exchange.reply()`): a pipe of it that
+      // fails (see `IOwnership.fail()`) fails it
+      const token = owners.getStore() as object;
+      const { promise: piped, resolve } = Promise.withResolvers<{
+        error: unknown;
+      }>();
+      let running = true;
+      const pipe: { failure: { error: unknown } | null } = { failure: null };
+      works.handlers.add(token);
+      works.failures.set(token, (failure) => {
+        if (running) {
+          exchange.seal({ owner: token, error: failure });
+          pipe.failure = { error: failure };
+          resolve(pipe.failure);
+        } else {
+          // Settled: only its own work is abandoned
+          exchange.revoke({ owner: token, error: failure });
+          const late = "A pipe of the provided `error_handler` has failed late";
+          context.log.debug(late, this.#failure(context, failure, "send"));
+        }
+      });
       const outcome = await this.#bounded(
         this.#error_handler,
         context,
         exchange,
         error,
+        piped,
       );
+      running = false;
 
       const { response } = context;
       if (outcome === SUPERSEDED) {
@@ -830,6 +952,11 @@ export class Binden<
         }
         // It sees its response closed first (see `kRevoke`)
         await exchange.delivered;
+        if (outcome === pipe.failure && !response.headersSent) {
+          // Its pipe has failed before the headers: its sends have written
+          // nothing
+          response[kCancel](pipe.failure.error);
+        }
         if (response.writableEnded) {
           // Its reply is complete: what is left of it (e.g. under
           // backpressure) is still sent
@@ -878,9 +1005,10 @@ export class Binden<
     context: Context,
     exchange: Exchange,
     error: unknown,
+    piped: Promise<{ error: unknown }>,
   ): Promise<typeof EXPIRED | typeof SUPERSEDED | { error: unknown } | null> {
-    // Once the handler is abandoned, a failure of its own (then or later) is
-    // only logged
+    // Once the handler is abandoned (or has failed by its pipe), a failure of
+    // its own (then or later) is only logged
     const state: { abandoned: boolean; failure: { error: unknown } | null } = {
       abandoned: false,
       failure: null,
@@ -910,7 +1038,7 @@ export class Binden<
     timer.unref();
     const outcomes: Promise<
       typeof EXPIRED | typeof SUPERSEDED | { error: unknown } | null
-    >[] = [settled, timeout];
+    >[] = [settled, timeout, piped];
     const { signal } = exchange;
     const superseded = (): boolean =>
       signal.aborted &&
@@ -1126,7 +1254,7 @@ export class Binden<
     const settled = Promise.resolve(result).then(
       (value: unknown) => ({ ok: true, value }) as const,
       (error: unknown) => {
-        if (exchange.signal.aborted) {
+        if (exchange.has_halted) {
           const message =
             "A middleware has failed after the request was aborted";
           context.log.debug(
@@ -1139,9 +1267,11 @@ export class Binden<
     );
     const outcome = await Promise.race([
       settled,
-      exchange.aborted.then(() => null),
+      exchange.halted.then(() => null),
     ]);
-    if (outcome === null) {
+    // Whatever has won (e.g. its result settled from a listener of the
+    // abort): once the stack has stopped, its result is ignored
+    if (outcome === null || exchange.has_halted) {
       throw ABORTED;
     } else if (!outcome.ok) {
       throw outcome.error;

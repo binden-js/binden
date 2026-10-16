@@ -5,9 +5,20 @@ import {
   kRestoreFraming,
   kSaveFraming,
 } from "./framing.js";
-import { type IListener, bind, bindingOf, force, forced } from "./listeners.js";
+import {
+  type IListener,
+  adderNames,
+  bind,
+  bindingOf,
+  force,
+  forced,
+  onPipeFailure,
+  openWindow,
+  windowed,
+} from "./listeners.js";
 import {
   type IOwnership,
+  type IPipeFailure,
   type IRepresentation,
   type IRepresentationNegotiator,
   type IResponseOperation,
@@ -178,8 +189,28 @@ const parent = ServerResponse.prototype;
 /** The methods of `EventEmitter` of every emitter (e.g. of a piped source) */
 const intrinsic = EventEmitter.prototype;
 
+/**
+ * The methods that binden or the pipe of Node.js call on a piped source: a
+ * source that has its own one (other than the patches of an open window, see
+ * `openWindow()`) is not adopted (see `BindenResponse.#adopt()`)
+ */
+const inspected = [
+  ...adderNames,
+  "emit",
+  "pipe",
+  "unpipe",
+  "rawListeners",
+  "listeners",
+  "listenerCount",
+  "removeListener",
+  "off",
+  "removeAllListeners",
+];
+
 /** How a response handles the works that own it without the framework (see `kOwnership`) */
 const unowned: IOwnership = {
+  fail: (): boolean => false,
+  guards: (): boolean => false,
   debug: (): void => {
     // Nobody to tell
   },
@@ -216,6 +247,21 @@ function unpipe(source: EventEmitter, destination: object): void {
 }
 
 /**
+ * Replaces the last listener of an event of a source in its place, by the
+ * methods of every emitter: no listener of the source runs (it has none of
+ * `newListener` or `removeListener`, see `BindenResponse.#refusal()`)
+ */
+function replaceListener(
+  source: EventEmitter,
+  event: string,
+  listener: IListener,
+  bound: IListener,
+): void {
+  intrinsic.removeListener.call(source, event, listener);
+  intrinsic.on.call(source, event, bound);
+}
+
+/**
  * The arguments of a method of Node.js whose callback runs as the work that
  * has called it (see `bind()`): Node.js calls it once the socket has written,
  * as whoever has flushed it then
@@ -231,6 +277,12 @@ function callbacksOf(args: readonly unknown[]): unknown[] {
     );
   }
   return bound;
+}
+
+/** The pipe whose adopted `data` listener runs now (see `destroy()`) */
+interface IMarker {
+  readonly owner: object | undefined;
+  readonly source: EventEmitter;
 }
 
 /**
@@ -381,6 +433,12 @@ export class BindenResponse<
   readonly #revoked = new Map<object, boolean>();
   /** The sources that each work has piped into the response (see `#adopt()`) */
   readonly #sources = new Map<object | undefined, Set<EventEmitter>>();
+  /** The listeners that guard a piped source (see `#guard()`) */
+  readonly #guards = new Map<EventEmitter, [string, IListener][]>();
+  /** The works whose re-emitted `error` is absorbed now (see `#deliver()`) */
+  readonly #absorbing = new Set<object>();
+  /** The pipe whose adopted `data` listener runs now (see `destroy()`) */
+  #marker: IMarker | null = null;
   #rights?: IRights;
   /** How a library chooses the representation of the body (see `[kNegotiator]()`) */
   #negotiator: IRepresentationNegotiator | null = null;
@@ -440,6 +498,13 @@ export class BindenResponse<
         this.#piping(args[0]);
       } else if (event === "unpipe") {
         this.#unpiped(args[0]);
+      } else if (
+        event === "error" &&
+        this.#absorbing.has(owners.getStore() as object)
+      ) {
+        // Re-emitted by a listener of an abandoned work (e.g. the pipe of
+        // Node.js once it has unpiped): the framework handles the error
+        return false;
       }
       return parent.emit.call(this, event, ...args);
     }
@@ -539,38 +604,81 @@ export class BindenResponse<
   }
 
   /**
-   * Adopts a source that a `pipe()` of Node.js has just piped into the
-   * response: its writes (its last `data` listener) and its end (its last
-   * `end` listener, unless it has ended already) run as the work that has
-   * piped it, whose rights they keep, whatever work pushes its chunks (e.g. a
-   * timer of another one). Its other listeners are left as they are: piping
-   * gives no rights to another writer. Kept to be unpiped once the work may
-   * no longer mutate the response (see `[kRevoke]()`).
+   * Adopts a source that `Readable.prototype.pipe()` has just piped into the
+   * response, before any listener of `pipe` runs: its writes (the last `data`
+   * listener, which the pipe has just added) and its end (the last `end`
+   * listener, unless it has ended already: its end is then scheduled in the
+   * work that pipes) run as the work that has piped it, whose rights they
+   * keep, whatever work pushes its chunks. Until the end of the turn, the
+   * listeners added to the source are bound to the work that adds them (see
+   * `openWindow()`), and a source piped by an error handler that fails before
+   * its end fails it (see `#guard()`).
+   *
+   * The pipe is adopted only when nothing but the class of the source (which
+   * is trusted, as the stream that the work has chosen) can have added a
+   * listener during the pipe (see `#refusal()`): otherwise it is refused
+   * (see `#refuse()`), and the work that has piped it fails.
    */
   #adopt(source: EventEmitter, owner: object | undefined): void {
-    this.#sourcesOf(owner).add(source);
-    const events =
-      (source as Partial<Readable>).readableEnded === true
-        ? ["data"]
-        : ["data", "end"];
-    for (const event of events) {
-      const listener = source.rawListeners(event).at(-1) as
-        (IListener & { listener?: IListener }) | undefined;
-      if (typeof listener !== "undefined") {
-        // `once()` of Node.js wraps it
-        const original = listener.listener ?? listener;
-        source.removeListener(event, listener);
-        source.on(
-          event,
-          bind(
-            original,
-            owner,
-            "source",
-            original === listener ? null : { emitter: source, event },
-          ),
-        );
-      }
+    const refusal = this.#refusal(source);
+    if (refusal !== null) {
+      this.#refuse(source, owner, refusal);
+      return;
+    } else if (!openWindow(source)) {
+      this.#refuse(source, owner, "its listeners cannot be bound");
+      return;
     }
+    this.#sourcesOf(owner).add(source);
+    if (typeof owner !== "undefined") {
+      onPipeFailure(owner, (error) => this.#pipeFailed(owner, error, source));
+    }
+    // A write of the pipe that throws (e.g. a head that Node.js refuses) is
+    // caught by the pipe, which destroys the response with it (see
+    // `destroy()`)
+    const data = rawListenersOf(source, "data").at(-1) as IListener;
+    replaceListener(
+      source,
+      "data",
+      data,
+      bind(bindingOf(data)?.listener ?? data, owner, "source", null, (call) => {
+        const marker = this.#marker;
+        this.#marker = { owner, source };
+        try {
+          return call();
+        } finally {
+          this.#marker = marker;
+        }
+      }),
+    );
+    if ((source as Partial<Readable>).readableEnded !== true) {
+      // Its end (e.g. `dest.end()` into a head that Node.js refuses) throws
+      // out of the events of the source: the pipe fails instead
+      const end = rawListenersOf(source, "end").at(-1) as IListener & {
+        listener: IListener;
+      };
+      replaceListener(
+        source,
+        "end",
+        end,
+        bind(
+          end.listener,
+          owner,
+          "source",
+          { emitter: source, event: "end" },
+          (call) => {
+            try {
+              return call();
+            } catch (error: unknown) {
+              if (this.#pipeFailed(owner, error, source)) {
+                return null;
+              }
+              throw error;
+            }
+          },
+        ),
+      );
+    }
+    this.#guard(source, owner);
   }
 
   /** The sources piped by a work (see `#adopt()`) */
@@ -583,11 +691,139 @@ export class BindenResponse<
     return sources;
   }
 
-  /** A source is unpiped: it is no longer kept to be unpiped (see `#deliver()`) */
+  /**
+   * Why a pipe cannot be adopted (`null` when it can): code other than the
+   * class of the source may have added a listener during the pipe (a
+   * listener of `newListener` or `removeListener` of the source or of the
+   * response, or a method of the source itself that the pipe calls), or it is
+   * not a pipe of `Readable.prototype.pipe()` (e.g. the legacy
+   * `Stream.prototype.pipe()`), whose last `data` listener and `end` wrapper
+   * it has just added. The source is inspected by the methods of every
+   * emitter, never by its own ones.
+   */
+  #refusal(source: EventEmitter): string | null {
+    const listens = (emitter: EventEmitter): boolean =>
+      intrinsic.listenerCount.call(emitter, "newListener") +
+        intrinsic.listenerCount.call(emitter, "removeListener") >
+      0;
+    if (listens(source)) {
+      return "the source has listeners of its listeners";
+    } else if (listens(this)) {
+      return "the response has listeners of its listeners";
+    }
+    const own = inspected.find(
+      (name) =>
+        Object.hasOwn(source, name) &&
+        !(windowed(source) && adderNames.includes(name)),
+    );
+    if (typeof own !== "undefined") {
+      return `the source has its own ${own}()`;
+    } else if (!pipesInto(source, this)) {
+      return "it is not a pipe of Readable.prototype.pipe()";
+    }
+    const data = rawListenersOf(source, "data").at(-1);
+    const plain =
+      bindingOf(data)?.once === false ||
+      (typeof data === "function" && !("listener" in data));
+    if (!plain) {
+      return "its data listener is not the one of the pipe";
+    } else if ((source as Partial<Readable>).readableEnded === true) {
+      return null;
+    }
+    const end = rawListenersOf(source, "end").at(-1);
+    const once =
+      typeof end === "function" &&
+      typeof (end as { listener?: unknown }).listener === "function";
+    return once ? null : "its end listener is not the one of the pipe";
+  }
+
+  /**
+   * Refuses a pipe (see `#refusal()`): it is unpiped at once (by the method of
+   * the class of the source), and the work that has piped it fails with a
+   * `TypeError` (see `#pipeFailed()`), which closes the response for it (see
+   * `[kRevoke]()`): e.g. a legacy pipe, which has no `unpipe()`, is
+   * dismantled by its `close` listener
+   */
+  #refuse(
+    source: EventEmitter,
+    owner: object | undefined,
+    reason: string,
+  ): void {
+    unpipe(source, this);
+    const error = new TypeError(
+      `The pipe into the response is refused: ${reason}`,
+    );
+    this.#pipeFailed(owner, error, null);
+  }
+
+  /**
+   * A source piped by a work that the framework guards (see
+   * `IOwnership.guards()`, e.g. an error handler): when it errors or closes
+   * before its end, the work fails (Node.js would leave the response open,
+   * the work waiting). Guarded until it is unpiped.
+   */
+  #guard(source: EventEmitter, owner: object | undefined): void {
+    if (typeof owner === "undefined" || !this.#ownership.guards(owner)) {
+      return;
+    }
+    const failed = (error: unknown): void => {
+      if ((source as Partial<Readable>).readableEnded !== true) {
+        this.#pipeFailed(owner, error, source);
+      }
+    };
+    const guards: [string, IListener][] = [
+      ["error", failed],
+      [
+        "close",
+        (): void => {
+          failed(BindenResponse.#premature());
+        },
+      ],
+    ];
+    this.#unguard(source);
+    for (const [event, listener] of guards) {
+      intrinsic.prependListener.call(source, event, listener);
+    }
+    this.#guards.set(source, guards);
+  }
+
+  /**
+   * A source is unpiped: it is no longer guarded (see `#guard()`), nor kept
+   * to be unpiped (see `#deliver()`)
+   */
   #unpiped(source: unknown): void {
     for (const sources of this.#sources.values()) {
       sources.delete(source as EventEmitter);
     }
+    this.#unguard(source);
+  }
+
+  /** A source is no longer guarded (see `#guard()`) */
+  #unguard(source: unknown): void {
+    const guards = this.#guards.get(source as EventEmitter);
+    if (typeof guards !== "undefined") {
+      this.#guards.delete(source as EventEmitter);
+      for (const [event, listener] of guards) {
+        intrinsic.removeListener.call(source, event, listener);
+      }
+    }
+  }
+
+  /**
+   * A pipe of a work into the response has failed: the framework handles it
+   * (see `IOwnership.fail()`), unless it does not know the work (e.g. of no
+   * request). `true` once handled. Its source, if any, is unpiped once the
+   * work has been told (see `[kRevoke]()`).
+   */
+  #pipeFailed(
+    owner: object | undefined,
+    error: unknown,
+    source: EventEmitter | null,
+  ): boolean {
+    if (source !== null) {
+      this.#sourcesOf(owner).add(source);
+    }
+    return typeof owner !== "undefined" && this.#ownership.fail(owner, error);
   }
 
   /**
@@ -607,20 +843,32 @@ export class BindenResponse<
   }
 
   /**
-   * Tells a work that it may no longer mutate the response: its `close`
+   * Tells a work that it may no longer mutate the response: its `error`
+   * listeners get the error of its failure (if any), then its `close`
    * listeners run once (and are removed), as their own work, as if the
    * response had been closed; the sources that it has piped and that are
    * still piped are then unpiped. Never the listeners of another work, nor
    * those of the framework, which get the real `close`.
    */
-  #deliver(owner: object): void {
-    const own = rawListenersOf(this, "close").filter((raw) => {
-      const binding = bindingOf(raw);
-      return binding?.kind === "user" && binding.owner === owner;
-    });
-    for (const listener of own) {
-      intrinsic.removeListener.call(this, "close", listener);
-      this.#safely(listener, []);
+  #deliver(owner: object, failure: [unknown] | null): void {
+    const own = (event: string): IListener[] =>
+      rawListenersOf(this, event).filter((raw) => {
+        const binding = bindingOf(raw);
+        return binding?.kind === "user" && binding.owner === owner;
+      });
+    this.#absorbing.add(owner);
+    try {
+      if (failure !== null) {
+        for (const listener of own("error")) {
+          this.#safely(listener, failure);
+        }
+      }
+      for (const listener of own("close")) {
+        intrinsic.removeListener.call(this, "close", listener);
+        this.#safely(listener, []);
+      }
+    } finally {
+      this.#absorbing.delete(owner);
     }
     for (const source of this.#sources.get(owner) ?? []) {
       unpipe(source, this);
@@ -1278,9 +1526,20 @@ export class BindenResponse<
   /**
    * Destroys the response and its connection (see `destroy()` of Node.js),
    * unless the response is sealed: the abandoned work cannot cut the reply
-   * of the framework
+   * of the framework. With an error while an adopted pipe writes (see
+   * `#adopt()`), it is the `data` listener of the pipe that catches a write
+   * that throws (e.g. for a head that Node.js refuses): the pipe fails
+   * instead (see `#pipeFailed()`), so that its work gets the error.
    */
   public override destroy(error?: Error): this {
+    const marker = this.#marker;
+    if (
+      marker !== null &&
+      typeof error !== "undefined" &&
+      this.#pipeFailed(marker.owner, error, marker.source)
+    ) {
+      return this;
+    }
     return this.#allows() ? super.destroy(error) : this;
   }
 
@@ -1395,11 +1654,15 @@ export class BindenResponse<
   /**
    * Works may no longer mutate the response (see `kRevoke`): they are told so
    * on the next tick, after what they do now (e.g. the listeners that
-   * `pipeline()` adds once it has piped, see `#deliver()`)
+   * `pipeline()` adds once it has piped), with the failure of a pipe of one
+   * of them (see `#deliver()`)
    *
    * @internal
    */
-  public [kRevoke](revoked: readonly object[]): Promise<void> {
+  public [kRevoke](
+    revoked: readonly object[],
+    failure: IPipeFailure | null,
+  ): Promise<void> {
     for (const owner of revoked) {
       this.#revoked.set(owner, false);
     }
@@ -1407,7 +1670,10 @@ export class BindenResponse<
       process.nextTick(() => {
         for (const owner of revoked) {
           this.#revoked.set(owner, true);
-          this.#deliver(owner);
+          this.#deliver(
+            owner,
+            failure?.owner === owner ? [failure.error] : null,
+          );
         }
         resolve();
       });
