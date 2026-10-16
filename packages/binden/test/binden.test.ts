@@ -25,6 +25,7 @@ import { Readable } from "node:stream";
 import fetch from "node-fetch";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { sleep } from "./helpers.js";
 
 class CustomMiddleware extends Middleware {
   public readonly id: string;
@@ -605,6 +606,53 @@ suite("Binden", () => {
         );
       ok(outcome !== "complete" && outcome !== "AbortError", outcome);
       ok(logged.output().includes("has not ended its reply"), logged.output());
+    } finally {
+      await logged.close();
+    }
+  });
+
+  test("does not warn of an `error_handler` reply that is not ended once its response has been closed", async () => {
+    const logged = await loggedApp({
+      error_handler: async (context: Context): Promise<void> => {
+        context.response.write("partial");
+        context.response.destroy();
+        await sleep(5);
+      },
+    });
+    try {
+      logged.app.use(() => {
+        throw new BindenError(400);
+      });
+
+      const outcome = await fetch(logged.url, {
+        signal: AbortSignal.timeout(5000),
+      })
+        .then(async (response) => response.text())
+        .then(
+          () => "complete",
+          (error: unknown) => (error as Error).name,
+        );
+      ok(outcome !== "complete" && outcome !== "AbortError", outcome);
+      const deadline = Date.now() + 5000;
+      while (
+        !logged
+          .output()
+          .includes(
+            "The response has been destroyed: nothing replaces the reply",
+          ) &&
+        Date.now() < deadline
+      ) {
+        await sleep(5);
+      }
+      ok(
+        logged
+          .output()
+          .includes(
+            "The response has been destroyed: nothing replaces the reply",
+          ),
+        logged.output(),
+      );
+      ok(!logged.output().includes("has not ended its reply"), logged.output());
     } finally {
       await logged.close();
     }

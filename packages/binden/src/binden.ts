@@ -1058,14 +1058,17 @@ export class Binden<
         return;
       } else if (response.started) {
         // A reply that is not ended once the handler has settled (e.g. a
-        // `write()` without `end()`) would leave the client waiting
-        const unfinished =
-          "The provided `error_handler` has not ended its reply. Destroying the socket";
-        context.log.warn(
-          unfinished,
-          this.#failure(context, error, "error_handler"),
-        );
-        response[kFramework](() => response.destroy());
+        // `write()` without `end()`) would leave the client waiting, unless
+        // the response has been closed already (e.g. by the handler)
+        if (!Binden.#closed(context)) {
+          const unfinished =
+            "The provided `error_handler` has not ended its reply. Destroying the socket";
+          context.log.warn(
+            unfinished,
+            this.#failure(context, error, "error_handler"),
+          );
+          response[kFramework](() => response.destroy());
+        }
         return;
       }
       const ignored = "The provided `error_handler` has not replied";
