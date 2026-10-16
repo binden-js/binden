@@ -229,15 +229,46 @@ function rawListenersOf(emitter: EventEmitter, event: string): IListener[] {
   return intrinsic.rawListeners.call(emitter, event) as IListener[];
 }
 
+/** The state of a readable stream that binden reads (see `pipesInto()`) */
+interface IReadableState {
+  readonly pipes?: unknown;
+  readonly pipesCount?: unknown;
+  readonly endEmitted?: unknown;
+}
+
+/** The state of a readable stream, if it has one */
+function stateOf(source: EventEmitter): IReadableState | undefined {
+  const { _readableState: state } = source as {
+    _readableState?: IReadableState;
+  };
+  return state;
+}
+
 /**
  * Whether a source is piped into a destination by `Readable.prototype.pipe()`
- * (its state lists it)
+ * (its state lists it): in the list of its pipes, or as its only one, which
+ * the state of Node.js 10 (also of `readable-stream` 2 and 3) holds as is
  */
 function pipesInto(source: EventEmitter, destination: object): boolean {
-  const { _readableState: state } = source as {
-    _readableState?: { pipes?: unknown };
-  };
-  return Array.isArray(state?.pipes) && state.pipes.includes(destination);
+  const state = stateOf(source);
+  if (typeof state === "undefined") {
+    return false;
+  }
+  const { pipes, pipesCount } = state;
+  return Array.isArray(pipes)
+    ? pipes.includes(destination)
+    : pipes === destination && pipesCount === 1;
+}
+
+/**
+ * Whether a source has emitted its `end`: `readableEnded`, or the state of
+ * a stream that has no such property (e.g. of `readable-stream` 2 and 3)
+ */
+function hasEnded(source: EventEmitter): boolean {
+  return (
+    (source as Partial<Readable>).readableEnded === true ||
+    stateOf(source)?.endEmitted === true
+  );
 }
 
 /**
@@ -650,7 +681,8 @@ export class BindenResponse<
     this.#sourcesOf(owner).add(source);
     // A write of the pipe that throws (e.g. a head that Node.js refuses) is
     // caught by the pipe, which destroys the response with it (see
-    // `destroy()`)
+    // `destroy()`); by a pipe that does not catch it (e.g. of
+    // `readable-stream`, whose source would get it), it fails the pipe here
     const data = rawListenersOf(source, "data").at(-1) as IListener;
     replaceListener(
       source,
@@ -661,12 +693,17 @@ export class BindenResponse<
         this.#marker = { owner, source };
         try {
           return call();
+        } catch (error: unknown) {
+          if (this.#pipeFailed(owner, error, source)) {
+            return null;
+          }
+          throw error;
         } finally {
           this.#marker = marker;
         }
       }),
     );
-    if ((source as Partial<Readable>).readableEnded !== true) {
+    if (!hasEnded(source)) {
       // Its end (e.g. `dest.end()` into a head that Node.js refuses) throws
       // out of the events of the source: the pipe fails instead
       const end = rawListenersOf(source, "end").at(-1) as IListener & {
@@ -741,7 +778,7 @@ export class BindenResponse<
       (typeof data === "function" && !("listener" in data));
     if (!plain) {
       return "its data listener is not the one of the pipe";
-    } else if ((source as Partial<Readable>).readableEnded === true) {
+    } else if (hasEnded(source)) {
       return null;
     }
     const end = rawListenersOf(source, "end").at(-1);
@@ -796,7 +833,7 @@ export class BindenResponse<
       return;
     }
     const failed = (error: unknown): void => {
-      if ((source as Partial<Readable>).readableEnded !== true) {
+      if (!hasEnded(source)) {
         this.#pipeFailed(owner, error, source);
       }
     };

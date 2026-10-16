@@ -61,7 +61,11 @@
     "@types/sinon": "^22.0.0",
     "fast-json-stringify": "^7.1.0",
     "node-fetch": "^3.3.2",
-    "sinon": "^22.1.0"
+    "readable-stream-v2": "npm:readable-stream@^2.3.8",
+    "readable-stream-v3": "npm:readable-stream@^3.6.2",
+    "readable-stream-v4": "npm:readable-stream@^4.8.0",
+    "sinon": "^22.1.0",
+    "through2-v2": "npm:through2@^2.0.5"
   },
   "publishConfig": {
     "access": "public"
