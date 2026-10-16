@@ -149,6 +149,92 @@ function refuse(chunk: unknown): never {
 }
 
 /**
+ * The encoding of a chunk as binden checks it (see `write()` of
+ * `BindenResponse`): `utf8` without one (a callback in its place, or a falsy
+ * value, as Node.js reads it), and `null` for one that it refuses (an unknown
+ * encoding, or `buffer` for a string)
+ */
+function encodingOf(
+  chunk: Uint8Array | string,
+  encoding: unknown,
+): BufferEncoding | null {
+  const given = typeof encoding !== "function" && Boolean(encoding);
+  if (!given) {
+    return "utf8";
+  }
+  return typeof encoding === "string" &&
+    (Buffer.isEncoding(encoding) ||
+      (typeof chunk !== "string" && encoding === "buffer"))
+    ? (encoding as BufferEncoding)
+    : null;
+}
+
+/**
+ * Whether Node.js writes the body of a response, as binden reads it (see
+ * `write()` of `BindenResponse`): not to `HEAD`, nor with a 1xx, 204 or 304
+ * status, whose chunks Node.js ignores (and binden does not check)
+ */
+function hasBody(response: IResponse): boolean {
+  const status = response.statusCode;
+  return (
+    Reflect.get(response, "_hasBody") === true &&
+    (response.headersSent ||
+      !((status >= 100 && status < 200) || status === 204 || status === 304))
+  );
+}
+
+/** The error of an encoding that binden refuses (see `encodingOf()`), as binden throws it */
+function unknownEncoding(encoding: unknown): Error {
+  return Object.assign(
+    new TypeError(`Unknown encoding: ${encoding as string}`),
+    { code: "ERR_UNKNOWN_ENCODING" },
+  );
+}
+
+/**
+ * The encodings whose byte length Node.js only estimates from the length of
+ * a string (see `normalized()`)
+ */
+const estimated: ReadonlySet<string> = new Set(["base64", "base64url", "hex"]);
+
+/**
+ * A chunk as it is written: a string (but an empty one, which `end()` takes
+ * for none) in an encoding whose byte length Node.js only estimates (`hex`,
+ * `base64` and `base64url`, the name in any case) becomes the bytes that
+ * `Buffer.from()` decodes. Node.js would otherwise decide by, and frame, a
+ * length that is not the one that it writes for an invalid string (e.g.
+ * `end("zz", "hex")` declares one byte, and writes none), and Node.js 24
+ * aborts on a `hex` string of an odd length.
+ */
+function normalized(
+  chunk: Uint8Array | string,
+  encoding: unknown,
+): Uint8Array | string {
+  return typeof chunk === "string" &&
+    chunk !== "" &&
+    typeof encoding === "string" &&
+    estimated.has(encoding.toLowerCase())
+    ? Buffer.from(chunk, encoding as BufferEncoding)
+    : chunk;
+}
+
+/**
+ * The arguments of a `write()` or an `end()` with their chunk as it is
+ * written (see `normalized()`): a chunk that becomes bytes has no encoding
+ * any more, and keeps its callback
+ */
+function normalize(args: readonly unknown[]): readonly unknown[] {
+  const [chunk, encoding, callback] = args;
+  if (isChunk(chunk)) {
+    const data = normalized(chunk, encoding);
+    if (data !== chunk) {
+      return typeof callback === "function" ? [data, callback] : [data];
+    }
+  }
+  return args;
+}
+
+/**
  * Sets the headers given to `writeHead()` as Node.js does once headers have
  * been set: an object sets them, a list (flat, or of pairs) replaces each of
  * its names with its values. They have been checked (see `kValidateHead`):
@@ -391,22 +477,56 @@ export class CompressedResponse {
   }
 
   /**
-   * `write()`: the decision is taken first, unless it has been. A chunk that
-   * Node.js refuses (`null`, or neither a string nor bytes) is left to the
-   * response, which throws the error of Node.js before it changes anything:
-   * nothing is decided, and the response may still reply.
+   * Where the body goes: a response whose headers have been sent by another
+   * path (e.g. around the compression) before any decision is left as it is
+   */
+  #current(): ISink {
+    if (this.#sink === "pending" && this.#response.headersSent) {
+      this.#sink = "as_is";
+    }
+    return this.#sink;
+  }
+
+  /**
+   * The encoding of a chunk that the compression decides by, compresses or
+   * discards, checked as binden checks it (see `encodingOf()`), before
+   * anything is decided: one that binden refuses throws its error, unless
+   * the response has no body (e.g. to `HEAD`), as without a compression
+   */
+  #encoding(chunk: Uint8Array | string, encoding: unknown): BufferEncoding {
+    const checked = encodingOf(chunk, encoding);
+    if (checked === null && hasBody(this.#response)) {
+      throw unknownEncoding(encoding);
+    }
+    // As Node.js reads one that it ignores
+    return checked ?? "utf8";
+  }
+
+  /**
+   * `write()`, in the order of binden: the rights of the work, its arguments
+   * (a chunk that Node.js refuses, `null` or neither a string nor bytes,
+   * throws the error of Node.js, and an encoding that binden refuses throws
+   * its error), the chunk as it is written (see `normalized()`), then the
+   * decision, unless it has been taken. Nothing is decided by a write that
+   * throws, and the response may still reply. A response sent as it is gets
+   * its arguments, as without a compression.
    */
   #onWrite(args: unknown[]): boolean {
+    const response = this.#response;
     const [chunk, second, third] = args;
     if (!this.#allowed()) {
       ignore(args);
       return true;
+    } else if (this.#current() === "as_is") {
+      return Reflect.apply(this.#write, response, normalize(args)) as boolean;
     } else if (!isChunk(chunk)) {
-      return Reflect.apply(this.#write, this.#response, args) as boolean;
-    } else if (this.#sink === "pending") {
+      return refuse(chunk);
+    }
+    const encoding = this.#encoding(chunk, second);
+    if (this.#sink === "pending") {
       const sent = this.#decideForBody(
         null,
-        () => Reflect.apply(this.#write, this.#response, args) as boolean,
+        () => Reflect.apply(this.#write, response, normalize(args)) as boolean,
       );
       if (sent !== null) {
         return sent.value;
@@ -414,41 +534,36 @@ export class CompressedResponse {
     }
     const callback = (typeof second === "function" ? second : third) as
       ICallback | undefined;
-    if (this.#sink === "compressor") {
-      const compressor = this.#compressor as ICompressor;
-      if (this.#flushing) {
-        // The marker of `flush()`, which always has a callback (see `#hook()`)
-        this.#flushing = false;
-        this.#flushCompressor(compressor, callback as ICallback);
-        return true;
-      } else if (this.#ended) {
-        // As Node.js, but the response is sent (not destroyed, nor crashing
-        // the process with an `error` event)
-        if (callback) {
-          process.nextTick(callback, writeAfterEnd());
-        }
-        return false;
-      }
-      const encoding = typeof second === "string" ? second : "utf8";
-      return compressor.write(
-        chunk,
-        encoding as BufferEncoding,
-        callback as ICallback,
-      );
-    } else if (this.#sink === "discard") {
+    if (this.#sink === "discard") {
       // The response has been replaced: its writes are discarded
       if (callback) {
         process.nextTick(callback);
       }
       return true;
     }
-    return Reflect.apply(this.#write, this.#response, args) as boolean;
+    const compressor = this.#compressor as ICompressor;
+    if (this.#flushing) {
+      // The marker of `flush()`, which always has a callback (see `#hook()`)
+      this.#flushing = false;
+      this.#flushCompressor(compressor, callback as ICallback);
+      return true;
+    } else if (this.#ended) {
+      // As Node.js, but the response is sent (not destroyed, nor crashing
+      // the process with an `error` event)
+      if (callback) {
+        process.nextTick(callback, writeAfterEnd());
+      }
+      return false;
+    }
+    // Decoded by the compressor as `Buffer.from()` decodes it (see
+    // `normalized()`)
+    return compressor.write(chunk, encoding, callback as ICallback);
   }
 
   /**
-   * `end()`: the decision is taken first (with the size of its chunk), unless
-   * it has been. As for Node.js, a chunk that is falsy (e.g. `0`) is none,
-   * and a chunk that it refuses (neither a string nor bytes) throws its error
+   * `end()`, in the order of `write()` (see `#onWrite()`), the decision with
+   * the size of its chunk as it is written. As for Node.js, a chunk that is
+   * falsy (e.g. `0`) is none, and a chunk that it refuses throws its error
    * before anything is changed, the cork of the socket by `end()` of Node.js
    * as well (see `refuse()`): unless the application has ended the response
    * as it is, which Node.js answers as without a compression.
@@ -460,92 +575,83 @@ export class CompressedResponse {
     if (!this.#allowed()) {
       ignore(args);
       return response;
-    } else if (chunk !== null && !isChunk(chunk)) {
-      if (this.#sink !== "as_is" || !response.writableEnded) {
-        // Before `end()` of Node.js, which corks the socket first (and leaves
-        // it corked when it throws: the next reply would stall). Also once
-        // the compression has replaced (and ended) the response, or the
-        // application has ended it through the compressor, whenever its end
-        // comes: as for a response that has not ended, rather than the
-        // `error` event that Node.js emits once it has (which crashes the
-        // process without a listener)
-        refuse(chunk);
-      }
-      // Ended by the application as it is: as without a compression
-      return Reflect.apply(this.#end, response, args) as IResponse;
     }
-    const encoding = typeof second === "string" ? second : "utf8";
+    const sink = this.#current();
+    if (
+      sink === "as_is" &&
+      (chunk === null || isChunk(chunk) || response.writableEnded)
+    ) {
+      return Reflect.apply(this.#end, response, normalize(args)) as IResponse;
+    } else if (chunk !== null && !isChunk(chunk)) {
+      // Before `end()` of Node.js, which corks the socket first (and leaves
+      // it corked when it throws: the next reply would stall). Also once the
+      // compression has replaced (and ended) the response, or the
+      // application has ended it through the compressor, whenever its end
+      // comes: as for a response that has not ended, rather than the `error`
+      // event that Node.js emits once it has (which crashes the process
+      // without a listener)
+      return refuse(chunk);
+    }
+    const encoding = chunk === null ? "utf8" : this.#encoding(chunk, second);
+    const data = chunk === null ? null : normalized(chunk, encoding);
     const callback = [first, second, third].find(
       (arg) => typeof arg === "function",
     ) as ICallback | undefined;
-    if (this.#sink === "pending") {
+    if (sink === "pending") {
       // Without writes before it, its chunk is the body
       const sent = this.#decideForBody(
-        chunk === null
-          ? 0
-          : Buffer.byteLength(chunk, encoding as BufferEncoding),
-        () => Reflect.apply(this.#end, response, args) as IResponse,
+        data === null ? 0 : Buffer.byteLength(data, encoding),
+        () => Reflect.apply(this.#end, response, normalize(args)) as IResponse,
       );
       if (sent !== null) {
         return sent.value;
       }
     }
-    if (this.#sink === "compressor") {
-      if (!this.#ended) {
-        // As Node.js, a chunk that the compressor refuses (e.g. in an
-        // unknown encoding) throws, and the response is not ended
-        (this.#compressor as ICompressor).end(
-          chunk,
-          encoding as BufferEncoding,
-        );
-        this.#ended = true;
-        // What the compressor has accepted is sent, even if the work that
-        // has ended the response is abandoned afterwards
-        (this.#operation as IResponseOperation).transfer();
-      }
-      // As Node.js: the callback runs once the response has finished (or
-      // with `ERR_STREAM_ALREADY_FINISHED` once it has), and a second `end()`
-      // writes nothing
-      if (callback) {
-        if (response.writableFinished) {
-          this.#end(callback);
-        } else {
-          response.once("finish", () => {
-            callback();
-          });
-        }
-      }
-      return response;
-    } else if (this.#sink === "discard") {
+    if (this.#sink === "discard") {
       // Ended already: only its callback runs
       return Reflect.apply(
         this.#end,
         response,
         callback ? [callback] : [],
       ) as IResponse;
+    } else if (!this.#ended) {
+      // Its chunk and its encoding have been checked: the compressor
+      // accepts them
+      (this.#compressor as ICompressor).end(data, encoding);
+      this.#ended = true;
+      // What the compressor has accepted is sent, even if the work that
+      // has ended the response is abandoned afterwards
+      (this.#operation as IResponseOperation).transfer();
     }
-    return Reflect.apply(this.#end, response, args) as IResponse;
+    // As Node.js: the callback runs once the response has finished (or
+    // with `ERR_STREAM_ALREADY_FINISHED` once it has), and a second `end()`
+    // writes nothing
+    if (callback) {
+      if (response.writableFinished) {
+        this.#end(callback);
+      } else {
+        response.once("finish", () => {
+          callback();
+        });
+      }
+    }
+    return response;
   }
 
   /**
    * Takes the decision for the body that is written (`size` is the size of
-   * the whole body when `end()` writes it, `null` otherwise), and commits the
-   * headers: at once for a compressed body, and by `send` (the `write()` or
-   * the `end()` of the response, whose result is returned) for a body sent
-   * as it is, so that a head that Node.js refuses then is rolled back as
-   * well. `null` when the body does not go to the response as it is (or the
-   * headers have been sent by another path: it is then left as it is).
+   * the whole body as it is written when `end()` writes it, `null`
+   * otherwise), and commits the headers: at once for a compressed body, and
+   * by `send` (the `write()` or the `end()` of the response, whose result is
+   * returned) for a body sent as it is, so that a head that Node.js refuses
+   * then is rolled back as well. `null` when the body does not go to the
+   * response as it is.
    */
   #decideForBody<T>(
     size: number | null,
     send: () => T,
   ): { readonly value: T } | null {
     const response = this.#response;
-    if (response.headersSent) {
-      // Sent by another path: left as it is
-      this.#sink = "as_is";
-      return null;
-    }
     let sent: { readonly value: T } | null = null;
     this.#commit(() => {
       // What Node.js would refuse (e.g. a reason phrase), before anything is
@@ -569,8 +675,9 @@ export class CompressedResponse {
    * `#rollback()`), and the representation chosen for the body, which is not
    * sent, is forgotten. The error is replied with a decision of its own,
    * rather than followed by compressed bytes. Once the headers are sent
-   * (e.g. a chunk in an unknown encoding, which Node.js refuses after them),
-   * the decision stands.
+   * (e.g. a `Content-Length` that `strictContentLength` refuses once the
+   * head is committed), the decision stands: the arguments of a write are
+   * checked before anything is decided (see `#onWrite()`).
    */
   #commit(commit: () => void): void {
     const response = this.#response;

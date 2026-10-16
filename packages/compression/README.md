@@ -33,9 +33,19 @@ same response does nothing. A head that Node.js refuses (e.g. a reason phrase wi
 or a `Trailer` of a body that is not chunked) throws as without a compression, and leaves nothing
 of the decision, whether the body would be compressed or sent as it is: the compressor is
 destroyed, and the status, the headers and the framing of Node.js (e.g. whether it closes the
-connection) are those from before, so that the error is replied with a decision of its own. A
-`write()` or an `end()` of a chunk that Node.js refuses (`null`, or neither a string nor bytes)
-throws the error of Node.js before anything is decided.
+connection) are those from before, so that the error is replied with a decision of its own.
+
+The arguments of a `write()` or an `end()` are checked first, as binden checks them, and a refused
+one throws before anything is decided or changed:
+
+- a chunk that Node.js refuses (`null`, or neither a string nor bytes) throws the error of
+  Node.js;
+- an unknown encoding (or `buffer` for a string) throws `ERR_UNKNOWN_ENCODING`, but for a response
+  without a body (to `HEAD`, or with a 1xx, 204 or 304 status), whose chunks Node.js ignores;
+- a string in `hex`, `base64` or `base64url` (the name in any case) is written as the bytes that
+  `Buffer.from()` decodes from it: Node.js only estimates its length, which may be more than it
+  writes (e.g. for invalid digits). The decision (the `threshold`) and the framing of the body
+  are those of its bytes. An explicit `Content-Length` is never replaced.
 
 ## Options
 
@@ -157,7 +167,7 @@ is added to every response with a body:
   `406 Not Acceptable`: an empty body (`Content-Length: 0`) without the headers of the body that
   it replaces, as an error reply of binden (its type, framing with `Trailer`, validators,
   digests, …), nor `Accept-Ranges`. What the application writes afterwards is discarded (the
-  callbacks of its writes still run);
+  callbacks of its writes still run, and a refused chunk or encoding still throws);
 - an encoded response (e.g. a precompressed file, with the `Content-Encoding` that the application
   has set) has no other version: it is sent as it is when the request accepts its coding (any
   coding without `Accept-Encoding`, none with an empty one), and replaced with `406` otherwise.
