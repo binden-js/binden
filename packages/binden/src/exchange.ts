@@ -6,13 +6,16 @@ import {
 } from "./listeners.js";
 import {
   type IPipeFailure,
+  kFramework,
   kListen,
   kPipeFailure,
   kRevoke,
   owners,
 } from "./seal.js";
 import type { BindenResponse } from "./response.js";
+import { EventEmitter } from "node:events";
 import type { IncomingMessage } from "node:http";
+import type { Socket } from "node:net";
 
 /** Why the work of a request has been abandoned */
 export type IAbortReason = "client_closed" | "deadline" | "shutdown";
@@ -56,6 +59,24 @@ const MAX_DELAY = 2 ** 31 - 1;
 
 const exchanges = new WeakMap<IncomingMessage, Exchange>();
 
+/** The methods of `EventEmitter` of every emitter (e.g. of a connection) */
+const intrinsic = EventEmitter.prototype;
+
+/**
+ * A connection whose termination its exchanges observe (see
+ * `Exchange.#observe()`): the exchanges whose responses are not closed yet,
+ * and its one `close` listener
+ */
+interface ITransport {
+  readonly exchanges: Set<Exchange>;
+  readonly closed: IClosed;
+}
+
+/** The `close` listener of a connection (see `ITransport`) */
+type IClosed = () => void;
+
+const transports = new WeakMap<Socket, ITransport>();
+
 /**
  * The state of one request and its response, shared by every context created
  * for them (e.g. a middleware that returns a new context of the same request):
@@ -87,6 +108,10 @@ export class Exchange implements ITokenIssuer {
   /** The token of the middleware stack (see `stack()`), once created */
   #stack: object | null = null;
   #halting = false;
+  /** Whether its connection terminates (see `terminating`) */
+  #terminating = false;
+  /** The connection of the request, whose termination it observes */
+  readonly #connection: Socket | null;
   #phase: IPhase;
   #sealed: boolean;
   #reply: object | null;
@@ -98,10 +123,14 @@ export class Exchange implements ITokenIssuer {
   #route: string | null;
 
   private constructor(
+    request: IncomingMessage,
     response: BindenResponse,
     { state = {}, report }: IExchangeOptions,
   ) {
     this.#response = response;
+    const { socket } = request as { socket: Socket | null };
+    // E.g. a request without a socket has no connection to observe
+    this.#connection = socket instanceof EventEmitter ? socket : null;
     this.#controller = new AbortController();
     this.#state = state;
     this.#cleanups = [];
@@ -130,12 +159,90 @@ export class Exchange implements ITokenIssuer {
     // response is complete: the real one (never the one of an abandoned work)
     this.#finished = new Promise<void>((resolve) => {
       response[kListen]("close", () => {
+        this.#unobserve();
         if (!response.writableFinished) {
           this.abort("client_closed");
         }
         resolve(this.#finish());
       });
     });
+    this.#observe();
+  }
+
+  /**
+   * Observes the termination of the connection of the request (the `close`
+   * of its socket: the client has gone away, Node.js has aborted the
+   * responses that it still had, or a shutdown has destroyed it) until the
+   * response is closed: by one listener of the connection, for every exchange
+   * of its requests (e.g. pipelined) whose response is not closed yet. Never
+   * the `close` of the request itself, which comes once its body has been
+   * read, while the connection lives on.
+   */
+  #observe(): void {
+    const connection = this.#connection;
+    if (connection === null) {
+      return;
+    }
+    let transport = transports.get(connection);
+    if (typeof transport === "undefined") {
+      const observed = new Set<Exchange>();
+      const closed = (): void => {
+        transports.delete(connection);
+        intrinsic.removeListener.call(connection, "close", closed);
+        for (const exchange of observed) {
+          exchange.#terminate();
+        }
+      };
+      transport = { exchanges: observed, closed };
+      transports.set(connection, transport);
+      intrinsic.on.call(connection, "close", closed);
+    }
+    transport.exchanges.add(this);
+  }
+
+  /**
+   * The response is closed: its connection is no longer observed for it (nor
+   * at all, once no other response of the connection is open)
+   */
+  #unobserve(): void {
+    const connection = this.#connection as Socket;
+    const transport = transports.get(connection);
+    if (transport?.exchanges.delete(this) === true) {
+      if (transport.exchanges.size === 0) {
+        transports.delete(connection);
+        intrinsic.removeListener.call(connection, "close", transport.closed);
+      }
+    }
+  }
+
+  /**
+   * The connection of the request has closed: a response that is not closed
+   * yet is destroyed with the rights of the framework (also once it is
+   * sealed, e.g. a complete reply that waits for the response before it, or
+   * the reply of a deadline, which Node.js would destroy without an owner), so
+   * that it is finalized once, on every version of Node.js: one that has no
+   * socket (it waits for another response of the connection) is closed on
+   * the next tick, by Node.js or else (Node.js 24.14) by the framework
+   */
+  #terminate(): void {
+    this.#terminating = true;
+    const response = this.#response;
+    response[kFramework](() => response.destroy());
+    process.nextTick(() => {
+      if (!response.closed) {
+        Reflect.set(response, "_closed", true);
+        response.emit("close");
+      }
+    });
+  }
+
+  /**
+   * Whether the connection of the request terminates: it has closed (see
+   * `#terminate()`), or the server shuts down (see `abort()`), also while
+   * the abort listeners run, before its socket is destroyed
+   */
+  public get terminating(): boolean {
+    return this.#terminating;
   }
 
   /**
@@ -149,7 +256,7 @@ export class Exchange implements ITokenIssuer {
   ): Exchange {
     const found = exchanges.get(request);
     if (typeof found === "undefined") {
-      const exchange = new Exchange(response, options);
+      const exchange = new Exchange(request, response, options);
       exchanges.set(request, exchange);
       return exchange;
     } else if (found.#response !== response) {
@@ -428,6 +535,9 @@ export class Exchange implements ITokenIssuer {
     this.#clearTimer();
     if (reason === "deadline") {
       this.seal();
+    } else if (reason === "shutdown") {
+      // Before its listeners run (see `terminating`)
+      this.#terminating = true;
     }
     this.#controller.abort(new BindenAbortError(reason));
     return true;

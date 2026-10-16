@@ -1,16 +1,18 @@
 /* eslint-disable init-declarations */
+import { type AddressInfo, Socket } from "node:net";
 import {
   BindenAbortError,
   BindenRequest,
   BindenResponse,
   Context,
 } from "../index.js";
-import { type Server, createServer, get } from "node:http";
+import { IncomingMessage, type Server, createServer, get } from "node:http";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert";
-import type { AddressInfo } from "node:net";
 import { Exchange } from "../src/exchange.js";
+import { PassThrough } from "node:stream";
 import { once } from "node:events";
+import { within } from "./helpers.js";
 
 type IServer = Server<typeof BindenRequest, typeof BindenResponse>;
 
@@ -463,5 +465,109 @@ suite("Exchange", () => {
       Promise.reject(reason),
       (error: unknown) => error instanceof BindenAbortError,
     );
+  });
+});
+
+suite("The connection of an exchange", () => {
+  /** A request on a connection (a socket of its own), and its response */
+  const detached = (
+    socket = new Socket(),
+  ): { socket: Socket; request: IncomingMessage; response: BindenResponse } => {
+    const request = new IncomingMessage(socket);
+    return { socket, request, response: new BindenResponse(request) };
+  };
+
+  /**
+   * Gives a response a socket of its own, which closes it once destroyed
+   * (on every Node.js, unlike a response without one)
+   */
+  const assigned = (response: BindenResponse): BindenResponse => {
+    response.assignSocket(new Socket());
+    return response;
+  };
+
+  test("a response that waits for its socket is closed once, when the connection closes", async () => {
+    const { socket, request, response } = detached();
+    const exchange = Exchange.for(request, response);
+    let cleaned = 0;
+    exchange.onCleanup(() => {
+      cleaned += 1;
+    });
+    const closes: unknown[] = [];
+    response.on("close", () => {
+      closes.push(response.destroyed);
+    });
+    ok(!exchange.terminating);
+    socket.emit("close");
+    ok(exchange.terminating);
+    socket.emit("close");
+    await within(exchange.finished);
+    deepStrictEqual([cleaned, closes], [1, [true]]);
+    ok(response.closed);
+    deepStrictEqual(
+      (exchange.signal.reason as BindenAbortError).reason,
+      "client_closed",
+    );
+  });
+
+  test("a response whose socket never closes it is closed by the framework", async () => {
+    const { socket, request, response } = detached();
+    const exchange = Exchange.for(request, response);
+    // A socket whose destroy does not close it (as Node.js 24.14 leaves a
+    // response that has no socket)
+    const lasting = new PassThrough();
+    lasting.destroy = (): PassThrough => lasting;
+    response.assignSocket(lasting as unknown as Socket);
+    socket.emit("close");
+    await within(exchange.finished);
+    ok(response.closed && response.destroyed);
+  });
+
+  test("its responses share one listener of the connection, removed once they are closed", async () => {
+    const socket = new Socket();
+    const before = socket.listenerCount("close");
+    const first = detached(socket);
+    const second = detached(socket);
+    const one = Exchange.for(first.request, first.response);
+    const two = Exchange.for(second.request, second.response);
+    deepStrictEqual(socket.listenerCount("close"), before + 1);
+    assigned(first.response).destroy();
+    await within(one.finished);
+    deepStrictEqual(socket.listenerCount("close"), before + 1);
+    assigned(second.response).destroy();
+    await within(two.finished);
+    deepStrictEqual(socket.listenerCount("close"), before);
+    // A new exchange of the connection observes it again
+    const third = detached(socket);
+    const exchange = Exchange.for(third.request, third.response);
+    deepStrictEqual(socket.listenerCount("close"), before + 1);
+    socket.emit("close");
+    await within(exchange.finished);
+    deepStrictEqual(socket.listenerCount("close"), before);
+  });
+
+  test("a request without a socket has no connection to observe", async () => {
+    const request = new IncomingMessage(null as unknown as Socket);
+    const response = new BindenResponse(request);
+    const exchange = Exchange.for(request, response);
+    assigned(response).destroy();
+    await within(exchange.finished);
+    ok(!exchange.terminating);
+  });
+
+  test("a shutdown terminates it before its abort listeners run", () => {
+    const { request, response } = detached();
+    const exchange = Exchange.for(request, response);
+    const seen: boolean[] = [];
+    exchange.signal.addEventListener("abort", () => {
+      seen.push(exchange.terminating);
+    });
+    ok(exchange.abort("shutdown"));
+    deepStrictEqual(seen, [true]);
+    // Not another reason
+    const other = detached();
+    const deadline = Exchange.for(other.request, other.response);
+    ok(deadline.abort("deadline"));
+    ok(!deadline.terminating);
   });
 });
