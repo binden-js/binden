@@ -160,6 +160,13 @@ const ABORTED = new Error("The request has been aborted");
 /** The route of the access log for the replies of the framework (e.g. `404`) */
 const UNMATCHED = "<unmatched>";
 
+/**
+ * The encodings of the strings whose length Node.js only estimates: the
+ * response writes such a string as its bytes (`Buffer.from()`), which the
+ * access log counts
+ */
+const estimated: ReadonlySet<string> = new Set(["base64", "base64url", "hex"]);
+
 /** The outcome of an `error_handler` that has not settled in time */
 const EXPIRED = Symbol("expired");
 
@@ -1402,8 +1409,12 @@ export class Binden<
         // Node.js does not send a body
         return;
       } else if (typeof chunk === "string") {
-        const coding = typeof encoding === "string" ? encoding : "utf8";
-        bytes += Buffer.byteLength(chunk, coding as BufferEncoding);
+        const coding = (
+          typeof encoding === "string" ? encoding : "utf8"
+        ) as BufferEncoding;
+        bytes += estimated.has(coding.toLowerCase())
+          ? Buffer.from(chunk, coding).length
+          : Buffer.byteLength(chunk, coding);
       } else if (ArrayBuffer.isView(chunk)) {
         bytes += chunk.byteLength;
       }

@@ -324,6 +324,28 @@ suite("Access log", () => {
     );
   });
 
+  test("the bytes of a string whose length Node.js only estimates, as written", async () => {
+    await withApp(
+      { access_log: true },
+      (app) => {
+        app.use((context: Context) => {
+          const { response } = context;
+          context.done = true;
+          // An odd and an invalid hex string, an invalid base64 (any case)
+          response.write("68692", "hex");
+          response.write("zz", "HEX" as BufferEncoding);
+          response.write("aGk", "Base64" as BufferEncoding);
+          response.end("aGk", "base64url");
+        });
+      },
+      async ({ port }, captured) => {
+        deepStrictEqual((await send(port)).body, "hihihi");
+        await waitFor(captured, 1);
+        deepStrictEqual(records(captured)[0]?.body_bytes, 6);
+      },
+    );
+  });
+
   test("only the writes that Node.js accepts are counted", async () => {
     const accepted: boolean[] = [];
     const refused: unknown[] = [];
