@@ -217,10 +217,12 @@ behaviours of Node.js:
 - **OpenTelemetry**: its `http` instrumentation binds every request and client response to its
   context (`context.bind()`: listener methods of their own). A native pipe of such a stream by a
   middleware (e.g. `request.pipe(response)` or `upstream.pipe(response)`, also through
-  `stream.pipeline()`) is left to Node.js, as without binden; but a deadline (or the failure of a
-  pipe of the stack) during it closes the connection instead of replying `503` (or `500`), unless
-  the stream has ended. In an error handler, such a pipe is refused (`500`). Send such a stream
-  with `context.send(stream)` (or pipe `new Readable().wrap(stream)`), which keeps those replies.
+  `stream.pipeline()`) is left to Node.js, as without binden; but any revocation of the stack
+  during it (its deadline, or the failure of a pipe of its own) closes the connection instead of
+  replying `503` (or `500`) unless its response has ended, also once the stream has ended (e.g.
+  piped with `{ end: false }`). In an error handler, such a pipe is refused (`500`). Send such a
+  stream with `context.send(stream)` (or pipe `new Readable().wrap(stream)`), which keeps those
+  replies.
 - **A pipe whose write or end throws fails its work** (e.g. a reason phrase or a `Trailer` that
   Node.js refuses): instead of a destroyed response (or a crash, from its end), the error handler
   replies before the headers, and the connection is closed afterwards; `stream.pipeline()` rejects

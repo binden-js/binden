@@ -193,6 +193,14 @@ const left = "A pipe has been left to Node.js";
 const unproven =
   "A pipe left to Node.js by an abandoned work may still write. Destroying the socket";
 
+/** Sets the state of a source as if it had emitted its `end` */
+function saysEnded(source: PassThrough): void {
+  const state = Reflect.get(source, "_readableState") as {
+    endEmitted: boolean;
+  };
+  state.endEmitted = true;
+}
+
 /** Feeds a source from a timer of no request: its chunks, then its end */
 function feed(source: PassThrough, chunks: readonly string[], ms = 5): void {
   owners.exit(() => {
@@ -355,7 +363,7 @@ suite(
             const reply = await exchange(port);
             deepStrictEqual(reply, { raw: "", closed: true });
             deepStrictEqual(reasons(captured, unproven), [
-              "the source has not ended",
+              "the source has its own on()",
             ]);
             ok(
               captured.records.some(
@@ -369,7 +377,7 @@ suite(
         );
       });
 
-      test("a deadline once its source has ended (unpiped): the 503 as usual", async () => {
+      test("a deadline once its source has ended (`{ end: false }`): the connection is closed all the same", async () => {
         await withApp(
           { timeout: 30 },
           (app) => {
@@ -381,10 +389,104 @@ suite(
               await never();
             });
           },
-          async (port) => {
+          async (port, captured) => {
+            deepStrictEqual(await exchange(port), { raw: "", closed: true });
+            deepStrictEqual(reasons(captured, unproven), [
+              "the source has its own on()",
+            ]);
+            ok(!attempted(captured), captured.output());
+          },
+        );
+      });
+
+      test("a deadline once its pipe has ended the response, which waits for the one before it: the reply is kept", async () => {
+        await withApp(
+          { timeout: 40 },
+          (app) => {
+            app.use(async (context: Context) => {
+              const { request, response } = context;
+              response.type("text/plain");
+              if (request.url === "/first") {
+                // Replies after the deadline of the request after it
+                context.setTimeout(0);
+                await sleep(100);
+                await context.send("FIRST");
+                return;
+              }
+              const source = otel(new PassThrough());
+              source.pipe(response);
+              feed(source, ["REAL"]);
+              await once(source, "end");
+              await never();
+            });
+          },
+          async (port, captured) => {
+            // Pipelined: the second response waits for the first one
+            const socket = connect(port, "localhost");
+            await once(socket, "connect");
+            let raw = "";
+            socket.setEncoding("latin1").on("data", (chunk: string) => {
+              raw += chunk;
+            });
+            socket.write(
+              "GET /first HTTP/1.1\r\nHost: localhost\r\n\r\nGET / HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            );
+            const deadline = Date.now() + 3000;
+            while (
+              !raw.endsWith("REAL\r\n0\r\n\r\n") &&
+              Date.now() < deadline
+            ) {
+              await sleep(5);
+            }
+            await sleep(20);
+            const { closed } = socket;
+            socket.destroy();
+            deepStrictEqual(
+              [...raw.matchAll(/HTTP\/1\.1 (?<code>\d+)/gu)].map(
+                ({ groups }) => groups?.code,
+              ),
+              ["200", "200"],
+            );
+            ok(raw.includes("FIRSTHTTP/1.1 200 OK"), raw);
+            ok(raw.endsWith("\r\n\r\n4\r\nREAL\r\n0\r\n\r\n"), raw);
+            ok(!closed);
+            deepStrictEqual(reasons(captured, left), [
+              "the source has its own on()",
+            ]);
+            await captured.waitFor(
+              "The deadline has passed once the response was complete. It is sent after the responses before it",
+            );
+            deepStrictEqual(reasons(captured, unproven), []);
+          },
+        );
+      });
+
+      test("a failure of a pipe of the stack once its pipe has finished the response: the reply is kept", async () => {
+        await withApp(
+          {},
+          (app) => {
+            app.use(async ({ response }: Context) => {
+              response.type("text/plain");
+              const source = otel(new PassThrough());
+              source.pipe(response);
+              feed(source, ["REAL"]);
+              await once(response, "finish");
+              // Refused (and the stack fails): its source has listeners of
+              // its listeners
+              const refused = new PassThrough();
+              refused.on("newListener", () => null);
+              refused.pipe(response);
+              await never();
+            });
+          },
+          async (port, captured) => {
             const reply = await exchange(port);
-            deepStrictEqual(replied(reply)[0], 503);
+            deepStrictEqual(replied(reply), [200, "REAL"]);
             ok(!reply.closed);
+            deepStrictEqual(reasons(captured, left), [
+              "the source has its own on()",
+            ]);
+            deepStrictEqual(reasons(captured, unproven), []);
           },
         );
       });
@@ -457,61 +559,160 @@ suite(
     suite(
       "once the stack is revoked, before anything replaces its reply",
       () => {
-        test("own `on()` and `removeListener()` that leave the listener of the pipe: the connection is closed, nothing of it is sent", async () => {
+        for (const spoof of [
+          "none",
+          "endEmitted",
+          "readableEnded",
+          "emit",
+        ] as const) {
+          test(`own \`on()\` and \`removeListener()\` that leave the listener of the pipe (says it has ended: ${spoof}): the connection is closed, nothing of it is sent`, async () => {
+            const shared = new PassThrough();
+            await withApp(
+              {
+                timeout: 20,
+                error_handler: async (
+                  context: Context,
+                  error,
+                ): Promise<void> => {
+                  if (isDeadline(error)) {
+                    // The reply of the error handler, through the shared source
+                    shared.write("OLD");
+                    await context.status(503).send("handler");
+                  }
+                },
+              },
+              (app) => {
+                app.use(async ({ response }: Context) => {
+                  const extra = (): null => null;
+                  const on = Reflect.get(
+                    PassThrough.prototype,
+                    "on",
+                  ) as IListener;
+                  const remove = Reflect.get(
+                    EventEmitter.prototype,
+                    "removeListener",
+                  ) as IListener;
+                  Object.assign(shared, {
+                    on(this: PassThrough, event: string, listener: IListener) {
+                      Reflect.apply(on, this, [event, listener]);
+                      if (event === "data" && listener !== extra) {
+                        Reflect.apply(on, this, [event, extra]);
+                      }
+                      return this;
+                    },
+                    removeListener(
+                      this: PassThrough,
+                      event: string,
+                      listener: IListener,
+                    ) {
+                      return Reflect.apply(remove, this, [
+                        event,
+                        event === "data" ? extra : listener,
+                      ]);
+                    },
+                  });
+                  shared.pipe(response);
+                  // At its revocation, before the pipe is dismantled: the
+                  // source says that it has ended, then flows again
+                  response.once("close", () => {
+                    if (spoof === "endEmitted") {
+                      saysEnded(shared);
+                    } else if (spoof === "readableEnded") {
+                      Object.defineProperty(shared, "readableEnded", {
+                        configurable: true,
+                        value: true,
+                      });
+                    } else if (spoof === "emit") {
+                      shared.emit("end");
+                    }
+                    process.nextTick(() => shared.resume());
+                  });
+                  await never();
+                });
+              },
+              async (port, captured) => {
+                const reply = await exchange(port);
+                // Fed after the deadline as well
+                shared.write("LATE");
+                deepStrictEqual(reply, { raw: "", closed: true });
+                deepStrictEqual(reasons(captured, unproven), [
+                  "the source has its own on()",
+                ]);
+                ok(!attempted(captured), captured.output());
+              },
+            );
+          });
+        }
+
+        test("own `on()` that wraps the end of the pipe, and `removeListener()` that keeps it: the connection is closed, nothing of it ends a reply", async () => {
           const shared = new PassThrough();
+          const state = { allow: false, handled: false };
+          const on = Reflect.get(EventEmitter.prototype, "on") as IListener;
+          const remove = Reflect.get(
+            EventEmitter.prototype,
+            "removeListener",
+          ) as IListener;
+          Object.assign(shared, {
+            on(this: PassThrough, event: string, listener: IListener) {
+              if (event !== "end") {
+                return Reflect.apply(on, this, [event, listener]);
+              }
+              // As the wrapper of a `once()`: its call is suppressed until
+              // allowed
+              const wrapper = Object.assign(
+                function wrapped(this: unknown, ...args: unknown[]): unknown {
+                  return state.allow
+                    ? Reflect.apply(listener, this, args)
+                    : null;
+                },
+                { listener },
+              );
+              return Reflect.apply(on, this, [event, wrapper]);
+            },
+            removeListener(
+              this: PassThrough,
+              event: string,
+              listener: IListener,
+            ) {
+              return event === "end"
+                ? this
+                : Reflect.apply(remove, this, [event, listener]);
+            },
+          });
           await withApp(
             {
               timeout: 20,
               error_handler: async (context: Context, error): Promise<void> => {
                 if (isDeadline(error)) {
-                  // The reply of the error handler, through the shared source
-                  shared.write("OLD");
-                  await context.status(503).send("handler");
+                  state.handled = true;
+                  context.response.status(503);
+                  // The end of the shared source, which the wrapper now lets
+                  // through to the end of the pipe
+                  state.allow = true;
+                  shared.emit("end");
+                  await context.send("handler");
                 }
               },
             },
             (app) => {
               app.use(async ({ response }: Context) => {
-                const extra = (): null => null;
-                const on = Reflect.get(
-                  PassThrough.prototype,
-                  "on",
-                ) as IListener;
-                const remove = Reflect.get(
-                  EventEmitter.prototype,
-                  "removeListener",
-                ) as IListener;
-                Object.assign(shared, {
-                  on(this: PassThrough, event: string, listener: IListener) {
-                    Reflect.apply(on, this, [event, listener]);
-                    if (event === "data" && listener !== extra) {
-                      Reflect.apply(on, this, [event, extra]);
-                    }
-                    return this;
-                  },
-                  removeListener(
-                    this: PassThrough,
-                    event: string,
-                    listener: IListener,
-                  ) {
-                    return Reflect.apply(remove, this, [
-                      event,
-                      event === "data" ? extra : listener,
-                    ]);
-                  },
-                });
                 shared.pipe(response);
+                response.once("close", () => {
+                  // Its end, which the wrapper suppresses, and the state of
+                  // a source that has ended
+                  shared.emit("end");
+                  saysEnded(shared);
+                });
                 await never();
               });
             },
             async (port, captured) => {
-              const reply = await exchange(port);
-              // Fed after the deadline as well
-              shared.write("LATE");
-              deepStrictEqual(reply, { raw: "", closed: true });
+              deepStrictEqual(await exchange(port), { raw: "", closed: true });
               deepStrictEqual(reasons(captured, unproven), [
-                "the source has not ended",
+                "the source has its own on()",
               ]);
+              ok(!state.handled);
+              ok(!attempted(captured), captured.output());
             },
           );
         });
@@ -540,7 +741,7 @@ suite(
             async (port, captured) => {
               deepStrictEqual(await exchange(port), { raw: "", closed: true });
               deepStrictEqual(reasons(captured, unproven), [
-                "the source has not ended",
+                "the source has its own on()",
               ]);
               await captured.waitFor(
                 "The response has been destroyed: nothing replaces the reply",
@@ -569,7 +770,7 @@ suite(
             async (port, captured) => {
               deepStrictEqual(await exchange(port), { raw: "", closed: true });
               deepStrictEqual(reasons(captured, unproven), [
-                "the source has not ended",
+                "the source has its own on()",
               ]);
               await captured.waitFor(
                 "The response has been destroyed: nothing replaces the reply",
@@ -579,7 +780,7 @@ suite(
           );
         });
 
-        test("whose source has ended, but whose class does not unpipe it: the connection is closed", async () => {
+        test("whose source has ended, and whose class does not unpipe it: the connection is closed", async () => {
           /** A class that keeps its pipes */
           class Kept extends PassThrough {
             public override unpipe(): this {
@@ -600,7 +801,7 @@ suite(
             async (port, captured) => {
               deepStrictEqual(await exchange(port), { raw: "", closed: true });
               deepStrictEqual(reasons(captured, unproven), [
-                "the source is still piped",
+                "the source has its own on()",
               ]);
             },
           );
@@ -623,7 +824,7 @@ suite(
             async (port, captured) => {
               deepStrictEqual(await exchange(port), { raw: "", closed: true });
               deepStrictEqual(reasons(captured, unproven), [
-                "the source has an accessor of its own (readableEnded)",
+                "the source has its own on()",
               ]);
             },
           );

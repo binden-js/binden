@@ -562,8 +562,11 @@ export class BindenResponse<
   readonly #sources = new Map<object | undefined, Set<EventEmitter>>();
   /** The listeners that guard a piped source (see `#guard()`) */
   readonly #guards = new Map<EventEmitter, [string, IListener][]>();
-  /** The sources that each work has piped, left to Node.js (see `#leave()`) */
-  readonly #natives = new Map<object, Set<EventEmitter>>();
+  /**
+   * The sources that each work has piped, left to Node.js (see `#leave()`),
+   * with the reason
+   */
+  readonly #natives = new Map<object, Map<EventEmitter, string>>();
   /** The works whose re-emitted `error` is absorbed now (see `#deliver()`) */
   readonly #absorbing = new Set<object>();
   /** The pipe whose adopted `data` listener runs now (see `destroy()`) */
@@ -926,26 +929,26 @@ export class BindenResponse<
     this.#start(owner);
     let sources = this.#natives.get(owner);
     if (typeof sources === "undefined") {
-      sources = new Set();
+      sources = new Map();
       this.#natives.set(owner, sources);
     }
-    sources.add(source);
+    sources.set(source, reason);
     this.#ownership.note("A pipe has been left to Node.js", reason);
   }
 
   /**
    * Dismantles the pipes of a revoked work that it has left to Node.js (see
    * `#leave()`), before anything replaces the reply of the work: each source
-   * is unpiped by the method of its class, as that work. Nothing of a pipe
-   * whose source has ended (no `data` follows its `end`) and no longer lists
-   * the response can write. Any other may still have a listener that writes
-   * (its methods of its own may have added one, or removed another one in
-   * its place): the response and its connection are then closed, with the
-   * rights of the framework, so that nothing replaces the reply.
+   * is unpiped by the method of its class, as that work. Nothing proves that
+   * no callback of such a pipe is left, whatever its source reports (e.g.
+   * that it has ended): its methods of its own may have kept a listener of
+   * the pipe, or wrapped one (e.g. its end, which would end the reply that
+   * replaces it). Unless the response has ended (its reply is complete:
+   * nothing replaces it), the response and its connection are closed, with
+   * the rights of the framework, so that nothing replaces the reply.
    */
-  #dismantle(owner: object, sources: Iterable<EventEmitter>): void {
-    let unproven: string | null = null;
-    for (const source of sources) {
+  #dismantle(owner: object, sources: ReadonlyMap<EventEmitter, string>): void {
+    for (const source of sources.keys()) {
       try {
         as(owner, () => {
           unpipe(source, this);
@@ -954,19 +957,13 @@ export class BindenResponse<
         const message = "The cleanup of a pipe left to Node.js has failed";
         this.#ownership.debug(message, cleanup);
       }
-      const accessor = accessorOf(source);
-      if (typeof accessor !== "undefined") {
-        unproven = `the source has an accessor of its own (${accessor})`;
-      } else if (!hasEnded(source)) {
-        unproven = "the source has not ended";
-      } else if (pipesInto(source, this)) {
-        unproven = "the source is still piped";
-      }
     }
-    if (unproven !== null) {
+    if (!this.writableEnded) {
       const message =
         "A pipe left to Node.js by an abandoned work may still write. Destroying the socket";
-      this.#ownership.note(message, unproven);
+      // Why the first one has been left to Node.js (see `#leave()`)
+      const [reason] = sources.values();
+      this.#ownership.note(message, reason);
       this[kFramework](() => {
         this.destroy();
       });
