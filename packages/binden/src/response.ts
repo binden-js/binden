@@ -52,6 +52,13 @@ import {
   tagOf,
 } from "./send-file.js";
 import {
+  type IStreamLike,
+  type IStreamLikeMethods,
+  readStreamLike,
+  releaseStreamLike,
+  streamLikeOf,
+} from "./stream-like.js";
+import {
   IncomingMessage,
   type OutgoingHttpHeader,
   type OutgoingHttpHeaders,
@@ -2403,16 +2410,19 @@ export class BindenResponse<
     }
   }
 
-  /** Send a response */
+  /**
+   * Send a response: a string (or a number), bytes, a `Readable`, a
+   * stream-like source (see `IStreamLike`, e.g. of `readable-stream`), or no
+   * body. Any other object rejects with a `TypeError` before anything is
+   * sent.
+   */
   public send(
-    data?: Buffer | Readable | bigint | number | string,
+    data?:
+      Buffer | IStreamLike | Readable | Uint8Array | bigint | number | string,
   ): Promise<void>;
   /** Send a string in an encoding (e.g. `latin1`) */
   public send(data: string, encoding: BufferEncoding): Promise<void>;
-  public send(
-    data?: Buffer | Readable | bigint | number | string,
-    encoding?: BufferEncoding,
-  ): Promise<void> {
+  public send(data?: unknown, encoding?: BufferEncoding): Promise<void> {
     try {
       return this.#send(data, encoding);
     } catch (error: unknown) {
@@ -2424,16 +2434,23 @@ export class BindenResponse<
   }
 
   /** `send()`, which may throw before it has changed the response */
-  #send(
-    data?: Buffer | Readable | bigint | number | string,
-    encoding?: BufferEncoding,
-  ): Promise<void> {
+  #send(data: unknown, encoding?: BufferEncoding): Promise<void> {
+    // What is sent (see `#kind()`): the methods of a stream-like source are
+    // read once
+    const kind = BindenResponse.#kind(data);
     if (this.writableEnded || !this.#allows()) {
-      if (data instanceof Readable) {
-        // Nothing of it will be sent: release it (e.g. its file)
-        BindenResponse.#discard(data);
-      }
+      // Nothing of it will be sent: release it (e.g. its file)
+      BindenResponse.#release(data, kind);
       return Promise.resolve();
+    } else if (kind === null) {
+      // Before anything is changed: never its `toString()` (e.g. `[object
+      // Object]`), nor a source that cannot be read with backpressure or
+      // released (its methods are not called)
+      return Promise.reject(
+        new TypeError(
+          "The data is not a string, a number, a Buffer, a Uint8Array, a Readable nor a stream-like source (with on(), pause(), resume(), and removeListener() or off())",
+        ),
+      );
     } else if (
       typeof encoding !== "undefined" &&
       !Buffer.isEncoding(encoding)
@@ -2443,9 +2460,7 @@ export class BindenResponse<
       );
     } else if (BindenResponse.#informational(this.statusCode)) {
       // Not a final response: the client would wait for the final one
-      if (data instanceof Readable) {
-        BindenResponse.#discard(data);
-      }
+      BindenResponse.#release(data, kind);
       return Promise.reject(
         new TypeError(
           `Status code ${this.statusCode} is informational (use writeEarlyHints())`,
@@ -2453,10 +2468,10 @@ export class BindenResponse<
       );
     }
 
-    if (data instanceof Readable) {
+    if (kind !== "value") {
       if (this.#bodiless()) {
         // Nothing of the source would be sent: it is not read at all
-        BindenResponse.#discard(data);
+        BindenResponse.#release(data, kind);
         // The representation and the framing of the length that it declares
         // (unknown without one, not empty), without a stale `Transfer-Encoding`
         this[kRepresentation](this.#length());
@@ -2464,7 +2479,13 @@ export class BindenResponse<
         this.#remove(...contentDigests);
         return this.#end();
       }
-      return this.#pipe(data);
+      return this.#pipe(
+        kind === "readable"
+          ? (data as Readable)
+          : readStreamLike(data as object, kind, () =>
+              this.#abandoned(BindenResponse.#premature()),
+            ),
+      );
     }
 
     if (typeof data === "undefined" || this.destroyed) {
@@ -2483,9 +2504,9 @@ export class BindenResponse<
     const body =
       typeof data === "string"
         ? Buffer.from(data, encoding)
-        : data instanceof Buffer
-          ? data
-          : Buffer.from(data.toString());
+        : isUint8Array(data)
+          ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+          : Buffer.from(String(data as bigint | number));
 
     // Only for a status with a body: also on a `304` that stands for the
     // `200` (see below)
@@ -3060,6 +3081,37 @@ export class BindenResponse<
     return Object.assign(new Error(message), {
       code: "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
     });
+  }
+
+  /**
+   * What `send()` sends: a `Readable`, a stream-like source (its methods, see
+   * `IStreamLike`), a value (bytes, a string, a number or nothing), or
+   * `null` for another object, which it refuses
+   */
+  static #kind(
+    data: unknown,
+  ): IStreamLikeMethods | "readable" | "value" | null {
+    if (data instanceof Readable) {
+      return "readable";
+    } else if (
+      isUint8Array(data) ||
+      (typeof data !== "object" && typeof data !== "function")
+    ) {
+      return "value";
+    }
+    return data === null ? null : streamLikeOf(data);
+  }
+
+  /** Releases a source (a `Readable`, or a stream-like one) that will not be sent */
+  static #release(
+    data: unknown,
+    kind: IStreamLikeMethods | "readable" | "value" | null,
+  ): void {
+    if (kind === "readable") {
+      BindenResponse.#discard(data as Readable);
+    } else if (kind !== null && kind !== "value") {
+      releaseStreamLike(data as object, kind);
+    }
   }
 
   /** Destroys a source that will not be sent, whose errors are no longer of interest */

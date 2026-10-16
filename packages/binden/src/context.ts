@@ -10,6 +10,7 @@ import { defaultLogger, safe, snapshot } from "./logger.js";
 import type { BindenRequest } from "./request.js";
 import type { ILogger } from "@binden/logger";
 import type { ISendFileOptions } from "./send-file.js";
+import type { IStreamLike } from "./stream-like.js";
 import type { Readable } from "node:stream";
 
 /** The request and the response that a context handles */
@@ -181,9 +182,10 @@ export class Context<
     return this.request.URL;
   }
 
-  /** Execute `response.send()` and set `done` */
+  /** Execute `response.send()` (see `IStreamLike`) and set `done` */
   public async send(
-    data?: Buffer | Readable | bigint | number | string,
+    data?:
+      Buffer | IStreamLike | Readable | Uint8Array | bigint | number | string,
   ): Promise<void> {
     await this.#reply(() => this.response.send(data));
   }

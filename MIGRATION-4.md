@@ -298,6 +298,13 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
   default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A
   `Readable` that has ended is an empty body, and one that has been destroyed rejects at once.
+- `send()` (and `context.send()`) rejects with a `TypeError`, before anything is sent, for an
+  object that is neither a `Buffer`, a `Uint8Array`, a `Readable` nor a stream-like source: it sent
+  its `toString()` (e.g. `[object Object]`, or the text of a `URLSearchParams`). Send a string
+  instead (e.g. `send(String(value))`, or `form()` for `URLSearchParams`). A stream that is not a
+  Node.js `Readable` (e.g. of `readable-stream` or `through2`: an object with `on()`, `pause()`,
+  `resume()`, and `removeListener()` or `off()`) is sent as a stream (it sent `[object Object]`),
+  and a `Uint8Array` is sent as its bytes (it sent its numbers, separated by commas).
 - `response.type()` throws a `TypeError` for a parameter that is not a token with a token or a
   quoted string as value (e.g. `text/plain; charset`), which it used to drop.
 - With `root`, `sendFile()` replies `404` for a socket, a device or a FIFO, without opening it.

@@ -166,6 +166,10 @@
     "dist/src/status.d.ts.map",
     "dist/src/status.js",
     "dist/src/status.js.map",
+    "dist/src/stream-like.d.ts",
+    "dist/src/stream-like.d.ts.map",
+    "dist/src/stream-like.js",
+    "dist/src/stream-like.js.map",
     "index.ts",
     "package.json",
     "src/binden.ts",
@@ -204,7 +208,8 @@
     "src/send-file.ts",
     "src/shutdown.ts",
     "src/stack.ts",
-    "src/status.ts"
+    "src/status.ts",
+    "src/stream-like.ts"
   ],
   "@binden/body": [
     "LICENSE",
