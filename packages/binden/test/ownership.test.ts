@@ -1213,6 +1213,55 @@ suite("Ownership of the response once the exchange is sealed", () => {
       });
     }
 
+    test("started by an error handler in the turn of its failure: it rejects with it (never as an ignored send), and the 500 is replied", async () => {
+      const handles = delay({});
+      const failure = new Error("The error handler has failed");
+      /**
+       * How each `sendFile()` has settled, called once the error handler
+       * has thrown and a number of microtasks have run (once more for each
+       * request): `null` for one ignored at once (once it has failed)
+       */
+      const outcomes: Promise<unknown[] | null>[] = [];
+      let turns = 0;
+      await withApp(
+        {
+          error_handler: (context: Context): never => {
+            let chain: Promise<unknown> = Promise.resolve();
+            for (let turn = 0; turn < turns; turn += 1) {
+              chain = chain.then(() => null);
+            }
+            outcomes.push(
+              chain.then(() => {
+                const sent = settledAs(context.response.sendFile(file));
+                return context.response.started ? sent : null;
+              }),
+            );
+            throw failure;
+          },
+        },
+        (app) => {
+          app.use(() => {
+            throw new Error("A failure");
+          });
+        },
+        async ({ port }) => {
+          for (; turns < 16; turns += 1) {
+            const received = await fetch(port);
+            deepStrictEqual([received.status, received.body], [500, ""]);
+          }
+        },
+      );
+      const settled = await within(Promise.all(outcomes));
+      const started = settled.filter((outcome) => outcome !== null);
+      // Before it has failed, and once
+      ok(started.length > 0 && started.length < settled.length);
+      deepStrictEqual(
+        started,
+        started.map(() => ["rejected", failure]),
+      );
+      await within(closed(handles));
+    });
+
     /**
      * The stack leaves a `sendFile()` (whose file is read) and a send of a
      * stream (whose first chunk has not come) pending, without awaiting them,

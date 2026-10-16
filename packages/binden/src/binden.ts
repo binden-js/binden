@@ -31,6 +31,7 @@ import { type IMiddleware, Middleware } from "./middleware.js";
 import {
   bodyHeaders,
   kCancel,
+  kCancelling,
   kFramework,
   kListen,
   kOperation,
@@ -1045,6 +1046,17 @@ export class Binden<
         // The handler has failed, or has not settled in time: it may no
         // longer mutate the response, and the request gets an opaque error
         exchange.seal();
+        // Its sends that have not committed the headers (e.g. a `sendFile()`
+        // whose file is still opened, or a stream whose first chunk has not
+        // come) have written nothing: as at the deadline, they are cancelled
+        // at once (one that settles before they are, below, rejects with the
+        // reason, never as an ignored send), and the reply that follows
+        // replaces them
+        const reason =
+          outcome === EXPIRED
+            ? new BindenError(500, { code: "error_handler_timeout" })
+            : outcome.error;
+        response[kCancelling](reason);
         if (outcome === EXPIRED) {
           const late = "The provided `error_handler` has not settled in time";
           context.log.error(
@@ -1061,16 +1073,8 @@ export class Binden<
         if (Binden.#closed(context)) {
           return;
         }
-        // Its sends that have not committed the headers (e.g. a `sendFile()`
-        // whose file is still opened, or a stream whose first chunk has not
-        // come) have written nothing: as at the deadline, they are cancelled
-        // (each settles with its failure, and releases its file or stream),
-        // and the reply that follows replaces them
-        response[kCancel](
-          outcome === EXPIRED
-            ? new BindenError(500, { code: "error_handler_timeout" })
-            : outcome.error,
-        );
+        // Each settles with the reason, and releases its file or stream
+        response[kCancel](reason);
         if (response.writableEnded) {
           // Its reply is complete: what is left of it (e.g. under
           // backpressure) is still sent
