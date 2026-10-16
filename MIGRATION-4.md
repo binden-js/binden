@@ -312,9 +312,11 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `strictContentLength`, a first `write()` past a valid `Content-Length` throws
   `ERR_HTTP_CONTENT_LENGTH_MISMATCH` before anything is committed, where Node.js 24 and 26 and
   binden 2.0.4 send the whole chunk (the client reads its excess as the next response).
-- `Content-Length` values that disagree (`["2", "3"]`, two `appendHeader()` calls, or a list such
-  as `2, 3`) now throw a `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`) when the head is committed,
-  where Node.js and binden 2.0.4 sent every line.
+- `Content-Length` values that disagree (`["2", "3"]`, or two `appendHeader()` calls) now throw a
+  `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`, "Content-Length values disagree") when the head is
+  committed, where Node.js and binden 2.0.4 sent every line. So does any comma list, even one whose
+  members agree (`2, 3`, but also `2, 2` and `2,2`, alone or as an element of an array), with
+  "Content-Length is a list": Node.js sends it as it is, and cannot read it.
 - `send()` with a `1xx` status rejects with a `TypeError` (use `writeEarlyHints()`). A string sent
   with an `encoding` is encoded once: the bytes that it decodes to are sent, with their length. A
   `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the

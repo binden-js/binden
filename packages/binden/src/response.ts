@@ -1469,9 +1469,10 @@ export class BindenResponse<
    * values of the headers given (a list must be of pairs). An invalid status
    * code is left to `writeHead()`, which throws before it changes anything.
    * The `Content-Length` values that the head would have (the ones given, or
-   * else the ones set) must not disagree (see `#disagree()`): every path that
-   * commits the head runs `writeHead()` (also a first `write()`, an `end()`
-   * and `flushHeaders()`), which then throws before anything is committed.
+   * else the ones set) must be neither a list nor disagree (see
+   * `#disagree()`): every path that commits the head runs `writeHead()`
+   * (also a first `write()`, an `end()` and `flushHeaders()`), which then
+   * throws before anything is committed.
    *
    * @internal
    */
@@ -1512,40 +1513,43 @@ export class BindenResponse<
         }
       }
     }
-    if (
-      BindenResponse.#disagree(
-        lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
-      )
-    ) {
-      throw Object.assign(new TypeError("Content-Length values disagree"), {
+    const refusal = BindenResponse.#disagree(
+      lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
+    );
+    if (refusal !== null) {
+      throw Object.assign(new TypeError(refusal), {
         code: "ERR_HTTP_INVALID_HEADER_VALUE",
       });
     }
   }
 
   /**
-   * Whether the `Content-Length` values of a head disagree: more than one
-   * (the elements of an array, which Node.js sends a line of each of and
-   * frames the body by the last, or the members of a list, e.g. `2, 3`),
-   * which are not all one same length (each an element of digits only), so
-   * that a recipient may read either of them (RFC 9110, section 8.6), or
-   * Node.js none (it cannot read a list). Refused by binden before anything
-   * is committed (see `kValidateHead`), where Node.js would send them.
+   * Why the `Content-Length` values of a head are refused, `null` when they
+   * are not: a list (e.g. `2, 3`, also `2, 2`, alone or as an element of an
+   * array), which Node.js cannot read, even of members that agree; or
+   * elements of an array (which Node.js sends a line of each of, and frames
+   * the body by the last) that are not all one same length (each of digits
+   * only), so that a recipient may read either of them (RFC 9110, section
+   * 8.6). Refused by binden before anything is committed (see
+   * `kValidateHead`), where Node.js would send them.
    */
-  static #disagree(value: unknown): boolean {
+  static #disagree(value: unknown): string | null {
     const elements = BindenResponse.#values(value as OutgoingHttpHeader).map(
       (element) => trimOws(element),
     );
+    if (elements.some((element) => element.includes(","))) {
+      return "Content-Length is a list";
+    }
     const [first = ""] = elements;
-    return (
-      elements.flatMap((element) => element.split(",")).length > 1 &&
+    return elements.length > 1 &&
       !elements.every(
         (element) =>
           /^\d+$/u.test(element) &&
           Number.isSafeInteger(Number(element)) &&
           Number(element) === Number(first),
       )
-    );
+      ? "Content-Length values disagree"
+      : null;
   }
 
   /**
@@ -3186,11 +3190,11 @@ export class BindenResponse<
   /**
    * The `Content-Length` of the response, `null` without a valid one: as
    * Node.js reads it (the last element of an array, which agrees with the
-   * others), unless its values disagree (see `#disagree()`)
+   * others), unless they are refused (see `#disagree()`)
    */
   #length(): number | null {
     const value = this.getHeader("Content-Length");
-    if (BindenResponse.#disagree(value)) {
+    if (BindenResponse.#disagree(value) !== null) {
       return null;
     }
     const length = Number(

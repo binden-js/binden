@@ -760,18 +760,6 @@ suite("Content-Length values that disagree", () => {
       response.appendHeader("Content-Length", "2");
       response.write(body);
     },
-    "a list, then write()": (response) => {
-      response.setHeader("Content-Length", `2, ${body.length}`);
-      response.write(body);
-    },
-    "a list of equal lengths, then write()": (response) => {
-      response.setHeader("Content-Length", "2, 2");
-      response.write(body);
-    },
-    "an array with a list of equal lengths, then write()": (response) => {
-      response.setHeader("Content-Length", ["2", "2,"]);
-      response.write(body);
-    },
     "equal values that are not lengths, then write()": (response) => {
       response.setHeader("Content-Length", ["0x2", "0x2"]);
       response.write("ab");
@@ -815,8 +803,60 @@ suite("Content-Length values that disagree", () => {
       ]);
     },
   };
+  /**
+   * Lists, which Node.js cannot read, also of members that agree (with each
+   * other and with the body), given in a way, then the call that commits the
+   * head
+   */
+  const lists: Record<string, (response: ServerResponse) => void> = {
+    "a list, then write()": (response) => {
+      response.setHeader("Content-Length", `2, ${body.length}`);
+      response.write(body);
+    },
+    "a list of equal lengths, then write()": (response) => {
+      response.setHeader("Content-Length", "2, 2");
+      response.write(body);
+    },
+    "a list of the length of the body, then end() with it": (response) => {
+      response.setHeader("Content-Length", "3, 3");
+      response.end("abc");
+    },
+    "a list without a space, then end() with a chunk": (response) => {
+      response.setHeader("Content-Length", "3,3");
+      response.end("abc");
+    },
+    "an array with a list of equal lengths, then end() with a chunk": (
+      response,
+    ) => {
+      response.setHeader("Content-Length", ["3", "3, 3"]);
+      response.end("abc");
+    },
+    "an array with a list of an empty member, then write()": (response) => {
+      response.setHeader("Content-Length", ["2", "2,"]);
+      response.write(body);
+    },
+    "a list given to writeHead()": (response) => {
+      response.setHeader("Content-Length", "3");
+      response.writeHead(200, { "Content-Length": "3, 3" });
+    },
+    "a list appended, then flushHeaders()": (response) => {
+      response.appendHeader("Content-Length", "3");
+      response.appendHeader("Content-Length", "3,3");
+      response.flushHeaders();
+    },
+  };
+  /** The message of the refusal of each case */
+  const messages = new Map([
+    ...Object.keys(disagreeing).map(
+      (name) => [name, "Content-Length values disagree"] as const,
+    ),
+    ...Object.keys(lists).map(
+      (name) => [name, "Content-Length is a list"] as const,
+    ),
+  ]);
+  const refused = { ...disagreeing, ...lists };
 
-  test("are refused before anything is committed: the call that would commit the head throws, and the error is replied, where Node.js sends them", async () => {
+  test("and lists are refused before anything is committed: the call that would commit the head throws, and the error is replied, where Node.js sends them", async () => {
     const outcomes: unknown[] = [];
     const app = new Binden().use(({ response, url }: Context) => {
       const name = decodeURIComponent(url.pathname.slice(1));
@@ -825,7 +865,7 @@ suite("Content-Length values that disagree", () => {
         return;
       }
       try {
-        disagreeing[name](response);
+        refused[name](response);
       } catch (error: unknown) {
         const { code, message } = error as { code?: unknown; message: string };
         outcomes.push([
@@ -840,7 +880,7 @@ suite("Content-Length values that disagree", () => {
     });
     const listening = await listen(app);
     try {
-      for (const name of Object.keys(disagreeing)) {
+      for (const name of Object.keys(refused)) {
         deepStrictEqual(
           await converse(
             listening.port,
@@ -858,10 +898,10 @@ suite("Content-Length values that disagree", () => {
       }
       deepStrictEqual(
         outcomes,
-        Object.keys(disagreeing).map((name) => [
+        Object.keys(refused).map((name) => [
           name,
           "ERR_HTTP_INVALID_HEADER_VALUE",
-          "Content-Length values disagree",
+          messages.get(name),
           false,
           false,
         ]),
@@ -879,6 +919,15 @@ suite("Content-Length values that disagree", () => {
       ),
     );
     deepStrictEqual(Reflect.get(response, "_contentLength"), 3);
+    // Node.js sends a list as it is, and cannot read it (even of members
+    // that agree): it does not know the length of the body
+    const list = new ServerResponse(new IncomingMessage(new Socket()));
+    list.setHeader("Content-Length", "3, 3");
+    list.flushHeaders();
+    ok(
+      String(Reflect.get(list, "_header")).includes("Content-Length: 3, 3\r\n"),
+    );
+    deepStrictEqual(Reflect.get(list, "_contentLength"), Number.NaN);
   });
 
   test("given to writeHead() replace the ones set, as Node.js does: only the values of the head are checked", () => {
