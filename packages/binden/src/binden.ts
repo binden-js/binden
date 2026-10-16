@@ -457,11 +457,15 @@ export class Binden<
       replier(): object | null {
         return exchange.terminating ? null : exchange.current_reply;
       },
+      native: (owner): boolean => owner === works.stack,
       debug: (message, error): void => {
         context.log.debug(message, this.#failure(context, error, "send"));
       },
       warn: (message, reason): void => {
         context.log.warn(message, { reason });
+      },
+      note: (message, reason): void => {
+        context.log.debug(message, { reason });
       },
     });
     if (this.#request_id?.echo === true) {
@@ -608,7 +612,7 @@ export class Binden<
   ): Promise<void> {
     await exchange.delivered;
     const { response } = context;
-    if (exchange.signal.aborted) {
+    if (exchange.signal.aborted || Binden.#closed(context)) {
       return;
     } else if (response.headersSent) {
       const message =
@@ -874,7 +878,9 @@ export class Binden<
     response[kCancel](exchange.signal.reason);
     // The abandoned works see their response closed first (see `kRevoke`)
     await exchange.delivered;
-    if (!response.started) {
+    if (Binden.#closed(context)) {
+      return;
+    } else if (!response.started) {
       const error = new BindenError(503, { code: "deadline" });
       await exchange.reply(async () => {
         Binden.#closeUnread(context);
@@ -892,6 +898,21 @@ export class Binden<
       context.log.debug(message);
       response[kFramework](() => response.destroy());
     }
+  }
+
+  /**
+   * Whether the response has been destroyed once the works that it replaces
+   * have been told (see `kRevoke`), e.g. a pipe that one of them has left to
+   * Node.js may still write: nothing replaces their reply
+   */
+  static #closed({ log, response }: Context): boolean {
+    if (response.destroyed) {
+      const message =
+        "The response has been destroyed: nothing replaces the reply";
+      log.debug(message);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -1009,7 +1030,9 @@ export class Binden<
         }
         // It sees its response closed first (see `kRevoke`)
         await exchange.delivered;
-        if (outcome === pipe.failure && !response.headersSent) {
+        if (Binden.#closed(context)) {
+          return;
+        } else if (outcome === pipe.failure && !response.headersSent) {
           // Its pipe has failed before the headers: its sends have written
           // nothing
           response[kCancel](pipe.failure.error);

@@ -136,10 +136,12 @@ suite("The observers of the framework on a response", () => {
       fail: () => false,
       guards: () => false,
       replier: () => null,
+      native: () => false,
       debug: (message, error) => {
         logged.push([message, (error as Error).message]);
       },
       warn: () => null,
+      note: () => null,
     });
     const calls: string[] = [];
     const thrown = new Error("An observer has failed");
@@ -256,10 +258,12 @@ suite("The observers of the framework on a response", () => {
           fail: () => false,
           guards: () => false,
           replier: () => null,
+          native: () => false,
           debug: (message, error) => {
             logged.push([message, (error as Error).message]);
           },
           warn: () => null,
+          note: () => null,
         });
         response[kListen]("error", () => {
           throw new Error("An observer has failed");

@@ -212,6 +212,13 @@ behaviours of Node.js:
   (`Object.seal()`; Node.js itself cannot pipe a frozen stream). The class of the source (also of
   `readable-stream`) is trusted: piping a stream that another work has patched (its class, or its
   own methods, which refuse the pipe once it is set up) runs that code as the work that pipes.
+- **OpenTelemetry**: its `http` instrumentation binds every request and client response to its
+  context (`context.bind()`: listener methods of their own). A native pipe of such a stream by a
+  middleware (e.g. `request.pipe(response)` or `upstream.pipe(response)`, also through
+  `stream.pipeline()`) is left to Node.js, as without binden; but a deadline (or the failure of a
+  pipe of the stack) during it closes the connection instead of replying `503` (or `500`), unless
+  the stream has ended. In an error handler, such a pipe is refused (`500`). Send such a stream
+  with `context.send(stream)` (or pipe `new Readable().wrap(stream)`), which keeps those replies.
 - **A pipe whose write or end throws fails its work** (e.g. a reason phrase or a `Trailer` that
   Node.js refuses): instead of a destroyed response (or a crash, from its end), the error handler
   replies before the headers, and the connection is closed afterwards; `stream.pipeline()` rejects

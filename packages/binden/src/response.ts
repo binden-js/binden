@@ -215,6 +215,33 @@ const inspected = [
 ];
 
 /**
+ * The listener methods that an instrumentation sets on a source to bind its
+ * listeners (e.g. `context.bind()` of OpenTelemetry): a pipe of the stack
+ * whose source has its own ones, and no other method of its own, may be left
+ * to Node.js (see `BindenResponse.#leave()`)
+ */
+const wrappers: ReadonlySet<string> = new Set([
+  ...adderNames,
+  "removeListener",
+  "off",
+  "removeAllListeners",
+]);
+
+/**
+ * Why a pipe cannot be adopted (see `BindenResponse.#refusal()`), and
+ * whether it may be left to Node.js instead (see `BindenResponse.#leave()`)
+ */
+interface IRefusal {
+  readonly reason: string;
+  readonly native: boolean;
+}
+
+/** A pipe that cannot be adopted, nor left to Node.js */
+function refused(reason: string): IRefusal {
+  return { reason, native: false };
+}
+
+/**
  * The properties of a piped source that Node.js reads as it pipes it (its
  * state, its listener table and the inspected methods), and binden as it
  * adopts the pipe: an accessor of the source itself (e.g. a getter of
@@ -249,10 +276,14 @@ const unowned: IOwnership = {
   fail: (): boolean => false,
   guards: (): boolean => false,
   replier: (): null => null,
+  native: (): boolean => false,
   debug: (): void => {
     // Nobody to tell
   },
   warn: (): void => {
+    // Nobody to tell
+  },
+  note: (): void => {
     // Nobody to tell
   },
 };
@@ -524,6 +555,8 @@ export class BindenResponse<
   readonly #sources = new Map<object | undefined, Set<EventEmitter>>();
   /** The listeners that guard a piped source (see `#guard()`) */
   readonly #guards = new Map<EventEmitter, [string, IListener][]>();
+  /** The sources that each work has piped, left to Node.js (see `#leave()`) */
+  readonly #natives = new Map<object, Set<EventEmitter>>();
   /** The works whose re-emitted `error` is absorbed now (see `#deliver()`) */
   readonly #absorbing = new Set<object>();
   /** The pipe whose adopted `data` listener runs now (see `destroy()`) */
@@ -709,12 +742,22 @@ export class BindenResponse<
    * The pipe is adopted only when nothing but the class of the source (which
    * is trusted, as the stream that the work has chosen) can have added a
    * listener during the pipe (see `#refusal()`): otherwise it is refused
-   * (see `#refuse()`), and the work that has piped it fails.
+   * (see `#refuse()`), and the work that has piped it fails, unless it is a
+   * pipe of the stack that is left to Node.js (see `#leave()`).
    */
   #adopt(source: EventEmitter, owner: object | undefined): void {
     const refusal = this.#refusal(source);
     if (refusal !== null) {
-      this.#refuse(source, owner, refusal);
+      if (
+        refusal.native &&
+        typeof owner !== "undefined" &&
+        this.#ownership.native(owner) &&
+        this.#allows(owner)
+      ) {
+        this.#leave(source, owner, refusal.reason);
+      } else {
+        this.#refuse(source, owner, refusal.reason);
+      }
       return;
     } else if (!openWindow(source)) {
       this.#refuse(source, owner, "its listeners cannot be bound");
@@ -806,44 +849,113 @@ export class BindenResponse<
    * `Readable.prototype.pipe()` (e.g. the legacy
    * `Stream.prototype.pipe()`), whose last `data` listener and `end` wrapper
    * it has just added. The source is inspected by the methods of every
-   * emitter, never by its own ones.
+   * emitter, never by its own ones. A source whose only methods of its own
+   * are listener methods (see `wrappers`, e.g. bound by an instrumentation),
+   * and that passes every other check, may be left to Node.js (`native`).
    */
-  #refusal(source: EventEmitter): string | null {
+  #refusal(source: EventEmitter): IRefusal | null {
     const listens = (emitter: EventEmitter): boolean =>
       intrinsic.listenerCount.call(emitter, "newListener") +
         intrinsic.listenerCount.call(emitter, "removeListener") >
       0;
     if (listens(source)) {
-      return "the source has listeners of its listeners";
+      return refused("the source has listeners of its listeners");
     } else if (listens(this)) {
-      return "the response has listeners of its listeners";
+      return refused("the response has listeners of its listeners");
     }
     const accessor = accessorOf(source);
     if (typeof accessor !== "undefined") {
-      return `the source has an accessor of its own (${accessor})`;
+      return refused(`the source has an accessor of its own (${accessor})`);
     }
-    const own = inspected.find(
+    const own = inspected.filter(
       (name) => Object.hasOwn(source, name) && !isPatch(source, name),
     );
-    if (typeof own !== "undefined") {
-      return `the source has its own ${own}()`;
+    const other = own.find((name) => !wrappers.has(name));
+    if (typeof other !== "undefined") {
+      return refused(`the source has its own ${other}()`);
     } else if (!pipesInto(source, this)) {
-      return "it is not a pipe of Readable.prototype.pipe()";
+      return refused("it is not a pipe of Readable.prototype.pipe()");
     }
     const data = rawListenersOf(source, "data").at(-1);
     const plain =
       bindingOf(data)?.once === false ||
       (typeof data === "function" && !("listener" in data));
     if (!plain) {
-      return "its data listener is not the one of the pipe";
-    } else if (hasEnded(source)) {
-      return null;
+      return refused("its data listener is not the one of the pipe");
     }
     const end = rawListenersOf(source, "end").at(-1);
     const once =
       typeof end === "function" &&
       typeof (end as { listener?: unknown }).listener === "function";
-    return once ? null : "its end listener is not the one of the pipe";
+    if (!once && !hasEnded(source)) {
+      return refused("its end listener is not the one of the pipe");
+    }
+    const [wrapper] = own;
+    return typeof wrapper === "undefined"
+      ? null
+      : { reason: `the source has its own ${wrapper}()`, native: true };
+  }
+
+  /**
+   * Leaves a pipe of the stack to Node.js (see `IOwnership.native()`), while
+   * the stack may mutate the response: its source has listener methods of
+   * its own (e.g. bound by the context of an instrumentation, such as
+   * `context.bind()` of OpenTelemetry), which may have added any listener
+   * during the pipe, so that nothing of it can be attributed. It is not
+   * adopted (nothing of it gets the rights of the stack), and runs as without
+   * binden: before the exchange is sealed, every work may mutate the
+   * response. It is kept, to be dismantled once the stack is revoked (see
+   * `#dismantle()`); a pipe of a stack that has been revoked is refused.
+   */
+  #leave(source: EventEmitter, owner: object, reason: string): void {
+    this.#start(owner);
+    let sources = this.#natives.get(owner);
+    if (typeof sources === "undefined") {
+      sources = new Set();
+      this.#natives.set(owner, sources);
+    }
+    sources.add(source);
+    this.#ownership.note("A pipe has been left to Node.js", reason);
+  }
+
+  /**
+   * Dismantles the pipes of a revoked work that it has left to Node.js (see
+   * `#leave()`), before anything replaces the reply of the work: each source
+   * is unpiped by the method of its class, as that work. Nothing of a pipe
+   * whose source has ended (no `data` follows its `end`) and no longer lists
+   * the response can write. Any other may still have a listener that writes
+   * (its methods of its own may have added one, or removed another one in
+   * its place): the response and its connection are then closed, with the
+   * rights of the framework, so that nothing replaces the reply.
+   */
+  #dismantle(owner: object, sources: Iterable<EventEmitter>): void {
+    let unproven: string | null = null;
+    for (const source of sources) {
+      try {
+        as(owner, () => {
+          unpipe(source, this);
+        });
+      } catch (cleanup: unknown) {
+        const message = "The cleanup of a pipe left to Node.js has failed";
+        this.#ownership.debug(message, cleanup);
+      }
+      const accessor = accessorOf(source);
+      if (typeof accessor !== "undefined") {
+        unproven = `the source has an accessor of its own (${accessor})`;
+      } else if (!hasEnded(source)) {
+        unproven = "the source has not ended";
+      } else if (pipesInto(source, this)) {
+        unproven = "the source is still piped";
+      }
+    }
+    if (unproven !== null) {
+      const message =
+        "A pipe left to Node.js by an abandoned work may still write. Destroying the socket";
+      this.#ownership.note(message, unproven);
+      this[kFramework](() => {
+        this.destroy();
+      });
+    }
   }
 
   /**
@@ -998,6 +1110,11 @@ export class BindenResponse<
       unpipe(source, this);
     }
     this.#sources.delete(owner);
+    const natives = this.#natives.get(owner);
+    if (typeof natives !== "undefined") {
+      this.#natives.delete(owner);
+      this.#dismantle(owner, natives);
+    }
   }
 
   /** Runs a listener of an abandoned work: its failure is only logged */

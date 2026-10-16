@@ -128,6 +128,14 @@ export interface IOwnership {
    * server shuts down)
    */
   replier(): object | null;
+  /**
+   * Whether a pipe of the work whose source has listener methods of its own
+   * (e.g. bound by OpenTelemetry), which cannot be adopted, is left to
+   * Node.js rather than refused: a work whose rights do not matter until it
+   * is revoked (the stack), whose pipe is dismantled then (or the response
+   * closed, see `BindenResponse`)
+   */
+  native(owner: object): boolean;
   /** Logs a failure that nothing else handles (e.g. of an abandoned work) */
   debug(message: string, error: unknown): void;
   /**
@@ -135,6 +143,8 @@ export interface IOwnership {
    * request), with the reason: the response is left to its owner
    */
   warn(message: string, reason: string): void;
+  /** Logs (at `debug`) what is done with a pipe, with the reason */
+  note(message: string, reason: string): void;
 }
 
 /**

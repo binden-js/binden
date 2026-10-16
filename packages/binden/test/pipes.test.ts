@@ -1204,37 +1204,60 @@ suite("A pipe into the response", () => {
   suite(
     "refused (its owner fails), when code other than its source may have run",
     () => {
-      /** Pipes a source fed by a work of no request into the response, refused by `prepare` */
+      /** Pipes a source into the response */
+      const piped = (source: PassThrough, response: BindenResponse): void => {
+        source.pipe(response);
+      };
+
+      /**
+       * Pipes a source fed by a work of no request into the response, refused
+       * by `prepare`: by the stack, or by the error handler of its deadline
+       * (`handler`, e.g. for a source whose listener methods of its own the
+       * stack would leave to Node.js)
+       */
       const refusedBy = async (
         prepare: (source: PassThrough, response: BindenResponse) => void,
-        pipe: (source: PassThrough, response: BindenResponse) => void = (
-          source,
-          response,
-        ): void => {
-          source.pipe(response);
-        },
+        pipe: (source: PassThrough, response: BindenResponse) => void = piped,
+        work: "handler" | "stack" = "stack",
       ): Promise<{ reply: IRaw; logged: unknown[] }> => {
         const source = silent();
         const feed = feeder(source, ["REAL"]);
+        const run = async ({ response }: Context): Promise<void> => {
+          response.type("text/plain");
+          prepare(source, response);
+          pipe(source, response);
+          feed.start();
+          await never();
+        };
         try {
           let result: { reply: IRaw; logged: unknown[] } | null = null;
           await withApp(
-            {},
+            work === "stack"
+              ? {}
+              : {
+                  timeout: 20,
+                  error_handler: async (
+                    context: Context,
+                    error,
+                  ): Promise<void> => {
+                    if (isDeadline(error)) {
+                      await run(context);
+                    }
+                  },
+                },
             (app) => {
-              app.use(async (context: Context) => {
-                context.response.type("text/plain");
-                prepare(source, context.response);
-                pipe(source, context.response);
-                feed.start();
-                await never();
-              });
+              app.use(work === "stack" ? run : never);
             },
             async ({ port }, captured) => {
               const reply = await exchange(port, { linger: 60 });
               result = {
                 reply,
                 logged: captured.records
-                  .filter(({ msg }) => msg === "The request has failed")
+                  .filter(
+                    ({ msg }) =>
+                      msg === "The request has failed" ||
+                      msg === "The provided `error_handler` has failed",
+                  )
                   .map(({ failure }) => (failure as { type: string }).type),
               };
             },
@@ -1290,42 +1313,56 @@ suite("A pipe into the response", () => {
         "resume",
         "read",
       ]) {
-        test(`a method \`${name}()\` of the source itself`, async () => {
-          const { reply } = await refusedBy((source) => {
-            const inherited = Reflect.get(PassThrough.prototype, name) as (
-              ...args: unknown[]
-            ) => unknown;
-            Object.defineProperty(source, name, {
-              configurable: true,
-              writable: true,
-              value(this: PassThrough, ...args: unknown[]): unknown {
-                return Reflect.apply(inherited, this, args);
-              },
-            });
-          });
+        // The stack leaves a pipe of a source with listener methods of its
+        // own to Node.js
+        const work = ["on", "once"].includes(name) ? "handler" : "stack";
+        test(`a method \`${name}()\` of the source itself (${work === "stack" ? "of the stack" : "of an error handler"})`, async () => {
+          const { reply } = await refusedBy(
+            (source) => {
+              const inherited = Reflect.get(PassThrough.prototype, name) as (
+                ...args: unknown[]
+              ) => unknown;
+              Object.defineProperty(source, name, {
+                configurable: true,
+                writable: true,
+                value(this: PassThrough, ...args: unknown[]): unknown {
+                  return Reflect.apply(inherited, this, args);
+                },
+              });
+            },
+            piped,
+            work,
+          );
           deepStrictEqual([reply.status, reply.complete], [500, true]);
         });
       }
 
       for (const name of ["rawListeners", "unpipe", "removeListener"]) {
-        test(`a method \`${name}()\` of the source itself, which binden never calls`, async () => {
+        const work = name === "removeListener" ? "handler" : "stack";
+        test(`a method \`${name}()\` of the source itself, which binden never calls (${work === "stack" ? "of the stack" : "of an error handler"})`, async () => {
           const calls: string[] = [];
-          const { reply } = await refusedBy((source) => {
-            const inherited = Reflect.get(PassThrough.prototype, name) as (
-              ...args: unknown[]
-            ) => unknown;
-            Object.defineProperty(source, name, {
-              configurable: true,
-              writable: true,
-              value(this: PassThrough, ...args: unknown[]): unknown {
-                // Node.js calls it from the pipe that it dismantles (its
-                // `cleanup()`), as it would without binden
-                const { stack = "" } = new Error("Called");
-                calls.push(/\bat cleanup\b/u.test(stack) ? "cleanup" : "other");
-                return Reflect.apply(inherited, this, args);
-              },
-            });
-          });
+          const { reply } = await refusedBy(
+            (source) => {
+              const inherited = Reflect.get(PassThrough.prototype, name) as (
+                ...args: unknown[]
+              ) => unknown;
+              Object.defineProperty(source, name, {
+                configurable: true,
+                writable: true,
+                value(this: PassThrough, ...args: unknown[]): unknown {
+                  // Node.js calls it from the pipe that it dismantles (its
+                  // `cleanup()`), as it would without binden
+                  const { stack = "" } = new Error("Called");
+                  calls.push(
+                    /\bat cleanup\b/u.test(stack) ? "cleanup" : "other",
+                  );
+                  return Reflect.apply(inherited, this, args);
+                },
+              });
+            },
+            piped,
+            work,
+          );
           deepStrictEqual([reply.status, reply.complete], [500, true]);
           ok(
             calls.every((call) => call === "cleanup"),
@@ -1562,7 +1599,12 @@ suite("A pipe into the response", () => {
         ],
       ] as const) {
         test(`the cleanup of its unpipe (${name}) runs once its work has lost the response`, async () => {
-          const { reply, logged } = await refusedBy(prepare);
+          const { reply, logged } = await refusedBy(
+            prepare,
+            piped,
+            // The stack leaves its own `removeListener()` to Node.js
+            name === "its own `removeListener()`" ? "handler" : "stack",
+          );
           deepStrictEqual(
             [reply.status, reply.body, reply.complete],
             [500, "", true],
@@ -2902,8 +2944,10 @@ suite("A pipe into the response", () => {
           },
           guards: () => true,
           replier: () => null,
+          native: () => false,
           debug: () => null,
           warn: () => null,
+          note: () => null,
         });
         const source = new Source();
         owners.run({ name: "an error handler" }, () => {
@@ -3108,8 +3152,10 @@ suite("A pipe into the response", () => {
           fail: () => false,
           guards: () => true,
           replier: () => null,
+          native: () => false,
           debug: () => null,
           warn: () => null,
+          note: () => null,
         });
         const source = silent();
         const thrown = new Error("Thrown");
