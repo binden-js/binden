@@ -59,6 +59,7 @@ import {
   type IStreamLikeMethods,
   emitterMethods,
   guard,
+  hasClosed,
   readStreamLike,
   releaseStreamLike,
   streamLikeOf,
@@ -2962,7 +2963,8 @@ export class BindenResponse<
    * otherwise the response is destroyed, so that a truncated body does not
    * look complete, and more bytes are not read by the client as the next
    * response of the connection. A source that has already ended is an empty
-   * body; one that has been destroyed before rejects at once.
+   * body; one that has been destroyed before rejects at once, under its
+   * guard (see `guard()`: its destroy may still fail).
    *
    * Once another writer has ended the response (e.g. a compression that has
    * replaced it with `406` when its first chunk committed the headers), the
@@ -2977,7 +2979,10 @@ export class BindenResponse<
    */
   #pipe(data: Readable): Promise<void> {
     if (!data.readableEnded && data.destroyed) {
-      // Nothing more of it can be read
+      // Nothing more of it can be read, but its destroy (e.g. by the
+      // application) may still fail: its guard listens, as for a stream-like
+      // source (see `guard()`)
+      guard(data, emitterMethods, this.#report(), hasClosed(data));
       return Promise.reject(BindenResponse.#premature());
     }
     const operation = this.#operation();
