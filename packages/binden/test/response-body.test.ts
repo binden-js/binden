@@ -3,6 +3,7 @@ import {
   BindenResponse,
   type Context,
   type IResponseOptions,
+  kNegotiator,
   validateResponseOptions,
 } from "../index.js";
 import { type IReply, type ITestServer, listen } from "./http.js";
@@ -519,6 +520,73 @@ suite("BindenResponse (bodies)", () => {
     ];
     for (const received of notModified) {
       deepStrictEqual([received.status, received.headers.trailer], [304, none]);
+    }
+  });
+
+  test("an empty reply that replaces the body (`412`, `416`, `406`) has no `Trailer` either", async () => {
+    const trailer = (response: BindenResponse): BindenResponse =>
+      response.setHeader("Trailer", "X-T");
+    /** A library that replaces the representation (e.g. a compression) */
+    const refusing = (response: BindenResponse): BindenResponse => {
+      response[kNegotiator]({
+        choose: () => ({ coding: null, status: 406 }),
+        forget: () => null,
+      });
+      return response;
+    };
+    const file = import.meta.filename;
+    const failing = { "If-Match": '"other"' };
+    /** Replies, their request headers, whether with the dynamic `ETag`, and the status that they get */
+    const cases: [
+      string,
+      (response: BindenResponse) => Promise<unknown>,
+      OutgoingHttpHeaders,
+      boolean,
+      number,
+    ][] = [
+      [
+        "a failed precondition of the dynamic `ETag`",
+        async (r): Promise<unknown> => trailer(r).send("abc"),
+        failing,
+        true,
+        412,
+      ],
+      [
+        "a representation replaced for the dynamic `ETag`",
+        async (r): Promise<unknown> => refusing(trailer(r)).send("abc"),
+        {},
+        true,
+        406,
+      ],
+      [
+        "a failed precondition of a file",
+        async (r): Promise<unknown> => trailer(r).sendFile(file),
+        failing,
+        false,
+        412,
+      ],
+      [
+        "a representation of a file replaced",
+        async (r): Promise<unknown> => refusing(trailer(r)).sendFile(file),
+        {},
+        false,
+        406,
+      ],
+      [
+        "a range of a file that cannot be satisfied",
+        async (r): Promise<unknown> => trailer(r).sendFile(file),
+        { Range: "bytes=999999999-" },
+        false,
+        416,
+      ],
+    ];
+    for (const [name, handler, headers, etag, status] of cases) {
+      const received = await reply(handler, { headers }, etag);
+      deepStrictEqual(
+        [received.status, received.headers.trailer, received.body.toString()],
+        [status, none, ""],
+        name,
+      );
     }
   });
 

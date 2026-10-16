@@ -566,8 +566,13 @@ export async function sendFileTo(
     // (e.g. with `406 Not Acceptable`, whatever the preconditions are)
     const representation = response[kRepresentation](size);
     if (representation.status !== null) {
-      // Without the digests of the representation that it replaces
-      remove(response, [...contentDigests, ...representationDigests]);
+      // Without the digests and the trailers (which Node.js refuses without
+      // chunks) of the representation that it replaces
+      remove(response, [
+        "Trailer",
+        ...contentDigests,
+        ...representationDigests,
+      ]);
       await response.status(representation.status).send();
       return;
     }
@@ -587,10 +592,11 @@ export async function sendFileTo(
       return;
     } else if (failed !== null) {
       // Empty, also for `HEAD` (which would keep the length of a body), and
-      // without the coding nor the digests of the file (e.g. a precompressed
-      // one), whose representation it replaces
+      // without the coding, the digests (e.g. of a precompressed file) nor
+      // the trailers of the file, whose representation it replaces
       remove(response, [
         "Content-Encoding",
+        "Trailer",
         ...contentDigests,
         ...representationDigests,
       ]);
@@ -617,7 +623,12 @@ export async function sendFileTo(
     const range = byteRange(ranges, size);
 
     if (range === "unsatisfiable") {
-      remove(response, [...contentDigests, ...representationDigests]);
+      // Empty: without the digests nor the trailers of the file
+      remove(response, [
+        "Trailer",
+        ...contentDigests,
+        ...representationDigests,
+      ]);
       const cr = new ContentRange({ size }).toString();
       await response.setHeader("Content-Range", cr).status(416).send();
       return;

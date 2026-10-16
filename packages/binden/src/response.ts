@@ -2502,11 +2502,13 @@ export class BindenResponse<
       return this.#endNotModified(body.length);
     } else if (status !== null) {
       // Empty, also for `HEAD` (which would keep the length of a body), and
-      // without the coding nor the digests of the body (e.g. a precompressed
-      // one), whose representation it replaces
+      // without the coding, the digests (e.g. of a precompressed body) nor
+      // the trailers (which Node.js refuses without chunks) of the body whose
+      // representation it replaces
       this.statusCode = status;
       this.#remove(
         "Content-Encoding",
+        "Trailer",
         ...contentDigests,
         ...representationDigests,
       );
