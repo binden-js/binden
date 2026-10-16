@@ -313,6 +313,23 @@ const keeping: ReadonlySet<unknown> = new Set([
   "ERR_UNKNOWN_ENCODING",
 ]);
 
+/** A method called with any receiver (see `IStreamLikeMethods`) */
+type IMethodOf = IStreamLikeMethods["on"];
+
+/* eslint-disable @typescript-eslint/unbound-method -- called with the stream as their receiver */
+/**
+ * The methods of Node.js that release a `Readable` of a send that is ignored
+ * (see `BindenResponse.#releaseIgnored()`): never its own
+ */
+const readableMethods: IStreamLikeMethods = {
+  on: Readable.prototype.on as IMethodOf,
+  pause: Readable.prototype.pause,
+  resume: Readable.prototype.resume,
+  remove: Readable.prototype.removeListener as IMethodOf,
+  destroy: Readable.prototype.destroy as IMethodOf,
+};
+/* eslint-enable @typescript-eslint/unbound-method */
+
 /** The report of a late error of a source of a response that is not owned */
 function unreported(): void {
   // Nobody to tell
@@ -2553,7 +2570,9 @@ export class BindenResponse<
   #send(data: unknown, encoding?: BufferEncoding): Promise<void> {
     if (this.writableEnded || !this.#allows()) {
       // Ignored: nothing of the data is read (e.g. a getter of an object of
-      // a work that may no longer mutate the response), nor released
+      // a work that may no longer mutate the response), but a Node.js
+      // `Readable` is released (see `#releaseIgnored()`)
+      this.#releaseIgnored(data);
       return Promise.resolve();
     }
     // What is sent (see `#kind()`): the methods of a stream-like source are
@@ -3243,6 +3262,47 @@ export class BindenResponse<
    */
   #report(): ISourceReport {
     return this.#ownership.released ?? unreported;
+  }
+
+  /**
+   * Releases the data of a send that is ignored when it is a Node.js
+   * `Readable` (see `#isReadable()`), whose file (or the like) would stay
+   * open: it is destroyed by the method of `Readable`, never by its own,
+   * under a guard (see `releaseStreamLike()`). Anything else (e.g. a
+   * stream-like source, or a `Proxy`) is not touched. A failure of the
+   * release is logged (`debug`): the send is still ignored.
+   */
+  #releaseIgnored(data: unknown): void {
+    if (BindenResponse.#isReadable(data)) {
+      try {
+        releaseStreamLike(data, readableMethods, this.#report());
+      } catch (error: unknown) {
+        const message = "The release of an ignored stream has failed";
+        this.#ownership.debug(message, error);
+      }
+    }
+  }
+
+  /**
+   * Whether a value is a Node.js `Readable`, without running any code of it:
+   * an object whose prototype chain reaches `Readable.prototype`, read link
+   * by link, none of which may be a `Proxy` (whose `getPrototypeOf` trap
+   * would run)
+   */
+  static #isReadable(value: unknown): value is Readable {
+    if (typeof value !== "object" || value === null) {
+      return false;
+    }
+    for (let link: object | null = value; link !== null;) {
+      if (isProxy(link)) {
+        return false;
+      }
+      link = Object.getPrototypeOf(link) as object | null;
+      if (link === Readable.prototype) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Destroys a source that will not be sent, whose errors are no longer of interest */

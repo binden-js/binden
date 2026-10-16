@@ -13,10 +13,13 @@ import {
   never,
   send,
   sleep,
+  within,
 } from "./helpers.js";
+import { type ReadStream, createReadStream } from "node:fs";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
+import { once } from "node:events";
 
 /** Runs `fn` with a listening application (with a captured debug logger) */
 async function withApp(
@@ -426,5 +429,44 @@ suite("Lifecycle (late sends of the response)", () => {
         }
       },
     );
+  });
+
+  test("a late send of a Node.js `Readable` releases it without reading it: its file is closed", async () => {
+    const sources: ReadStream[] = [];
+    const settled: Promise<unknown>[] = [];
+    await withApp(
+      { timeout: 20 },
+      (app) => {
+        app.use(async (context: Context) => {
+          await sleep(40);
+          for (const sent of [
+            // Through the context too, which ignores it first
+            (source: Readable): Promise<void> => context.send(source),
+            (source: Readable): Promise<void> => context.response.send(source),
+          ]) {
+            const source = createReadStream(import.meta.filename);
+            sources.push(source);
+            settled.push(
+              sent(source).then(
+                () => "resolved",
+                (error: unknown) => error,
+              ),
+            );
+          }
+          await Promise.all(settled);
+        });
+      },
+      async ({ port }, captured) => {
+        deepStrictEqual((await send(port)).status, 503);
+        await captured.waitFor("A late reply has been ignored");
+      },
+    );
+    deepStrictEqual(await Promise.all(settled), ["resolved", "resolved"]);
+    for (const source of sources) {
+      deepStrictEqual([source.readableFlowing, source.bytesRead], [null, 0]);
+      if (!source.closed) {
+        await within(once(source, "close"));
+      }
+    }
   });
 });

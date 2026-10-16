@@ -187,7 +187,9 @@ export class Context<
     data?:
       Buffer | IStreamLike | Readable | Uint8Array | bigint | number | string,
   ): Promise<void> {
-    await this.#reply(() => this.response.send(data));
+    // Also once it is late: the response ignores it then, but releases a
+    // Node.js `Readable` (e.g. a stream of a file, which would stay open)
+    await this.#reply(() => this.response.send(data), true);
   }
 
   /**
@@ -289,11 +291,15 @@ export class Context<
 
   /**
    * Sends a reply and sets `done`, unless the framework has taken over the
-   * reply (e.g. the deadline has passed): a late reply is then ignored
+   * reply (e.g. the deadline has passed): a late reply is then ignored, and
+   * `send` runs only when it is `late` too (the response ignores it as well)
    */
-  async #reply(send: () => Promise<void>): Promise<void> {
+  async #reply(send: () => Promise<void>, late = false): Promise<void> {
     if (!this.#exchange.may_reply) {
       this.log.debug("A late reply has been ignored");
+      if (late) {
+        await send();
+      }
       return;
     } else if (this.response.started) {
       // E.g. a second `send()`: the response is not sent again

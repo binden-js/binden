@@ -25,6 +25,7 @@ import { IncomingMessage, Server, createServer, get } from "node:http";
 import { type Stats, createReadStream } from "node:fs";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert";
+import { toError, within } from "./helpers.js";
 import { Readable } from "node:stream";
 import { execFileSync } from "node:child_process";
 import fastJSON from "fast-json-stringify";
@@ -33,7 +34,6 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { toError } from "./helpers.js";
 
 /** The port of a listening server */
 function portOf(server: { address(): unknown }): number {
@@ -291,7 +291,7 @@ suite("BindenResponse", () => {
     ok(response.ok);
   });
 
-  test(".send() (`writableEnded === true` resolves without touching a `Readable`)", async () => {
+  test(".send() (`writableEnded === true` resolves, and releases a `Readable` without reading it)", async () => {
     const source = createReadStream(filePath);
     const settled = new Promise<unknown>((resolve) => {
       server.once("request", (_request, response) => {
@@ -303,9 +303,11 @@ suite("BindenResponse", () => {
     await (await fetch(url)).text();
 
     deepStrictEqual(await settled, null);
-    // Neither read nor released: left to the work that has it
-    deepStrictEqual([source.destroyed, source.readableFlowing], [false, null]);
-    source.destroy();
+    deepStrictEqual([source.destroyed, source.readableFlowing], [true, null]);
+    // Its file is closed
+    if (!source.closed) {
+      await within(once(source, "close"));
+    }
   });
 
   test(".send() (with encoding)", async () => {

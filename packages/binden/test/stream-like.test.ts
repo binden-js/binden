@@ -1038,10 +1038,11 @@ suite("send() of a stream-like source", () => {
 });
 
 /**
- * An object whose every inspection is recorded and throws (e.g. a getter of
- * `on` that throws): `send()` must not read it
+ * A `Proxy` (of `target`, an empty object by default) whose every inspection
+ * is recorded and throws (e.g. a getter of `on` that throws): `send()` must
+ * not read it
  */
-function untouchable(traps: string[]): object {
+function untouchable(traps: string[], target: object = {}): object {
   const handler: ProxyHandler<object> = {};
   for (const trap of [
     "get",
@@ -1055,7 +1056,7 @@ function untouchable(traps: string[]): object {
       throw new Error(`The source has been read (${trap})`);
     };
   }
-  return new Proxy({}, handler);
+  return new Proxy(target, handler);
 }
 
 suite("send() of a stream-like source that will not be sent", () => {
@@ -1145,6 +1146,116 @@ suite("send() of a stream-like source that will not be sent", () => {
         deepStrictEqual(traps, []);
       },
     );
+  });
+
+  test("once the response has ended, or by a work that may no longer mutate it: a Node.js `Readable` is released by the methods of Node.js", async () => {
+    const responses = [
+      (): BindenResponse => {
+        const response = new BindenResponse(new IncomingMessage(new Socket()));
+        response.end();
+        return response;
+      },
+      (): BindenResponse => {
+        const response = new BindenResponse(new IncomingMessage(new Socket()));
+        response[kSeal](() => false);
+        return response;
+      },
+    ];
+    const read: string[] = [];
+    const traps: string[] = [];
+    for (const respond of responses) {
+      // Its own methods, which never run (nor their getters)
+      const source = new Readable({
+        read(): void {
+          // Nothing to read
+        },
+      });
+      for (const name of [
+        "on",
+        "off",
+        "removeListener",
+        "pause",
+        "resume",
+        "destroy",
+      ]) {
+        Object.defineProperty(source, name, {
+          get(): never {
+            read.push(name);
+            throw new Error(`The source has been read (${name})`);
+          },
+        });
+      }
+      // A `Proxy` anywhere in its chain of prototypes: not touched
+      const wrapped = new Readable();
+      const proxied = new Readable();
+      Object.setPrototypeOf(proxied, untouchable(traps, Readable.prototype));
+      const behind: unknown = Object.create(
+        untouchable(traps, Readable.prototype),
+      );
+      for (const sent of [
+        source,
+        untouchable(traps, wrapped),
+        proxied,
+        behind,
+      ]) {
+        const outcome = await respond()
+          // @ts-expect-error -- not always data that `send()` takes
+          .send(sent)
+          .then(
+            () => null,
+            (error: unknown) => error,
+          );
+        deepStrictEqual(outcome, null);
+      }
+      // By `Readable.prototype.destroy()`, without being read
+      deepStrictEqual([source.destroyed, source.readableFlowing], [true, null]);
+      ok(!wrapped.destroyed);
+      ok(!(Reflect.get(proxied, "_readableState") as Readable).destroyed);
+    }
+    deepStrictEqual([read, traps], [[], []]);
+  });
+
+  test("once the response has ended: a Node.js `Readable` whose release fails is logged, and its send resolves", async () => {
+    const captured = capture();
+    const outcomes = Promise.withResolvers<unknown[]>();
+    const app = new Binden({ logger: captured.logger }).use(
+      async (context: Context) => {
+        context.response.end("ended");
+        const sends: unknown[] = [];
+        for (const sent of [
+          // Its `_destroy()` throws: Node.js emits the error, which its guard
+          // logs
+          new Readable({
+            read(): void {
+              // Nothing to read
+            },
+            destroy(): void {
+              throw new Error("Its destroy has failed");
+            },
+          }),
+          // Not constructed as a `Readable`: its release throws at once
+          Object.create(Readable.prototype) as Readable,
+        ]) {
+          sends.push(
+            await context.response.send(sent).then(
+              () => "resolved",
+              (error: unknown) => error,
+            ),
+          );
+        }
+        outcomes.resolve(sends);
+      },
+    );
+    const listening = await listen(app);
+    try {
+      const { status, body } = await fetchBytes(listening.port);
+      deepStrictEqual([status, body.toString()], [200, "ended"]);
+      deepStrictEqual(await within(outcomes.promise), ["resolved", "resolved"]);
+      await captured.waitFor("A stream-like source has failed once released");
+      await captured.waitFor("The release of an ignored stream has failed");
+    } finally {
+      await listening.close();
+    }
   });
 
   test("its errors once it has closed or been cancelled do not crash the process", () => {
