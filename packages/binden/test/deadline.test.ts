@@ -1031,9 +1031,8 @@ suite("A complete reply that waits for the response before it", () => {
         data += chunk;
       });
       socket.write(requests);
-      // Destroyed: closed before it has finished (Node.js 24.14 destroys the
-      // connection once it would send it, 24.16 and 26 send what it has
-      // written, and keep the connection open)
+      // Destroyed: closed before it has finished (its connection is closed
+      // once it would be sent, see `cut.test.ts`)
       deepStrictEqual(await within(closed), false);
       await captured.waitFor("The deadline has passed. Destroying the socket");
       // The response before it is complete

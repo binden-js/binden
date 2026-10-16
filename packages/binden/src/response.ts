@@ -1,4 +1,5 @@
 import Cookie, { type ICookie } from "./headers/cookie.js";
+import { type Duplex, Readable } from "node:stream";
 import { EventEmitter, errorMonitor } from "node:events";
 import {
   type IFramingState,
@@ -64,7 +65,6 @@ import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
 import { Exchange } from "./exchange.js";
-import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
 import { parseHttpDate } from "./headers/http-date.js";
@@ -574,6 +574,11 @@ export class BindenResponse<
    * framing only while it is the latest (see `#pipe()`)
    */
   #framing = 0;
+  /**
+   * Whether the framework has destroyed the response before it has ended:
+   * its socket, once Node.js assigns one, is destroyed (see `#cutQueued()`)
+   */
+  #cut = false;
 
   static {
     // The status of a sealed response is not changed by the abandoned work
@@ -622,6 +627,9 @@ export class BindenResponse<
         this.#piping(args[0]);
       } else if (event === "unpipe") {
         this.#unpiped(args[0]);
+      } else if (event === "socket") {
+        // Before its listeners, and before Node.js flushes the response
+        this.#assigned(args[0] as Duplex);
       } else if (
         event === "error" &&
         this.#absorbing.has(owners.getStore() as object)
@@ -1870,7 +1878,9 @@ export class BindenResponse<
    * instead (see `#pipeFailed()`), so that its work gets the error. So does
    * a destroy by an error handler that its pipe guards (see `#guarded()`),
    * with its error (or `ERR_STREAM_PREMATURE_CLOSE`), and a destroy of no
-   * work while it replies (see `#replier()`).
+   * work while it replies (see `#replier()`). A response that the framework
+   * destroys before it has a socket is cut once it gets one (see
+   * `#cutQueued()`).
    */
   public override destroy(error?: Error): this {
     const marker = this.#marker;
@@ -1886,8 +1896,40 @@ export class BindenResponse<
       this.#pipeFailed(owner, error ?? BindenResponse.#premature(), null)
     ) {
       return this;
+    } else if (!this.#allows()) {
+      return this;
     }
-    return this.#allows() ? super.destroy(error) : this;
+    this.#cutQueued();
+    return super.destroy(error);
+  }
+
+  /**
+   * The framework destroys a response that has not ended: when it waits for
+   * the one before it on its connection (no socket yet, e.g. started at its
+   * deadline), its socket is destroyed once Node.js assigns it, before
+   * Node.js flushes what the response has queued (see `emit()`). Node.js
+   * 24.14.1 does so itself, but later versions would send its head and the
+   * part of its body that it has written, then keep the connection open for
+   * a response that never ends. The responses before it have finished by
+   * then: Node.js assigns the socket once the one before has finished. A
+   * complete reply is not cut (Node.js sends it), nor one that the
+   * application destroys (as without binden).
+   */
+  #cutQueued(): void {
+    if (forced(this) && !this.writableEnded) {
+      this.#cut = true;
+    }
+  }
+
+  /**
+   * Node.js assigns its socket to the response (once the response before it
+   * has finished): the socket of a response that is cut is destroyed (see
+   * `#cutQueued()`)
+   */
+  #assigned(socket: Duplex): void {
+    if (this.#cut) {
+      socket.destroy();
+    }
   }
 
   /**
