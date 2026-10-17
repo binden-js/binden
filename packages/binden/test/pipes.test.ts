@@ -2399,7 +2399,7 @@ suite("A pipe into the response", () => {
           const socket = connect(port, "127.0.0.1");
           await once(socket, "connect");
           socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
-          await once(socket, "data");
+          await within(once(socket, "data"));
           socket.destroy();
           await within(piped.promise);
           await sleep(20);
@@ -2426,7 +2426,7 @@ suite("A pipe into the response", () => {
           const socket = connect(port, "127.0.0.1");
           await once(socket, "connect");
           socket.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
-          await once(socket, "data");
+          await within(once(socket, "data"));
           socket.destroy();
           await within(piped.promise);
           await sleep(20);

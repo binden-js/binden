@@ -206,6 +206,10 @@ suite("Streaming through the compressor", () => {
         const timer = setInterval(() => {
           response.removeAllListeners("drain");
         }, 1);
+        // Also when the reply never finishes: once the connection closes
+        response.once("close", () => {
+          clearInterval(timer);
+        });
         try {
           await new Promise<void>((resolve) => {
             response.end(expected, resolve);

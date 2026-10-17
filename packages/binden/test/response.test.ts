@@ -100,7 +100,11 @@ async function exchange(method = "GET", headers = ""): Promise<IRawResponse> {
   socket.write(
     `${method} / HTTP/1.1\r\nHost: ${hostname}\r\nConnection: close\r\n${headers}\r\n`,
   );
-  await once(socket, "close");
+  try {
+    await within(once(socket, "close"));
+  } finally {
+    socket.destroy();
+  }
   const [head = "", ...rest] = data.split("\r\n\r\n");
   const [status = "", ...lines] = head.split("\r\n");
   return {

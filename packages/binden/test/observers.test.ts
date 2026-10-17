@@ -368,6 +368,10 @@ suite("The observers of the framework on a response", () => {
           const timer = setInterval(() => {
             context.response.removeAllListeners("drain");
           }, 1);
+          // Also when the send never settles: once the connection closes
+          context.response.once("close", () => {
+            clearInterval(timer);
+          });
           try {
             await context.send(
               Readable.from(

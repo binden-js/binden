@@ -13,6 +13,7 @@ import {
   pollUntil,
   send,
   sleep,
+  within,
 } from "./helpers.js";
 import { deepStrictEqual, ok, throws } from "node:assert/strict";
 import { suite, test } from "node:test";
@@ -178,11 +179,11 @@ suite("Request and response options", () => {
         socket.end(
           "GET / HTTP/1.1\r\nHost: localhost\r\nHost: evil.test\r\nConnection: close\r\n\r\n",
         );
-        const [chunk] = (await once(socket.setEncoding("utf8"), "data")) as [
-          string,
-        ];
+        const [chunk] = (await within(
+          once(socket.setEncoding("utf8"), "data"),
+        )) as [string];
         ok(chunk.startsWith("HTTP/1.1 400"), chunk);
-        await once(socket, "close");
+        await within(once(socket, "close"));
         deepStrictEqual(reached, false);
         // Logged without failing: the access log does not read the URL
         const records = captured.records.filter(
@@ -265,7 +266,7 @@ suite("Request ids", () => {
         await sleep(20);
         release.resolve(null);
         await closing;
-        await once(client, "close");
+        await within(once(client, "close"));
         const [, second = ""] = received.split(/(?=HTTP\/1\.1 )/u);
         ok(second.startsWith("HTTP/1.1 503"), received);
         ids.push(/\r\nx-request-id: (?<id>[^\r]+)/iu.exec(second)?.groups?.id);
