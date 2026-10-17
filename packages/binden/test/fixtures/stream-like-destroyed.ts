@@ -5,9 +5,10 @@
 // it (before the send: `readable-stream` 2 and 4, whose destroy fails 20 ms
 // later, and a `PassThrough` of `readable-stream` 2 whose error follows on the
 // next tick; or once sent, emitting its `end` at once and failing 20 ms
-// later): it is logged at `debug`, but the error of a source destroyed with
-// it before the send that its state tells (its `errored`, of
-// `readable-stream` 4), which the send rejects with.
+// later; only the cancelled one waits for a deadline): it is logged at
+// `debug`, but the error of a source destroyed with it before the send that
+// its state tells (its `errored`, of `readable-stream` 4), which the send
+// rejects with.
 import { Binden, releasedFailure } from "../../index.js";
 import { EventEmitter, once } from "node:events";
 import { type IncomingMessage, request } from "node:http";
@@ -93,6 +94,11 @@ function sourceOf(pathname: string): EventEmitter {
     source.destroy(new Error("Failed in the same turn"));
     return source;
   }
+  // `/ended`: destroyed by a timer once its send has started (without its
+  // deadline, see below). Its premature close follows in the same turn of
+  // the event loop (a `setImmediate()` of the send), before any timer: the
+  // failure of its destroy 20 ms later never comes first, however long the
+  // process stalls, as it would after a destroy in a `setImmediate()`
   const source = failing(v2, true);
   setTimeout(() => {
     source.destroy(new Error("Failed after its end"));
@@ -107,6 +113,12 @@ const app = new Binden({
   timeout: 50,
 }).use(async (context) => {
   const { pathname } = context.url;
+  if (pathname !== "/cancelled") {
+    // Only `/cancelled` waits for its deadline: the others are decided
+    // without it, and a loaded machine could let it pass before the timer
+    // that destroys `/ended` (its `503` replied)
+    context.setTimeout(0);
+  }
   if (pathname === "/released") {
     context.status(204);
   }
