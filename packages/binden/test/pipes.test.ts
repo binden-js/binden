@@ -844,18 +844,22 @@ suite("A pipe into the response", () => {
           app.use(async (context: Context) => {
             await sleep(40);
             finished(context.response, (error) => {
-              outcome.resolve((error as { code?: string } | undefined)?.code);
+              // At once: before the reply of the deadline has been sent
+              // (whatever the load, its timer comes after this one)
+              outcome.resolve([
+                (error as { code?: string } | undefined)?.code,
+                context.response.headersSent,
+              ]);
             });
             await never();
           });
         },
         async ({ port }) => {
           const replied = exchange(port);
-          // Before the reply of the deadline has been sent
-          deepStrictEqual(
-            await within(outcome.promise, 60),
+          deepStrictEqual(await within(outcome.promise), [
             "ERR_STREAM_PREMATURE_CLOSE",
-          );
+            false,
+          ]);
           deepStrictEqual((await replied).status, 503);
         },
       );
