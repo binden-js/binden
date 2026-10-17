@@ -3092,7 +3092,7 @@ export class BindenResponse<
    * `flushHeaders()` has sent it) does not look complete, and more bytes are
    * not read by the client as the next response of the connection.
    * A source that has already ended is an empty body; one that has been
-   * destroyed before rejects at once (see `#unreadable()`).
+   * destroyed or has errored before rejects at once (see `#unreadable()`).
    * One that is paused (e.g. by the application, or by an `unpipe()`) is
    * resumed once the listeners of the send are added, as
    * `Readable.prototype.pipe()` does: once the response drains when it needs
@@ -3130,7 +3130,7 @@ export class BindenResponse<
    * logged (`debug`).
    */
   #pipe(data: Readable): Promise<void> {
-    if (!data.readableEnded && data.destroyed) {
+    if (!data.readableEnded && (data.destroyed || data.errored !== null)) {
       return this.#unreadable(data);
     }
     const operation = this.#operation();
@@ -3481,11 +3481,12 @@ export class BindenResponse<
 
   /**
    * The send of a `Readable` that nothing more can be read of (see
-   * `#pipe()`): destroyed before its end. Its destroy (e.g. by the
-   * application) may still fail: its guard listens, as for a stream-like
-   * source (see `#guardReleased()`). It rejects at once, as a premature
-   * close, and destroys a response whose headers are committed, whose head
-   * promises a body that will not come. Once
+   * `#pipe()`): destroyed, or errored (e.g. without `autoDestroy`), before
+   * its end. Its destroy (e.g. by the application) may still fail: its guard
+   * listens, as for a stream-like source (see `#guardReleased()`). It
+   * rejects at once, with the error of the source (its `errored`), or as a
+   * premature close, and destroys a response whose headers are committed,
+   * whose head promises a body that will not come. Once
    * another writer has ended the response (e.g. code of the source, such as
    * a getter that the checks of `#send()` have run), the response is left as
    * it is: the send settles as the response does, and the error of the
@@ -3502,7 +3503,7 @@ export class BindenResponse<
     } else if (this.headersSent) {
       this.destroy();
     }
-    return Promise.reject(BindenResponse.#premature());
+    return Promise.reject(errored ?? BindenResponse.#premature());
   }
 
   /**

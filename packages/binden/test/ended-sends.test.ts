@@ -2,8 +2,8 @@ import { Binden, type Context } from "../index.js";
 import { type ICaptured, capture, listen, within } from "./helpers.js";
 import { PassThrough, Readable } from "node:stream";
 import { converse, get } from "./connection.js";
+import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
-import { deepStrictEqual } from "node:assert/strict";
 
 /** The message of a late error of a source that a send no longer reads */
 const late = "A stream-like source has failed once released";
@@ -489,3 +489,80 @@ suite("A send that has ended its response", () => {
     );
   });
 });
+
+suite(
+  "A Readable that has errored before the send, without being destroyed",
+  () => {
+    /** A source that has errored (a chunk that is not bytes), which `autoDestroy: false` keeps */
+    function errored(): Readable {
+      const source = new Readable({
+        autoDestroy: false,
+        read(): void {
+          // Never read
+        },
+      });
+      source.on("error", () => {
+        // Its error is `errored`
+      });
+      source.push({});
+      return source;
+    }
+
+    test("rejects at once with its error, which is replied", async () => {
+      const source = errored();
+      deepStrictEqual(source.destroyed, false);
+      const [received, closed, outcome] = await run(
+        async (context) => {
+          const error = await outcomeOf(context.send(source));
+          return [
+            (error as { code?: unknown }).code,
+            error === source.errored,
+            context.response.started,
+          ];
+        },
+        `${get("/")}${get("/next")}`,
+      );
+      // The middleware has not replied: 404
+      ok(received.startsWith("HTTP/1.1 404 Not Found\r\n"), received);
+      deepStrictEqual(
+        [closed, outcome, source.destroyed],
+        [false, ["ERR_INVALID_ARG_TYPE", true, false], false],
+      );
+    });
+
+    test("closes a response whose headers are committed", async () => {
+      const [received, closed, outcome] = await run(
+        async (context) => {
+          const { response } = context;
+          response.setHeader("Content-Length", 3);
+          response.flushHeaders();
+          const error = await outcomeOf(context.send(errored()));
+          return [(error as { code?: unknown }).code, response.destroyed];
+        },
+        `${get("/")}${get("/next")}`,
+      );
+      deepStrictEqual(
+        [received.includes("next"), closed, outcome],
+        [false, true, ["ERR_INVALID_ARG_TYPE", true]],
+      );
+    });
+
+    test("destroyed with an error before the send: rejects at once with that error", async () => {
+      const failure = new Error("Destroyed before");
+      const source = new Readable({
+        read(): void {
+          // Never read
+        },
+      });
+      source.on("error", () => {
+        // Its error is `errored`
+      });
+      source.destroy(failure);
+      const [, , outcome] = await run(
+        (context) => outcomeOf(context.send(source)),
+        `${get("/")}${get("/next")}`,
+      );
+      deepStrictEqual(outcome, failure);
+    });
+  },
+);
