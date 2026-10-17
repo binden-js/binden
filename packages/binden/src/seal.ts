@@ -155,7 +155,7 @@ export interface IOwnership {
    * pipe that cannot be unpiped (e.g. a legacy one) to Node.js
    */
   warn(message: string, reason: string): void;
-  /** Logs (at `debug`) what is done with a pipe, with the reason */
+  /** Logs (at `debug`) what is done with a pipe or a sent stream, with the reason */
   note(message: string, reason: string): void;
   /**
    * Logs (at `debug`, with `releasedFailure`) a late error of a source that
