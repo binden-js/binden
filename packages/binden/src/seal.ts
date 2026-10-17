@@ -160,18 +160,13 @@ export interface IOwnership {
   /**
    * Logs (at `debug`, with `releasedFailure`) a late error of a source that
    * is not sent, or no longer (e.g. its `destroy()` fails asynchronously): a
-   * function of its own scope, which holds neither the request nor the
-   * response, since the source may keep it as long as it lives (none: not
-   * reported)
+   * Node.js `Readable`, a stream-like source, or the request of the response
+   * once a send of it (an echo) no longer listens to it (e.g. its abort, once
+   * the client has gone away), which is never destroyed. A function of its
+   * own scope, which holds neither the request nor the response, since the
+   * source may keep it as long as it lives (none: not reported)
    */
   readonly released?: ((error: unknown) => void) | undefined;
-  /**
-   * Logs (at `debug`) a late error of the request of the response once a
-   * send of it (an echo) no longer listens to it (e.g. its abort, once the
-   * client has gone away), as `released` does: the request is never
-   * released (none: not reported)
-   */
-  readonly echoed?: ((error: unknown) => void) | undefined;
 }
 
 /**

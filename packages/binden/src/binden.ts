@@ -480,12 +480,6 @@ export class Binden<
         this.#details,
         releasedFailure,
       ),
-      echoed: Binden.#lateReport(
-        this.#logger,
-        context.id,
-        this.#details,
-        releasedFailure,
-      ),
     });
     if (this.#request_id?.echo === true) {
       // Every reply sends it back, also the error replies of the framework
@@ -513,9 +507,9 @@ export class Binden<
    * by a function of its own scope, which holds neither the request nor its
    * context: once the request has completed, what is left of its works (see
    * `Exchange.onLateFailure()`, e.g. a listener of `end` that one has left on
-   * a shared source), a late error of a stream that it has released (see
-   * `IOwnership.released`), and one of the request once a send of it no
-   * longer listens to it (see `IOwnership.echoed`)
+   * a shared source), and a late error of a stream that it has released,
+   * the request included once a send of it no longer listens to it (see
+   * `IOwnership.released`)
    */
   static #lateReport(
     logger: ILogger,
