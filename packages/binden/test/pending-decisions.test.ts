@@ -225,6 +225,37 @@ suite("decidedFor()", () => {
   });
 });
 
+suite(
+  "A stream-like source whose `pause()` throws an error of the application, which decides its send",
+  () => {
+    test("is destroyed with it, which is not reported for it, but for another source that emits it (R1 F2)", () => {
+      const failure = new Error("One error of the application");
+      const [reports, report] = reporter();
+      const source = Object.assign(new Source(), {
+        pause(): never {
+          throw failure;
+        },
+      });
+      const readable = readStreamLike(
+        source,
+        methodsOf(source),
+        cancelled,
+        report,
+      ).on("error", () => null);
+      // More than its high water mark: it is full, and paused
+      source.emit("data", Buffer.alloc(readable.readableHighWaterMark));
+      const other = new EventEmitter();
+      guard(other, emitterMethods, report);
+      source.emit("error", failure);
+      other.emit("error", failure);
+      deepStrictEqual(
+        [readable.errored, source.destroys, reports],
+        [failure, [[failure]], [failure]],
+      );
+    });
+  },
+);
+
 suite("resolved()", () => {
   test("a readable of a stream-like source whose send has resolved, once released, destroys the source without an error, never with the reason (R2 R21-H3)", () => {
     const source = new Source();

@@ -912,15 +912,22 @@ export function readStreamLike(
             // a Node.js `Readable` is, never with the reason of a
             // cancellation
             releaseBy(source, destroy, logs.released);
-          } else {
-            // The error that decides the send (e.g. of a chunk that is not
-            // bytes, which the readable refuses), or the reason of its
-            // cancellation (also for a falsy value that its code has thrown,
-            // a premature close): the guard does not report it once the
-            // source emits it
-            const failure = error ?? reason();
+          } else if (error === null) {
+            // The reason of its cancellation (also for a falsy value that its
+            // code has thrown, a premature close), an error of binden: no
+            // guard reports it once the source emits it (see `decided()`)
+            const failure = reason();
             decided(failure);
             releaseBy(source, destroy, logs.released, failure);
+          } else {
+            // The error that decides the send (e.g. of a chunk that is not
+            // bytes, which the readable refuses, or what a `pause()` of the
+            // source has thrown): its guard does not report it once the
+            // source emits it, but the one of another source does (an error
+            // of the application, e.g. that it destroys each of its streams
+            // with, see `decidedFor()`)
+            decidedFor(source, error);
+            releaseBy(source, destroy, logs.released, error);
           }
         });
       }
