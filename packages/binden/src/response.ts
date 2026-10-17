@@ -3161,10 +3161,23 @@ export class BindenResponse<
     let heard = false;
     /** What removes the observers that `#finished()` adds to the response */
     const finishing: (() => void)[] = [];
-    const done = this.#finished(() => {
-      const length = this.#length();
-      return length !== null && flushed >= length;
-    }, finishing);
+    /**
+     * How the response has ended for the send (see `#finished()`): its
+     * error, `null` once it has finished (or is complete for the client).
+     * Told as `done` settles, before its reactions, and before the `close`
+     * of the response reaches `unclose` (`done` observes it first).
+     */
+    let ending: Error | null = null;
+    const done = this.#finished(
+      () => {
+        const length = this.#length();
+        return length !== null && flushed >= length;
+      },
+      finishing,
+      (error) => {
+        ending = error;
+      },
+    );
     return this.#cancellable(key, (resolve, reject) => {
       /** The listeners that the send adds to the source (see `listening`) */
       const listeners: [string, (...args: never[]) => void][] = [];
@@ -3379,8 +3392,13 @@ export class BindenResponse<
 
       const unclose = this[kListen]("close", () => {
         closed = true;
-        // Releases the source (e.g. the file of `sendFile()`)
-        drop();
+        // Settled at once as the response has ended (see `ending`), before
+        // its source is released (e.g. the file of `sendFile()`, see
+        // `settle`): a release that fails (e.g. a `destroy()` of the source
+        // that destroys it with an error of its own, or a `_destroy()` that
+        // fails on the next tick) can no longer decide the send, and is
+        // reported by the guard of the source
+        settle(ending === null ? null : { error: ending, own: false });
       });
       observers.add(unclose);
       /**
@@ -3726,27 +3744,32 @@ export class BindenResponse<
    * when it is closed before (e.g. the client went away), unless it is
    * `complete()` for the client already. What removes its observers is added
    * to `unlisten` (e.g. for a send that settles otherwise, see `#pipe()`).
+   * `ended` is told at once how it settles (its error, `null` once it has
+   * finished, or is complete), before any reaction to the promise runs: e.g.
+   * for a send that settles at once when the response closes (see `#pipe()`).
    */
   #finished(
     complete: () => boolean,
     unlisten: (() => void)[] = [],
+    ended?: (error: Error | null) => void,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      if (this.destroyed) {
-        reject(BindenResponse.#premature());
-        return;
-      }
-      const listeners: [string, (error?: Error) => void][] = [];
       const settle = (error: Error | null): void => {
         for (const dispose of unlisten) {
           dispose();
         }
+        ended?.(error);
         if (error) {
           reject(error);
         } else {
           resolve();
         }
       };
+      if (this.destroyed) {
+        settle(BindenResponse.#premature());
+        return;
+      }
+      const listeners: [string, (error?: Error) => void][] = [];
       listeners.push(
         [
           "finish",

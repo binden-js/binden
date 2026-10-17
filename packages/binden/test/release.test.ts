@@ -409,8 +409,9 @@ suite("The request of a response, sent as its body (an echo)", () => {
 
   test("whose error Node.js has scheduled once it has found the listener of the send, without a listener of the application: its guard, which listens before the send removes its own, logs it, and the process does not crash", () => {
     for (const [mode, expected] of [
-      // A write of the response fails while the request aborts
-      ["write", "Write aborted 0\n"],
+      // A write of the response fails while the request aborts, once its
+      // connection has closed: the close of the response decides the send
+      ["write", "ERR_STREAM_PREMATURE_CLOSE 0\n"],
       // Its client goes away once the send has failed
       ["rst", "ERR_HTTP_CONTENT_LENGTH_MISMATCH 0\n20 ECONNRESET\n"],
       ["fin", "ERR_HTTP_CONTENT_LENGTH_MISMATCH 0\n20 ECONNRESET\n"],

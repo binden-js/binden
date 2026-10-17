@@ -730,9 +730,10 @@ suite("Conditional requests of compressed responses", () => {
         await once(response, "data");
         sent.destroy();
 
-        // With the error of its write that the compressor has not taken
+        // As its response has closed (before the error of its write that the
+        // compressor has not taken)
         deepStrictEqual(await within(outcome), [
-          "ERR_STREAM_DESTROYED",
+          "ERR_STREAM_PREMATURE_CLOSE",
           "client_closed",
           false,
         ]);
