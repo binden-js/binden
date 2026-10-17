@@ -191,8 +191,8 @@ export function decided(error: unknown): void {
 /**
  * The sources that each late error has been reported for (see
  * `reportOnce()`), whatever has reported it: the guard of the source (see
- * `guard()`), its send (see `reportLate()`), or the listener of a stream-like
- * source (see `readStreamLike()`)
+ * `guard()`), its send (see `reportLate()`), or the listener of `error` of a
+ * send once it is detached (see `forwarder()`)
  */
 const reports = new WeakMap<object, WeakSet<object>>();
 
