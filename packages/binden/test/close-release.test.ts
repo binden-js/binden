@@ -1,8 +1,14 @@
-import { Binden, type Context, releasedFailure } from "../index.js";
+import {
+  Binden,
+  BindenResponse,
+  type Context,
+  releasedFailure,
+} from "../index.js";
+import { Duplex, PassThrough, Readable } from "node:stream";
 import { HOST, capture, ioTurn, listen, within } from "./helpers.js";
+import { type Socket, connect } from "node:net";
 import { suite, test } from "node:test";
-import { Readable } from "node:stream";
-import { connect } from "node:net";
+import { IncomingMessage } from "node:http";
 import { deepStrictEqual } from "node:assert/strict";
 import { once } from "node:events";
 
@@ -101,4 +107,46 @@ suite("A send whose response closes before the send has settled", () => {
       });
     }
   }
+
+  test("started once its response is destroyed, before the response emits its close: rejects as a premature close, as `done` has settled", async () => {
+    const wire = new Duplex({
+      read(): void {
+        // The client sends nothing more
+      },
+      write(_chunk: Buffer, _encoding, done): void {
+        done();
+      },
+    });
+    const request = new IncomingMessage(wire as unknown as Socket);
+    Object.assign(request, {
+      method: "GET",
+      headers: {},
+      httpVersionMajor: 1,
+      httpVersionMinor: 1,
+    });
+    const response = new BindenResponse(request);
+    response.assignSocket(wire as unknown as Socket);
+    const data = new PassThrough();
+    // In a turn of its own: the close of the response (on the next tick)
+    // comes before the reactions to the promises of the send
+    const outcome = await within(
+      new Promise<unknown>((resolve) => {
+        setImmediate(() => {
+          response.destroy();
+          response.send(data).then(
+            () => {
+              resolve("resolved");
+            },
+            (error: unknown) => {
+              resolve((error as { code?: unknown }).code);
+            },
+          );
+        });
+      }),
+    );
+    deepStrictEqual(
+      [outcome, response.closed, data.destroyed],
+      ["ERR_STREAM_PREMATURE_CLOSE", true, true],
+    );
+  });
 });
