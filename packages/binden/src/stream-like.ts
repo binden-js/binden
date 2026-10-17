@@ -699,7 +699,11 @@ export function releaseStreamLike(
  * so that its guard does not report it once the source emits it, or pauses
  * a source that cannot be destroyed. A destroy (or a pause) that throws is
  * logged (see `IStreamLikeLogs`), and the readable is destroyed with the
- * error that decides the send all the same.
+ * error that decides the send all the same. That error (an `error` of the
+ * source, or the one that the readable is destroyed with) is pending before
+ * the guard of the source is installed (see `decide()`): code of the source
+ * that emits it, or throws it again, meanwhile (e.g. a listener of its
+ * `newListener`) is neither reported nor logged when it is an object.
  *
  * Every listener that it adds is removed through the source (by its
  * `removeListener()` or `off()`): at once for a cancellation, whatever the
@@ -875,46 +879,50 @@ export function readStreamLike(
     destroy: (error, callback): void => {
       if (!settled) {
         settled = true;
-        // Its guard listens before its listeners are removed, and before it
-        // is paused or destroyed, once the listener of `error` of the send
-        // no longer fails it (see `detach()`)
-        const kept = detach();
-        const safe = protect();
-        release("data", "end", "close", "error");
-        const { destroy, pause } = methods;
-        if (!safe && !kept) {
-          // No listener of its `error` is in place: untouched (see
-          // `releaseStreamLike()`)
-          unreleased();
-        } else if (destroy === null) {
-          releaseBy(source, pause, logs.released);
-        } else if (destroyed) {
-          // By the application: not again
-        } else if (kept) {
-          // Only the listener of the send hears it: without the error that
-          // decides the send, which the send has failed with already
-          releaseBy(source, destroy, logs.released);
-        } else if (undecided && error !== null) {
-          // What the send decides (see `unreadable()`), with which it is
-          // destroyed meanwhile (see `decide()`): also an `Error` that
-          // carries what its code has thrown (see `destroyWith()`)
-          decide(source, error, () => {
+        // The error that it is destroyed with decides the send: pending
+        // before its guard is installed, and while it is released, so that
+        // its code that emits it or throws it meanwhile (e.g. a listener of
+        // its `newListener`, or its destroy) is not reported (see `decide()`)
+        decide(source, error, () => {
+          // Its guard listens before its listeners are removed, and before
+          // it is paused or destroyed, once the listener of `error` of the
+          // send no longer fails it (see `detach()`)
+          const kept = detach();
+          const safe = protect();
+          release("data", "end", "close", "error");
+          const { destroy, pause } = methods;
+          if (!safe && !kept) {
+            // No listener of its `error` is in place: untouched (see
+            // `releaseStreamLike()`)
+            unreleased();
+          } else if (destroy === null) {
+            releaseBy(source, pause, logs.released);
+          } else if (destroyed) {
+            // By the application: not again
+          } else if (kept) {
+            // Only the listener of the send hears it: without the error that
+            // decides the send, which the send has failed with already
+            releaseBy(source, destroy, logs.released);
+          } else if (undecided && error !== null) {
+            // What the send decides (see `unreadable()`): also an `Error`
+            // that carries what its code has thrown (see `destroyWith()`)
             releaseBy(source, destroy, logs.released, error);
-          });
-        } else if (error === null && resolutions.has(readable)) {
-          // Its send has resolved (see `resolved()`): without an error, as
-          // a Node.js `Readable` is, never with the reason of a cancellation
-          releaseBy(source, destroy, logs.released);
-        } else {
-          // The error that decides the send (e.g. of a chunk that is not
-          // bytes, which the readable refuses), or the reason of its
-          // cancellation (also for a falsy value that its code has thrown,
-          // a premature close): the guard does not report it once the
-          // source emits it
-          const failure = error ?? reason();
-          decided(failure);
-          releaseBy(source, destroy, logs.released, failure);
-        }
+          } else if (error === null && resolutions.has(readable)) {
+            // Its send has resolved (see `resolved()`): without an error, as
+            // a Node.js `Readable` is, never with the reason of a
+            // cancellation
+            releaseBy(source, destroy, logs.released);
+          } else {
+            // The error that decides the send (e.g. of a chunk that is not
+            // bytes, which the readable refuses), or the reason of its
+            // cancellation (also for a falsy value that its code has thrown,
+            // a premature close): the guard does not report it once the
+            // source emits it
+            const failure = error ?? reason();
+            decided(failure);
+            releaseBy(source, destroy, logs.released, failure);
+          }
+        });
       }
       // With the error that decides the send, never one of its release
       callback(error);
@@ -938,10 +946,18 @@ export function readStreamLike(
       );
     }
   };
-  /** Fails the readable with an error of the source (`closed`: by its `close`) */
+  /**
+   * Fails the readable with an error of the source (`closed`: by its
+   * `close`), which decides the send before the guard of the source is
+   * installed (see `settle()`): code of the source that emits it or throws it
+   * meanwhile (e.g. a listener of its `newListener`) is not reported (see
+   * `decide()`)
+   */
   const fail = (error: unknown, closed = false): void => {
-    settle(closed);
-    destroyWith(error);
+    decide(source, error, () => {
+      settle(closed);
+      destroyWith(error);
+    });
   };
   /**
    * Releases a source that has failed (its `error`) while it was read,
@@ -1014,8 +1030,17 @@ export function readStreamLike(
     // rejects with that error, as a Node.js `Readable` does, and is not
     // destroyed again
     settled = true;
-    protect(hasClosed(source));
-    const failure = erroredOf(source);
+    let failure: unknown = null;
+    try {
+      failure = erroredOf(source);
+    } finally {
+      // Read before its guard is installed, which the send decides
+      // meanwhile (see `decide()`): its code that emits it or throws it then
+      // (e.g. a listener of its `newListener`) is not reported. Its guard
+      // listens also when its state cannot be read (e.g. a getter of its own
+      // that throws), which the send rejects with
+      decide(source, failure, () => protect(hasClosed(source)));
+    }
     if (failure !== null) {
       return unreadable(failure);
     }
