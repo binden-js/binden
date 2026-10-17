@@ -63,6 +63,7 @@ import {
   forwarder,
   guard,
   hasClosed,
+  hear,
   readStreamLike,
   releaseStreamLike,
   reportLate,
@@ -3235,7 +3236,8 @@ export class BindenResponse<
         guarded = this.#guardReleased(data);
         for (const [event, listener] of listeners) {
           // Kept when no guard listens, without which an error of its
-          // release (see `drop`) would crash the process
+          // release (see `drop`) would crash the process: it reports a late
+          // error itself (see `forwarder()`), heard as long as it listens
           if (listener !== errors.listener || !listened || guarded) {
             try {
               Reflect.apply(removerOf(data), data, [event, listener]);
@@ -3245,6 +3247,13 @@ export class BindenResponse<
               const message =
                 "The removal of a listener of a stream has failed";
               this.#ownership.debug(message, error);
+            } finally {
+              if (listener === errors.listener) {
+                // No longer heard by the send, even when a removal that
+                // throws leaves it: once detached, it reports an error that
+                // the guard does not (see `forwarder()`)
+                hear(data, -1);
+              }
             }
           }
         }
@@ -3342,11 +3351,13 @@ export class BindenResponse<
        * it is (its reply is complete, and the responses that follow it on
        * the connection are sent), which the send settles as (see `done`).
        * The error of the source is reported once, as a late error (see
-       * `reportLate()`; `emitted`: by an `error` event, `null` for none)
+       * `reportLate()`; `emitted`: by an `error` event, `null` for none), by
+       * the send also when the source has emitted it: the send hears it
+       * (see `hear()`), so its guard does not report it
        */
       const stop = (error: unknown, emitted: boolean | null): void => {
         if (emitted !== null) {
-          reportLate(data, error, emitted, this.#report());
+          reportLate(data, error, false, this.#report());
         }
         stopped = true;
         this.#discard(data, listened);
@@ -3365,7 +3376,11 @@ export class BindenResponse<
        * been ended (by another writer, e.g. a compression that has replaced
        * it with `406`, or by the send itself, once the whole body is
        * written), a failure no longer fails the send, which is stopped
-       * instead (see `stop`, `emitted`)
+       * instead (see `stop`, `emitted`). An error that the source has emitted
+       * (`emitted`) and that fails the send has decided it (see `decided()`):
+       * no guard reports it, e.g. the one that another response has installed
+       * on a source that it has released, whose listener of `error` comes
+       * after the one of the send
        */
       const fail = (
         error: unknown,
@@ -3379,6 +3394,9 @@ export class BindenResponse<
           return;
         } else if (sent > 0 || this.headersSent) {
           this.#cutFailed();
+        }
+        if (emitted === true) {
+          decided(error);
         }
         settle({ error, own });
       };
@@ -3461,6 +3479,13 @@ export class BindenResponse<
         on: (event, listener) => {
           if (!settled) {
             listeners.push([event, listener]);
+            if (listener === errors.listener) {
+              // Heard by the send (see `hear()`): until it is removed (see
+              // `unlisten`), its error fails the send, and is not reported
+              // by the guard of the source (e.g. installed by another
+              // response that has released it)
+              hear(data, 1);
+            }
             data.on(event, listener as IListener);
             if (listener === errors.listener) {
               listened = true;
