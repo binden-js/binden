@@ -507,7 +507,7 @@ suite(
       return source;
     }
 
-    test("rejects at once with its error, which is replied", async () => {
+    test("rejects at once with its error, which is replied, and is released", async () => {
       const source = errored();
       deepStrictEqual(source.destroyed, false);
       const [received, closed, outcome] = await run(
@@ -525,7 +525,7 @@ suite(
       ok(received.startsWith("HTTP/1.1 404 Not Found\r\n"), received);
       deepStrictEqual(
         [closed, outcome, source.destroyed],
-        [false, ["ERR_INVALID_ARG_TYPE", true, false], false],
+        [false, ["ERR_INVALID_ARG_TYPE", true, false], true],
       );
     });
 
