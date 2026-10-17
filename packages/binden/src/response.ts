@@ -3499,13 +3499,15 @@ export class BindenResponse<
    * `#pipe()`): destroyed, or errored (e.g. without `autoDestroy`), before
    * its end. Its destroy (e.g. by the application) may still fail: its guard
    * listens, as for a stream-like source (see `#guardReleased()`). It
-   * rejects at once, with the error of the source (its `errored`), or as a
-   * premature close, and closes a response whose headers are committed (see
-   * `#cutFailed()`), whose head promises a body that will not come. Once
-   * another writer has ended the response (e.g. code of the source, such as
-   * a getter that the checks of `#send()` have run), the response is left as
-   * it is: the send settles as the response does, and the error of the
-   * source is reported once, as a late error (see `reportLate()`).
+   * rejects at once, with the error of the source (its `errored`, which then
+   * decides the send: its guard does not report it, see `decided()`), or as
+   * a premature close, and closes a response whose headers are committed
+   * (see `#cutFailed()`), whose head promises a body that will not come.
+   * Once another writer has ended the response (e.g. code of the source, such
+   * as a getter that the checks of `#send()` have run), the response is left
+   * as it is: the send settles as the response does, and the error of the
+   * source is reported once, as a late error, whatever reports it (see
+   * `reportLate()`).
    */
   #unreadable(data: Readable): Promise<void> {
     this.#guardReleased(data);
@@ -3518,6 +3520,7 @@ export class BindenResponse<
     } else if (this.headersSent) {
       this.#cutFailed();
     }
+    decided(errored);
     return Promise.reject(errored ?? BindenResponse.#premature());
   }
 

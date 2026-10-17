@@ -169,11 +169,44 @@ export function decided(error: unknown): void {
 }
 
 /**
+ * The sources that each late error has been reported for (see
+ * `reportOnce()`), whatever has reported it: the guard of the source (see
+ * `guard()`), its send (see `reportLate()`), or the listener of a stream-like
+ * source (see `readStreamLike()`)
+ */
+const reports = new WeakMap<object, WeakSet<object>>();
+
+/**
+ * Reports a late error of a source (see `ISourceReport`) once: never an error
+ * that has decided a send (see `decided()`), nor one that has been reported
+ * for that source already (e.g. by its send, before the source emits it to
+ * its guard). Only an object can be recorded, as by `decided()`: any other
+ * value (e.g. a string) is reported each time.
+ */
+function reportOnce(
+  source: object,
+  error: unknown,
+  report: ISourceReport,
+): void {
+  if (Object(error) !== error) {
+    report(error);
+    return;
+  }
+  const failure = error as object;
+  const sources = reports.get(failure) ?? new WeakSet<object>();
+  if (!decisions.has(failure) && !sources.has(source)) {
+    reports.set(failure, sources.add(source));
+    report(error);
+  }
+}
+
+/**
  * Reports a late error of a source (see `ISourceReport`) that its send no
  * longer fails with (e.g. once the response has been ended, see
  * `BindenResponse.#pipe()`), unless the source has emitted it (`emitted`)
  * while its guard listens, which reports it itself (see `guard()`): it is
- * reported once. For the packages of binden only.
+ * reported once, whatever reports it, and never once it has decided a send
+ * (see `reportOnce()`). For the packages of binden only.
  *
  * @internal
  */
@@ -184,7 +217,7 @@ export function reportLate(
   report: ISourceReport,
 ): void {
   if (!emitted || !guards.has(source)) {
-    report(error);
+    reportOnce(source, error, report);
   }
 }
 
@@ -218,7 +251,8 @@ export const emitterMethods: IGuardMethods = Object.freeze({
  * paused or destroyed, and before a send removes its own listener of
  * `error`. A guard of its own reports it (see `ISourceReport`), but not an
  * error that a send hears (which fails the send), nor one that a send has
- * failed with and destroyed it with (see `decided()`), and holds nothing else
+ * failed with and destroyed it with (see `decided()`), nor one that has been
+ * reported for the source already (see `reportOnce()`), and holds nothing else
  * (never the response, nor the send), so that it may stay on a source that
  * never emits anything: it is never removed by a timer, only on the turn
  * after the `close` of the source (some sources emit their `error` after it,
@@ -238,8 +272,9 @@ export function guard(
     return;
   }
   const failed = (error: unknown): void => {
-    if (!decisions.has(error as object) && !hearing.has(source)) {
-      report(error);
+    if (!hearing.has(source)) {
+      // Once, whatever reports it (see `reportOnce()`)
+      reportOnce(source, error, report);
     }
   };
   const close = (): void => {
@@ -440,8 +475,9 @@ export function readStreamLike(
   listen("error", (error: Error) => {
     if (settled) {
       // Once the send is decided, until its listener is removed: a late
-      // error, which its guard does not report while it is heard
-      report(error);
+      // error, which its guard does not report while it is heard (nor once
+      // it has been reported, see `reportOnce()`)
+      reportOnce(source, error, report);
     } else {
       fail(error);
     }
