@@ -57,6 +57,7 @@ import {
 import {
   type ISourceReport,
   type IStreamLike,
+  type IStreamLikeLogs,
   type IStreamLikeMethods,
   decided,
   emitterMethods,
@@ -2734,6 +2735,7 @@ export class BindenResponse<
               () => {
                 this.#unreleased();
               },
+              this.#streamLikeLogs(),
             ),
       );
     }
@@ -3778,9 +3780,15 @@ export class BindenResponse<
     if (kind === "readable") {
       this.#discard(data as Readable);
     } else if (kind !== null && kind !== "value") {
-      releaseStreamLike(data as object, kind, this.#report(), () => {
-        this.#unreleased();
-      });
+      releaseStreamLike(
+        data as object,
+        kind,
+        this.#report(),
+        () => {
+          this.#unreleased();
+        },
+        this.#streamLikeLogs(),
+      );
     }
   }
 
@@ -3792,6 +3800,27 @@ export class BindenResponse<
    */
   #report(): ISourceReport {
     return this.#ownership.released ?? unreported;
+  }
+
+  /**
+   * How code of a stream-like source that throws while it is released (its
+   * guard refused, a `pause()` or a `destroy()`, or a removal of a listener)
+   * is logged (`debug`, see `IStreamLikeLogs`): with the messages of a
+   * Node.js `Readable` (see `#guardReleased()`, `#pipe()`), not as a late
+   * error. They hold the response: no listener of the guard of the source
+   * holds them (see `guard()`), which only the report of a late error does
+   * (see `#report()`)
+   */
+  #streamLikeLogs(): IStreamLikeLogs {
+    return {
+      released: (error: unknown): void => {
+        this.#ownership.debug("The release of a stream has failed", error);
+      },
+      removed: (error: unknown): void => {
+        const message = "The removal of a listener of a stream has failed";
+        this.#ownership.debug(message, error);
+      },
+    };
   }
 
   /**
