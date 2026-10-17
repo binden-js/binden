@@ -60,7 +60,9 @@ import {
   type IStreamLike,
   type IStreamLikeLogs,
   type IStreamLikeMethods,
+  decide,
   decided,
+  decidedFor,
   emitterMethods,
   forwarder,
   guard,
@@ -3429,10 +3431,10 @@ export class BindenResponse<
        * it with `406`, or by the send itself, once the whole body is
        * written), a failure no longer fails the send, which is stopped
        * instead (see `stop`, `emitted`). An error that the source has emitted
-       * (`emitted`) and that fails the send has decided it (see `decided()`):
-       * no guard reports it, e.g. the one that another response has installed
-       * on a source that it has released, whose listener of `error` comes
-       * after the one of the send
+       * (`emitted`) and that fails the send has decided it for that source
+       * (see `decidedFor()`): no guard of the source reports it, e.g. the one
+       * that another response has installed on a source that it has
+       * released, whose listener of `error` comes after the one of the send
        */
       const fail = (
         error: unknown,
@@ -3448,7 +3450,10 @@ export class BindenResponse<
           this.#cutFailed();
         }
         if (emitted === true) {
-          decided(error);
+          // For this source only: the same object of the application (e.g.
+          // one that it destroys each of its streams with) may still be a
+          // late error of another source
+          decidedFor(data, error);
         }
         settle({ error, own });
       };
@@ -3647,7 +3652,8 @@ export class BindenResponse<
    * before its end. Its destroy (e.g. by the application) may still fail:
    * its guard listens, as for a stream-like source (see `#guardReleased()`).
    * It rejects at once, with the error of the source (its `errored`, which
-   * then decides the send: its guard does not report it, see `decided()`),
+   * decides the send while its guard is installed, see `decide()`, and then
+   * for that source: its guard does not report it, see `decidedFor()`),
    * or as a premature close, as a send that fails in `#pipe()`: before the
    * headers are committed, without the framing of its body (see
    * `#unframe()`), nor the representation chosen for it (see `#forget()`),
@@ -3667,9 +3673,12 @@ export class BindenResponse<
     destroyed: boolean,
     errored: Error | null,
   ): Promise<void> {
-    // Not decided yet: code of the source that ends the response meanwhile
-    // (e.g. a listener of its `newListener`) leaves its error a late one
-    this.#guardReleased(data, errored);
+    // Decided meanwhile (see `decide()`): code of the source that emits its
+    // error while its guard is installed (e.g. a listener of its
+    // `newListener`) is not reported by the guard, nor logged when it throws
+    // it. Code of the source that ends the response meanwhile leaves its
+    // error a late one, which is reported below
+    decide(data, errored, () => this.#guardReleased(data));
     try {
       if (this.writableEnded) {
         if (errored !== null) {
@@ -3682,7 +3691,9 @@ export class BindenResponse<
         this.#forget();
         this.#unframe(this.#framing);
       }
-      decided(errored);
+      // For this source only (see `decidedFor()`), as an error that it emits
+      // while it is sent
+      decidedFor(data, errored);
       return Promise.reject(errored ?? BindenResponse.#premature());
     } finally {
       // Once the send has settled, or knows how it settles
@@ -3698,20 +3709,19 @@ export class BindenResponse<
    * listener of its `newListener`) is logged (`debug`): a source that
    * refuses the listener of `error` of its guard is not guarded, and is not
    * destroyed without another listener of `error` (see `#discard()`). Never
-   * an error that has decided a send (see `guard()`, `decided()`), nor the
-   * one that the send settles by (`decision`, an object, see
-   * `#unreadable()`), which its rejection, or its late report, tells
+   * an object known for the source (see `guard()`): an error that has
+   * decided a send, or that a send of the source decides meanwhile (see
+   * `decide()`, e.g. in `#unreadable()`), which its rejection, or its late
+   * report, tells
    */
-  #guardReleased(source: Readable, decision: unknown = null): boolean {
+  #guardReleased(source: Readable): boolean {
     return guard(
       source,
       emitterMethods,
       this.#report(),
       hasClosed(source),
       (error: unknown) => {
-        if (Object(error) !== error || error !== decision) {
-          this.#ownership.debug("The release of a stream has failed", error);
-        }
+        this.#ownership.debug("The release of a stream has failed", error);
       },
     );
   }
