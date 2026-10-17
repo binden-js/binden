@@ -347,8 +347,10 @@ suite("A send whose response another writer has ended", () => {
         // Not bytes: it errors, but is not destroyed
         source.push({});
         await new Promise(setImmediate);
-        // Before the response has finished (its client does not read yet)
-        const released = [source.destroyed, response.writableFinished];
+        // Released at once, before the response has finished where its client
+        // does not read yet (Windows takes the whole write while its send
+        // buffer has room: its response may have finished already)
+        const released = source.destroyed;
         failed.resolve(null);
         return [await sent, released];
       },
@@ -360,7 +362,7 @@ suite("A send whose response another writer has ended", () => {
       [
         [large, true, true],
         false,
-        ["resolved", [true, false]],
+        ["resolved", true],
         ["ERR_INVALID_ARG_TYPE"],
       ],
     );
