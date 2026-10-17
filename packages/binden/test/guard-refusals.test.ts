@@ -426,37 +426,23 @@ suite("A stream-like source used without the framework", () => {
     );
   });
 
-  for (const throws of [false, true]) {
-    test(`released that refuses its guard, without a report of it: left, paused${throws ? " (a pause() that throws is reported)" : ""}`, () => {
-      const source = new Recorded();
-      Object.assign(source, {
-        on(event: string, listener: () => void): Recorded {
-          if (event === "error") {
-            throw new Error("No listener");
-          }
-          EventEmitter.prototype.on.call(source, event, listener);
-          return source;
-        },
-        ...(throws
-          ? {
-              pause: (): never => {
-                throw new Error("pause() refused");
-              },
-            }
-          : {}),
-      });
-      const reports: unknown[] = [];
-      releaseStreamLike(source, methodsOf(source), (error: unknown) => {
-        reports.push((error as Error).message);
-      });
-      deepStrictEqual(
-        [source.calls, reports],
-        throws
-          ? [[], ["No listener", "pause() refused"]]
-          : [["pause"], ["No listener"]],
-      );
+  test("released that refuses its guard: left untouched (neither paused nor destroyed), the refusal reported", () => {
+    const source = new Recorded();
+    Object.assign(source, {
+      on(event: string, listener: () => void): Recorded {
+        if (event === "error") {
+          throw new Error("No listener");
+        }
+        EventEmitter.prototype.on.call(source, event, listener);
+        return source;
+      },
     });
-  }
+    const reports: unknown[] = [];
+    releaseStreamLike(source, methodsOf(source), (error: unknown) => {
+      reports.push((error as Error).message);
+    });
+    deepStrictEqual([source.calls, reports], [[], ["No listener"]]);
+  });
 });
 
 suite(

@@ -502,24 +502,10 @@ function pauseOf(
 }
 
 /**
- * Leaves a stream-like source that cannot be released: no listener of its
- * `error` is in place (it refuses the one of its guard, see `guard()`, and
- * the send has none), without which an error of its destroy would crash the
- * process. It is only paused (a `pause()` that throws is logged, see
- * `IStreamLikeLogs`), and `unreleased()` tells it: it is the application's
- * to release.
+ * Does nothing: the default of what tells that a stream-like source is left
+ * untouched, since no listener of its `error` is in place (see
+ * `releaseStreamLike()`)
  */
-function leave(
-  source: object,
-  { pause }: IStreamLikeMethods,
-  released: IStreamLikeLog,
-  unreleased: () => void,
-): void {
-  unreleased();
-  pauseOf(source, pause, released);
-}
-
-/** Does nothing: the default of what tells that a source cannot be released (see `leave()`) */
 function unnoticed(): void {
   // Nobody to tell
 }
@@ -528,9 +514,12 @@ function unnoticed(): void {
  * Releases a stream-like source that is not sent (e.g. to `HEAD`): it is
  * destroyed (without an error), or paused, and never read. A late error of
  * its destroy (or of its pause) is reported (see `guard()`). A source that
- * refuses its guard is left (see `leave()`): `unreleased()` tells it. Code
- * of the source that throws meanwhile is logged by `logs` (see
- * `IStreamLikeLogs`).
+ * refuses its guard is left untouched: no listener of its `error` is in
+ * place, without which an error of its destroy or of its pause (e.g. emitted
+ * asynchronously) would crash the process, so that none of its code runs
+ * (neither `destroy()` nor `pause()`), and `unreleased()` tells it: it is
+ * the application's to release. Code of the source that throws meanwhile is
+ * logged by `logs` (see `IStreamLikeLogs`).
  */
 export function releaseStreamLike(
   source: object,
@@ -541,7 +530,8 @@ export function releaseStreamLike(
 ): void {
   // Its guard listens before it is paused or destroyed
   if (!guard(source, methods, report, false, logs.released)) {
-    leave(source, methods, logs.released, unreleased);
+    // Untouched
+    unreleased();
     return;
   }
   const { destroy, pause } = methods;
@@ -592,9 +582,10 @@ export function releaseStreamLike(
  * as for a cancellation, with it. A source that refuses the listener of
  * `error` of its guard keeps the one of the send (see `forwarder()`), and is
  * destroyed without the error that decides the send; one that has neither
- * is left (see `leave()`): `unreleased()` tells it. A refusal of its guard,
- * a `pause()` that throws once it is no longer read, and a removal that
- * throws are logged by `logs` (see `IStreamLikeLogs`), not as late errors.
+ * is left untouched (see `releaseStreamLike()`): `unreleased()` tells it. A
+ * refusal of its guard, a `pause()` that throws once it is no longer read,
+ * and a removal that throws are logged by `logs` (see `IStreamLikeLogs`),
+ * not as late errors.
  */
 export function readStreamLike(
   source: object,
@@ -722,8 +713,9 @@ export function readStreamLike(
         release("data", "end", "close", "error");
         const { destroy, pause } = methods;
         if (!safe && !kept) {
-          // No listener of its `error` is in place
-          leave(source, methods, logs.released, unreleased);
+          // No listener of its `error` is in place: untouched (see
+          // `releaseStreamLike()`)
+          unreleased();
         } else if (destroy === null) {
           pauseOf(source, pause, logs.released);
         } else if (destroyed) {
