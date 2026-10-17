@@ -1,6 +1,7 @@
 import Cookie, { type ICookie } from "./headers/cookie.js";
 import { type Duplex, Readable } from "node:stream";
 import { EventEmitter, errorMonitor } from "node:events";
+import { Exchange, formatStack } from "./exchange.js";
 import {
   type IFramingState,
   framingCounters,
@@ -84,7 +85,6 @@ import { isProxy, isUint8Array } from "node:util/types";
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
-import { Exchange } from "./exchange.js";
 import { createHash } from "node:crypto";
 import { isStatus } from "./status.js";
 import { parseHttpDate } from "./headers/http-date.js";
@@ -1081,8 +1081,9 @@ export class BindenResponse<
     owner: object | undefined,
     reason: string,
   ): void {
-    const error = new TypeError(
-      `The pipe into the response is refused: ${reason}`,
+    // Formatted (see `formatStack()`): its work fails with it
+    const error = formatStack(
+      new TypeError(`The pipe into the response is refused: ${reason}`),
     );
     const failed = this.#pipeFailed(owner, error, null);
     let unpiped = false;
@@ -3755,19 +3756,27 @@ export class BindenResponse<
     return framingLength(this.getHeader("Content-Length"));
   }
 
-  /** The error of a close before the end */
+  /**
+   * The error of a close before the end, whose stack is formatted (see
+   * `formatStack()`): a send rejects with it, or destroys its source with it
+   */
   static #premature(): Error {
-    return Object.assign(new Error("Premature close"), {
+    const error = Object.assign(new Error("Premature close"), {
       code: "ERR_STREAM_PREMATURE_CLOSE",
     });
+    return formatStack(error);
   }
 
-  /** The error of a body that does not have its `Content-Length` */
+  /**
+   * The error of a body that does not have its `Content-Length`, whose stack
+   * is formatted (see `formatStack()`), as the one of `#premature()`
+   */
   static #mismatch(size: number, length: number): Error {
     const message = `The body (${size} bytes) does not match its Content-Length (${length} bytes)`;
-    return Object.assign(new Error(message), {
+    const error = Object.assign(new Error(message), {
       code: "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
     });
+    return formatStack(error);
   }
 
   /**

@@ -21,6 +21,27 @@ import type { Socket } from "node:net";
 /** Why the work of a request has been abandoned */
 export type IAbortReason = "client_closed" | "deadline" | "shutdown";
 
+/**
+ * Formats the stack of an error that binden has just created, before it hands
+ * it over (e.g. the reason of an aborted signal, or the error that a send
+ * rejects with, or destroys its source with): V8 formats it once it is first
+ * read, and until then its frames hold their objects (e.g. the response, as
+ * the receiver of its methods), which an error kept by the application, or
+ * by a source (e.g. minipass, which keeps the one it is destroyed with),
+ * would retain as long as it lives. For the packages of binden only.
+ *
+ * @internal
+ */
+export function formatStack<T extends Error>(error: T): T {
+  try {
+    Reflect.get(error, "stack");
+  } catch {
+    // A `prepareStackTrace` of the application that throws: the stack is
+    // left to it
+  }
+  return error;
+}
+
 /** The reason of `context.signal` once the request is aborted */
 export class BindenAbortError extends Error {
   readonly #reason: IAbortReason;
@@ -555,7 +576,9 @@ export class Exchange implements ITokenIssuer {
       // Before its listeners run (see `terminating`)
       this.#terminating = true;
     }
-    this.#controller.abort(new BindenAbortError(reason));
+    // Formatted at once: a source destroyed with it (e.g. a send cancelled at
+    // the deadline) may keep it, and must not retain the exchange
+    this.#controller.abort(formatStack(new BindenAbortError(reason)));
     return true;
   }
 
