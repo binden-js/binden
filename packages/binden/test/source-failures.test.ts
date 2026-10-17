@@ -117,6 +117,10 @@ suite("Code of a source that throws while send() reads it", () => {
 
   test("a guard that cannot be installed (a listener of its `newListener` that throws) is logged, and the send still settles", async () => {
     const failure = new Error("No close listener");
+    // Another error than the one that decides the send (which is not logged
+    // again, see `guard-decisions.test.ts`)
+    const refusal = new Error("No close listener of the guard");
+    let closes = 0;
     const source = new Readable({
       read(): void {
         // Never read
@@ -124,7 +128,8 @@ suite("Code of a source that throws while send() reads it", () => {
     });
     source.on("newListener", (event: string) => {
       if (event === "close") {
-        throw failure;
+        closes += 1;
+        throw closes === 1 ? failure : refusal;
       }
     });
     const [status, outcome, captured] = await replied(async (context) => {
@@ -140,7 +145,7 @@ suite("Code of a source that throws while send() reads it", () => {
         (record.failure as { message?: unknown }).message,
         source.destroyed,
       ],
-      [500, [failure, false], 20, failure.message, true],
+      [500, [failure, false], 20, refusal.message, true],
     );
     // Only the `error` listener of its guard
     deepStrictEqual(

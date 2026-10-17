@@ -3286,7 +3286,7 @@ export class BindenResponse<
             }
           } else if (guarded) {
             // Its guard does not report it again when the source emits it
-            decided(failure?.error);
+            // (decided, see `settle`)
             data.destroy(failure?.error as Error | undefined);
           } else if (listened) {
             data.destroy();
@@ -3317,6 +3317,12 @@ export class BindenResponse<
           return;
         }
         settled = true;
+        if (failure?.own === true) {
+          // Before its guard is installed (see `unlisten`): code of the
+          // source that throws it again then is not logged (see `guard()`),
+          // nor is it reported once the source emits it (see `drop`)
+          decided(failure.error);
+        }
         // Restored by `[kCancel]()` still, once its cancellation is recorded
         this.#settled(key);
         if (release === null) {
@@ -3612,7 +3618,9 @@ export class BindenResponse<
     destroyed: boolean,
     errored: Error | null,
   ): Promise<void> {
-    this.#guardReleased(data);
+    // Not decided yet: code of the source that ends the response meanwhile
+    // (e.g. a listener of its `newListener`) leaves its error a late one
+    this.#guardReleased(data, errored);
     try {
       if (this.writableEnded) {
         if (errored !== null) {
@@ -3640,16 +3648,21 @@ export class BindenResponse<
    * listens to: whether it listens. Code of the source that throws (e.g. a
    * listener of its `newListener`) is logged (`debug`): a source that
    * refuses the listener of `error` of its guard is not guarded, and is not
-   * destroyed without another listener of `error` (see `#discard()`)
+   * destroyed without another listener of `error` (see `#discard()`). Never
+   * an error that has decided a send (see `guard()`, `decided()`), nor the
+   * one that the send settles by (`decision`, an object, see
+   * `#unreadable()`), which its rejection, or its late report, tells
    */
-  #guardReleased(source: Readable): boolean {
+  #guardReleased(source: Readable, decision: unknown = null): boolean {
     return guard(
       source,
       emitterMethods,
       this.#report(),
       hasClosed(source),
       (error: unknown) => {
-        this.#ownership.debug("The release of a stream has failed", error);
+        if (Object(error) !== error || error !== decision) {
+          this.#ownership.debug("The release of a stream has failed", error);
+        }
       },
     );
   }
