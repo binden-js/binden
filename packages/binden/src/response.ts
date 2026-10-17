@@ -64,6 +64,7 @@ import {
   hasClosed,
   readStreamLike,
   releaseStreamLike,
+  reportLate,
   streamLikeOf,
 } from "./stream-like.js";
 import {
@@ -3091,8 +3092,7 @@ export class BindenResponse<
    * `flushHeaders()` has sent it) does not look complete, and more bytes are
    * not read by the client as the next response of the connection.
    * A source that has already ended is an empty body; one that has been
-   * destroyed before rejects at once (as a failure), under its guard (see
-   * `#guardReleased()`: its destroy may still fail).
+   * destroyed before rejects at once (see `#unreadable()`).
    * One that is paused (e.g. by the application, or by an `unpipe()`) is
    * resumed once the listeners of the send are added, as
    * `Readable.prototype.pipe()` does: once the response drains when it needs
@@ -3105,10 +3105,11 @@ export class BindenResponse<
    * thrown, as it is (also `null`): `done` is observed before any code of
    * the source runs, so that nothing of the send is left.
    *
-   * Once another writer has ended the response (e.g. a compression that has
-   * replaced it with `406` when its first chunk committed the headers), the
-   * rest of the source is not read: it is released, and the response is left
-   * as it is.
+   * Once the response has been ended (by another writer, e.g. a compression
+   * that has replaced it with `406` when its first chunk committed the
+   * headers, or by the send itself, once the whole body is written), the
+   * rest of the source is not read, and its failure no longer fails the send
+   * (see `stop`): it is released, and the response is left as it is.
    *
    * The callbacks of the source run as the owner that has started the send,
    * whose rights they keep: once that owner may no longer mutate the
@@ -3130,16 +3131,7 @@ export class BindenResponse<
    */
   #pipe(data: Readable): Promise<void> {
     if (!data.readableEnded && data.destroyed) {
-      // Nothing more of it can be read, but its destroy (e.g. by the
-      // application) may still fail: its guard listens, as for a stream-like
-      // source (see `#guardReleased()`)
-      this.#guardReleased(data);
-      if (this.headersSent) {
-        // As a send that fails (see `fail` below): the committed head
-        // promises a body that will not come
-        this.destroy();
-      }
-      return Promise.reject(BindenResponse.#premature());
+      return this.#unreadable(data);
     }
     const operation = this.#operation();
     const declared = this.#length();
@@ -3154,9 +3146,11 @@ export class BindenResponse<
     let sent = 0;
     // Once the response is closed, `#finished()` tells how it ended
     let closed = false;
-    // Once the response has been ended by another writer
+    // Once the response has been ended (see `stop`)
     let stopped = false;
     let settled = false;
+    // Once the source has emitted an `error` (see its `close`)
+    let heard = false;
     /** What removes the observers that `#finished()` adds to the response */
     const finishing: (() => void)[] = [];
     const done = this.#finished(() => {
@@ -3265,6 +3259,21 @@ export class BindenResponse<
         }
       };
       /**
+       * Stops the send once the response has been ended (see `fail`): the
+       * source is released (see `#discard()`), and the response is left as
+       * it is (its reply is complete, and the responses that follow it on
+       * the connection are sent), which the send settles as (see `done`).
+       * The error of the source is reported once, as a late error (see
+       * `reportLate()`; `emitted`: by an `error` event, `null` for none)
+       */
+      const stop = (error: unknown, emitted: boolean | null): void => {
+        if (emitted !== null) {
+          reportLate(data, error, emitted, this.#report());
+        }
+        stopped = true;
+        this.#discard(data);
+      };
+      /**
        * Fails the send: once anything is sent, or the headers are committed
        * (e.g. by `flushHeaders()`, whose head promises a body), the response
        * is destroyed, so that the client never takes it for complete, nor
@@ -3274,11 +3283,21 @@ export class BindenResponse<
        * once, never by an `error` event of the source (which a `_destroy()`
        * that calls back without the error never emits), then destroys the
        * source with it under its guard (see `settle`), unless it is the
-       * request of the response (see `#destroys()`)
+       * request of the response (see `#destroys()`). Once the response has
+       * been ended (by another writer, e.g. a compression that has replaced
+       * it with `406`, or by the send itself, once the whole body is
+       * written), a failure no longer fails the send, which is stopped
+       * instead (see `stop`, `emitted`)
        */
-      const fail = (error: unknown, own = false): void => {
-        if (settled || stopped) {
-          // E.g. the source released below: the response is not changed
+      const fail = (
+        error: unknown,
+        own = false,
+        emitted: boolean | null = false,
+      ): void => {
+        if (settled) {
+          return;
+        } else if (stopped || this.writableEnded) {
+          stop(error, emitted);
           return;
         } else if (sent > 0 || this.headersSent) {
           this.destroy();
@@ -3308,7 +3327,9 @@ export class BindenResponse<
         observers.add(drained);
       };
       const end = (): void => {
-        if (settled) {
+        if (settled || this.writableEnded) {
+          // Once another writer has ended the response, the send settles as
+          // the response does (see `stop`)
           return;
         } else if (declared !== null && sent < declared) {
           fail(BindenResponse.#mismatch(sent, declared));
@@ -3412,17 +3433,24 @@ export class BindenResponse<
           })
           // Every error (also one emitted while the source is destroyed later)
           .on("error", (error: unknown) => {
+            heard = true;
             operation.run(() => {
-              fail(error);
+              fail(error, false, true);
             });
           })
           .on("close", () => {
             // Destroyed before its end, without an `error` event (which
             // precedes the close): with its error (e.g. of `destroy(error)`,
             // whose `_destroy()` calls back without it), or without one
-            if (!closed && !data.readableEnded) {
+            // (nothing to report once the response has ended, see `stop`)
+            if (!closed && !heard && !data.readableEnded) {
               operation.run(() => {
-                fail(data.errored ?? BindenResponse.#premature());
+                const { errored } = data;
+                fail(
+                  errored ?? BindenResponse.#premature(),
+                  false,
+                  errored === null ? null : false,
+                );
               });
             }
           });
@@ -3449,6 +3477,32 @@ export class BindenResponse<
         fail(error, true);
       }
     });
+  }
+
+  /**
+   * The send of a `Readable` that nothing more can be read of (see
+   * `#pipe()`): destroyed before its end. Its destroy (e.g. by the
+   * application) may still fail: its guard listens, as for a stream-like
+   * source (see `#guardReleased()`). It rejects at once, as a premature
+   * close, and destroys a response whose headers are committed, whose head
+   * promises a body that will not come. Once
+   * another writer has ended the response (e.g. code of the source, such as
+   * a getter that the checks of `#send()` have run), the response is left as
+   * it is: the send settles as the response does, and the error of the
+   * source is reported once, as a late error (see `reportLate()`).
+   */
+  #unreadable(data: Readable): Promise<void> {
+    this.#guardReleased(data);
+    const { errored } = data;
+    if (this.writableEnded) {
+      if (errored !== null) {
+        reportLate(data, errored, false, this.#report());
+      }
+      return this.#finished(() => false);
+    } else if (this.headersSent) {
+      this.destroy();
+    }
+    return Promise.reject(BindenResponse.#premature());
   }
 
   /**

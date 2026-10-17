@@ -169,6 +169,26 @@ export function decided(error: unknown): void {
 }
 
 /**
+ * Reports a late error of a source (see `ISourceReport`) that its send no
+ * longer fails with (e.g. once the response has been ended, see
+ * `BindenResponse.#pipe()`), unless the source has emitted it (`emitted`)
+ * while its guard listens, which reports it itself (see `guard()`): it is
+ * reported once. For the packages of binden only.
+ *
+ * @internal
+ */
+export function reportLate(
+  source: object,
+  error: unknown,
+  emitted: boolean,
+  report: ISourceReport,
+): void {
+  if (!emitted || !guards.has(source)) {
+    report(error);
+  }
+}
+
+/**
  * How a guard (see `guard()`) adds its listeners to a source, and removes
  * them: by the methods of the source (see `IStreamLikeMethods`), or by
  * `emitterMethods`
