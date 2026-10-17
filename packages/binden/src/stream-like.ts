@@ -485,17 +485,20 @@ export function forwarder(target: (error: unknown) => void): IForwarder {
 }
 
 /**
- * Pauses a stream-like source that is no longer read: a `pause()` that
- * throws (e.g. once more, after the one that has failed its send) is logged
- * (see `IStreamLikeLogs`), never thrown into the events of the source
+ * Releases a stream-like source that is no longer read, by its `destroy()`
+ * (with `args`) or its `pause()`: what it throws (e.g. a `pause()` once
+ * more, after the one that has failed its send) is logged (see
+ * `IStreamLikeLogs`), never thrown into the events of the source, nor in
+ * place of the error that decides its send
  */
-function pauseOf(
+function releaseBy(
   source: object,
-  pause: IMethod,
+  method: IMethod,
   released: IStreamLikeLog,
+  ...args: unknown[]
 ): void {
   try {
-    Reflect.apply(pause, source, []);
+    Reflect.apply(method, source, args);
   } catch (error: unknown) {
     released(error);
   }
@@ -534,12 +537,9 @@ export function releaseStreamLike(
     unreleased();
     return;
   }
-  const { destroy, pause } = methods;
-  if (destroy === null) {
-    Reflect.apply(pause, source, []);
-  } else {
-    Reflect.apply(destroy, source, []);
-  }
+  // Destroyed, or paused without `destroy()`: what it throws is logged, and
+  // the send goes on (e.g. `HEAD` gets its reply)
+  releaseBy(source, methods.destroy ?? methods.pause, logs.released);
 }
 
 /**
@@ -615,7 +615,7 @@ export function readStreamLike(
   const errors = forwarder((error: unknown) => {
     listened = true;
     // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
-    fail(error as Error);
+    fail(error);
   });
   const call = (method: IMethod, ...args: unknown[]): void => {
     Reflect.apply(method, source, args);
@@ -726,13 +726,13 @@ export function readStreamLike(
           // `releaseStreamLike()`)
           unreleased();
         } else if (destroy === null) {
-          pauseOf(source, pause, logs.released);
+          releaseBy(source, pause, logs.released);
         } else if (destroyed) {
           // By the application: not again
         } else if (kept) {
           // Only the listener of the send hears it: without the error that
           // decides the send, which the send has failed with already
-          call(destroy);
+          releaseBy(source, destroy, logs.released);
         } else {
           if (error !== null) {
             // The error that decides the send (e.g. of a chunk that is not
@@ -740,16 +740,33 @@ export function readStreamLike(
             // it again once the source emits it
             decided(error);
           }
-          call(destroy, error ?? reason());
+          releaseBy(source, destroy, logs.released, error ?? reason());
         }
       }
+      // With the error that decides the send, never one of its release
       callback(error);
     },
   });
+  /**
+   * Destroys the readable with an error of the source, or with what its code
+   * has thrown: a value that Node.js cannot take as an error (it reads its
+   * `stack`, e.g. by a getter that throws) is wrapped in an `Error` whose
+   * `cause` it is, so that the readable is destroyed in any case, and the
+   * listeners of the send are released (see `destroy`)
+   */
+  const destroyWith = (error: unknown): void => {
+    try {
+      readable.destroy(error as Error);
+    } catch {
+      readable.destroy(
+        new Error("A stream-like source has failed", { cause: error }),
+      );
+    }
+  };
   /** Fails the readable with an error of the source (`closed`: by its `close`) */
-  const fail = (error: Error, closed = false): void => {
+  const fail = (error: unknown, closed = false): void => {
     settle(closed);
-    readable.destroy(error);
+    destroyWith(error);
   };
   /**
    * A readable that nothing is read into, destroyed at once with `error`
@@ -758,7 +775,7 @@ export function readStreamLike(
    */
   const unreadable = (error: unknown): Readable => {
     hear(readable, 1);
-    readable.destroy(error as Error);
+    destroyWith(error);
     return readable;
   };
   /**
@@ -825,7 +842,7 @@ export function readStreamLike(
           call(methods.pause);
         } catch (error: unknown) {
           // Code of the source that throws: as for a cancellation, with it
-          readable.destroy(error as Error);
+          destroyWith(error);
         }
       }
     });
