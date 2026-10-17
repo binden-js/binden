@@ -3089,13 +3089,21 @@ export class BindenResponse<
    * be replied (see `.started`); otherwise the response is destroyed, so
    * that a truncated body (or a head that promises one, e.g. once
    * `flushHeaders()` has sent it) does not look complete, and more bytes are
-   * not read by the client as the next response of the connection. A source
-   * that has already ended is an empty body; one that has been destroyed
-   * before rejects at once (as a failure), under its guard (see `guard()`:
-   * its destroy may still fail). One that is paused
-   * (e.g. by the application, or by an `unpipe()`) is resumed once the
-   * listeners of the send are added, as `Readable.prototype.pipe()` does:
-   * once the response drains when it needs to.
+   * not read by the client as the next response of the connection.
+   * A source that has already ended is an empty body; one that has been
+   * destroyed before rejects at once (as a failure), under its guard (see
+   * `#guardReleased()`: its destroy may still fail).
+   * One that is paused (e.g. by the application, or by an `unpipe()`) is
+   * resumed once the listeners of the send are added, as
+   * `Readable.prototype.pipe()` does: once the response drains when it needs
+   * to.
+   *
+   * Code of the source that throws (its own `on()`, e.g. by a listener of its
+   * `newListener`, or its `resume()`: also the one that `on("data")` of
+   * Node.js calls for a source that is not paused, and the one at a drain)
+   * fails the send as binden fails it itself (see `fail`), with what it has
+   * thrown, as it is (also `null`): `done` is observed before any code of
+   * the source runs, so that nothing of the send is left.
    *
    * Once another writer has ended the response (e.g. a compression that has
    * replaced it with `406` when its first chunk committed the headers), the
@@ -3124,8 +3132,8 @@ export class BindenResponse<
     if (!data.readableEnded && data.destroyed) {
       // Nothing more of it can be read, but its destroy (e.g. by the
       // application) may still fail: its guard listens, as for a stream-like
-      // source (see `guard()`)
-      guard(data, emitterMethods, this.#report(), hasClosed(data));
+      // source (see `#guardReleased()`)
+      this.#guardReleased(data);
       if (this.headersSent) {
         // As a send that fails (see `fail` below): the committed head
         // promises a body that will not come
@@ -3167,16 +3175,16 @@ export class BindenResponse<
        * Removes every listener of the source and every observer of the
        * response that the send has added, once it has settled, so that a
        * source that lives on holds nothing of the response: the guard of the
-       * source (see `guard()`) listens before, and reports a late error of it
-       * (e.g. of a destroy by `autoDestroy` that fails after its end). So
-       * does the guard of the request of the response, which the send never
-       * destroys (see `#destroys()`), but whose error Node.js may already
-       * have scheduled once it has found the listener of the send (e.g. of a
-       * client that aborts): whether a source needs a guard does not depend
-       * on whether it may be destroyed
+       * source (see `#guardReleased()`) listens before, and reports a late
+       * error of it (e.g. of a destroy by `autoDestroy` that fails after its
+       * end). So does the guard of the request of the response, which the
+       * send never destroys (see `#destroys()`), but whose error Node.js may
+       * already have scheduled once it has found the listener of the send
+       * (e.g. of a client that aborts): whether a source needs a guard does
+       * not depend on whether it may be destroyed
        */
       const unlisten = (): void => {
-        guard(data, emitterMethods, this.#report(), hasClosed(data));
+        this.#guardReleased(data);
         for (const [event, listener] of listeners) {
           try {
             Reflect.apply(removerOf(data), data, [event, listener]);
@@ -3192,51 +3200,45 @@ export class BindenResponse<
         }
       };
       /**
-       * Releases the source that the send no longer reads: it is destroyed
-       * (with the error that binden has failed the send with, see `fail`),
-       * unless it is the request of the response (see `#destroys()`), which
-       * is only left, no longer paused (e.g. by the backpressure of the send,
-       * once another writer has ended the response), so that Node.js reads
-       * the rest of its body, and the next request of the connection. A
-       * failure of the release (e.g. of a `destroy()` of its own) is logged
-       * (`debug`)
+       * Releases the source that the send no longer reads, unless it has
+       * ended or is destroyed: it is destroyed (with the error that binden
+       * has failed the send with, `failure`, see `fail`), unless it is the
+       * request of the response (see `#destroys()`), which is only left, no
+       * longer paused (e.g. by the backpressure of the send, once another
+       * writer has ended the response), so that Node.js reads the rest of its
+       * body, and the next request of the connection. A failure of the
+       * release (e.g. of a `destroy()` of its own) is logged (`debug`)
        */
-      const drop = (error?: Error): void => {
+      const drop = (
+        failure: { readonly error: unknown } | null = null,
+      ): void => {
         try {
-          if (this.#destroys(data)) {
-            if (typeof error !== "undefined") {
-              // Its guard does not report it again when the source emits it
-              decided(error);
-            }
-            data.destroy(error);
+          if (data.readableEnded || data.destroyed) {
+            return;
+          } else if (this.#destroys(data)) {
+            // Its guard does not report it again when the source emits it
+            decided(failure?.error);
+            data.destroy(failure?.error as Error | undefined);
           } else if (data.isPaused()) {
             data.resume();
           }
-        } catch (failure: unknown) {
-          this.#ownership.debug("The release of a stream has failed", failure);
+        } catch (error: unknown) {
+          this.#ownership.debug("The release of a stream has failed", error);
         }
       };
-      /** Resumes the source, which is paused, once the response drains */
-      const drain = (): void => {
-        const drained = this[kListen]("drain", () => {
-          observers.delete(drained);
-          data.resume();
-        });
-        observers.add(drained);
-      };
       /**
-       * Settles the send once (`cancelled`: by `[kCancel]()`, which releases
-       * its source afterwards, and fails it with the reason, whatever it is,
-       * e.g. the `null` that a failed error handler has thrown). Only then, a
+       * Settles the send once: it resolves without a `failure`, otherwise it
+       * rejects with its error, whatever it is (e.g. the `null` that code of
+       * the source has thrown, or the reason of a cancellation). Only then, a
        * source still read (neither ended nor destroyed, e.g. once another
        * writer has ended the response) is released, as it would be once the
-       * response has closed: with the error (`own`) that binden fails the
-       * send with itself.
+       * response has closed: with the error that binden fails the send with
+       * itself (`own`, see `fail`), unless `[kCancel]()` has cancelled it
+       * (`cancelled`), which releases its source afterwards.
        */
       const settle = (
-        error: Error | null,
+        failure: { readonly error: unknown; readonly own: boolean } | null,
         cancelled = false,
-        own = false,
       ): void => {
         if (settled) {
           return;
@@ -3245,7 +3247,7 @@ export class BindenResponse<
         // Restored by `[kCancel]()` still, once its cancellation is recorded
         this.#settled(key);
         unlisten();
-        if (error === null && !cancelled) {
+        if (failure === null) {
           resolve();
         } else {
           if (!this.headersSent) {
@@ -3255,45 +3257,55 @@ export class BindenResponse<
           // Abandoned at the deadline (e.g. its source destroyed by a
           // listener of `signal`, before the deadline cancels it), it fails
           // as a cancelled send (whose reason may be anything)
-          const failure = error as Error;
-          reject(operation.active ? failure : this.#abandoned(failure));
+          const error = failure.error as Error;
+          reject(operation.active ? error : this.#abandoned(error));
         }
-        if (cancelled || data.readableEnded || data.destroyed) {
-          return;
-        } else if (own) {
-          drop(error as Error);
-        } else {
-          drop();
+        if (!cancelled) {
+          drop(failure?.own === true ? failure : null);
         }
       };
       /**
        * Fails the send: once anything is sent, or the headers are committed
        * (e.g. by `flushHeaders()`, whose head promises a body), the response
        * is destroyed, so that the client never takes it for complete, nor
-       * reads the next response of the connection as its body (`own`: an
-       * error of binden itself, see `destroy`)
+       * reads the next response of the connection as its body.
+       * A failure that binden finds itself (`own`: e.g. a body longer than
+       * its `Content-Length`, or code of the source that throws) fails it at
+       * once, never by an `error` event of the source (which a `_destroy()`
+       * that calls back without the error never emits), then destroys the
+       * source with it under its guard (see `settle`), unless it is the
+       * request of the response (see `#destroys()`)
        */
-      const fail = (error: Error, own = false): void => {
+      const fail = (error: unknown, own = false): void => {
         if (settled || stopped) {
           // E.g. the source released below: the response is not changed
           return;
         } else if (sent > 0 || this.headersSent) {
           this.destroy();
         }
-        settle(error, false, own);
+        settle({ error, own });
       };
-      // Fails the send with an error of binden itself (e.g. a body longer
-      // than its `Content-Length`) at once, never by an `error` event of the
-      // source (which a `_destroy()` that calls back without the error never
-      // emits), then destroys the source with it under its guard (see
-      // `settle`), unless it is the request of the response (see
-      // `#destroys()`); without an error, releases the source (see `drop()`)
-      const destroy = (error?: Error): void => {
-        if (typeof error === "undefined") {
-          drop();
-        } else {
+      /**
+       * Resumes the source that the send has paused, or has found paused: a
+       * `resume()` of its own that throws fails the send (see `fail`)
+       */
+      const resume = (): void => {
+        try {
+          data.resume();
+        } catch (error: unknown) {
           fail(error, true);
         }
+      };
+      /**
+       * Resumes the source, which is paused, once the response drains: as the
+       * owner that has started the send (see `Operation.run()`)
+       */
+      const drain = (): void => {
+        const drained = this[kListen]("drain", () => {
+          observers.delete(drained);
+          operation.run(resume);
+        });
+        observers.add(drained);
       };
       const end = (): void => {
         if (settled) {
@@ -3307,9 +3319,18 @@ export class BindenResponse<
         } catch (error: unknown) {
           // Nothing sent (e.g. an empty source, whose headers Node.js
           // refuses): never thrown out of the events of the source
-          fail(error as Error);
+          fail(error);
         }
       };
+      // Before any code of the source runs, which may fail the send
+      done.then(
+        () => {
+          settle(null);
+        },
+        (error: unknown) => {
+          settle({ error, own: false });
+        },
+      );
       // The framing of the body that is not sent, and its representation,
       // which `[kCancel]()` removes first (see `#rollbacks`)
       this.#rollbacks.set(key, this.#unsent);
@@ -3317,120 +3338,130 @@ export class BindenResponse<
         release.push(() => {
           this.#discard(data);
         });
-        settle(reason as Error, true);
+        settle({ error: reason, own: false }, true);
       });
 
       const unclose = this[kListen]("close", () => {
         closed = true;
         // Releases the source (e.g. the file of `sendFile()`)
-        if (!data.readableEnded) {
-          destroy();
-        }
+        drop();
       });
       observers.add(unclose);
       /**
        * Adds the listeners of the send to the source by its own `on()`, and
-       * records them, so that its own `removeListener()` removes them (see
-       * `unlisten`): never by `once()`, whose wrapper the `removeListener()`
-       * of a source whose `on()` wraps its listeners (e.g. the
-       * `context.bind()` of OpenTelemetry) would not find
+       * records them first (an `on()` that throws may have added it), so
+       * that its own `removeListener()` removes them (see `unlisten`): never
+       * by `once()`, whose wrapper a `removeListener()` that pairs with a
+       * wrapping `on()` may not find (e.g. of a wrapper that patches `on()`
+       * and `removeListener()`, but not `once()`). None once the send has
+       * settled (e.g. by an `error` that its `on()` has emitted at once)
        */
       const listening: IListening = {
         on: (event, listener) => {
-          data.on(event, listener as IListener);
-          listeners.push([event, listener]);
+          if (!settled) {
+            listeners.push([event, listener]);
+            data.on(event, listener as IListener);
+          }
           return listening;
         },
       };
-      listening
-        .on("data", (chunk: Uint8Array | string) => {
-          operation.run(() => {
-            if (settled || !operation.active) {
-              // Cancelled, or its owner may no longer write
-              this.#discard(data);
-              return;
-            } else if (this.writableEnded) {
-              stopped = true;
-              this.#discard(data);
-              return;
-            }
-            try {
-              const size = Buffer.byteLength(chunk);
-              if (declared !== null && sent + size > declared) {
-                destroy(BindenResponse.#mismatch(sent + size, declared));
+      try {
+        listening
+          .on("data", (chunk: Uint8Array | string) => {
+            operation.run(() => {
+              if (settled || !operation.active) {
+                // Cancelled, or its owner may no longer write
+                this.#discard(data);
+                return;
+              } else if (this.writableEnded) {
+                stopped = true;
+                this.#discard(data);
                 return;
               }
-              const accepted = this.write(chunk, (error?: Error | null) => {
-                if (error) {
-                  // Not delivered: the client went away (Node.js 24 may still
-                  // emit `finish` once the response is ended); settled, then
-                  // its source released (see `settle`)
-                  settle(error);
-                } else {
-                  flushed += size;
+              try {
+                const size = Buffer.byteLength(chunk);
+                if (declared !== null && sent + size > declared) {
+                  fail(BindenResponse.#mismatch(sent + size, declared), true);
+                  return;
                 }
-              });
-              // Once written: a first write that throws (e.g. for a reason
-              // phrase that Node.js refuses) has sent nothing
-              sent += size;
-              if (!accepted) {
-                data.pause();
-                drain();
+                const accepted = this.write(chunk, (error?: Error | null) => {
+                  if (error) {
+                    // Not delivered: the client went away (Node.js 24 may
+                    // still emit `finish` once the response is ended)
+                    settle({ error, own: false });
+                  } else {
+                    flushed += size;
+                  }
+                });
+                // Once written: a first write that throws (e.g. for a reason
+                // phrase that Node.js refuses) has sent nothing
+                sent += size;
+                if (!accepted) {
+                  data.pause();
+                  drain();
+                }
+              } catch (error: unknown) {
+                // Not a chunk of bytes (e.g. an object), or a `pause()` of
+                // the source that throws
+                fail(error, true);
               }
-            } catch (error: unknown) {
-              // Not a chunk of bytes (e.g. an object)
-              destroy(error as Error);
+            });
+          })
+          .on("end", () => {
+            operation.run(end);
+          })
+          // Every error (also one emitted while the source is destroyed later)
+          .on("error", (error: unknown) => {
+            operation.run(() => {
+              fail(error);
+            });
+          })
+          .on("close", () => {
+            // Destroyed before its end, without an `error` event (which
+            // precedes the close): with its error (e.g. of `destroy(error)`,
+            // whose `_destroy()` calls back without it), or without one
+            if (!closed && !data.readableEnded) {
+              operation.run(() => {
+                fail(data.errored ?? BindenResponse.#premature());
+              });
             }
           });
-        })
-        .on("end", () => {
-          operation.run(end);
-        })
-        // Every error (also one emitted while the source is destroyed later)
-        .on("error", (error: Error) => {
-          operation.run(() => {
-            fail(error);
-          });
-        })
-        .on("close", () => {
-          // Destroyed before its end, without an `error` event (which
-          // precedes the close): with its error (e.g. of `destroy(error)`,
-          // whose `_destroy()` calls back without it), or without one
-          if (!closed && !data.readableEnded) {
-            operation.run(() => {
-              fail(data.errored ?? BindenResponse.#premature());
-            });
-          }
-        });
-      if (data.readableEnded) {
-        // Its end has been read already: an empty body
-        end();
-      } else if (data.readableFlowing !== true) {
-        // Paused (e.g. by the application, by an `unpipe()`, or the request
-        // that a body parser has refused), which a listener of `data` does
-        // not resume: read, as `Readable.prototype.pipe()` does, once the
-        // response has room
-        try {
+        if (settled) {
+          // E.g. by an `error` that its `on()` has emitted at once
+        } else if (data.readableEnded) {
+          // Its end has been read already: an empty body
+          end();
+        } else if (data.readableFlowing !== true) {
+          // Paused (e.g. by the application, by an `unpipe()`, or the request
+          // that a body parser has refused), which a listener of `data` does
+          // not resume: read, as `Readable.prototype.pipe()` does, once the
+          // response has room
           if (this.writableNeedDrain) {
             drain();
           } else {
             data.resume();
           }
-        } catch (error: unknown) {
-          // E.g. a `resume()` of its own that throws
-          destroy(error as Error);
         }
+      } catch (error: unknown) {
+        // Code of the source (e.g. its own `on()`, a listener of its
+        // `newListener`, or its own `resume()`, also the one that `on("data")`
+        // of Node.js calls for a source that is not paused)
+        fail(error, true);
       }
-      done.then(
-        () => {
-          settle(null);
-        },
-        (error: unknown) => {
-          // Settled, then its source released (see `settle`)
-          settle(error as Error);
-        },
-      );
     });
+  }
+
+  /**
+   * Installs the guard of a source (see `guard()`), which a send no longer
+   * listens to: a failure of it (e.g. a listener of its `newListener` that
+   * throws) is logged (`debug`)
+   */
+  #guardReleased(source: Readable): void {
+    try {
+      guard(source, emitterMethods, this.#report(), hasClosed(source));
+    } catch (error: unknown) {
+      this.#ownership.debug("The release of a stream has failed", error);
+    }
   }
 
   /**

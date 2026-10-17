@@ -155,13 +155,17 @@ const decisions = new WeakSet<object>();
  * Records an error of binden that has decided a send (e.g. a body longer
  * than its `Content-Length`), which the send destroys its source with once
  * it has settled: no guard (see `guard()`) reports it when the source emits
- * it (nor when a stream-like source read through it does). For the packages
- * of binden only.
+ * it (nor when a stream-like source read through it does). Only an object
+ * can be recorded: any other value (e.g. a string that a `resume()` of the
+ * source has thrown) is not, and is reported once the source emits it. For
+ * the packages of binden only.
  *
  * @internal
  */
-export function decided(error: Error): void {
-  decisions.add(error);
+export function decided(error: unknown): void {
+  if (Object(error) === error) {
+    decisions.add(error as object);
+  }
 }
 
 /**
