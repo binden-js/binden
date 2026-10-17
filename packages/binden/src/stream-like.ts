@@ -646,13 +646,18 @@ export function readStreamLike(
         listeners.delete(event);
         try {
           call(methods.remove, event, listener);
-          if (event === "error") {
-            hear(source, -1);
-          }
         } catch (error: unknown) {
           // Never thrown into the events of the source, nor out of a turn of
           // its own: once the send has settled, its listeners change nothing
           logs.removed(error);
+        } finally {
+          if (event === "error") {
+            // The send no longer hears it, also when the removal has thrown
+            // (before or after it has removed the listener): a listener left
+            // is detached (see `detach()`), and reports a later error itself
+            // only when its guard does not (see `forwarder()`)
+            hear(source, -1);
+          }
         }
       }
     }
@@ -667,12 +672,15 @@ export function readStreamLike(
   };
   /**
    * The send no longer listens to the source: its listener of `error` no
-   * longer fails it (see `forwarder()`), and is kept when no guard listens
-   * (`closed`: by its `close`): whether it is
+   * longer fails it (see `forwarder()`), before the guard of the source is
+   * installed, whose `on()` runs code of the source that may emit an error
+   * (e.g. a listener of its `newListener`), reported once as a late error,
+   * never by the settled send. That listener is kept when no guard listens
+   * (`closed`: by its `close`): whether it is.
    */
   const detach = (closed = false): boolean => {
-    const kept = !protect(closed) && listened;
     errors.detach(source, report);
+    const kept = !protect(closed) && listened;
     if (kept) {
       // Never removed (it holds nothing of the send): it reports a late
       // error itself, heard as long as it listens (see `hear()`)
@@ -707,9 +715,10 @@ export function readStreamLike(
       if (!settled) {
         settled = true;
         // Its guard listens before its listeners are removed, and before it
-        // is paused or destroyed
-        const safe = protect();
+        // is paused or destroyed, once the listener of `error` of the send
+        // no longer fails it (see `detach()`)
         const kept = detach();
+        const safe = protect();
         release("data", "end", "close", "error");
         const { destroy, pause } = methods;
         if (!safe && !kept) {
