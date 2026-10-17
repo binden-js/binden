@@ -42,15 +42,19 @@ export async function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
 }
 
 /**
- * Resolves after a turn of the pending I/O (`setImmediate()`): once a stall
- * of the process (e.g. a loaded machine) has passed, the timers run before
- * the I/O that has come meanwhile is read, so that silence (or an expired
- * deadline) is judged only after this turn
+ * Resolves after a turn of the pending I/O (two turns of `setImmediate()`):
+ * once a stall of the process (e.g. a loaded machine) has passed, the timers
+ * run before the I/O that has come meanwhile is read, and the `close` of a
+ * socket whose end is read then is emitted only once the first turn has run
+ * (in the close callbacks of the event loop), so that silence (or an expired
+ * deadline) is judged only after both
  */
-export function ioTurn(): Promise<void> {
-  return new Promise<void>((resolve) => {
-    setImmediate(resolve);
-  });
+export async function ioTurn(): Promise<void> {
+  for (let turn = 0; turn < 2; turn += 1) {
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+  }
 }
 
 /**

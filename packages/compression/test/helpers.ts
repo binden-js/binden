@@ -38,10 +38,26 @@ export async function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
 }
 
 /**
+ * Resolves after a turn of the pending I/O (two turns of `setImmediate()`):
+ * once a stall of the process (e.g. a loaded machine) has passed, the timers
+ * run before the I/O that has come meanwhile is read, and the `close` of a
+ * socket whose end is read then is emitted only once the first turn has run
+ * (in the close callbacks of the event loop), so that silence (or an expired
+ * deadline) is judged only after both
+ */
+export async function ioTurn(): Promise<void> {
+  for (let turn = 0; turn < 2; turn += 1) {
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+  }
+}
+
+/**
  * Resolves once `check()` holds (polled every 5 ms), or rejects once it has
- * not within `ms` milliseconds, judged after a turn of the pending I/O: a
- * poller that ends by itself, whoever waits for it, so that a failure never
- * keeps the process of a test alive
+ * not within `ms` milliseconds, judged after a turn of the pending I/O (see
+ * `ioTurn()`): a poller that ends by itself, whoever waits for it, so that a
+ * failure never keeps the process of a test alive
  */
 export async function pollUntil(
   check: () => boolean,
@@ -50,9 +66,7 @@ export async function pollUntil(
   const deadline = Date.now() + ms;
   while (!check()) {
     if (Date.now() > deadline) {
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      await ioTurn();
       if (check()) {
         return;
       }
