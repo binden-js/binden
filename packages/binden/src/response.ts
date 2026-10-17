@@ -60,6 +60,7 @@ import {
   type IStreamLikeMethods,
   decided,
   emitterMethods,
+  forwarder,
   guard,
   hasClosed,
   readStreamLike,
@@ -326,6 +327,14 @@ const keeping: ReadonlySet<unknown> = new Set([
  * sent (see `BindenResponse.#discard()`): never its own
  */
 const destroyReadable = Reflect.get(Readable.prototype, "destroy") as (
+  this: Readable,
+) => unknown;
+
+/**
+ * `Readable.prototype.pause()`, which leaves a `Readable` that cannot be
+ * released (see `BindenResponse.#unreleasable()`): never its own
+ */
+const pauseReadable = Reflect.get(Readable.prototype, "pause") as (
   this: Readable,
 ) => unknown;
 
@@ -3186,6 +3195,27 @@ export class BindenResponse<
       /** The listeners that the send adds to the source (see `listening`) */
       const listeners: [string, (...args: never[]) => void][] = [];
       /**
+       * Whether the listener of `error` of the send is in place (see
+       * `errors`): its `on()` has returned, or it has heard an error. Kept
+       * once the send has settled when no guard listens (see `unlisten`)
+       */
+      let listened = false;
+      /** Whether the guard of the source listens, once the send has settled */
+      let guarded = false;
+      /**
+       * The listener of `error` of the send (every error, also one emitted
+       * while the source is destroyed later), which holds nothing of the
+       * send once it has settled (see `forwarder()`)
+       */
+      const errors = forwarder((error: unknown) => {
+        heard = true;
+        listened = true;
+        operation.run(() => {
+          // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
+          fail(error, false, true);
+        });
+      });
+      /**
        * What removes the other observers that the send adds to the response:
        * of its `close`, and of each `drain` that it waits for
        */
@@ -3203,15 +3233,21 @@ export class BindenResponse<
        * not depend on whether it may be destroyed
        */
       const unlisten = (): void => {
-        this.#guardReleased(data);
+        guarded = this.#guardReleased(data);
+        errors.detach(data, this.#report());
         for (const [event, listener] of listeners) {
-          try {
-            Reflect.apply(removerOf(data), data, [event, listener]);
-          } catch (error: unknown) {
-            // Its guard keeps it harmless: once the send has settled, its
-            // listeners change nothing of the response
-            const message = "The removal of a listener of a stream has failed";
-            this.#ownership.debug(message, error);
+          // Kept when no guard listens, without which an error of its
+          // release (see `drop`) would crash the process
+          if (listener !== errors.listener || !listened || guarded) {
+            try {
+              Reflect.apply(removerOf(data), data, [event, listener]);
+            } catch (error: unknown) {
+              // Its guard keeps it harmless: once the send has settled, its
+              // listeners change nothing of the response
+              const message =
+                "The removal of a listener of a stream has failed";
+              this.#ownership.debug(message, error);
+            }
           }
         }
         for (const dispose of [...finishing, ...observers]) {
@@ -3225,8 +3261,11 @@ export class BindenResponse<
        * request of the response (see `#destroys()`), which is only left, no
        * longer paused (e.g. by the backpressure of the send, once another
        * writer has ended the response), so that Node.js reads the rest of its
-       * body, and the next request of the connection. A failure of the
-       * release (e.g. of a `destroy()` of its own) is logged (`debug`)
+       * body, and the next request of the connection. Without its guard (see
+       * `unlisten`), it is destroyed without that error, which the send has
+       * failed with already, while the listener of `error` of the send
+       * listens, and else left (see `#unreleasable()`). A failure of the release
+       * (e.g. of a `destroy()` of its own) is logged (`debug`)
        */
       const drop = (
         failure: { readonly error: unknown } | null = null,
@@ -3234,12 +3273,18 @@ export class BindenResponse<
         try {
           if (data.readableEnded || data.destroyed) {
             return;
-          } else if (this.#destroys(data)) {
+          } else if (!this.#destroys(data)) {
+            if (data.isPaused()) {
+              data.resume();
+            }
+          } else if (guarded) {
             // Its guard does not report it again when the source emits it
             decided(failure?.error);
             data.destroy(failure?.error as Error | undefined);
-          } else if (data.isPaused()) {
-            data.resume();
+          } else if (listened) {
+            data.destroy();
+          } else {
+            this.#unreleasable(data);
           }
         } catch (error: unknown) {
           this.#ownership.debug("The release of a stream has failed", error);
@@ -3271,7 +3316,7 @@ export class BindenResponse<
           unlisten();
         } else {
           release.push(unlisten, () => {
-            this.#discard(data);
+            this.#discard(data, listened);
           });
         }
         if (failure === null) {
@@ -3306,7 +3351,7 @@ export class BindenResponse<
           reportLate(data, error, emitted, this.#report());
         }
         stopped = true;
-        this.#discard(data);
+        this.#discard(data, listened);
       };
       /**
        * Fails the send: once anything is sent, or the headers are committed
@@ -3419,6 +3464,9 @@ export class BindenResponse<
           if (!settled) {
             listeners.push([event, listener]);
             data.on(event, listener as IListener);
+            if (listener === errors.listener) {
+              listened = true;
+            }
           }
           return listening;
         },
@@ -3429,11 +3477,11 @@ export class BindenResponse<
             operation.run(() => {
               if (settled || !operation.active) {
                 // Cancelled, or its owner may no longer write
-                this.#discard(data);
+                this.#discard(data, listened);
                 return;
               } else if (this.writableEnded) {
                 stopped = true;
-                this.#discard(data);
+                this.#discard(data, listened);
                 return;
               }
               try {
@@ -3468,13 +3516,7 @@ export class BindenResponse<
           .on("end", () => {
             operation.run(end);
           })
-          // Every error (also one emitted while the source is destroyed later)
-          .on("error", (error: unknown) => {
-            heard = true;
-            operation.run(() => {
-              fail(error, false, true);
-            });
-          })
+          .on("error", errors.listener)
           .on("close", () => {
             // Destroyed before its end, without an `error` event (which
             // precedes the close): with its error (e.g. of `destroy(error)`,
@@ -3567,15 +3609,41 @@ export class BindenResponse<
 
   /**
    * Installs the guard of a source (see `guard()`), which a send no longer
-   * listens to: a failure of it (e.g. a listener of its `newListener` that
-   * throws) is logged (`debug`)
+   * listens to: whether it listens. Code of the source that throws (e.g. a
+   * listener of its `newListener`) is logged (`debug`): a source that
+   * refuses the listener of `error` of its guard is not guarded, and is not
+   * destroyed without another listener of `error` (see `#discard()`)
    */
-  #guardReleased(source: Readable): void {
-    try {
-      guard(source, emitterMethods, this.#report(), hasClosed(source));
-    } catch (error: unknown) {
-      this.#ownership.debug("The release of a stream has failed", error);
-    }
+  #guardReleased(source: Readable): boolean {
+    return guard(
+      source,
+      emitterMethods,
+      this.#report(),
+      hasClosed(source),
+      (error: unknown) => {
+        this.#ownership.debug("The release of a stream has failed", error);
+      },
+    );
+  }
+
+  /**
+   * Leaves a source that cannot be released: no listener of its `error` is
+   * in place (it refuses the one of its guard, see `guard()`, and its send
+   * has none), without which an error of its destroy would crash the
+   * process. It is only paused (by `Readable.prototype.pause()`, never its
+   * own), and that is logged (`debug`): it is the application's to release.
+   */
+  #unreleasable(source: Readable): void {
+    this.#unreleased();
+    Reflect.apply(pauseReadable, source, []);
+  }
+
+  /** Logs (`debug`) that a source is left (see `#unreleasable()`) */
+  #unreleased(): void {
+    this.#ownership.note(
+      "A stream could not be released",
+      "No listener of its error event can be added",
+    );
   }
 
   /**
@@ -3671,7 +3739,9 @@ export class BindenResponse<
     if (kind === "readable") {
       this.#discard(data as Readable);
     } else if (kind !== null && kind !== "value") {
-      releaseStreamLike(data as object, kind, this.#report());
+      releaseStreamLike(data as object, kind, this.#report(), () => {
+        this.#unreleased();
+      });
     }
   }
 
@@ -3727,10 +3797,13 @@ export class BindenResponse<
    * (never through its own `destroy()`, its `_destroy()` runs) under a guard
    * that the methods of `EventEmitter` install (see `guard()`), one however
    * many sends release it, which reports a late error (e.g. of a file that
-   * fails to close). A failure of the release is logged (`debug`). Never the
-   * request of the response (e.g. an echo, see `#destroys()`).
+   * fails to close). A source that refuses its guard is destroyed only
+   * while the listener of `error` of its send listens (`listened`), and is
+   * left otherwise (see `#unreleasable()`). A failure of the release is logged
+   * (`debug`). Never the request of the response (e.g. an echo, see
+   * `#destroys()`).
    */
-  #discard(source: Readable): void {
+  #discard(source: Readable, listened = false): void {
     if (!this.#destroys(source)) {
       return;
     }
@@ -3738,9 +3811,13 @@ export class BindenResponse<
       const state = Reflect.get(source, "_readableState") as
         { readonly closeEmitted?: unknown } | undefined;
       if (state?.closeEmitted !== true) {
-        // Its guard listens before it is destroyed
-        guard(source, emitterMethods, this.#report());
-        Reflect.apply(destroyReadable, source, []);
+        // Its guard listens before it is destroyed, or else the listener of
+        // `error` of its send (`listened`)
+        if (this.#guardReleased(source) || listened) {
+          Reflect.apply(destroyReadable, source, []);
+        } else {
+          this.#unreleasable(source);
+        }
       }
     } catch (error: unknown) {
       const message = "The release of a stream has failed";
