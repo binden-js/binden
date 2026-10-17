@@ -239,7 +239,8 @@ export function decided(error: unknown): void {
  * The sources that each late error has been reported for (see
  * `reportOnce()`), whatever has reported it: the guard of the source (see
  * `guard()`), its send (see `reportLate()`), or the listener of `error` of a
- * send once it is detached (see `forwarder()`)
+ * send once it is detached (see `forwarder()`). Also the sources whose sends
+ * an error that they have emitted has decided (see `decidedFor()`)
  */
 const reports = new WeakMap<object, WeakSet<object>>();
 
@@ -251,35 +252,126 @@ const reports = new WeakMap<object, WeakSet<object>>();
  */
 const links = new WeakMap<object, object>();
 
-/**
- * The error that the send of each stream-like source decides once it cannot
- * be read (see `readStreamLike()`), while the source is destroyed with it:
- * the send rejects with it, or reports it itself once the response has ended
- * (see `BindenResponse.#unreadable()`), so that no guard reports it
- * meanwhile (e.g. emitted at once by the destroy of the source)
- */
-const deciding = new WeakMap<object, unknown>();
+/** The readables of `readStreamLike()` whose sends have resolved (see `resolved()`) */
+const resolutions = new WeakSet<object>();
 
 /**
- * Whether an error of a source (or of a readable of a stream-like source,
- * see `links`) has decided a send (see `decided()`), or is the one that its
- * send decides meanwhile (see `deciding`): it is not reported
+ * Tells a readable of a stream-like source (see `readStreamLike()`) that its
+ * send has resolved, or settles without a failure (e.g. its body is complete
+ * for the client, or another writer has ended the response): released then,
+ * its source is destroyed without an error, as a Node.js `Readable` is, never
+ * with the reason of a cancellation (see `readStreamLike()`), which the
+ * listeners of `error` of the application, and its `errored`, would take for
+ * a failure. A readable destroyed with an error destroys its source with that
+ * error all the same. For the packages of binden only.
+ *
+ * @internal
  */
-function isDecided(source: object, error: unknown): boolean {
+export function resolved(readable: object): void {
+  resolutions.add(readable);
+}
+
+/**
+ * Records an error (an object) for a source, or for the stream-like source of
+ * a readable of `readStreamLike()` (see `links`): it is not reported for it
+ * (see `reportOnce()`)
+ */
+function record(source: object, failure: object): void {
   const reported = links.get(source) ?? source;
-  if (deciding.has(reported) && deciding.get(reported) === error) {
-    return true;
+  const sources = reports.get(failure) ?? new WeakSet<object>();
+  reports.set(failure, sources.add(reported));
+}
+
+/**
+ * Records an error that a source has emitted, and that has decided its send
+ * (e.g. heard while the source is read): it is not reported for that source
+ * (nor for a readable of a stream-like source that reads it, see `links`),
+ * as if it had been already (see `reportOnce()`), but it still is for any
+ * other source (e.g. one error of the application that it destroys each of
+ * its streams with), unlike an error of binden (see `decided()`). Only an
+ * object can be recorded, as by `decided()`. For the packages of binden
+ * only.
+ *
+ * @internal
+ */
+export function decidedFor(source: object, error: unknown): void {
+  if (Object(error) === error) {
+    record(source, error as object);
   }
-  return Object(error) === error && decisions.has(error as object);
+}
+
+/**
+ * The errors that the sends of each source decide meanwhile (see
+ * `decide()`), each with how many of its decisions are pending: an inner
+ * decision with the same error (e.g. of a send of the source that its code
+ * starts meanwhile) that ends first leaves the outer one pending
+ */
+const pending = new WeakMap<object, Map<unknown, number>>();
+
+/**
+ * Runs `call` while a send of a source decides `error` (e.g. the error that
+ * a destroyed source rejects it with), and returns what it returns: until
+ * `call` returns or throws, no guard (see `guard()`) nor any other report of
+ * a late error (see `reportOnce()`) reports that error for the source (nor
+ * for a readable of a stream-like source that reads it, see `links`), nor
+ * logs it as a refusal (see `refuse()`), whatever code of the source runs
+ * (e.g. a listener of its `newListener` that emits it, or throws it, while
+ * its guard is installed). Decisions nest: each is counted, so that an inner
+ * one with the same error (e.g. of a send of the same source that its code
+ * starts meanwhile) that ends first leaves the outer one pending. Only an
+ * object is known as decided (see `isKnown()`): any other value (e.g. a
+ * string) is reported, and logged. For the packages of binden only.
+ *
+ * @internal
+ */
+export function decide<T>(source: object, error: unknown, call: () => T): T {
+  const decider = links.get(source) ?? source;
+  const counts = pending.get(decider) ?? new Map<unknown, number>();
+  pending.set(decider, counts.set(error, (counts.get(error) ?? 0) + 1));
+  try {
+    return call();
+  } finally {
+    const count = (counts.get(error) as number) - 1;
+    if (count > 0) {
+      counts.set(error, count);
+    } else {
+      counts.delete(error);
+    }
+    if (counts.size === 0) {
+      pending.delete(decider);
+    }
+  }
+}
+
+/**
+ * Whether an error of a source (or of a readable of a stream-like source, see
+ * `links`) is known, and therefore not reported (see `reportOnce()`), nor
+ * logged as a refusal (see `refuse()`): it has decided a send (see
+ * `decided()`, or `decidedFor()` for that source), a send of the source
+ * decides it meanwhile (see `decide()`), or it has been reported for that
+ * source already. Only an object can be known: any other value (e.g. a
+ * string) is not.
+ */
+function isKnown(source: object, error: unknown): boolean {
+  if (Object(error) !== error) {
+    return false;
+  }
+  const failure = error as object;
+  const reported = links.get(source) ?? source;
+  return (
+    decisions.has(failure) ||
+    pending.get(reported)?.has(failure) === true ||
+    reports.get(failure)?.has(reported) === true
+  );
 }
 
 /**
  * Reports a late error of a source (see `ISourceReport`) once: never an error
- * that has decided a send (see `decided()`), nor one that its send decides
- * meanwhile (see `deciding`), nor one that has been reported for that source
- * already (e.g. by its send, before the source emits it to its guard), also
- * for a readable of a stream-like source (see `links`). Only an object can
- * be recorded, as by `decided()`: any other value (e.g. a string) is
+ * that is known for it (see `isKnown()`): one that has decided a send, one
+ * that a send of it decides meanwhile, or one that has been reported for that
+ * source already (e.g. by its send, before the source emits it to its guard),
+ * also for a readable of a stream-like source (see `links`). Only an object
+ * can be recorded, as by `decided()`: any other value (e.g. a string) is
  * reported each time.
  */
 function reportOnce(
@@ -287,19 +379,12 @@ function reportOnce(
   error: unknown,
   report: ISourceReport,
 ): void {
-  if (isDecided(source, error)) {
+  if (isKnown(source, error)) {
     return;
-  } else if (Object(error) !== error) {
-    report(error);
-    return;
+  } else if (Object(error) === error) {
+    record(source, error as object);
   }
-  const failure = error as object;
-  const reported = links.get(source) ?? source;
-  const sources = reports.get(failure) ?? new WeakSet<object>();
-  if (!sources.has(reported)) {
-    reports.set(failure, sources.add(reported));
-    report(error);
-  }
+  report(error);
 }
 
 /**
@@ -350,17 +435,18 @@ const refusals = new WeakSet<object>();
 
 /**
  * Gives `refused` what the code of a source has thrown while its guard is
- * installed (see `guard()`), unless it is an error that has decided a send,
- * or that the send of the source decides meanwhile (see `isDecided()`),
- * which is not reported again. A function of the module, so that no
- * listener of the guard holds `refused` (it may hold the response)
+ * installed (see `guard()`), unless it is an object that is known for the
+ * source (see `isKnown()`): an error that has decided a send, or that a send
+ * of the source decides meanwhile, which is not reported again. Any other
+ * value (e.g. a string) is given each time. A function of the module, so
+ * that no listener of the guard holds `refused` (it may hold the response)
  */
 function refuse(
   source: object,
   refused: (error: unknown) => void,
   error: unknown,
 ): void {
-  if (!isDecided(source, error)) {
+  if (!isKnown(source, error)) {
     refused(error);
   }
 }
@@ -385,24 +471,24 @@ function unguard(
 /**
  * Keeps a late `error` of a source that is not sent, or no longer (released,
  * cancelled, or destroyed by the application), from crashing the process
- * without a listener of the application: its `destroy()` (or its `pause()`)
- * may fail asynchronously, at any time. Installed before the source is
- * paused or destroyed, and before a send removes its own listener of
- * `error`. A guard of its own reports it (see `ISourceReport`), but not an
- * error that a send hears (which fails the send), nor one that a send has
- * failed with and destroyed it with (see `decided()`), nor one that has been
- * reported for the source already (see `reportOnce()`), and holds nothing else
- * (never the response, nor the send), so that it may stay on a source that
- * never emits anything: it is never removed by a timer, only on the turn
- * after the `close` of a source whose state tells that it has closed (see
- * `hasClosed()`, e.g. a Node.js `Readable`, or of `readable-stream` 4), or
- * after it is installed for such a source that has emitted its `close`
- * already (`closed`). A source whose state cannot tell it (e.g. of
- * `readable-stream` 2 or 3, of `through2`, or an emitter of its own) keeps
- * its guard as long as it lives: such a source may emit an error after its
- * `close` (e.g. of a write once binden has destroyed it, or of a second
- * destroy), each reported once. One guard per source, however many sends
- * release it. For the packages of binden only.
+ * without a listener of the application: its `destroy()` (or its `pause()`) may
+ * fail asynchronously, at any time. Installed before the source is paused or
+ * destroyed, and before a send removes its own listener of `error`. A guard of
+ * its own reports it (see `ISourceReport`), but not an error that a send hears
+ * (which fails the send), nor one that a send has failed with and destroyed it
+ * with (see `decided()`, `decidedFor()`), nor one that a send of the source
+ * decides meanwhile (see `decide()`), nor one that has been reported for the
+ * source already (see `reportOnce()`), and holds nothing else (never the
+ * response, nor the send), so that it may stay on a source that never emits
+ * anything: it is never removed by a timer, only on the turn after the `close`
+ * of a source whose state tells that it has closed (see `hasClosed()`, e.g. a
+ * Node.js `Readable`, or of `readable-stream` 4), or after it is installed for
+ * such a source that has emitted its `close` already (`closed`). A source whose
+ * state cannot tell it (e.g. of `readable-stream` 2 or 3, of `through2`, or an
+ * emitter of its own) keeps its guard as long as it lives: such a source may
+ * emit an error after its `close` (e.g. of a write once binden has destroyed
+ * it, or of a second destroy), each reported once. One guard per source,
+ * however many sends release it. For the packages of binden only.
  *
  * Returns whether its listener of `error` is in place, and only then is the
  * source guarded: a source that refuses it (its `on()` throws, e.g. by a
@@ -410,8 +496,9 @@ function unguard(
  * the caller keeps a listener of its own (see `forwarder()`), or does not
  * release it. What the code of the source throws (also for the listener of
  * `close`, without which the guard stays) is given to `refused` (`report` by
- * default), never thrown, unless it is an error that has decided a send
- * (see `decided()`), which is not reported again.
+ * default), never thrown, unless it is an object known for the source (see
+ * `isKnown()`: e.g. an error that has decided a send, or that a send of the
+ * source decides meanwhile, see `decide()`), which is not reported again.
  *
  * @internal
  */
@@ -809,10 +896,15 @@ export function readStreamLike(
           releaseBy(source, destroy, logs.released);
         } else if (undecided && error !== null) {
           // What the send decides (see `unreadable()`), with which it is
-          // destroyed meanwhile (see `deciding`): also an `Error` that
+          // destroyed meanwhile (see `decide()`): also an `Error` that
           // carries what its code has thrown (see `destroyWith()`)
-          deciding.set(source, error);
-          releaseBy(source, destroy, logs.released, error);
+          decide(source, error, () => {
+            releaseBy(source, destroy, logs.released, error);
+          });
+        } else if (error === null && resolutions.has(readable)) {
+          // Its send has resolved (see `resolved()`): without an error, as
+          // a Node.js `Readable` is, never with the reason of a cancellation
+          releaseBy(source, destroy, logs.released);
         } else {
           // The error that decides the send (e.g. of a chunk that is not
           // bytes, which the readable refuses), or the reason of its
@@ -885,13 +977,10 @@ export function readStreamLike(
     undecided = true;
     // Meanwhile, its guard does not report it, whatever reports it (e.g. a
     // refusal of the listener of its `close`, or its destroy)
-    deciding.set(source, error);
-    try {
+    decide(source, error, () => {
       hear(readable, 1);
       destroyWith(error);
-    } finally {
-      deciding.delete(source);
-    }
+    });
     return readable;
   };
   /**
