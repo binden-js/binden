@@ -3282,6 +3282,32 @@ export class BindenResponse<
         }
       };
       /**
+       * Destroys the source under its guard, by its own `destroy()`, with the
+       * error that binden has failed the send with (`failure`), or without
+       * one. A value that Node.js cannot take as an error (it reads its
+       * `stack`, e.g. by a getter that throws) makes it throw before anything
+       * is destroyed: the source is then destroyed with an `Error` whose
+       * `cause` it is, decided as well (see `decided()`), as for a stream-like
+       * source, so that it is destroyed in any case (e.g. its file closed).
+       * What it throws otherwise (also once it is destroyed) is thrown.
+       */
+      const destroyWith = (
+        failure: { readonly error: unknown } | null,
+      ): void => {
+        try {
+          data.destroy(failure?.error as Error | undefined);
+        } catch (error: unknown) {
+          if (failure === null || data.destroyed) {
+            throw error;
+          }
+          const wrapped = formatStack(
+            new Error("A stream has failed", { cause: failure.error }),
+          );
+          decided(wrapped);
+          data.destroy(wrapped);
+        }
+      };
+      /**
        * Releases the source that the send no longer reads, unless it has
        * ended or is destroyed: it is destroyed (with the error that binden
        * has failed the send with, `failure`, see `fail`), unless it is the
@@ -3307,7 +3333,7 @@ export class BindenResponse<
           } else if (guarded) {
             // Its guard does not report it again when the source emits it
             // (decided, see `settle`)
-            data.destroy(failure?.error as Error | undefined);
+            destroyWith(failure);
           } else if (listened) {
             data.destroy();
           } else {
