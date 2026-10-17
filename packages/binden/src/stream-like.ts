@@ -145,6 +145,23 @@ function invalidChunk(chunk: unknown): TypeError {
   });
 }
 
+/**
+ * An error whose stack is formatted at once: the stack of V8 that is not
+ * formatted yet keeps the objects of its frames (e.g. a response that their
+ * scopes hold), which a source that keeps the error it is destroyed with
+ * (e.g. minipass 7 keeps the error that it emits) would retain for its life
+ */
+function formatted(error: Error): Error {
+  try {
+    // Read once: V8 formats it then
+    Reflect.get(error, "stack");
+  } catch {
+    // Its stack cannot be read (e.g. a getter of its own that throws): it is
+    // handed over as it is
+  }
+  return error;
+}
+
 /** The error of a close before the end */
 function premature(): Error {
   return Object.assign(new Error("Premature close"), {
@@ -915,8 +932,9 @@ export function readStreamLike(
           } else if (error === null) {
             // The reason of its cancellation (also for a falsy value that its
             // code has thrown, a premature close), an error of binden: no
-            // guard reports it once the source emits it (see `decided()`)
-            const failure = reason();
+            // guard reports it once the source emits it (see `decided()`).
+            // Formatted before the source has it, which may keep it
+            const failure = formatted(reason());
             decided(failure);
             releaseBy(source, destroy, logs.released, failure);
           } else {
