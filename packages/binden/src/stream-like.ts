@@ -345,10 +345,15 @@ function unguard(
  * reported for the source already (see `reportOnce()`), and holds nothing else
  * (never the response, nor the send), so that it may stay on a source that
  * never emits anything: it is never removed by a timer, only on the turn
- * after the `close` of the source (some sources emit their `error` after it,
- * e.g. `readable-stream` 2), or after it is installed for a source that has
- * emitted its `close` already (`closed`). One guard per source, however many
- * sends release it. For the packages of binden only.
+ * after the `close` of a source whose state tells that it has closed (see
+ * `hasClosed()`, e.g. a Node.js `Readable`, or of `readable-stream` 4), or
+ * after it is installed for such a source that has emitted its `close`
+ * already (`closed`). A source whose state cannot tell it (e.g. of
+ * `readable-stream` 2 or 3, of `through2`, or an emitter of its own) keeps
+ * its guard as long as it lives: such a source may emit an error after its
+ * `close` (e.g. of a write once binden has destroyed it, or of a second
+ * destroy), each reported once. One guard per source, however many sends
+ * release it. For the packages of binden only.
  *
  * Returns whether its listener of `error` is in place, and only then is the
  * source guarded: a source that refuses it (its `on()` throws, e.g. by a
@@ -381,8 +386,12 @@ export function guard(
   };
   const close = (): void => {
     setImmediate(() => {
-      // Once (e.g. not for a second `close`)
-      if (guards.get(source) === failed) {
+      // Once (e.g. not for a second `close`), and only once its state tells
+      // that it has closed: a source that cannot tell it (e.g. of
+      // `readable-stream` 2 or 3, or an emitter of its own) may still emit
+      // an error after its `close` (e.g. of a write once it is destroyed, or
+      // of a second destroy), and keeps its guard
+      if (guards.get(source) === failed && hasClosed(source)) {
         guards.delete(source);
         try {
           Reflect.apply(remove, source, ["error", failed]);

@@ -145,6 +145,22 @@ function closesAtEnd(library: string): boolean {
   return library === "readable-stream 4";
 }
 
+/**
+ * Whether the state of the sources of a library tells that they have closed
+ * (`closeEmitted`): only `readable-stream` 4. The guard that a send leaves on
+ * a source (see `guard()`) is removed on the turn after its close only then:
+ * the others keep it as long as they live (they may emit an error after
+ * their close).
+ */
+function tellsClosed(library: string): boolean {
+  return library === "readable-stream 4";
+}
+
+/** The listeners of the guard of a source that keeps it once closed (see `tellsClosed()`) */
+function keptOf(library: string): string[] {
+  return tellsClosed(library) ? [] : ["error", "close"];
+}
+
 /** The events of the listeners left on a source, in the order they were added */
 function leftOf(recorded: ISpy): string[] {
   return recorded.left().map(([event]) => event);
@@ -427,7 +443,7 @@ for (const [library, create] of libraries) {
       );
     });
 
-    test("destroys the source with the reason of the deadline, and removes its listeners (its guard once it has closed)", async () => {
+    test("destroys the source with the reason of the deadline, and removes its listeners (its guard once its state tells that it has closed)", async () => {
       const source = create();
       const reason = errorOf(source);
       const recorded = spy(source);
@@ -440,7 +456,9 @@ for (const [library, create] of libraries) {
           const received = await fetchBytes(port);
           deepStrictEqual(received.status, 503);
           await pollUntil(() => destroyed(source) && reason() !== null);
-          await pollUntil(() => recorded.left().length === 0);
+          await pollUntil(
+            () => leftOf(recorded).join() === keptOf(library).join(),
+          );
           deepStrictEqual((reason() as BindenAbortError).reason, "deadline");
           // Of the send, and of its guard
           deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
@@ -492,7 +510,8 @@ for (const [library, create] of libraries) {
             (reason() as BindenAbortError).reason,
             "client_closed",
           );
-          deepStrictEqual(recorded.left(), []);
+          // Its guard, unless its state tells that it has closed
+          deepStrictEqual(leftOf(recorded), keptOf(library));
         },
       );
     });
@@ -589,7 +608,7 @@ for (const [library, create] of libraries) {
     ] as const) {
       // Also a `PassThrough` of `readable-stream` 2, which emits its `end`
       // once destroyed: not its end
-      test(`rejects when the source ${how}, and removes its listeners: its guard stays until the turn after its close`, async () => {
+      test(`rejects when the source ${how}, and removes its listeners: its guard stays until the turn after its close, once its state tells it`, async () => {
         const source = create();
         // The error of the application, which `readable-stream` 2 emits
         // once closed
@@ -620,10 +639,10 @@ for (const [library, create] of libraries) {
             );
             await nextTurn();
             // An error of a source that has not closed (nor been destroyed)
-            // may follow
+            // may follow, or of one whose state cannot tell that it has
             deepStrictEqual(
               leftOf(recorded),
-              how === "fails" ? ["error", "close"] : [],
+              how === "fails" ? ["error", "close"] : keptOf(library),
             );
           },
         );
@@ -676,7 +695,8 @@ for (const [library, create] of libraries) {
                 failure ? "E_DESTROYED" : "ERR_STREAM_PREMATURE_CLOSE",
               );
               await nextTurn();
-              deepStrictEqual(recorded.left(), []);
+              // Its guard, unless its state tells that it has closed
+              deepStrictEqual(leftOf(recorded), keptOf(library));
             },
           );
         });
@@ -688,7 +708,7 @@ for (const [library, create] of libraries) {
       ["GET", 204],
       ["GET", 304],
     ] as const) {
-      test(`sends no body to ${method} with ${status}: the source is destroyed without being read, guarded until it has closed`, async () => {
+      test(`sends no body to ${method} with ${status}: the source is destroyed without being read, guarded until it has closed (as long as it lives, unless its state tells it)`, async () => {
         const source = create();
         source.write("unread");
         const recorded = spy(source);
@@ -704,7 +724,9 @@ for (const [library, create] of libraries) {
               [status, ""],
             );
             await pollUntil(() => destroyed(source));
-            await pollUntil(() => recorded.left().length === 0);
+            await pollUntil(
+              () => leftOf(recorded).join() === keptOf(library).join(),
+            );
             // Only by its guard
             deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
               "close",
@@ -843,7 +865,12 @@ suite("send() of a stream-like source", () => {
         source.emit("error", new Error("Late"));
         await captured.waitFor(releasedFailure);
         deepStrictEqual(reported(captured), ["Late"]);
-        // Until the turn after its close
+        // Its state cannot tell that it has closed: it stays
+        source.emit("close");
+        await nextTurn();
+        deepStrictEqual(counts(source), [0, 0, 1, 1]);
+        // Until the turn after a close that its state tells
+        Object.assign(source, { _readableState: { closeEmitted: true } });
         source.emit("close");
         deepStrictEqual(counts(source), [0, 0, 1, 1]);
         await nextTurn();
@@ -877,12 +904,13 @@ suite("send() of a stream-like source", () => {
     );
   });
 
-  test("to HEAD: its guard reports an error emitted after its close within the turn, and is removed once (a removal that throws is reported)", async () => {
+  test("to HEAD: its guard reports an error emitted after its close within the turn, and is removed once its state tells that it has closed (a removal that throws is reported)", async () => {
     const captured = capture();
     const removed: string[] = [];
     // Closed twice, then an error
     const closing = Object.assign(new Emitting(), {
       destroy(): void {
+        Object.assign(closing, { _readableState: { closeEmitted: true } });
         closing.emit("close");
         closing.emit("close");
         process.nextTick(() => {
@@ -900,6 +928,7 @@ suite("send() of a stream-like source", () => {
     });
     const stuck = Object.assign(new Emitting(), {
       destroy(): void {
+        Object.assign(stuck, { _readableState: { closeEmitted: true } });
         stuck.emit("close");
       },
       removeListener(): never {
@@ -951,7 +980,7 @@ suite("send() of a stream-like source", () => {
     );
   });
 
-  test("that has ended (`readableEnded`) is an empty body: its guard reports a later error (e.g. of a destroy by autoDestroy) until the turn after its close", async () => {
+  test("that has ended (`readableEnded`) is an empty body: its guard reports a later error (e.g. of a destroy by autoDestroy) until the turn after its close, once its state tells it", async () => {
     const source = Object.assign(new Emitting(), { readableEnded: true });
     const captured = capture();
     await withApp(
@@ -967,6 +996,7 @@ suite("send() of a stream-like source", () => {
           [["error", "close"], []],
         );
         source.emit("error", new Error("Its destroy has failed"));
+        Object.assign(source, { _readableState: { closeEmitted: true } });
         source.emit("close");
         await nextTurn();
         deepStrictEqual(
@@ -977,7 +1007,7 @@ suite("send() of a stream-like source", () => {
     );
   });
 
-  test("an end or a close once destroyed is not its end: the error emitted within the turn rejects (not reported), and a later one is reported once (by the send until its listener is removed, then by its guard until the turn after its close)", async () => {
+  test("an end or a close once destroyed is not its end: the error emitted within the turn rejects (not reported), and a later one is reported once (by the send until its listener is removed, then by its guard until the turn after a close that its state tells)", async () => {
     for (const [flag, event] of [
       ["destroyed", "end"],
       ["_destroyed", "close"],
@@ -990,6 +1020,9 @@ suite("send() of a stream-like source", () => {
         async (context: Context) => {
           setTimeout(() => {
             Object.assign(source, { [flag]: true });
+            if (event === "close") {
+              Object.assign(source, { _readableState: { closeEmitted: true } });
+            }
             source.emit(event);
             process.nextTick(() => {
               const error = new Error("Destroyed");
@@ -1011,6 +1044,7 @@ suite("send() of a stream-like source", () => {
             // Its guard, which has not seen its close
             deepStrictEqual(counts(source), [0, 0, 1, 1]);
             source.emit("error", new Error("Later"));
+            Object.assign(source, { _readableState: { closeEmitted: true } });
             source.emit("close");
             await nextTurn();
           }
@@ -1046,7 +1080,7 @@ suite("send() of a stream-like source", () => {
     deepStrictEqual(counts(source), [0, 0, 1, 1]);
   });
 
-  test("removes each of its listeners once, and its guard (which listens before) on the turn after its close: an error after its end is reported once", async () => {
+  test("removes each of its listeners once, and its guard (which listens before) on the turn after a close that its state tells: an error after its end is reported once", async () => {
     const source = new Emitting();
     const reports: unknown[] = [];
     const removed: string[] = [];
@@ -1074,6 +1108,7 @@ suite("send() of a stream-like source", () => {
     // By its guard (e.g. a destroy by autoDestroy that fails later), which
     // would otherwise crash the process
     source.emit("error", new Error("Failed later"));
+    Object.assign(source, { _readableState: { closeEmitted: true } });
     source.emit("close");
     await nextTurn();
     deepStrictEqual(
@@ -1344,10 +1379,11 @@ suite("send() of a stream-like source that will not be sent", () => {
     // A `PassThrough` of `readable-stream` 2 destroyed with an error (its
     // `end` and its `close`, then the error, which is replied), a source that
     // emits `close` then an error, and the reason of the deadline (also
-    // emitted once a destroy completes later)
+    // emitted once a destroy completes later): the guards of the sources
+    // whose state cannot tell that they have closed stay
     deepStrictEqual(fixture("stream-like-errors.ts"), {
       status: 0,
-      stdout: "500 500 503 503\n0 0 0 0\n",
+      stdout: "500 500 503 503\n1 1 1 0\n",
       stderr: "",
     });
   });
@@ -1355,7 +1391,8 @@ suite("send() of a stream-like source that will not be sent", () => {
   test("the late errors of its destroy, without a listener of the application, are logged and do not crash the process", () => {
     // Released to `HEAD`, with 204, 304 and 103, its destroy failing at once;
     // ignored once the response has ended (not destroyed); an error after
-    // its close; and destroys that fail 2 s later (released to `HEAD`, and
+    // its close (whose guard stays: its state cannot tell that it has
+    // closed); and destroys that fail 2 s later (released to `HEAD`, and
     // cancelled at the deadline)
     deepStrictEqual(fixture("stream-like-release.ts"), {
       status: 0,
@@ -1367,7 +1404,7 @@ suite("send() of a stream-like source that will not be sent", () => {
           "Failed to close after 2000 ms",
           "Failed to close after 2000 ms",
         ].join(", ")}\n` +
-        "0 0 0 0 0 0 0 0\n",
+        "0 0 0 0 0 1 0 0\n",
       stderr: "",
     });
   });
@@ -1377,7 +1414,7 @@ suite("send() of a stream-like source that will not be sent", () => {
     // released with 204); destroyed before the send (`readable-stream` 2 and
     // 4 failing 20 ms later, a `PassThrough` of 2 on the next tick), or once
     // sent by an `end` (failing 20 ms later): the guards of those that never
-    // close stay
+    // close, or whose state cannot tell it (`readable-stream` 2), stay
     deepStrictEqual(fixture("stream-like-destroyed.ts"), {
       status: 0,
       stdout:
@@ -1385,7 +1422,7 @@ suite("send() of a stream-like source that will not be sent", () => {
         `deadline resolved ${Array.from({ length: 4 }, () => "ERR_STREAM_PREMATURE_CLOSE").join(" ")}\n` +
         "Failed after its end, Failed after its pause, Failed after its pause, " +
         "Failed before the send (/v2), Failed before the send (/v4), Failed in the same turn\n" +
-        "1 1 0 1 0 1\n",
+        "1 1 1 1 0 1\n",
       stderr: "",
     });
   });

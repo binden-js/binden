@@ -53,12 +53,13 @@ function each(
 }
 
 /**
- * Whether a source of a library closes once destroyed or ended: not a
- * `Readable` of `readable-stream` 2, whose guard stays (as long as it lives,
- * holding nothing but the report of a late error)
+ * Whether the guard of a source of a library leaves once it has closed: only
+ * a `Readable` of `readable-stream` 4, whose state tells it (`closeEmitted`).
+ * The others keep theirs (as long as they live, holding nothing but the
+ * report of a late error): they may emit an error after their close.
  */
 function closes(library: string): boolean {
-  return library !== "v2";
+  return library === "v4";
 }
 
 /** What the fixture of the stream-like sources has printed (run once) */
@@ -184,7 +185,7 @@ suite("Code of a stream-like source that throws while send() reads it", () => {
     const lines = [
       // Rejected with what has been thrown, and destroyed with it (not
       // logged): only its guard stays (its listener of `error`, without its
-      // listener of `close`, which it refuses), until the turn after its close
+      // listener of `close`, which it refuses), as long as it lives
       ...each(
         "newListener-close",
         () =>
@@ -225,23 +226,24 @@ suite("Code of a stream-like source that throws while send() reads it", () => {
       ),
       // Its `pause()` throws once the response is full: the response,
       // committed, is closed; destroyed with that error, or paused (which
-      // throws again, logged) without `destroy()`
-      "emitter pause 0 rejected:pause() refused destroyed=pause() refused listeners=0/0/0/0 late=0",
+      // throws again, logged) without `destroy()`. The emitters keep their
+      // guards: their state cannot tell that they have closed
+      "emitter pause 0 rejected:pause() refused destroyed=pause() refused listeners=0/0/1/1 late=0",
       "emitter pause-undestroyable 0 rejected:pause() refused #1 destroyed= listeners=0/0/1/1 late=0",
       // A string thrown by its own `on()`: logged once (by its guard, as its
       // destroy emits it), not by the readable that the send rejects with
-      "emitter on-string 500 rejected:Thrown destroyed=Thrown listeners=0/0/0/0 late=0",
+      "emitter on-string 500 rejected:Thrown destroyed=Thrown listeners=0/0/1/1 late=0",
       // A falsy `errored` is no error: sent
       "emitter errored-false 200 resolved destroyed= listeners=0/0/1/1 late=0",
       // Failed without being destroyed: rejected at once with its error, and
       // released with it (not logged)
-      "emitter errored 500 rejected:Errored before destroyed=Errored before listeners=0/0/0/0 late=0",
+      "emitter errored 500 rejected:Errored before destroyed=Errored before listeners=0/0/1/1 late=0",
       'v4 errored-v4 500 rejected:ERR_INVALID_ARG_TYPE destroyed=The "chunk" argument must be of type string or an instance of Buffer or Uint8Array. Received type number (42) listeners=0/0/1/0 late=0',
-      "emitter errored-state 500 rejected:Errored before destroyed=Errored before listeners=0/0/0/0 late=0",
+      "emitter errored-state 500 rejected:Errored before destroyed=Errored before listeners=0/0/1/1 late=0",
       // A falsy value, which Node.js drops as an error: a premature close
       ...["null", "undefined"].map(
         (value) =>
-          `emitter resume-${value} 500 rejected:ERR_STREAM_PREMATURE_CLOSE destroyed=Premature close listeners=0/0/0/0 late=0`,
+          `emitter resume-${value} 500 rejected:ERR_STREAM_PREMATURE_CLOSE destroyed=Premature close listeners=0/0/1/1 late=0`,
       ),
       // Of every case: the removals that have thrown, the guards refused
       // (once per source), the sources left, and the strings logged
