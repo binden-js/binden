@@ -763,9 +763,11 @@ export function releaseStreamLike(
  * a turn destroys the readable, or else `ERR_STREAM_PREMATURE_CLOSE`. Destroyed
  * before (a cancellation: the deadline, the client gone away, another reply),
  * the readable destroys the source with the reason of the cancellation
- * (`reason()`), recorded before as decided (see `decided()`), so that its guard
- * does not report it once the source emits it, or pauses a source that cannot
- * be destroyed. A destroy (or a pause) that throws is logged (see
+ * (`reason()`, its stack formatted), recorded before as decided (see
+ * `decided()`), so that its guard does not report it once the source emits it,
+ * or pauses a source that cannot be destroyed; once its send has resolved (see
+ * `resolved()`), the source is destroyed without an error, as a Node.js
+ * `Readable` is. A destroy (or a pause) that throws is logged (see
  * `IStreamLikeLogs`), and the readable is destroyed with the error that decides
  * the send all the same. That error (an `error` of the source, or the one that
  * the readable is destroyed with) is pending before the guard of the source is
@@ -775,27 +777,27 @@ export function releaseStreamLike(
  *
  * Every listener that it adds is removed through the source (by its
  * `removeListener()` or `off()`): at once for a cancellation, whatever the
- * source emits then, and once the source has ended, failed or closed, but
- * the one of `error` on the next turn (which an error emitted after the end
- * or the close would otherwise crash the process without a listener of the
+ * source emits then, and once the source has ended, failed or closed, but the
+ * one of `error` on the next turn (which an error emitted after the end or the
+ * close would otherwise crash the process without a listener of the
  * application, and is reported as a late error). A removal that throws is
- * reported (see `ISourceReport`). A source that has ended already is an
- * empty body, one destroyed before its end closes the readable at once (with
+ * logged by `logs` (see `IStreamLikeLogs`). A source that has ended already is
+ * an empty body, one destroyed before its end closes the readable at once (with
  * its error, its `errored`, without being destroyed again), and one that has
  * failed without being destroyed (its `errored`, e.g. of `readable-stream` 4
  * with `autoDestroy: false`) destroys it at once with that error, and is
- * released with it: none of them is listened to. Such an error is decided
- * by the send (see `BindenResponse.#unreadable()`), which rejects with it,
- * or reports it once (also for the source, see `reportOnce()`) when the
- * response has ended meanwhile (e.g. by code of the source): no guard
- * reports it meanwhile (e.g. emitted at once by the destroy of the source,
- * or thrown again by its code while the guard is installed). The guard
- * of a source (see `guard()`) listens before the listeners of the send are
- * removed, and reports a later error of one that has ended (whose destroy,
- * e.g. by `autoDestroy`, may fail after the end), failed or closed, that it
- * cancels (also without `destroy()`), or that the application has destroyed
- * (before the send, or by an `end` or a `close` once destroyed, whose
- * destroy may fail after the turn that decides the send).
+ * released with it: none of them is listened to. Such an error is decided by
+ * the send (see `BindenResponse.#unreadable()`), which rejects with it, or
+ * reports it once (also for the source, see `reportOnce()`) when the response
+ * has ended meanwhile (e.g. by code of the source): no guard reports it
+ * meanwhile (e.g. emitted at once by the destroy of the source, or thrown again
+ * by its code while the guard is installed). The guard of a source (see
+ * `guard()`) listens before the listeners of the send are removed, and reports
+ * a later error of one that has ended (whose destroy, e.g. by `autoDestroy`,
+ * may fail after the end), failed or closed, that it cancels (also without
+ * `destroy()`), or that the application has destroyed (before the send, or by
+ * an `end` or a `close` once destroyed, whose destroy may fail after the turn
+ * that decides the send).
  *
  * Code of the source that throws while its listeners are added (its own
  * `on()`, e.g. by a listener of its `newListener`), or in its `pause()`,
