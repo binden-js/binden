@@ -7,7 +7,9 @@
 // sent whole, cancelled at the deadline, or destroyed by the application
 // later): its late error is logged once. One that refuses every listener of
 // `error` is never destroyed (failed by its own `on()`, or released to
-// `HEAD`): it is left paused. Nothing may crash the process. One line per
+// `HEAD`): it is left paused. One whose own `on()` emits an error once the
+// send listens (`/emitted`) keeps the listener that has heard it. Nothing may
+// crash the process. One line per
 // path: `<path> <status> <outcome> destroyed=<destroyed> paused=<paused>
 // errored=<its error> errors=<listeners of error>`, then the late errors
 // logged, and the counts of the records of the guards refused and of the
@@ -30,6 +32,11 @@ interface IRefusing {
   /** What it pushes once read (`null`: nothing, it never ends) */
   readonly body: string | null;
   readonly autoDestroy?: boolean;
+  /**
+   * Whether its own `on()` emits an `error` once it has added the first
+   * listener of `error` (of the send, which hears it then)
+   */
+  readonly emits?: boolean;
 }
 
 const specs: Readonly<Record<string, IRefusing>> = {
@@ -39,6 +46,7 @@ const specs: Readonly<Record<string, IRefusing>> = {
   "/later": { refuses: "guard", body: "ok", autoDestroy: false },
   "/deadline": { refuses: "guard", body: null },
   "/head": { refuses: "every", body: "ok" },
+  "/emitted": { refuses: "guard", body: null, emits: true },
 };
 
 /**
@@ -47,7 +55,7 @@ const specs: Readonly<Record<string, IRefusing>> = {
  */
 function refusing(
   path: string,
-  { refuses, body, autoDestroy = true }: IRefusing,
+  { refuses, body, autoDestroy = true, emits = false }: IRefusing,
 ): Readable {
   let listeners = 0;
   const source = new Readable({
@@ -70,6 +78,17 @@ function refusing(
       }
     }
   });
+  if (emits) {
+    Object.assign(source, {
+      on(event: string, listener: () => void): Readable {
+        Readable.prototype.on.call(source, event, listener);
+        if (event === "error" && listeners === 1) {
+          source.emit("error", new Error("Emitted at once"));
+        }
+        return source;
+      },
+    });
+  }
   return source;
 }
 
@@ -143,9 +162,10 @@ const late = (): string[] =>
       (message): message is string =>
         typeof message === "string" && message.startsWith("Late failure"),
     );
-// Every late error (`/guard`, `/ended`, `/later` and `/deadline`), then a
+// Every late error (`/guard`, `/ended`, `/later`, `/deadline` and
+// `/emitted`), then a
 // while for any other one
-await pollUntil(() => late().length >= 4, 5_000).catch(() => null);
+await pollUntil(() => late().length >= 5, 5_000).catch(() => null);
 await new Promise((resolve) => {
   setTimeout(resolve, 50);
 });

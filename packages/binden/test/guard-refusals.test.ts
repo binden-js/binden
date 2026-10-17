@@ -2,7 +2,9 @@ import { Binden, type Context } from "../index.js";
 import {
   type IGuardMethods,
   type IStreamLikeMethods,
+  decided,
   emitterMethods,
+  forwarder,
   guard,
   hasClosed,
   readStreamLike,
@@ -90,8 +92,10 @@ suite("A source that refuses the listener of `error` of its guard", () => {
     // neither is destroyed. The others refuse the one of their guard (the
     // second): a body longer than its `Content-Length` (not destroyed with
     // that error), sent whole (destroyed by `autoDestroy`, or by the
-    // application later), cancelled at the deadline. Each destroy fails
-    // 20 ms later, logged once.
+    // application later), cancelled at the deadline, or failed by an error
+    // that its own `on()` emits once the send listens (`/emitted`, heard by
+    // the listener of the send, which stays). Each destroy fails 20 ms
+    // later, logged once.
     deepStrictEqual(fixture("guard-refusals.ts"), {
       status: 0,
       stdout:
@@ -101,19 +105,21 @@ suite("A source that refuses the listener of `error` of its guard", () => {
         "/later 200 resolved destroyed=true errored=Late failure (/later) paused=false errors=1\n" +
         "/deadline 503 rejected:The request has been aborted (deadline) destroyed=true errored=Late failure (/deadline) paused=false errors=1\n" +
         "/head 200 resolved destroyed=false errored=null paused=true errors=0\n" +
-        `${["/deadline", "/ended", "/guard", "/later"].map((path) => `Late failure (${path})`).join(", ")}\n` +
+        "/emitted 500 rejected:Emitted at once destroyed=true errored=Late failure (/emitted) paused=false errors=1\n" +
+        `${["/deadline", "/emitted", "/ended", "/guard", "/later"].map((path) => `Late failure (${path})`).join(", ")}\n` +
         // Once per source; the sources left: `/every` and `/head`
-        "refused=6 left=2\n",
+        "refused=7 left=2\n",
       stderr: "",
     });
   });
 
-  test("its listener of `error` kept by the send does not keep the response", () => {
+  test("its listener of `error` kept by the send does not keep the response, nor does a guard", () => {
     // 100 Node.js `Readable`s and 100 stream-like sources, each with the
-    // listener of its send, which logs its late error once
+    // listener of its send, and 100 Node.js `Readable`s with their guard,
+    // each of which logs its late error once (200 guards refused)
     deepStrictEqual(fixture("fallback-retention.ts", "--expose-gc"), {
       status: 0,
-      stdout: "collected 100 100 200 200\n",
+      stdout: "collected 100 100 100 300 200\n",
       stderr: "",
     });
   });
@@ -150,6 +156,14 @@ suite(
           () => "200 resolved destroyed= listeners=0/0/0/0 late=0",
           ["emitter"],
         ),
+        // Failed by an error that its own `on()` emits once the send
+        // listens: the listener of the send, which has heard it, stays
+        ...each(
+          "guard-emitted",
+          () =>
+            "500 rejected:Its I/O has failed at once destroyed= listeners=0/0/1/0 late=1",
+          ["emitter"],
+        ),
       ];
       deepStrictEqual(
         streamLikes([
@@ -157,6 +171,7 @@ suite(
           "guard-error",
           "guard-deadline",
           "every-head",
+          "guard-emitted",
         ]),
         { status: 0, lines, stderr: "" },
       );
@@ -212,7 +227,12 @@ suite("Code of a stream-like source that throws while send() reads it", () => {
       // committed, is closed; destroyed with that error, or paused (which
       // throws again, logged) without `destroy()`
       "emitter pause 0 rejected:pause() refused destroyed=pause() refused listeners=0/0/0/0 late=0",
-      "emitter pause-undestroyable 0 rejected:pause() refused destroyed= listeners=0/0/1/1 late=0",
+      "emitter pause-undestroyable 0 rejected:pause() refused #1 destroyed= listeners=0/0/1/1 late=0",
+      // A string thrown by its own `on()`: logged once (by its guard, as its
+      // destroy emits it), not by the readable that the send rejects with
+      "emitter on-string 500 rejected:Thrown destroyed=Thrown listeners=0/0/0/0 late=0",
+      // A falsy `errored` is no error: sent
+      "emitter errored-false 200 resolved destroyed= listeners=0/0/1/1 late=0",
       // Failed without being destroyed: rejected at once with its error, and
       // released with it (not logged)
       "emitter errored 500 rejected:Errored before destroyed=Errored before listeners=0/0/0/0 late=0",
@@ -224,8 +244,8 @@ suite("Code of a stream-like source that throws while send() reads it", () => {
           `emitter resume-${value} 500 rejected:ERR_STREAM_PREMATURE_CLOSE destroyed=Premature close listeners=0/0/0/0 late=0`,
       ),
       // Of every case: the removals that have thrown, the guards refused
-      // (once per source), and the sources left
-      "removals=26 refusals=14 left=5",
+      // (once per source), the sources left, and the strings logged
+      "removals=26 refusals=15 left=5 strings=1",
     ];
     deepStrictEqual(
       streamLikes(
@@ -239,6 +259,8 @@ suite("Code of a stream-like source that throws while send() reads it", () => {
           "removeListener-all",
           "pause",
           "pause-undestroyable",
+          "on-string",
+          "errored-false",
           "errored",
           "errored-v4",
           "errored-state",
@@ -335,6 +357,26 @@ suite("guard() of a source", () => {
       ],
       [true, true, ["Failed"], 1, 1],
     );
+  });
+
+  test("forwarder(): forwards to its target until it is detached, then reports a late error as a guard does: not a decided one, nor one that the guard of the source reports", () => {
+    const source = new EventEmitter();
+    const forwarded: unknown[] = [];
+    const reports: unknown[] = [];
+    const forward = forwarder((error: unknown) => {
+      forwarded.push(error);
+    });
+    forward.listener("Heard");
+    forward.detach(source, (error: unknown) => {
+      reports.push(error);
+    });
+    const failure = new Error("Decided");
+    decided(failure);
+    forward.listener(failure);
+    forward.listener("Late");
+    guard(source, emitterMethods, () => null);
+    forward.listener("Guarded");
+    deepStrictEqual([forwarded, reports], [["Heard"], ["Late"]]);
   });
 
   test("hasClosed(): a state that cannot be read (a getter that throws) does not tell", () => {

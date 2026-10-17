@@ -1,9 +1,10 @@
 // Run by `guard-refusals.test.ts` with `--expose-gc`: sources whose guard
 // cannot be installed (they refuse its listener of `error`, the second one),
-// a Node.js `Readable` and a stream-like source of each other request, sent
-// whole. Each keeps the listener of `error` of its send, which
-// must not keep the response once the send has settled: it holds nothing but
-// the report of a late error. Prints whether the responses are collected, the
+// a Node.js `Readable` and a stream-like source, which keep the listener of
+// `error` of their send, and a Node.js `Readable` whose guard stays (it never
+// closes), each sent whole by a third of the requests. Neither listener may
+// keep the response once the send has settled: each holds nothing but the
+// report of a late error. Prints whether the responses are collected, the
 // listeners of `error` left on the sources of each kind (one each), the late
 // errors that they log once the sources fail, and the refusals logged.
 import { Agent, get } from "node:http";
@@ -65,26 +66,34 @@ class Whole extends EventEmitter {
   }
 }
 
-const requests = 200;
-const sources: EventEmitter[] = [];
+/** The kinds of sources, by path: each other request gets one of them */
+const kinds = ["/readable", "/like", "/guarded"];
+const requests = 300;
+/** The sources, by kind */
+const sources = new Map<string, EventEmitter[]>(
+  kinds.map((kind) => [kind, []]),
+);
 const captured = capture();
 const app = new Binden({
   logger: captured.logger,
   log_error_details: true,
 }).use(async (context: Context) => {
+  const { pathname } = context.url;
+  const readable = (): Readable =>
+    new Readable({
+      autoDestroy: false,
+      read(): void {
+        this.push("ok");
+        this.push(null);
+      },
+    });
   const source =
-    context.url.pathname === "/readable"
-      ? refusing(
-          new Readable({
-            autoDestroy: false,
-            read(): void {
-              this.push("ok");
-              this.push(null);
-            },
-          }),
-        )
-      : refusing(new Whole());
-  sources.push(source);
+    pathname === "/like"
+      ? refusing(new Whole())
+      : pathname === "/readable"
+        ? refusing(readable())
+        : readable();
+  sources.get(pathname)?.push(source);
   await context.send(source);
 });
 
@@ -99,10 +108,10 @@ const request = (path: string): Promise<void> =>
       response.resume().once("end", resolve);
     }).once("error", reject);
   });
-for (let sent = 0; sent < requests; sent += 8) {
+for (let sent = 0; sent < requests; sent += 6) {
   await Promise.all(
-    Array.from({ length: 8 }, (_value, index) =>
-      request(index % 2 === 0 ? "/readable" : "/like"),
+    Array.from({ length: 6 }, (_value, index) =>
+      request(kinds[index % kinds.length]),
     ),
   );
 }
@@ -118,10 +127,11 @@ for (let round = 0; round < 3; round += 1) {
 }
 const left = queryObjects(BindenResponse, { format: "count" });
 /** The listeners of `error` left on the sources of each kind */
-const listeners = [true, false].map((readable) =>
-  sources
-    .filter((source) => source instanceof Readable === readable)
-    .reduce((count, source) => count + source.listenerCount("error"), 0),
+const listeners = kinds.map((kind) =>
+  (sources.get(kind) ?? []).reduce(
+    (count, source) => count + source.listenerCount("error"),
+    0,
+  ),
 );
 /** The guards that could not be installed */
 const refused = captured.records.filter(
@@ -129,7 +139,7 @@ const refused = captured.records.filter(
     (failure as { message?: unknown } | undefined)?.message === "No guard",
 ).length;
 // Each source fails: its listener of `error` logs it
-for (const source of sources) {
+for (const source of [...sources.values()].flat()) {
   source.emit("error", new Error("Late failure"));
 }
 const late = (): number =>

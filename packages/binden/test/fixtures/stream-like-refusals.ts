@@ -7,13 +7,14 @@
 // and the send settles as it would with a Node.js `Readable`. One line per
 // source and case: `<source> <case> <status> <outcome> destroyed=<what it has
 // been destroyed with> listeners=<data>/<end>/<error>/<close> late=<late
-// errors logged>`, then the counts of the records of the sources left and
-// of the code of the sources that has thrown once released.
+// errors logged>`, then the counts of the records of the removals that have
+// thrown, of the guards refused, of the sources left, and of the strings
+// thrown that have been logged.
 import { Binden, type Context, type IStreamLike } from "../../index.js";
 import { EventEmitter, once } from "node:events";
 import { type IncomingMessage, request } from "node:http";
+import { capture, pollUntil } from "../helpers.js";
 import type { AddressInfo } from "node:net";
-import { capture } from "../helpers.js";
 import { createRequire } from "node:module";
 
 setTimeout(() => {
@@ -270,10 +271,12 @@ const cases: Readonly<Record<string, ICase>> = {
   "pause-undestroyable": {
     sources: ["emitter"],
     prepare: (source: ISource): void => {
+      let pauses = 0;
       Object.assign(source, {
         destroy: null,
         pause: (): never => {
-          throw new Error("pause() refused");
+          pauses += 1;
+          throw new Error(`pause() refused #${pauses}`);
         },
       });
       setImmediate(() => {
@@ -282,7 +285,58 @@ const cases: Readonly<Record<string, ICase>> = {
       });
     },
   },
-  // Failed without being destroyed (`errored`, also of its state)
+  // Its own `on()` emits an `error` once the send listens, and refuses the
+  // listener of `error` of its guard: the one of the send has heard it, and
+  // stays
+  "guard-emitted": {
+    sources: ["emitter"],
+    prepare: (source: ISource): void => {
+      const on = Reflect.get(source, "on") as IMethod;
+      let listeners = 0;
+      Object.assign(source, {
+        on(event: string, listener: () => void): unknown {
+          if (event === "error") {
+            listeners += 1;
+            if (listeners === 2) {
+              throw new Error("No listener of error #2");
+            }
+          }
+          const result = Reflect.apply(on, source, [event, listener]);
+          if (event === "error") {
+            source.emit("error", new Error("Its I/O has failed at once"));
+          }
+          return result;
+        },
+      });
+    },
+    later,
+  },
+  // Its own `on()` throws a string (for `end`): rejected with it, and
+  // destroyed with it (its destroy emits it, logged once)
+  "on-string": {
+    sources: ["emitter"],
+    prepare: (source: ISource): void => {
+      const on = Reflect.get(source, "on") as IMethod;
+      Object.assign(source, {
+        on(event: string, listener: () => void): unknown {
+          if (event === "end") {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- a string on purpose
+            throw "Thrown";
+          }
+          return Reflect.apply(on, source, [event, listener]);
+        },
+      });
+    },
+  },
+  // Failed without being destroyed (`errored`, also of its state); a falsy
+  // `errored` is no error
+  "errored-false": {
+    sources: ["emitter"],
+    prepare: (source: ISource): void => {
+      Object.assign(source, { errored: false });
+      whole(source);
+    },
+  },
   errored: {
     sources: ["emitter"],
     prepare: (source: ISource): void => {
@@ -437,16 +491,37 @@ for (const [name, spec] of Object.entries(cases)) {
     ]);
   }
 }
-// The late errors (20 ms later), and the turn after the close of each source
-await new Promise((resolve) => {
-  setTimeout(resolve, 50);
-});
+/** Whether a late error of each of these keys has been logged */
+const reported = (keys: readonly string[]): boolean =>
+  keys.every((key) =>
+    captured.records.some(
+      ({ failure }) =>
+        (failure as { message?: unknown } | undefined)?.message ===
+        `Late failure (${key})`,
+    ),
+  );
+/** The keys of the sources of the cases that have a property */
+function keysOf(property: keyof ICase): string[] {
+  const keys: string[] = [];
+  for (const [name, spec] of Object.entries(cases)) {
+    if (property in spec) {
+      keys.push(...spec.sources.map((library) => `${library} ${name}`));
+    }
+  }
+  return keys;
+}
+// The late errors of the destroys at the deadline (20 ms later), then those
+// of the sources that fail once released
+await pollUntil(() => reported(keysOf("deadline")), 5_000).catch(() => null);
 for (const [name, spec] of Object.entries(cases)) {
   for (const library of spec.sources) {
     const key = `${library} ${name}`;
     spec.later?.(sources.get(key) as ISource, key);
   }
 }
+await pollUntil(() => reported(keysOf("later")), 5_000).catch(() => null);
+// Anything else (which none may log), and the turn after the close of each
+// source
 await new Promise((resolve) => {
   setTimeout(resolve, 50);
 });
@@ -470,6 +545,6 @@ process.stdout.write(
       return `${key} ${code} ${outcomes.get(key)} destroyed=${destroyed.join("|")} listeners=${listeners} late=${count(`Late failure (${key})`)}`;
     })
     .join("\n")}\n` +
-    `removals=${late.filter((logged) => typeof logged === "string" && logged.startsWith("No removal")).length} refusals=${late.filter((logged) => typeof logged === "string" && logged.startsWith("No listener")).length} left=${captured.records.filter(({ msg }) => msg === "A stream could not be released").length}\n`,
+    `removals=${late.filter((logged) => typeof logged === "string" && logged.startsWith("No removal")).length} refusals=${late.filter((logged) => typeof logged === "string" && logged.startsWith("No listener")).length} left=${captured.records.filter(({ msg }) => msg === "A stream could not be released").length} strings=${captured.records.filter(({ failure }) => (failure as { type?: unknown } | undefined)?.type === "string").length}\n`,
 );
 process.exit(0);
