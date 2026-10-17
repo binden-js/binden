@@ -71,6 +71,7 @@ import {
   readStreamLike,
   releaseStreamLike,
   reportLate,
+  resolved,
   streamLikeOf,
 } from "./stream-like.js";
 import {
@@ -3365,7 +3366,12 @@ export class BindenResponse<
           return;
         }
         settled = true;
-        if (failure?.own === true) {
+        if (failure === null) {
+          // Before it is released (see `drop`): a stream-like source is then
+          // destroyed without an error, as a Node.js `Readable` is, never
+          // with the reason of a cancellation (see `resolved()`)
+          resolved(data);
+        } else if (failure.own) {
           // Before its guard is installed (see `unlisten`): code of the
           // source that throws it again then is not logged (see `guard()`),
           // nor is it reported once the source emits it (see `drop`)
@@ -3577,6 +3583,10 @@ export class BindenResponse<
                 return;
               } else if (this.writableEnded) {
                 stopped = true;
+                // No longer read, it no longer fails the send (see `stop`):
+                // released without an error (see `resolved()`), as at its
+                // resolution
+                resolved(data);
                 this.#discard(data, listened);
                 return;
               }
