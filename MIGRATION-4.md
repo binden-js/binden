@@ -335,7 +335,8 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   resolved at the end of the stream (its data could still be buffered), and it rejects when the
   client goes away before: with the error of the connection when a write fails first (e.g.
   `EPIPE`, `ECONNRESET` or `ECANCELED`), otherwise as a premature close
-  (`ERR_STREAM_PREMATURE_CLOSE`). The send of binden 2.0.4 never settled then.
+  (`ERR_STREAM_PREMATURE_CLOSE`). The send of binden 2.0.4 never settled then, unless the stream
+  failed by itself (e.g. the request of an echo, with `ECONNRESET`).
 - A `send()` that is ignored (once the response has ended, or by a work that can no longer change
   it, e.g. once its deadline has passed) releases a Node.js `Readable` without reading it: it is
   destroyed (closing the file of a stream), where binden 2.0.4 left it untouched. The request of
