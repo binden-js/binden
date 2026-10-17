@@ -5,7 +5,7 @@
 // the report of a late error. Modes: `sent` (sent in full), `ended` (ended and
 // closed before the send) and `cancelled` (at the deadline, with a destroy
 // that does not complete). With `bound`, the listeners of each source are
-// bound as the `context.bind()` of OpenTelemetry binds them (see `bind()`).
+// bound by a wrapper of its listener methods (see `bind()`).
 // Prints whether the responses are collected, and the listeners left on the
 // sources (of `data`, `end`, `error` and `close`).
 import { Agent, get } from "node:http";
@@ -29,11 +29,13 @@ const sources: Readable[] = [];
 type IMethod = (this: Readable, ...args: unknown[]) => unknown;
 
 /**
- * Binds the listeners of a source as the `context.bind()` of OpenTelemetry
- * binds those of an emitter: its own `on()`, `addListener()` and
- * `prependListener()` add a wrapper of each listener in its place, which
- * its own `removeListener()` and `off()` find (but `once()` is not patched:
- * it adds a wrapper of its own through `on()`, which they do not find)
+ * Binds the listeners of a source as a wrapper of the listener methods of an
+ * emitter may (e.g. an instrumentation that binds the listeners to a context):
+ * its own `on()`, `addListener()` and `prependListener()` add a wrapper of
+ * each listener in its place, which its own `removeListener()` and `off()`
+ * find. Its `once()` is left as it is: it adds a wrapper of its own through
+ * `on()`, which they do not find (OpenTelemetry also patches `once()`, but a
+ * wrapper need not), so the send must not listen with `once()`
  */
 function bind(source: Readable): Readable {
   const wrappers = new Map<string, WeakMap<object, IMethod>>();

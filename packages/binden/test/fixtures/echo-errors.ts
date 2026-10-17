@@ -1,4 +1,4 @@
-// Run by `process.test.ts`: the request of a response, sent as its body (an
+// Run by `release.test.ts`: the request of a response, sent as its body (an
 // echo), without a listener of `error` of the application. Node.js schedules
 // the error of a request (e.g. of a client that aborts) once it has found a
 // listener: the guard of the request listens before the send removes its own
