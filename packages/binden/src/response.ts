@@ -2656,7 +2656,12 @@ export class BindenResponse<
    * Send a response: a string (or a number), bytes, a `Readable`, a
    * stream-like source (see `IStreamLike`, e.g. of `readable-stream`), or no
    * body. Any other object rejects with a `TypeError` before anything is
-   * sent.
+   * sent. It resolves once the response is flushed to the connection. When
+   * the client goes away before, it rejects with the error of the connection
+   * when a pending write fails first (e.g. `EPIPE`, `ECONNRESET` or
+   * `ECANCELED`, whichever Node.js and the system report), otherwise as a
+   * premature close (`ERR_STREAM_PREMATURE_CLOSE`): a release of its source
+   * never decides it.
    */
   public send(
     data?:
@@ -3134,6 +3139,14 @@ export class BindenResponse<
    * framework may cancel the send (see `[kCancel]()`): it then rejects with
    * the reason at once, and its source is released.
    *
+   * When the response closes before the send has settled (e.g. the client
+   * goes away), the send rejects with the error of the connection when a
+   * pending write fails first (e.g. `EPIPE`, `ECONNRESET` or `ECANCELED`,
+   * which Node.js and the system decide), otherwise at once as the response
+   * has ended (see `unclose`): as a premature close, or resolved once its
+   * body is complete for the client. Only then is its source released: a
+   * release that fails never decides it.
+   *
    * Once the send has settled (sent, failed or cancelled), every listener
    * that it has added to the source (by its own `on()`, also of `end` and
    * `close`, which a source that has ended or closed before never emits) is
@@ -3533,8 +3546,11 @@ export class BindenResponse<
                 }
                 const accepted = this.write(chunk, (error?: Error | null) => {
                   if (error) {
-                    // Not delivered: the client went away (Node.js 24 may
-                    // still emit `finish` once the response is ended)
+                    // Not delivered: the client went away, and the error of
+                    // the connection (e.g. `EPIPE`, `ECONNRESET` or
+                    // `ECANCELED`) may come before its close, which the send
+                    // then rejects with (Node.js 24 may still emit `finish`
+                    // once the response is ended)
                     settle({ error, own: false });
                   } else {
                     flushed += size;
