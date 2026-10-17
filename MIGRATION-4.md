@@ -328,7 +328,14 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `Readable` that has ended is an empty body.
 - A `Readable` that has been destroyed, or that has errored without being destroyed (its
   `errored` is set, e.g. a stream without `autoDestroy`), rejects `send()` at once, with its
-  `errored` (otherwise `ERR_STREAM_PREMATURE_CLOSE`), where binden 2.0.4 never settled.
+  `errored` (otherwise `ERR_STREAM_PREMATURE_CLOSE`). binden 2.0.4 rejected only when the error of
+  the stream had not been emitted yet (e.g. a `destroy(error)` in the same tick as `send()`), and
+  otherwise never settled.
+- `send()` of a stream resolves once the response is flushed to the connection, where binden 2.0.4
+  resolved at the end of the stream (its data could still be buffered), and it rejects when the
+  client goes away before: with the error of the connection when a write fails first (e.g.
+  `EPIPE`, `ECONNRESET` or `ECANCELED`), otherwise as a premature close
+  (`ERR_STREAM_PREMATURE_CLOSE`). The send of binden 2.0.4 never settled then.
 - A `send()` that is ignored (once the response has ended, or by a work that can no longer change
   it, e.g. once its deadline has passed) releases a Node.js `Readable` without reading it: it is
   destroyed (closing the file of a stream), where binden 2.0.4 left it untouched. The request of
