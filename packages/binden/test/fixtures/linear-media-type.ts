@@ -1,6 +1,8 @@
 // Run in a worker thread by `headers/linear.test.ts`: `response.type()` of
 // inputs that an exponential regular expression would never finish (the
-// worker is then terminated), with the time each takes
+// worker is then terminated), with the CPU time that each takes in the worker
+// (see `cpuSince()` of the test: unlike the time of the clock, it does not
+// grow while other processes load the machine)
 import { BindenResponse } from "../../index.js";
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
@@ -17,13 +19,14 @@ const inputs = [
   `${" ".repeat(15_000)}text/plain${" ".repeat(15_000)}\x01`,
 ];
 const results = inputs.map((input) => {
-  const start = performance.now();
+  const start = process.threadCpuUsage();
   let outcome = "accepted";
   try {
     response.type(input);
   } catch (error: unknown) {
     outcome = (error as Error).name;
   }
-  return { outcome, ms: performance.now() - start };
+  const { user, system } = process.threadCpuUsage(start);
+  return { outcome, ms: (user + system) / 1000 };
 });
 parentPort?.postMessage(results);

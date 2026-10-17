@@ -1045,17 +1045,16 @@ suite("BindenResponse", () => {
   });
 
   test(".sendFile() (304 response with `If-Modified-Since`)", async () => {
-    const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response) => {
-        response
-          .sendFile(filePath)
-          .then(() => {
-            server.once("request", (_request2, response2) => {
-              response2.sendFile(filePath).then(resolve).catch(reject);
-            });
-          })
-          .catch(reject);
-      });
+    // Registered before the requests are sent: the second one may come
+    // before the send of the first has settled
+    const sends: Promise<unknown>[] = [];
+    server.on("request", (_request, response) => {
+      sends.push(
+        response.sendFile(filePath).then(
+          () => null,
+          (error: unknown) => error,
+        ),
+      );
     });
 
     const response = await fetch(url);
@@ -1074,21 +1073,20 @@ suite("BindenResponse", () => {
     const data2 = await response2.text();
     deepStrictEqual(data2, "");
 
-    await serverPromise;
+    deepStrictEqual(await within(Promise.all(sends)), [null, null]);
   });
 
   test(".sendFile() (304 response with `If-Modified-Since` HEAD)", async () => {
-    const serverPromise = new Promise<void>((resolve, reject) => {
-      server.once("request", (_request, response) => {
-        response
-          .sendFile(filePath)
-          .then(() => {
-            server.once("request", (_request2, response2) => {
-              response2.sendFile(filePath).then(resolve).catch(reject);
-            });
-          })
-          .catch(reject);
-      });
+    // Registered before the requests are sent: the second one may come
+    // before the send of the first has settled
+    const sends: Promise<unknown>[] = [];
+    server.on("request", (_request, response) => {
+      sends.push(
+        response.sendFile(filePath).then(
+          () => null,
+          (error: unknown) => error,
+        ),
+      );
     });
 
     const response = await fetch(url, { method: "HEAD" });
@@ -1107,7 +1105,7 @@ suite("BindenResponse", () => {
     const data2 = await response2.text();
     deepStrictEqual(data2, "");
 
-    await serverPromise;
+    deepStrictEqual(await within(Promise.all(sends)), [null, null]);
   });
 
   test(".sendFile() (416 response with invalid `Range`)", async () => {

@@ -12,11 +12,23 @@ import { Socket } from "node:net";
 import { Worker } from "node:worker_threads";
 import { once } from "node:events";
 
-/** The milliseconds that `fn` takes */
+/**
+ * The milliseconds of CPU time (user and system) that the current thread has
+ * taken since `start`, a `process.threadCpuUsage()`: unlike the time of the
+ * clock, it does not grow while other processes load the machine, nor with
+ * the threads of V8 that compile and collect in the background (which
+ * `process.cpuUsage()`, of the whole process, counts)
+ */
+function cpuSince(start: NodeJS.CpuUsage): number {
+  const { user, system } = process.threadCpuUsage(start);
+  return (user + system) / 1000;
+}
+
+/** The milliseconds of CPU time that `fn` takes (see `cpuSince()`) */
 function duration(fn: () => unknown): number {
-  const start = performance.now();
+  const start = process.threadCpuUsage();
   fn();
-  return performance.now() - start;
+  return cpuSince(start);
 }
 
 /**
@@ -25,7 +37,7 @@ function duration(fn: () => unknown): number {
  */
 const length = 15_000;
 
-/** A bound far above a linear parse, far below a quadratic one */
+/** A bound (of CPU time) far above a linear parse, far below a quadratic one */
 const bound = 100;
 
 /**
@@ -120,11 +132,11 @@ suite("Header parsers in linear time", () => {
     request.url = `http://${"a".repeat(length / 2)}/${"b".repeat(length / 2)}\n`;
     let ms = Number.POSITIVE_INFINITY;
     throws(() => {
-      const start = performance.now();
+      const start = process.threadCpuUsage();
       try {
         return request.URL;
       } finally {
-        ms = performance.now() - start;
+        ms = cpuSince(start);
       }
     }, /Bad Request/u);
     ok(ms < bound, `${ms} ms`);
