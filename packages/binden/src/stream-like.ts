@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
+import { formatStack } from "./exchange.js";
 
 /** A listener of an event of a stream-like source (see `IStreamLike`) */
 export type IStreamLikeListener = (...args: unknown[]) => unknown;
@@ -153,23 +154,6 @@ function invalidChunk(chunk: unknown): TypeError {
   return Object.assign(new TypeError(message), {
     code: "ERR_INVALID_ARG_TYPE",
   });
-}
-
-/**
- * An error whose stack is formatted at once: the stack of V8 that is not
- * formatted yet keeps the objects of its frames (e.g. a response that their
- * scopes hold), which a source that keeps the error it is destroyed with
- * (e.g. minipass 7 keeps the error that it emits) would retain for its life
- */
-function formatted(error: Error): Error {
-  try {
-    // Read once: V8 formats it then
-    Reflect.get(error, "stack");
-  } catch {
-    // Its stack cannot be read (e.g. a getter of its own that throws): it is
-    // handed over as it is
-  }
-  return error;
 }
 
 /** The error of a close before the end */
@@ -994,7 +978,7 @@ export function readStreamLike(
             // code has thrown, a premature close), an error of binden: no
             // guard reports it once the source emits it (see `decided()`).
             // Formatted before the source has it, which may keep it
-            const failure = formatted(reason());
+            const failure = formatStack(reason());
             decided(failure);
             releaseBy(source, destroy, released, failure);
           } else {

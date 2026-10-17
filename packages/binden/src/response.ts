@@ -3359,7 +3359,10 @@ export class BindenResponse<
        * own `removeListener()`), which belongs to the work that is abandoned.
        */
       const settle = (
-        failure: { readonly error: unknown; readonly own: boolean } | null,
+        failure: {
+          readonly error: unknown;
+          readonly own: boolean | "thrown";
+        } | null,
         release: (() => void)[] | null = null,
       ): void => {
         if (settled) {
@@ -3371,10 +3374,16 @@ export class BindenResponse<
           // destroyed without an error, as a Node.js `Readable` is, never
           // with the reason of a cancellation (see `resolved()`)
           resolved(data);
+        } else if (failure.own === "thrown") {
+          // What code of the source has thrown, an object of the
+          // application, before its guard is installed (see `unlisten`): its
+          // code that throws it again then is not logged (see `guard()`), nor
+          // is it reported once the source emits it (see `drop`), but it may
+          // still be a late error of another source (see `decidedFor()`)
+          decidedFor(data, failure.error);
         } else if (failure.own) {
-          // Before its guard is installed (see `unlisten`): code of the
-          // source that throws it again then is not logged (see `guard()`),
-          // nor is it reported once the source emits it (see `drop`)
+          // An error of binden (e.g. a body longer than its
+          // `Content-Length`), decided as above for every source
           decided(failure.error);
         }
         // Restored by `[kCancel]()` still, once its cancellation is recorded
@@ -3402,7 +3411,7 @@ export class BindenResponse<
           reject(operation.active ? error : this.#abandoned(error));
         }
         if (release === null) {
-          drop(failure?.own === true ? failure : null);
+          drop(failure !== null && failure.own !== false ? failure : null);
         }
       };
       /**
@@ -3432,29 +3441,30 @@ export class BindenResponse<
       };
       /**
        * Fails the send: once anything is sent, or the headers are committed
-       * (e.g. by `flushHeaders()`, whose head promises a body), the response
-       * is closed (see `#cutFailed()`), so that the client never takes it for
-       * complete, nor reads the next response of the connection as its body.
-       * A failure that binden finds itself (`own`: e.g. a body longer than
-       * its `Content-Length`, or code of the source that throws) fails it at
-       * once, never by an `error` event of the source (which a `_destroy()`
-       * that calls back without the error never emits), then destroys the
-       * source with it under its guard (see `settle`), unless it is the
-       * request of the response (see `#destroys()`). Once the response has
-       * been ended (by another writer, e.g. a compression that has replaced
-       * it with `406`, or by the send itself, once the whole body is
-       * written), a failure no longer fails the send, which is stopped
-       * instead (see `stop`, `emitted`). An error that an event of the source
-       * has brought (`emitted`: its `error`, or its `close` with its
-       * `errored`, which reach every listener of the source; `null` for none)
-       * and that fails the send has decided it for that source
+       * (e.g. by `flushHeaders()`, whose head promises a body), the response is
+       * closed (see `#cutFailed()`), so that the client never takes it for
+       * complete, nor reads the next response of the connection as its body. A
+       * failure that binden finds itself (`own`: `true` for an error of binden
+       * or of Node.js, e.g. a body longer than its `Content-Length`; `"thrown"`
+       * for what code of the source throws, an object of the application,
+       * decided for this source only) fails it at once, never by an `error`
+       * event of the source (which a `_destroy()` that calls back without the
+       * error never emits), then destroys the source with it under its guard
+       * (see `settle`), unless it is the request of the response (see
+       * `#destroys()`). Once the response has been ended (by another writer,
+       * e.g. a compression that has replaced it with `406`, or by the send
+       * itself, once the whole body is written), a failure no longer fails the
+       * send, which is stopped instead (see `stop`, `emitted`). An error that
+       * an event of the source has brought (`emitted`: its `error`, or its
+       * `close` with its `errored`, which reach every listener of the source;
+       * `null` for none) and that fails the send has decided it for that source
        * (see `decidedFor()`): no guard of the source reports it, e.g. the one
-       * that another response has installed on a source that it has
-       * released, whose listener of `error` comes after the one of the send
+       * that another response has installed on a source that it has released,
+       * whose listener of `error` comes after the one of the send
        */
       const fail = (
         error: unknown,
-        own = false,
+        own: boolean | "thrown" = false,
         emitted: boolean | null = false,
       ): void => {
         if (settled) {
@@ -3481,7 +3491,7 @@ export class BindenResponse<
         try {
           data.resume();
         } catch (error: unknown) {
-          fail(error, true);
+          fail(error, "thrown");
         }
       };
       /**
@@ -3494,6 +3504,19 @@ export class BindenResponse<
           operation.run(resume);
         });
         observers.add(drained);
+      };
+      /**
+       * Pauses the source while the response is full, until it drains: a
+       * `pause()` of its own that throws fails the send (see `fail`)
+       */
+      const pause = (): void => {
+        try {
+          data.pause();
+        } catch (error: unknown) {
+          fail(error, "thrown");
+          return;
+        }
+        drain();
       };
       const end = (): void => {
         if (settled || this.writableEnded) {
@@ -3612,12 +3635,11 @@ export class BindenResponse<
                 // phrase that Node.js refuses) has sent nothing
                 sent += size;
                 if (!accepted) {
-                  data.pause();
-                  drain();
+                  pause();
                 }
               } catch (error: unknown) {
-                // Not a chunk of bytes (e.g. an object), or a `pause()` of
-                // the source that throws
+                // Not a chunk of bytes (e.g. an object), or a write that
+                // Node.js refuses: an error of its own
                 fail(error, true);
               }
             });
@@ -3663,7 +3685,7 @@ export class BindenResponse<
         // Code of the source (e.g. its own `on()`, a listener of its
         // `newListener`, or its own `resume()`, also the one that `on("data")`
         // of Node.js calls for a source that is not paused)
-        fail(error, true);
+        fail(error, "thrown");
       }
     });
   }

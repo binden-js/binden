@@ -1,4 +1,4 @@
-import { BindenAbortError, Exchange } from "./exchange.js";
+import { BindenAbortError, Exchange, formatStack } from "./exchange.js";
 import {
   BindenRequest,
   type IRequestOptions,
@@ -914,7 +914,8 @@ export class Binden<
     if (Binden.#closed(context)) {
       return;
     } else if (!response.started) {
-      const error = new BindenError(503, { code: "deadline" });
+      // Formatted (see `formatStack()`): the error handler is given it
+      const error = formatStack(new BindenError(503, { code: "deadline" }));
       await exchange.reply(async () => {
         Binden.#closeUnread(context);
         await this.#errorHandler(context, exchange, error);
@@ -1055,10 +1056,13 @@ export class Binden<
         // come) have written nothing: as at the deadline, they are cancelled
         // at once (one that settles before they are, below, rejects with the
         // reason, never as an ignored send), and the reply that follows
-        // replaces them
+        // replaces them. Its stack is formatted (see `formatStack()`): they
+        // reject with it
         const reason =
           outcome === EXPIRED
-            ? new BindenError(500, { code: "error_handler_timeout" })
+            ? formatStack(
+                new BindenError(500, { code: "error_handler_timeout" }),
+              )
             : outcome.error;
         response[kCancelling](reason);
         if (outcome === EXPIRED) {
