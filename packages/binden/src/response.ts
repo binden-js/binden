@@ -330,14 +330,6 @@ const destroyReadable = Reflect.get(Readable.prototype, "destroy") as (
   this: Readable,
 ) => unknown;
 
-/**
- * `Readable.prototype.pause()`, which leaves a `Readable` that cannot be
- * released (see `BindenResponse.#unreleasable()`): never its own
- */
-const pauseReadable = Reflect.get(Readable.prototype, "pause") as (
-  this: Readable,
-) => unknown;
-
 /** The report of a late error of a source of a response that is not owned */
 function unreported(): void {
   // Nobody to tell
@@ -3267,7 +3259,7 @@ export class BindenResponse<
        * body, and the next request of the connection. Without its guard (see
        * `unlisten`), it is destroyed without that error, which the send has
        * failed with already, while the listener of `error` of the send
-       * listens, and else left (see `#unreleasable()`). A failure of the release
+       * listens, and else left (see `#unreleased()`). A failure of the release
        * (e.g. of a `destroy()` of its own) is logged (`debug`)
        */
       const drop = (
@@ -3287,7 +3279,7 @@ export class BindenResponse<
           } else if (listened) {
             data.destroy();
           } else {
-            this.#unreleasable(data);
+            this.#unreleased();
           }
         } catch (error: unknown) {
           this.#ownership.debug("The release of a stream has failed", error);
@@ -3632,16 +3624,14 @@ export class BindenResponse<
   /**
    * Leaves a source that cannot be released: no listener of its `error` is
    * in place (it refuses the one of its guard, see `guard()`, and its send
-   * has none), without which an error of its destroy would crash the
-   * process. It is only paused (by `Readable.prototype.pause()`, never its
-   * own), and that is logged (`debug`): it is the application's to release.
+   * has none), without which an error of its destroy, or of its pause (e.g.
+   * of a listener of its `pause` that fails later), would crash the process.
+   * Nothing of it is called, neither its own `pause()` nor
+   * `Readable.prototype.pause()` (which emits `pause` to the listeners of
+   * the application): that is only logged (`debug`), and it is the
+   * application's to release. Also for a stream-like source (see
+   * `readStreamLike()`).
    */
-  #unreleasable(source: Readable): void {
-    this.#unreleased();
-    Reflect.apply(pauseReadable, source, []);
-  }
-
-  /** Logs (`debug`) that a source is left (see `#unreleasable()`) */
   #unreleased(): void {
     this.#ownership.note(
       "A stream could not be released",
@@ -3802,7 +3792,7 @@ export class BindenResponse<
    * many sends release it, which reports a late error (e.g. of a file that
    * fails to close). A source that refuses its guard is destroyed only
    * while the listener of `error` of its send listens (`listened`), and is
-   * left otherwise (see `#unreleasable()`). A failure of the release is logged
+   * left otherwise (see `#unreleased()`). A failure of the release is logged
    * (`debug`). Never the request of the response (e.g. an echo, see
    * `#destroys()`).
    */
@@ -3819,7 +3809,7 @@ export class BindenResponse<
         if (this.#guardReleased(source) || listened) {
           Reflect.apply(destroyReadable, source, []);
         } else {
-          this.#unreleasable(source);
+          this.#unreleased();
         }
       }
     } catch (error: unknown) {

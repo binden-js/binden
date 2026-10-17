@@ -86,7 +86,7 @@ function streamLikes(
 }
 
 suite("A source that refuses the listener of `error` of its guard", () => {
-  test("a Node.js `Readable`: it keeps the one of its send, which logs its late error, and is destroyed without the error of the send; one that refuses every one is left, paused", () => {
+  test("a Node.js `Readable`: it keeps the one of its send, which logs its late error, and is destroyed without the error of the send; one that refuses every one is left untouched", () => {
     // `/every` refuses every listener of `error` (also of the send, which
     // rejects with it), `/head` the one of its guard (released to `HEAD`):
     // neither is destroyed. The others refuse the one of their guard (the
@@ -99,12 +99,12 @@ suite("A source that refuses the listener of `error` of its guard", () => {
     deepStrictEqual(fixture("guard-refusals.ts"), {
       status: 0,
       stdout:
-        "/every 500 rejected:No listener of error #1 destroyed=false errored=null paused=true errors=0\n" +
+        "/every 500 rejected:No listener of error #1 destroyed=false errored=null paused=false errors=0\n" +
         "/guard 500 rejected:ERR_HTTP_CONTENT_LENGTH_MISMATCH destroyed=true errored=Late failure (/guard) paused=false errors=1\n" +
         "/ended 200 resolved destroyed=true errored=Late failure (/ended) paused=false errors=1\n" +
         "/later 200 resolved destroyed=true errored=Late failure (/later) paused=false errors=1\n" +
         "/deadline 503 rejected:The request has been aborted (deadline) destroyed=true errored=Late failure (/deadline) paused=false errors=1\n" +
-        "/head 200 resolved destroyed=false errored=null paused=true errors=0\n" +
+        "/head 200 resolved destroyed=false errored=null paused=false errors=0\n" +
         "/emitted 500 rejected:Emitted at once destroyed=true errored=Late failure (/emitted) paused=false errors=1\n" +
         `${["/deadline", "/emitted", "/ended", "/guard", "/later"].map((path) => `Late failure (${path})`).join(", ")}\n` +
         // Once per source; the sources left: `/every` and `/head`

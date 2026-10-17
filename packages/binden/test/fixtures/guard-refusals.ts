@@ -7,10 +7,10 @@
 // sent whole, cancelled at the deadline, or destroyed by the application
 // later): its late error is logged once. One that refuses every listener of
 // `error` is never destroyed (failed by its own `on()`, or released to
-// `HEAD`): it is left paused. One whose own `on()` emits an error once the
-// send listens (`/emitted`) keeps the listener that has heard it. Nothing may
-// crash the process. One line per
-// path: `<path> <status> <outcome> destroyed=<destroyed> paused=<paused>
+// `HEAD`): it is left untouched (never paused). One whose own `on()` emits
+// an error once the send listens (`/emitted`) keeps the listener that has
+// heard it. Nothing may crash the process. One line per path: `<path>
+// <status> <outcome> destroyed=<destroyed> paused=<paused>
 // errored=<its error> errors=<listeners of error>`, then the late errors
 // logged, and the counts of the records of the guards refused and of the
 // sources left.
