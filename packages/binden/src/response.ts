@@ -3228,8 +3228,11 @@ export class BindenResponse<
        * not depend on whether it may be destroyed
        */
       const unlisten = (): void => {
-        guarded = this.#guardReleased(data);
+        // First: an error that the source emits while the listener of its
+        // guard is added (e.g. by a listener of its `newListener`) is a late
+        // one (see `forwarder()`), never one of the send, which has settled
         errors.detach(data, this.#report());
+        guarded = this.#guardReleased(data);
         for (const [event, listener] of listeners) {
           // Kept when no guard listens, without which an error of its
           // release (see `drop`) would crash the process
