@@ -1,0 +1,14 @@
+# The settings of Prettier (which reads this file too), for the other editors
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+# Two trailing spaces may be a line break
+trim_trailing_whitespace = false

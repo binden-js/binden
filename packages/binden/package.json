@@ -1,0 +1,77 @@
+{
+  "name": "binden",
+  "version": "0.0.0-development",
+  "description": "A simple HTTP server framework",
+  "main": "dist/index.js",
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "!dist/test",
+    "index.ts",
+    "src",
+    "MIGRATION-4.md",
+    "PRODUCTION.md"
+  ],
+  "engines": {
+    "node": ">=24.14.1"
+  },
+  "scripts": {
+    "build": "tsc",
+    "documents": "node ../../scripts/copy-documents.mjs MIGRATION-4.md PRODUCTION.md",
+    "prebuild": "node ../../scripts/clean.mjs MIGRATION-4.md PRODUCTION.md",
+    "prepack": "npm run build && npm run documents",
+    "test": "node ../../scripts/test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/binden-js/binden.git",
+    "directory": "packages/binden"
+  },
+  "keywords": [
+    "HTTP",
+    "REST",
+    "web",
+    "framework",
+    "server",
+    "router",
+    "routing",
+    "middleware",
+    "api",
+    "typescript"
+  ],
+  "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/binden-js/binden/issues"
+  },
+  "homepage": "https://github.com/binden-js/binden/tree/main/packages/binden#readme",
+  "dependencies": {
+    "@binden/logger": "^0.0.0-development"
+  },
+  "devDependencies": {
+    "@types/sinon": "^22.0.0",
+    "fast-json-stringify": "^7.1.0",
+    "node-fetch": "^3.3.2",
+    "readable-stream-v2": "npm:readable-stream@^2.3.8",
+    "readable-stream-v3": "npm:readable-stream@^3.6.2",
+    "readable-stream-v4": "npm:readable-stream@^4.8.0",
+    "sinon": "^22.1.0",
+    "through2-v2": "npm:through2@^2.0.5"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "funding": {
+    "type": "Coinbase Commerce",
+    "url": "https://commerce.coinbase.com/checkout/eddfb0f7-20e7-4e0d-8e04-232bbdf0b397"
+  }
+}

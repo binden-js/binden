@@ -1,0 +1,64 @@
+// Run by `process.test.ts`: a logger whose methods (and `child()`) return
+// rejected promises must neither crash the process (`unhandledRejection`) nor
+// keep the requests from being handled, whoever logs (the framework or a
+// context): a `child()` that returns a promise gives its parent
+import { Binden, BindenError } from "../../index.js";
+import { type IncomingMessage, request } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { ILogger } from "@binden/logger";
+import { once } from "node:events";
+
+process.on("unhandledRejection", () => {
+  process.stderr.write("unhandledRejection\n");
+  process.exitCode = 1;
+});
+setTimeout(() => {
+  process.stderr.write("Timed out\n");
+  process.exit(2);
+}, 10_000).unref();
+
+const reject = (): Promise<never> =>
+  Promise.reject(new Error("A rejecting logger"));
+const logger: ILogger = {
+  fatal: reject,
+  error: reject,
+  warn: reject,
+  info: reject,
+  debug: reject,
+  trace: reject,
+  // E.g. an `async` function: not a logger
+  child: reject as unknown as ILogger["child"],
+};
+
+const app = new Binden({ logger }).use((context) => {
+  context.log.info("Handled", { path: context.url.pathname });
+  context.log.child({ middleware: "test" }).debug("A child");
+  if (context.url.pathname === "/fails") {
+    throw new Error("A failure");
+  } else if (context.url.pathname === "/client") {
+    throw new BindenError(400);
+  }
+  return context.send("ok");
+});
+
+const server = app.createServer().listen(0, "127.0.0.1");
+await once(server, "listening");
+const { port } = server.address() as AddressInfo;
+
+const statuses: number[] = [];
+for (const path of ["/", "/fails", "/client"]) {
+  const response = await new Promise<IncomingMessage>((resolve, failed) => {
+    request({ agent: false, path, host: "127.0.0.1", port }, resolve)
+      .on("error", failed)
+      .end();
+  });
+  response.resume();
+  await once(response, "end");
+  statuses.push(response.statusCode ?? 0);
+}
+
+await new Promise((resolve) => {
+  setImmediate(resolve);
+});
+server.close();
+process.stdout.write(`${statuses.join(" ")}\n`);

@@ -7,6 +7,25 @@ updates:
       interval: daily
     allow:
       - dependency-type: direct
+    # One pull request for the dependencies of the published packages, one for the tooling
+    groups:
+      production:
+        dependency-type: production
+      development:
+        dependency-type: development
+    ignore:
+      # Workspace packages are released in lockstep by scripts/release.mjs
+      - dependency-name: binden
+      - dependency-name: "@binden/*"
+      # Held back on purpose (see "Dependencies" in the README): the tooling does not
+      # support TypeScript 7 yet, the types follow the oldest supported Node.js (24), and
+      # the version 10 of the preset breaks the release notes of semantic-release 25
+      - dependency-name: typescript
+        versions: [">=7"]
+      - dependency-name: "@types/node"
+        versions: [">=25"]
+      - dependency-name: conventional-changelog-conventionalcommits
+        versions: [">=10"]
     assignees:
       - vansergen
     versioning-strategy: increase
@@ -21,6 +40,10 @@ updates:
     directory: /
     schedule:
       interval: daily
+    groups:
+      actions:
+        patterns:
+          - "*"
     assignees:
       - vansergen
     labels:

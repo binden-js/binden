@@ -1,8 +1,38 @@
 {
   "out": "docs",
-  "entryPoints": ["./index.ts"],
   "name": "binden",
-  "exclude": ["test/**/*"],
+  "entryPointStrategy": "packages",
+  "entryPoints": ["packages/*"],
+  "packageOptions": {
+    "entryPoints": ["index.ts"],
+    "externalSymbolLinkMappings": {
+      "@types/node": {
+        "\"http\".request": "https://nodejs.org/api/http.html#httprequestoptions-callback",
+        "\"http\".createServer": "https://nodejs.org/api/http.html#httpcreateserveroptions-requestlistener",
+        "\"http\".Server": "https://nodejs.org/api/http.html#class-httpserver",
+        "\"http\".ClientRequest": "https://nodejs.org/api/http.html#class-httpclientrequest"
+      }
+    },
+    "validation": { "notDocumented": true }
+  },
+  "projectDocuments": ["MIGRATION-4.md", "PRODUCTION.md"],
   "hideGenerator": true,
-  "gitRevision": "main"
+  "gitRevision": "main",
+  "highlightLanguages": [
+    "bash",
+    "console",
+    "css",
+    "diff",
+    "html",
+    "http",
+    "javascript",
+    "json",
+    "jsonc",
+    "json5",
+    "nginx",
+    "tsx",
+    "typescript",
+    "yaml"
+  ],
+  "treatWarningsAsErrors": true
 }

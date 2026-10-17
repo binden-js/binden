@@ -1,1 +1,0 @@
-{ "extends": "@binden/tsconfig", "compilerOptions": { "outDir": "dist" } }

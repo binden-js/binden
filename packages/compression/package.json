@@ -1,0 +1,68 @@
+{
+  "name": "@binden/compression",
+  "version": "0.0.0-development",
+  "description": "binden compression middleware",
+  "main": "dist/index.js",
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "!dist/test",
+    "index.ts",
+    "src"
+  ],
+  "engines": {
+    "node": ">=24.14.1"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prebuild": "node ../../scripts/clean.mjs",
+    "prepack": "npm run build",
+    "test": "node ../../scripts/test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/binden-js/binden.git",
+    "directory": "packages/compression"
+  },
+  "keywords": [
+    "compress",
+    "compression",
+    "br",
+    "brotli",
+    "gzip",
+    "deflate",
+    "zstd",
+    "content-encoding",
+    "middleware",
+    "HTTP",
+    "binden"
+  ],
+  "author": "Sergey Bakulin <sergey.bakulin.github@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/binden-js/binden/issues"
+  },
+  "homepage": "https://github.com/binden-js/binden/tree/main/packages/compression#readme",
+  "peerDependencies": {
+    "binden": "^0.0.0-development"
+  },
+  "devDependencies": {
+    "undici": "^8.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "funding": {
+    "type": "Coinbase Commerce",
+    "url": "https://commerce.coinbase.com/checkout/eddfb0f7-20e7-4e0d-8e04-232bbdf0b397"
+  }
+}

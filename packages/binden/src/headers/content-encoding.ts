@@ -1,0 +1,69 @@
+/** The known content codings */
+export type IEncodings =
+  "br" | "compress" | "deflate" | "gzip" | "x-gzip" | "zstd";
+
+/** A coding of `Content-Encoding` */
+export interface IContentEncoding {
+  /** A known content coding, in lowercase */
+  encoding: IEncodings;
+}
+
+/** A coding of the `Content-Encoding` header (RFC 9110, section 8.4) */
+export class ContentEncoding implements IContentEncoding {
+  readonly #encoding: IEncodings;
+
+  /** A known content coding (in lowercase), or a `TypeError` */
+  public constructor({ encoding }: IContentEncoding) {
+    if (!ContentEncoding.#encodings.has(encoding)) {
+      throw new TypeError(`Unknown content coding: ${String(encoding)}`);
+    }
+    this.#encoding = encoding;
+  }
+
+  /** The content coding */
+  public get encoding(): IEncodings {
+    return this.#encoding;
+  }
+
+  /** The coding as in the header */
+  public toString(): string {
+    return this.#encoding;
+  }
+
+  /**
+   * The codings in the order to remove them (the last applied first), or `null`
+   * when one of them is unknown or malformed: the content cannot be decoded
+   * then (RFC 9110, section 8.4)
+   */
+  public static fromString(input?: string): ContentEncoding[] | null {
+    if (typeof input === "undefined") {
+      return [];
+    }
+
+    // Codings are case-insensitive, empty list elements are ignored (RFC 9110,
+    // sections 8.4.1 and 5.6.1)
+    const codings = input
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e !== "");
+
+    if (!codings.every((e) => ContentEncoding.#encodings.has(e))) {
+      return null;
+    }
+
+    return (codings as IEncodings[])
+      .map((encoding) => new ContentEncoding({ encoding }))
+      .reverse();
+  }
+
+  static readonly #encodings: ReadonlySet<string> = new Set([
+    "gzip",
+    "x-gzip",
+    "compress",
+    "deflate",
+    "br",
+    "zstd",
+  ]);
+}
+
+export default ContentEncoding;
