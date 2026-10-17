@@ -325,7 +325,10 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   with an `encoding` is encoded once: the bytes that it decodes to are sent, with their length. A
   `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
   default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A
-  `Readable` that has ended is an empty body, and one that has been destroyed rejects at once.
+  `Readable` that has ended is an empty body.
+- A `Readable` that has been destroyed, or that has errored without being destroyed (its
+  `errored` is set, e.g. a stream without `autoDestroy`), rejects `send()` at once, with its
+  `errored` (otherwise `ERR_STREAM_PREMATURE_CLOSE`), where binden 2.0.4 never settled.
 - A `send()` that is ignored (once the response has ended, or by a work that can no longer change
   it, e.g. once its deadline has passed) releases a Node.js `Readable` without reading it: it is
   destroyed (closing the file of a stream), where binden 2.0.4 left it untouched. The request of
@@ -344,6 +347,14 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   which the other sends of the stream reject with. Send each response a stream of its own (e.g. a
   `PassThrough` that the shared stream is piped into). The request of the response itself is only
   no longer read.
+- A source that fails once the response has ended no longer rejects `send()`, whether another
+  writer (e.g. its own `end()`) or the send itself, with the whole body, has ended the response:
+  the reply is sent whole, and the responses after it on the connection too, and the error is
+  logged at `debug`. binden 2.0.4 rejected with that error when another writer had ended the
+  response, and its default error handler, which destroys the connection of a response that has
+  ended, then cut the reply (the pipelined responses after it were never sent). It resolved the
+  send of a whole body once its stream had ended (binden 4 resolves once the response is flushed),
+  and ignored a later error of the stream.
 - `send()` (and `context.send()`) rejects with a `TypeError`, before anything is sent, for an
   object that is neither a `Buffer`, a `Uint8Array`, a `Readable` nor a stream-like source: it sent
   its `toString()` (e.g. `[object Object]`, or the text of a `URLSearchParams`). Send a string
