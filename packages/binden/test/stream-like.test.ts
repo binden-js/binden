@@ -638,12 +638,9 @@ for (const [library, create] of libraries) {
               how === "fails" ? "E_FAILED" : "ERR_STREAM_PREMATURE_CLOSE",
             );
             await nextTurn();
-            // An error of a source that has not closed (nor been destroyed)
-            // may follow, or of one whose state cannot tell that it has
-            deepStrictEqual(
-              leftOf(recorded),
-              how === "fails" ? ["error", "close"] : keptOf(library),
-            );
+            // Its guard, unless its state tells that it has closed: also
+            // once it has failed, which destroys it (without its error)
+            deepStrictEqual(leftOf(recorded), keptOf(library));
           },
         );
       });

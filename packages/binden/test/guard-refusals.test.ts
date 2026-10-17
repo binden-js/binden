@@ -137,10 +137,11 @@ suite(
           (library) =>
             `200 resolved destroyed=${library === "v4" ? "undefined" : ""} listeners=0/0/1/0 late=1`,
         ),
+        // Released once it has failed: destroyed without its error
         ...each(
           "guard-error",
           () =>
-            "500 rejected:Its I/O has failed destroyed= listeners=0/0/1/0 late=1",
+            "500 rejected:Its I/O has failed destroyed=undefined listeners=0/0/1/0 late=1",
           ["emitter"],
         ),
         // Destroyed without the reason of the deadline: its destroy fails
@@ -162,7 +163,7 @@ suite(
         ...each(
           "guard-emitted",
           () =>
-            "500 rejected:Its I/O has failed at once destroyed= listeners=0/0/1/0 late=1",
+            "500 rejected:Its I/O has failed at once destroyed=undefined listeners=0/0/1/0 late=1",
           ["emitter"],
         ),
       ];
@@ -419,10 +420,11 @@ suite("A stream-like source used without the framework", () => {
         });
       }),
     )) as [unknown];
-    // Its guard, after the listener of the send
+    // Its guard, after the listener of the send; released once it has
+    // failed (destroyed without its error)
     deepStrictEqual(
       [error, added, source.calls],
-      [failure, ["error", "error", "close"], []],
+      [failure, ["error", "error", "close"], ["destroy"]],
     );
   });
 

@@ -133,6 +133,18 @@ function isDestroyed(source: object): boolean {
   );
 }
 
+/**
+ * The error of a chunk of a stream-like source that a response cannot send:
+ * neither a string nor bytes (e.g. `null`, which would end the readable)
+ */
+function invalidChunk(chunk: unknown): TypeError {
+  const received = chunk === null ? "null" : typeof chunk;
+  const message = `The chunk of a stream-like source must be a string or bytes (received ${received})`;
+  return Object.assign(new TypeError(message), {
+    code: "ERR_INVALID_ARG_TYPE",
+  });
+}
+
 /** The error of a close before the end */
 function premature(): Error {
   return Object.assign(new Error("Premature close"), {
@@ -586,12 +598,17 @@ export function releaseStreamLike(
  * A stream-like source (see `IStreamLike`) read as a Node.js `Readable`, which
  * `send()` sends as such. Its `data` is pushed with backpressure: the source
  * is paused once the readable is full (e.g. while the response is), and
- * resumed once it is read. Its `end` ends the readable, and its `error`, or a
- * `close` before its end, destroys it with that error (or
- * `ERR_STREAM_PREMATURE_CLOSE`). An `end` or a `close` of a source that has
- * been destroyed (e.g. `readable-stream` 2 emits both before the `error` of
- * its `destroy()`) is not its end: the error that follows within a turn
- * destroys the readable, or else `ERR_STREAM_PREMATURE_CLOSE`. Destroyed
+ * resumed once it is read. A `data` that is neither a string nor bytes (e.g.
+ * `null`, never taken as its end) destroys it with a `TypeError`
+ * (`ERR_INVALID_ARG_TYPE`). Its `end` ends the readable, and its `error`, or
+ * a `close` before its end, destroys it with that error (or
+ * `ERR_STREAM_PREMATURE_CLOSE`); a source that has failed without being
+ * destroyed (e.g. without `autoDestroy`) is then released under its guard, as
+ * for a cancellation, but without its error. An `end` or a `close` of a
+ * source that has been destroyed (e.g. `readable-stream` 2 emits both before
+ * the `error` of its `destroy()`) is not its end: the error that follows
+ * within a turn destroys the readable, or else `ERR_STREAM_PREMATURE_CLOSE`.
+ * Destroyed
  * before (a cancellation: the deadline, the client gone away, another
  * reply), the readable destroys the source with the reason of the
  * cancellation (`reason()`), recorded before as decided (see `decided()`),
@@ -630,13 +647,13 @@ export function releaseStreamLike(
  * Node.js drops as an error, as a premature close, with which the source is
  * destroyed, decided; a value that Node.js cannot take as an error, e.g.
  * whose `stack` getter throws, wrapped in an `Error` whose `cause` it is),
- * and releases the source as for a cancellation, with it. A source that refuses the listener of
- * `error` of its guard keeps the one of the send (see `forwarder()`), and is
- * destroyed without the error that decides the send; one that has neither
- * is left untouched (see `releaseStreamLike()`): `unreleased()` tells it. A
- * refusal of its guard, a `pause()` that throws once it is no longer read,
- * and a removal that throws are logged by `logs` (see `IStreamLikeLogs`),
- * not as late errors.
+ * and releases the source as for a cancellation, with it. A source that
+ * refuses the listener of `error` of its guard keeps the one of the send
+ * (see `forwarder()`), and is destroyed without the error that decides the
+ * send; one that has neither is left untouched (see `releaseStreamLike()`):
+ * `unreleased()` tells it. A refusal of its guard, a `pause()` that throws
+ * once it is no longer read, and a removal that throws are logged by `logs`
+ * (see `IStreamLikeLogs`), not as late errors.
  */
 export function readStreamLike(
   source: object,
@@ -672,6 +689,10 @@ export function readStreamLike(
     listened = true;
     // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
     fail(error);
+    // Only while it is read: once the send has settled, this listener is
+    // detached (see `detach()`)
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
+    dropFailed();
   });
   const call = (method: IMethod, ...args: unknown[]): void => {
     Reflect.apply(method, source, args);
@@ -834,6 +855,27 @@ export function readStreamLike(
     destroyWith(error);
   };
   /**
+   * Releases a source that has failed (its `error`) while it was read,
+   * without being destroyed (e.g. of `readable-stream` 4 with `autoDestroy:
+   * false`), so that what it holds is freed, as for a cancellation (see
+   * `destroy`), but without its error, which it has emitted already: under
+   * its guard, or else the listener of `error` of the send, which has heard
+   * it, and is kept (see `detach()`)
+   */
+  const dropFailed = (): void => {
+    try {
+      if (destroyed || isDestroyed(source)) {
+        // By itself (e.g. by `autoDestroy`), or by the application
+        return;
+      }
+    } catch (error: unknown) {
+      // Its state cannot be read (e.g. a getter of its own that throws)
+      logs.released(error);
+      return;
+    }
+    releaseBy(source, methods.destroy ?? methods.pause, logs.released);
+  };
+  /**
    * A readable that nothing is read into, destroyed at once with `error`
    * (see `BindenResponse.#unreadable()`), which the send rejects with, and
    * decides (see `decided()`), or reports once, as a late error, when the
@@ -920,7 +962,11 @@ export function readStreamLike(
       }
     });
     listen("data", (chunk: unknown) => {
-      if (!readable.push(chunk)) {
+      if (typeof chunk !== "string" && !ArrayBuffer.isView(chunk)) {
+        // Never its end (`null`), nor dropped (`undefined`), as a `push()`
+        // would take them: refused as any other value that is not bytes
+        destroyWith(invalidChunk(chunk));
+      } else if (!readable.push(chunk)) {
         try {
           call(methods.pause);
         } catch (error: unknown) {
