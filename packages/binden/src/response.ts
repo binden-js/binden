@@ -3087,10 +3087,10 @@ export class BindenResponse<
    * is written (a compression removes the header): a source that fails,
    * closes before its end, or does not have exactly that length rejects.
    * Nothing sent yet, before the headers are committed, the error can still
-   * be replied (see `.started`); otherwise the response is destroyed, so
-   * that a truncated body (or a head that promises one, e.g. once
-   * `flushHeaders()` has sent it) does not look complete, and more bytes are
-   * not read by the client as the next response of the connection.
+   * be replied (see `.started`); otherwise the response is closed (see
+   * `#cutFailed()`), so that a truncated body (or a head that promises one,
+   * e.g. once `flushHeaders()` has sent it) does not look complete, and more
+   * bytes are not read by the client as the next response of the connection.
    * A source that has already ended is an empty body; one that has been
    * destroyed or has errored before rejects at once (see `#unreadable()`).
    * One that is paused (e.g. by the application, or by an `unpipe()`) is
@@ -3276,8 +3276,8 @@ export class BindenResponse<
       /**
        * Fails the send: once anything is sent, or the headers are committed
        * (e.g. by `flushHeaders()`, whose head promises a body), the response
-       * is destroyed, so that the client never takes it for complete, nor
-       * reads the next response of the connection as its body.
+       * is closed (see `#cutFailed()`), so that the client never takes it for
+       * complete, nor reads the next response of the connection as its body.
        * A failure that binden finds itself (`own`: e.g. a body longer than
        * its `Content-Length`, or code of the source that throws) fails it at
        * once, never by an `error` event of the source (which a `_destroy()`
@@ -3300,7 +3300,7 @@ export class BindenResponse<
           stop(error, emitted);
           return;
         } else if (sent > 0 || this.headersSent) {
-          this.destroy();
+          this.#cutFailed();
         }
         settle({ error, own });
       };
@@ -3485,8 +3485,8 @@ export class BindenResponse<
    * its end. Its destroy (e.g. by the application) may still fail: its guard
    * listens, as for a stream-like source (see `#guardReleased()`). It
    * rejects at once, with the error of the source (its `errored`), or as a
-   * premature close, and destroys a response whose headers are committed,
-   * whose head promises a body that will not come. Once
+   * premature close, and closes a response whose headers are committed (see
+   * `#cutFailed()`), whose head promises a body that will not come. Once
    * another writer has ended the response (e.g. code of the source, such as
    * a getter that the checks of `#send()` have run), the response is left as
    * it is: the send settles as the response does, and the error of the
@@ -3501,7 +3501,7 @@ export class BindenResponse<
       }
       return this.#finished(() => false);
     } else if (this.headersSent) {
-      this.destroy();
+      this.#cutFailed();
     }
     return Promise.reject(errored ?? BindenResponse.#premature());
   }
@@ -3516,6 +3516,20 @@ export class BindenResponse<
       guard(source, emitterMethods, this.#report(), hasClosed(source));
     } catch (error: unknown) {
       this.#ownership.debug("The release of a stream has failed", error);
+    }
+  }
+
+  /**
+   * Closes a response whose send has failed once its headers are committed
+   * (see `#pipe()`), as the framework closes it, while the work that sends it
+   * may still mutate it: one that waits for the response before it on its
+   * connection is cut once it gets its socket (see `#cutQueued()`), so that
+   * its committed head is never sent, and no later response of the
+   * connection is read as its body
+   */
+  #cutFailed(): void {
+    if (this.#allows()) {
+      this[kFramework](() => this.destroy());
     }
   }
 
