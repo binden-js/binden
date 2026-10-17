@@ -85,9 +85,11 @@ export async function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
 /**
  * Resolves once `check()` is true, which it must be within `ms` milliseconds
  * (10 s by default: a guard against a hang), judged after a turn of the
- * pending I/O (two turns of `setImmediate()`: after a stall of the process,
- * the timers run before the I/O that has completed meanwhile, and the
- * `close` of a socket whose end is read then is emitted after the first)
+ * pending I/O (a 5 ms timer, then two turns of `setImmediate()`: after a
+ * stall of the process, the timers run before the I/O that has completed
+ * meanwhile, which the system may not have delivered yet, e.g. the end of a
+ * loopback connection on macOS, and the `close` of a socket whose end is
+ * read then is emitted after the first turn)
  */
 export async function eventually(
   check: () => Promise<boolean> | boolean,
@@ -96,6 +98,7 @@ export async function eventually(
   const deadline = Date.now() + ms;
   while (!(await check())) {
     if (Date.now() > deadline) {
+      await sleep(5);
       for (let turn = 0; turn < 2; turn += 1) {
         await new Promise<void>((resolve) => {
           setImmediate(resolve);

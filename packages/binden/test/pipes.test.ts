@@ -94,7 +94,8 @@ function bodyOf(head: string, rest: string): [string, boolean] {
 /**
  * Sends a request on a new connection and reads its response: until it is
  * complete (and `linger` more milliseconds, for anything that follows), or
- * the connection is closed, within `ms`
+ * the connection is closed, within `ms` (once the end of the connection has
+ * been read, until its `close` itself)
  */
 async function exchange(
   port: number,
@@ -104,11 +105,13 @@ async function exchange(
   await once(socket, "connect");
   let raw = "";
   let closed = false;
+  const { promise: closing, resolve: close } = Promise.withResolvers<null>();
   socket.setEncoding("latin1").on("data", (chunk: string) => {
     raw += chunk;
   });
   socket.on("close", () => {
     closed = true;
+    close(null);
   });
   socket.write(`GET ${path} HTTP/1.1\r\nHost: localhost\r\n\r\n`);
   const parse = (): IRaw => {
@@ -138,6 +141,10 @@ async function exchange(
     await sleep(linger);
     // What has come meanwhile (e.g. its close), once a stall has passed
     await ioTurn();
+    if (socket.readableEnded) {
+      // Its `close` follows
+      await within(closing);
+    }
     return parse();
   } finally {
     socket.destroy();

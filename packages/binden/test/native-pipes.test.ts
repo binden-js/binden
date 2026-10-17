@@ -14,6 +14,7 @@ import {
   never,
   pollUntil,
   sleep,
+  within,
 } from "./helpers.js";
 import { PassThrough, Readable, pipeline } from "node:stream";
 import { createServer, get } from "node:http";
@@ -122,7 +123,8 @@ function complete(raw: string): boolean {
  * Sends a request on a new connection, then reads what comes until the
  * connection is closed, or for `ms` once a complete response has come (it
  * may take longer on a loaded machine: within 10 s), so that what would
- * follow it is seen (judged after a turn of the pending I/O)
+ * follow it is seen (judged after a turn of the pending I/O; once the end of
+ * the connection has been read, by its `close` itself)
  */
 async function exchange(
   port: number,
@@ -131,11 +133,13 @@ async function exchange(
   const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   const received = { raw: "", closed: false };
+  const { promise: closing, resolve: close } = Promise.withResolvers<null>();
   socket.setEncoding("latin1").on("data", (chunk: string) => {
     received.raw += chunk;
   });
   socket.on("close", () => {
     received.closed = true;
+    close(null);
   });
   socket.write(
     `${method} / HTTP/1.1\r\nHost: localhost\r\nContent-Length: ${body.length}\r\n\r\n${body}`,
@@ -148,6 +152,10 @@ async function exchange(
     await sleep(5);
   }
   await ioTurn();
+  if (socket.readableEnded) {
+    // Its `close` follows
+    await within(closing);
+  }
   socket.destroy();
   return {
     raw: received.raw

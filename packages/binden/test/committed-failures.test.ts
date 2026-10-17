@@ -9,8 +9,9 @@ import { once } from "node:events";
 /**
  * Writes raw requests on one connection: what it receives until the server
  * closes it, or until it has received what passes `expected` (then whether
- * the connection is still open, after a turn of the pending I/O). Never a
- * silence, which a stall of the process would make look longer than it is
+ * the connection is still open, after a turn of the pending I/O, and once its
+ * end has been read, after its `close` itself). Never a silence, which a
+ * stall of the process would make look longer than it is
  */
 async function exchange(
   port: number,
@@ -20,6 +21,7 @@ async function exchange(
   const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   const state = { received: "", closed: false };
+  const { promise: closing, resolve: close } = Promise.withResolvers<null>();
   socket
     .setEncoding("latin1")
     .on("data", (chunk: string) => {
@@ -30,6 +32,7 @@ async function exchange(
     })
     .on("close", () => {
       state.closed = true;
+      close(null);
     });
   socket.write(data);
   try {
@@ -38,6 +41,10 @@ async function exchange(
       () => null,
     );
     await ioTurn();
+    if (socket.readableEnded) {
+      // Its `close` follows
+      await within(closing);
+    }
   } finally {
     socket.destroy();
   }

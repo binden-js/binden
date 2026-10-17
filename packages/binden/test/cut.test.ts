@@ -28,7 +28,8 @@ interface IConversation {
  * Writes requests on one connection, and reads every byte until the server
  * closes it, or until nothing comes for `idle` milliseconds (judged after a
  * turn of the pending I/O, see `ioTurn()`: after a stall of the process, its
- * timer runs before the data, or the close, that has come meanwhile is seen)
+ * timer runs before the data, or the close, that has come meanwhile is seen;
+ * once the end of the connection has been read, its `close` itself decides)
  */
 async function converse(
   port: number,
@@ -42,8 +43,9 @@ async function converse(
   const expire = (): void => {
     const seen = data.length;
     const judge = (): void => {
-      // Else the data that has come re-armed the timer
-      if (data.length === seen) {
+      // Else the data that has come re-armed the timer, or the end of the
+      // connection has been read: its `close`, which follows, decides
+      if (data.length === seen && !socket.readableEnded) {
         resolve(false);
       }
     };
