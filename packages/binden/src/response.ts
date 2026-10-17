@@ -3227,12 +3227,14 @@ export class BindenResponse<
        * source still read (neither ended nor destroyed, e.g. once another
        * writer has ended the response) is released, as it would be once the
        * response has closed: with the error that binden fails the send with
-       * itself (`own`, see `fail`), unless `[kCancel]()` has cancelled it
-       * (`cancelled`), which releases its source afterwards.
+       * itself (`own`, see `fail`). A send that `[kCancel]()` cancels removes
+       * its listeners and releases its source afterwards (`release`), without
+       * the rights of the framework: that runs code of the source (e.g. its
+       * own `removeListener()`), which belongs to the work that is abandoned.
        */
       const settle = (
         failure: { readonly error: unknown; readonly own: boolean } | null,
-        cancelled = false,
+        release: (() => void)[] | null = null,
       ): void => {
         if (settled) {
           return;
@@ -3240,7 +3242,13 @@ export class BindenResponse<
         settled = true;
         // Restored by `[kCancel]()` still, once its cancellation is recorded
         this.#settled(key);
-        unlisten();
+        if (release === null) {
+          unlisten();
+        } else {
+          release.push(unlisten, () => {
+            this.#discard(data);
+          });
+        }
         if (failure === null) {
           resolve();
         } else {
@@ -3254,7 +3262,7 @@ export class BindenResponse<
           const error = failure.error as Error;
           reject(operation.active ? error : this.#abandoned(error));
         }
-        if (!cancelled) {
+        if (release === null) {
           drop(failure?.own === true ? failure : null);
         }
       };
@@ -3356,10 +3364,7 @@ export class BindenResponse<
       // which `[kCancel]()` removes first (see `#rollbacks`)
       this.#rollbacks.set(key, this.#unsent);
       this.#pending.set(key, (reason: unknown, release: (() => void)[]) => {
-        release.push(() => {
-          this.#discard(data);
-        });
-        settle({ error: reason, own: false }, true);
+        settle({ error: reason, own: false }, release);
       });
 
       const unclose = this[kListen]("close", () => {
