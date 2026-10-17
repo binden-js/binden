@@ -466,7 +466,16 @@ suite("The request of a response, sent as its body (an echo)", () => {
       skip: process.platform === "win32",
     },
     async () => {
-      const size = 4 * 1024 * 1024;
+      // Its body is chunked: its client writes until the send has paused it
+      // (whatever the loopback buffers take, e.g. megabytes on Linux), then
+      // ends it
+      const chunk = Buffer.alloc(64 * 1024, "a");
+      const frame = Buffer.concat([
+        Buffer.from(`${chunk.length.toString(16)}\r\n`),
+        chunk,
+        Buffer.from("\r\n"),
+      ]);
+      const limit = 256 * 1024 * 1024;
       const paused = Promise.withResolvers<null>();
       const outcome = Promise.withResolvers<unknown>();
       const app = new Binden({ logger: capture().logger }).use(
@@ -489,23 +498,46 @@ suite("The request of a response, sent as its body (an echo)", () => {
         await once(socket, "connect");
         let tail = "";
         socket
-          .on("data", (chunk: Buffer) => {
-            tail = (tail + chunk.toString("latin1")).slice(-100);
+          .on("data", (received: Buffer) => {
+            tail = (tail + received.toString("latin1")).slice(-100);
           })
           .on("error", () => {
             // Closed by the server: `close` follows
           })
           .pause();
         socket.write(
-          `POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: ${size}\r\n\r\n`,
+          "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n",
         );
-        socket.write(Buffer.alloc(size / 2, "a"));
-        await within(paused.promise);
+        const state = { paused: false };
+        const isPaused = (): boolean => state.paused;
+        paused.promise.then(
+          () => {
+            state.paused = true;
+          },
+          () => null,
+        );
+        let written = 0;
+        while (!isPaused()) {
+          ok(written < limit, `Not paused once ${written} bytes are written`);
+          written += chunk.length;
+          if (!socket.write(frame)) {
+            // Until it drains (the server reads), or the request is paused
+            await within(
+              Promise.race([
+                new Promise((resolve) => {
+                  socket.once("drain", resolve);
+                }),
+                paused.promise,
+              ]),
+            );
+          }
+        }
         socket.resume();
         deepStrictEqual(await within(outcome.promise), "resolved");
-        socket.write(Buffer.alloc(size / 2, "b"));
+        // The rest of its body, which is read
+        socket.write(frame);
         socket.write(
-          "GET /next HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+          "0\r\n\r\nGET /next HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         );
         await within(
           new Promise((resolve) => {
