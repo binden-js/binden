@@ -3405,13 +3405,21 @@ export class BindenResponse<
        * it is (its reply is complete, and the responses that follow it on
        * the connection are sent), which the send settles as (see `done`).
        * The error of the source is reported once, as a late error (see
-       * `reportLate()`; `emitted`: by an `error` event, `null` for none), by
-       * the send also when the source has emitted it: the send hears it
-       * (see `hear()`), so its guard does not report it
+       * `reportLate()`; `emitted`: whether an event of the source has
+       * brought it, `null` for none), by the send also when the source has
+       * emitted it: the send hears it (see `hear()`), so its guard does not
+       * report it. It is reported on a later turn, once the event that may
+       * have brought it has reached every listener of the source: a live
+       * send of the source (e.g. of another response) that fails with that
+       * error in the same event has decided it for the source then (see
+       * `fail`), and it is not reported, whichever of them listens first
        */
       const stop = (error: unknown, emitted: boolean | null): void => {
         if (emitted !== null) {
-          reportLate(data, error, this.#report());
+          const report = this.#report();
+          setImmediate(() => {
+            reportLate(data, error, report);
+          });
         }
         stopped = true;
         this.#discard(data, listened);
@@ -3430,8 +3438,10 @@ export class BindenResponse<
        * been ended (by another writer, e.g. a compression that has replaced
        * it with `406`, or by the send itself, once the whole body is
        * written), a failure no longer fails the send, which is stopped
-       * instead (see `stop`, `emitted`). An error that the source has emitted
-       * (`emitted`) and that fails the send has decided it for that source
+       * instead (see `stop`, `emitted`). An error that an event of the source
+       * has brought (`emitted`: its `error`, or its `close` with its
+       * `errored`, which reach every listener of the source; `null` for none)
+       * and that fails the send has decided it for that source
        * (see `decidedFor()`): no guard of the source reports it, e.g. the one
        * that another response has installed on a source that it has
        * released, whose listener of `error` comes after the one of the send
@@ -3608,15 +3618,17 @@ export class BindenResponse<
           .on("close", () => {
             // Destroyed before its end, without an `error` event (which
             // precedes the close): with its error (e.g. of `destroy(error)`,
-            // whose `_destroy()` calls back without it), or without one
-            // (nothing to report once the response has ended, see `stop`)
+            // whose `_destroy()` calls back without it), which its `close`
+            // brings to every listener of the source, as an `error` event
+            // would (see `fail`), or without one (nothing to report once the
+            // response has ended, see `stop`)
             if (!closed && !heard && !data.readableEnded) {
               operation.run(() => {
                 const { errored } = data;
                 fail(
                   errored ?? BindenResponse.#premature(),
                   false,
-                  errored === null ? null : false,
+                  errored === null ? null : true,
                 );
               });
             }
