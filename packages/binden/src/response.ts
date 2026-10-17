@@ -3096,7 +3096,9 @@ export class BindenResponse<
    * Writes a `Readable` into the response (with backpressure) and settles like
    * `#finished()`. The client has the whole response (and may close the
    * connection) once the `Content-Length` bytes are flushed to the connection,
-   * maybe before the source ends.
+   * maybe before the source ends; an empty one (`Content-Length: 0`) only
+   * once the response has finished, since nothing of it is written (a client
+   * that goes away before may not have its head).
    *
    * The `Content-Length` that the body declares is read once, before anything
    * is written (a compression removes the header): a source that fails,
@@ -3181,8 +3183,10 @@ export class BindenResponse<
     let ending: Error | null = null;
     const done = this.#finished(
       () => {
+        // An empty body only once the response has finished: nothing is
+        // written of it, and the client may not even have its head
         const length = this.#length();
-        return length !== null && flushed >= length;
+        return length !== null && length > 0 && flushed >= length;
       },
       finishing,
       (error) => {
