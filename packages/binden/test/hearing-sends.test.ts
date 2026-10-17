@@ -1,6 +1,6 @@
 import { Binden, type Context } from "../index.js";
 import { capture, ioTurn, listen, send, within } from "./helpers.js";
-import { emitterMethods, guard, reportLate } from "../src/stream-like.js";
+import { emitterMethods, guard } from "../src/stream-like.js";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
 import { deepStrictEqual } from "node:assert/strict";
@@ -249,22 +249,5 @@ suite("A Node.js `Readable` sent to two responses", () => {
     } finally {
       await listening.close();
     }
-  });
-});
-
-suite("reportLate() of an error that the source has emitted", () => {
-  test("while its guard listens is left to the guard; without a guard it is reported, once", () => {
-    const reports: unknown[] = [];
-    const report = (error: unknown): void => {
-      reports.push((error as Error).message);
-    };
-    const guarded = new Readable();
-    guard(guarded, emitterMethods, () => null);
-    reportLate(guarded, new Error("Left to the guard"), true, report);
-    const unguarded = new Readable();
-    const failure = new Error("Reported");
-    reportLate(unguarded, failure, true, report);
-    reportLate(unguarded, failure, true, report);
-    deepStrictEqual(reports, ["Reported"]);
   });
 });

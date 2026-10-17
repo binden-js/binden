@@ -305,22 +305,19 @@ function reportOnce(
 /**
  * Reports a late error of a source (see `ISourceReport`) that its send no
  * longer fails with (e.g. once the response has been ended, see
- * `BindenResponse.#pipe()`), unless the source has emitted it (`emitted`)
- * while its guard listens, which reports it itself (see `guard()`): it is
- * reported once, whatever reports it, and never once it has decided a send
- * (see `reportOnce()`). For the packages of binden only.
+ * `BindenResponse.#pipe()`): it is reported once, whatever reports it (also
+ * the guard of the source, which does not while a send hears it, see
+ * `hear()`), and never once it has decided a send (see `reportOnce()`). For
+ * the packages of binden only.
  *
  * @internal
  */
 export function reportLate(
   source: object,
   error: unknown,
-  emitted: boolean,
   report: ISourceReport,
 ): void {
-  if (!emitted || !guards.has(source)) {
-    reportOnce(source, error, report);
-  }
+  reportOnce(source, error, report);
 }
 
 /**

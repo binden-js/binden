@@ -84,7 +84,7 @@ suite("A late error of a source is reported once", () => {
     const failure = new Error("The source has failed");
     guard(source, emitterMethods, report);
     source.emit("error", failure);
-    reportLate(source, failure, false, report);
+    reportLate(source, failure, report);
     deepStrictEqual(reports, [failure]);
   });
 
@@ -96,7 +96,7 @@ suite("A late error of a source is reported once", () => {
     const source = new EventEmitter();
     const failure = new Error("The source has failed");
     guard(source, emitterMethods, report);
-    reportLate(source, failure, false, report);
+    reportLate(source, failure, report);
     source.emit("error", failure);
     // Again (e.g. a source that emits its error twice)
     source.emit("error", failure);
@@ -112,7 +112,7 @@ suite("A late error of a source is reported once", () => {
     const failure = new Error("The body is too long");
     decided(failure);
     guard(source, emitterMethods, report);
-    reportLate(source, failure, false, report);
+    reportLate(source, failure, report);
     source.emit("error", failure);
     deepStrictEqual(reports, []);
   });
@@ -126,7 +126,7 @@ suite("A late error of a source is reported once", () => {
         reports.push([source, error]);
       });
       source.emit("error", failure);
-      reportLate(source, failure, false, (error) => {
+      reportLate(source, failure, (error) => {
         reports.push([source, error]);
       });
     }
@@ -143,7 +143,7 @@ suite("A late error of a source is reported once", () => {
     };
     const source = new EventEmitter();
     guard(source, emitterMethods, report);
-    reportLate(source, "failed", false, report);
+    reportLate(source, "failed", report);
     source.emit("error", "failed");
     deepStrictEqual(reports, ["failed", "failed"]);
   });

@@ -3382,7 +3382,7 @@ export class BindenResponse<
        */
       const stop = (error: unknown, emitted: boolean | null): void => {
         if (emitted !== null) {
-          reportLate(data, error, false, this.#report());
+          reportLate(data, error, this.#report());
         }
         stopped = true;
         this.#discard(data, listened);
@@ -3646,7 +3646,7 @@ export class BindenResponse<
     try {
       if (this.writableEnded) {
         if (errored !== null) {
-          reportLate(data, errored, false, this.#report());
+          reportLate(data, errored, this.#report());
         }
         return this.#finished(() => false);
       } else if (this.headersSent) {
