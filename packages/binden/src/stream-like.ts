@@ -232,25 +232,60 @@ export function decided(error: unknown): void {
 const reports = new WeakMap<object, WeakSet<object>>();
 
 /**
+ * The stream-like source that each readable of `readStreamLike()` reads: a
+ * late error reported for the readable (e.g. by its send, see `reportLate()`)
+ * is recorded for the source (see `reportOnce()`), so that its guard does not
+ * report it again
+ */
+const links = new WeakMap<object, object>();
+
+/**
+ * The error that the send of each stream-like source decides once it cannot
+ * be read (see `readStreamLike()`), while the source is destroyed with it:
+ * the send rejects with it, or reports it itself once the response has ended
+ * (see `BindenResponse.#unreadable()`), so that no guard reports it
+ * meanwhile (e.g. emitted at once by the destroy of the source)
+ */
+const deciding = new WeakMap<object, unknown>();
+
+/**
+ * Whether an error of a source (or of a readable of a stream-like source,
+ * see `links`) has decided a send (see `decided()`), or is the one that its
+ * send decides meanwhile (see `deciding`): it is not reported
+ */
+function isDecided(source: object, error: unknown): boolean {
+  const reported = links.get(source) ?? source;
+  if (deciding.has(reported) && deciding.get(reported) === error) {
+    return true;
+  }
+  return Object(error) === error && decisions.has(error as object);
+}
+
+/**
  * Reports a late error of a source (see `ISourceReport`) once: never an error
- * that has decided a send (see `decided()`), nor one that has been reported
- * for that source already (e.g. by its send, before the source emits it to
- * its guard). Only an object can be recorded, as by `decided()`: any other
- * value (e.g. a string) is reported each time.
+ * that has decided a send (see `decided()`), nor one that its send decides
+ * meanwhile (see `deciding`), nor one that has been reported for that source
+ * already (e.g. by its send, before the source emits it to its guard), also
+ * for a readable of a stream-like source (see `links`). Only an object can
+ * be recorded, as by `decided()`: any other value (e.g. a string) is
+ * reported each time.
  */
 function reportOnce(
   source: object,
   error: unknown,
   report: ISourceReport,
 ): void {
-  if (Object(error) !== error) {
+  if (isDecided(source, error)) {
+    return;
+  } else if (Object(error) !== error) {
     report(error);
     return;
   }
   const failure = error as object;
+  const reported = links.get(source) ?? source;
   const sources = reports.get(failure) ?? new WeakSet<object>();
-  if (!decisions.has(failure) && !sources.has(source)) {
-    reports.set(failure, sources.add(source));
+  if (!sources.has(reported)) {
+    reports.set(failure, sources.add(reported));
     report(error);
   }
 }
@@ -306,12 +341,17 @@ const refusals = new WeakSet<object>();
 
 /**
  * Gives `refused` what the code of a source has thrown while its guard is
- * installed (see `guard()`), unless it is an error that has decided a send
- * (see `decided()`), which is not reported again. A function of the module,
- * so that no listener of the guard holds `refused` (it may hold the response)
+ * installed (see `guard()`), unless it is an error that has decided a send,
+ * or that the send of the source decides meanwhile (see `isDecided()`),
+ * which is not reported again. A function of the module, so that no
+ * listener of the guard holds `refused` (it may hold the response)
  */
-function refuse(refused: (error: unknown) => void, error: unknown): void {
-  if (Object(error) !== error || !decisions.has(error as object)) {
+function refuse(
+  source: object,
+  refused: (error: unknown) => void,
+  error: unknown,
+): void {
+  if (!isDecided(source, error)) {
     refused(error);
   }
 }
@@ -329,7 +369,7 @@ function unguard(
   try {
     Reflect.apply(remove, source, ["error", failed]);
   } catch (error: unknown) {
-    refuse(refused, error);
+    refuse(source, refused, error);
   }
 }
 
@@ -408,7 +448,7 @@ export function guard(
     Reflect.apply(on, source, ["error", failed]);
   } catch (error: unknown) {
     refusals.add(source);
-    refuse(refused, error);
+    refuse(source, refused, error);
     // A throwing `on()` of its own may have added it
     unguard(source, remove, failed, refused);
     return false;
@@ -425,7 +465,7 @@ export function guard(
     Reflect.apply(on, source, ["close", close]);
   } catch (error: unknown) {
     // It stays, holding nothing but the report
-    refuse(refused, error);
+    refuse(source, refused, error);
     return true;
   }
   if (closed) {
@@ -554,7 +594,11 @@ export function releaseStreamLike(
  * destroys the readable, or else `ERR_STREAM_PREMATURE_CLOSE`. Destroyed
  * before (a cancellation: the deadline, the client gone away, another
  * reply), the readable destroys the source with the reason of the
- * cancellation (`reason()`), or pauses a source that cannot be destroyed.
+ * cancellation (`reason()`), recorded before as decided (see `decided()`),
+ * so that its guard does not report it once the source emits it, or pauses
+ * a source that cannot be destroyed. A destroy (or a pause) that throws is
+ * logged (see `IStreamLikeLogs`), and the readable is destroyed with the
+ * error that decides the send all the same.
  *
  * Every listener that it adds is removed through the source (by its
  * `removeListener()` or `off()`): at once for a cancellation, whatever the
@@ -563,11 +607,16 @@ export function releaseStreamLike(
  * or the close would otherwise crash the process without a listener of the
  * application, and is reported as a late error). A removal that throws is
  * reported (see `ISourceReport`). A source that has ended already is an
- * empty body, one destroyed before its end closes the readable at once, and
- * one that has failed without being destroyed (its `errored`, e.g. of
- * `readable-stream` 4 with `autoDestroy: false`) destroys it at once with
- * that error, which is not reported again (see `decided()`), and is
- * released with it: none of them is listened to. The guard
+ * empty body, one destroyed before its end closes the readable at once (with
+ * its error, its `errored`, without being destroyed again), and one that has
+ * failed without being destroyed (its `errored`, e.g. of `readable-stream` 4
+ * with `autoDestroy: false`) destroys it at once with that error, and is
+ * released with it: none of them is listened to. Such an error is decided
+ * by the send (see `BindenResponse.#unreadable()`), which rejects with it,
+ * or reports it once (also for the source, see `reportOnce()`) when the
+ * response has ended meanwhile (e.g. by code of the source): no guard
+ * reports it meanwhile (e.g. emitted at once by the destroy of the source,
+ * or thrown again by its code while the guard is installed). The guard
  * of a source (see `guard()`) listens before the listeners of the send are
  * removed, and reports a later error of one that has ended (whose destroy,
  * e.g. by `autoDestroy`, may fail after the end), failed or closed, that it
@@ -578,8 +627,10 @@ export function releaseStreamLike(
  * Code of the source that throws while its listeners are added (its own
  * `on()`, e.g. by a listener of its `newListener`), or in its `pause()`,
  * gives a readable destroyed with what it has thrown (a falsy value, which
- * Node.js drops as an error, as a premature close), and releases the source
- * as for a cancellation, with it. A source that refuses the listener of
+ * Node.js drops as an error, as a premature close, with which the source is
+ * destroyed, decided; a value that Node.js cannot take as an error, e.g.
+ * whose `stack` getter throws, wrapped in an `Error` whose `cause` it is),
+ * and releases the source as for a cancellation, with it. A source that refuses the listener of
  * `error` of its guard keeps the one of the send (see `forwarder()`), and is
  * destroyed without the error that decides the send; one that has neither
  * is left untouched (see `releaseStreamLike()`): `unreleased()` tells it. A
@@ -606,6 +657,11 @@ export function readStreamLike(
   let destroyed = false;
   /** Whether its guard listens (see `protect()`), once installed */
   let guarded: boolean | null = null;
+  /**
+   * Whether the send decides the error that the readable is destroyed with
+   * (see `unreadable()`), not the readable
+   */
+  let undecided = false;
   /**
    * Whether the listener of `error` of the send is in place: its `on()` has
    * returned, or it has heard an error
@@ -733,20 +789,29 @@ export function readStreamLike(
           // Only the listener of the send hears it: without the error that
           // decides the send, which the send has failed with already
           releaseBy(source, destroy, logs.released);
+        } else if (undecided && error !== null) {
+          // What the send decides (see `unreadable()`), with which it is
+          // destroyed meanwhile (see `deciding`): also an `Error` that
+          // carries what its code has thrown (see `destroyWith()`)
+          deciding.set(source, error);
+          releaseBy(source, destroy, logs.released, error);
         } else {
-          if (error !== null) {
-            // The error that decides the send (e.g. of a chunk that is not
-            // bytes, which the readable refuses): the guard does not report
-            // it again once the source emits it
-            decided(error);
-          }
-          releaseBy(source, destroy, logs.released, error ?? reason());
+          // The error that decides the send (e.g. of a chunk that is not
+          // bytes, which the readable refuses), or the reason of its
+          // cancellation (also for a falsy value that its code has thrown,
+          // a premature close): the guard does not report it once the
+          // source emits it
+          const failure = error ?? reason();
+          decided(failure);
+          releaseBy(source, destroy, logs.released, failure);
         }
       }
       // With the error that decides the send, never one of its release
       callback(error);
     },
   });
+  // Its late errors are the ones of the source (see `reportOnce()`)
+  links.set(readable, source);
   /**
    * Destroys the readable with an error of the source, or with what its code
    * has thrown: a value that Node.js cannot take as an error (it reads its
@@ -770,12 +835,24 @@ export function readStreamLike(
   };
   /**
    * A readable that nothing is read into, destroyed at once with `error`
-   * (see `BindenResponse.#unreadable()`), which the send rejects with: its
-   * guard never reports it, as if a send heard it
+   * (see `BindenResponse.#unreadable()`), which the send rejects with, and
+   * decides (see `decided()`), or reports once, as a late error, when the
+   * response has ended (e.g. by code of the source that the send runs),
+   * recorded for the source (see `links`): its guard never reports it, as if
+   * a send heard it. The source is released with it, unless it has settled
+   * (e.g. destroyed already, see `destroy`).
    */
   const unreadable = (error: unknown): Readable => {
-    hear(readable, 1);
-    destroyWith(error);
+    undecided = true;
+    // Meanwhile, its guard does not report it, whatever reports it (e.g. a
+    // refusal of the listener of its `close`, or its destroy)
+    deciding.set(source, error);
+    try {
+      hear(readable, 1);
+      destroyWith(error);
+    } finally {
+      deciding.delete(source);
+    }
     return readable;
   };
   /**
@@ -805,9 +882,15 @@ export function readStreamLike(
   }
   if (isDestroyed(source)) {
     // Nothing more of it can be read (see `BindenResponse.#pipe()`), but its
-    // destroy may still fail
+    // destroy may still fail. Destroyed with an error (its `errored`), it
+    // rejects with that error, as a Node.js `Readable` does, and is not
+    // destroyed again
     settled = true;
     protect(hasClosed(source));
+    const failure = erroredOf(source);
+    if (failure !== null) {
+      return unreadable(failure);
+    }
     readable.destroy();
     return readable;
   }
@@ -815,7 +898,7 @@ export function readStreamLike(
   if (errored !== null) {
     // Failed without being destroyed: nothing more of it can be read either,
     // and it is released with its error, as for a cancellation (see
-    // `destroy`), which is not reported again
+    // `destroy`)
     return unreadable(errored);
   }
   try {

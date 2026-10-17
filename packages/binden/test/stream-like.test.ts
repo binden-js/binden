@@ -1414,14 +1414,17 @@ suite("send() of a stream-like source that will not be sent", () => {
     // released with 204); destroyed before the send (`readable-stream` 2 and
     // 4 failing 20 ms later, a `PassThrough` of 2 on the next tick), or once
     // sent by an `end` (failing 20 ms later): the guards of those that never
-    // close, or whose state cannot tell it (`readable-stream` 2), stay
+    // close, or whose state cannot tell it (`readable-stream` 2), stay. The
+    // error of `readable-stream` 4 (its `errored`) rejects its send, and is
+    // not logged
     deepStrictEqual(fixture("stream-like-destroyed.ts"), {
       status: 0,
       stdout:
         "503 204 500 500 500 500\n" +
-        `deadline resolved ${Array.from({ length: 4 }, () => "ERR_STREAM_PREMATURE_CLOSE").join(" ")}\n` +
+        "deadline resolved ERR_STREAM_PREMATURE_CLOSE ERR_STREAM_PREMATURE_CLOSE " +
+        "Failed before the send (/v4) ERR_STREAM_PREMATURE_CLOSE\n" +
         "Failed after its end, Failed after its pause, Failed after its pause, " +
-        "Failed before the send (/v2), Failed before the send (/v4), Failed in the same turn\n" +
+        "Failed before the send (/v2), Failed in the same turn\n" +
         "1 1 1 1 0 1\n",
       stderr: "",
     });

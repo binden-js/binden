@@ -5,7 +5,9 @@
 // it (before the send: `readable-stream` 2 and 4, whose destroy fails 20 ms
 // later, and a `PassThrough` of `readable-stream` 2 whose error follows on the
 // next tick; or once sent, emitting its `end` at once and failing 20 ms
-// later): it is logged at `debug`.
+// later): it is logged at `debug`, but the error of a source destroyed with
+// it before the send that its state tells (its `errored`, of
+// `readable-stream` 4), which the send rejects with.
 import { Binden, releasedFailure } from "../../index.js";
 import { EventEmitter, once } from "node:events";
 import { type IncomingMessage, request } from "node:http";
@@ -115,13 +117,12 @@ const app = new Binden({
       sent.set(pathname, "resolved");
     },
     (error: unknown) => {
-      sent.set(
-        pathname,
-        String(
-          (error as { code?: unknown; reason?: unknown }).reason ??
-            (error as { code?: unknown }).code,
-        ),
-      );
+      const { code, message, reason } = error as {
+        code?: unknown;
+        message?: unknown;
+        reason?: unknown;
+      };
+      sent.set(pathname, String(reason ?? code ?? message));
       throw error;
     },
   );
@@ -149,7 +150,8 @@ const reported = (): string[] =>
   captured.records
     .filter(({ msg }) => msg === releasedFailure)
     .map(({ failure }) => String((failure as { message?: unknown }).message));
-await pollUntil(() => reported().length >= paths.length);
+// Of every source but `/v4`, whose error rejects its send
+await pollUntil(() => reported().length >= paths.length - 1);
 // Once the guards of the sources that close are removed
 await new Promise((resolve) => {
   setTimeout(resolve, 20);
