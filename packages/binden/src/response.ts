@@ -3363,8 +3363,8 @@ export class BindenResponse<
               const accepted = this.write(chunk, (error?: Error | null) => {
                 if (error) {
                   // Not delivered: the client went away (Node.js 24 may still
-                  // emit `finish` once the response is ended)
-                  destroy();
+                  // emit `finish` once the response is ended); settled, then
+                  // its source released (see `settle`)
                   settle(error);
                 } else {
                   flushed += size;
@@ -3426,7 +3426,7 @@ export class BindenResponse<
           settle(null);
         },
         (error: unknown) => {
-          destroy();
+          // Settled, then its source released (see `settle`)
           settle(error as Error);
         },
       );
