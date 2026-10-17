@@ -60,6 +60,34 @@ export interface IStreamLikeMethods {
  */
 export type ISourceReport = (error: unknown) => void;
 
+/**
+ * How a response logs (`debug`) what code of a source has thrown while it is
+ * released (see `IStreamLikeLogs`). For the packages of binden only.
+ *
+ * @internal
+ */
+export type IStreamLikeLog = (error: unknown) => void;
+
+/**
+ * How code of a stream-like source that throws while `send()` releases it is
+ * logged (see `readStreamLike()`, `releaseStreamLike()`), as for a Node.js
+ * `Readable`: by the response, never by a listener left on the source. For
+ * the packages of binden only.
+ *
+ * @internal
+ */
+export interface IStreamLikeLogs {
+  /** Its guard refused (see `guard()`), or a `pause()` or a `destroy()` that throws */
+  readonly released: IStreamLikeLog;
+  /** A removal of a listener that throws (its `removeListener()` or `off()`) */
+  readonly removed: IStreamLikeLog;
+}
+
+/** The logs of a release (see `IStreamLikeLogs`) by the report of a late error */
+function logsOf(report: ISourceReport): IStreamLikeLogs {
+  return { released: report, removed: report };
+}
+
 /** A method of an object (`null` when it is not a function) */
 function methodOf(value: object, name: string): IMethod | null {
   const method: unknown = Reflect.get(value, name);
@@ -155,8 +183,15 @@ const guards = new WeakMap<object, (error: unknown) => void>();
  */
 const hearing = new WeakMap<object, number>();
 
-/** Counts a send that listens to the `error` of a source (`1`), or no longer (`-1`) */
-function hear(source: object, change: 1 | -1): void {
+/**
+ * Counts a send that listens to the `error` of a source (`1`), or no longer
+ * (`-1`): while one does, its guard (see `guard()`) and the detached
+ * listeners of other sends (see `forwarder()`) do not report an error of it,
+ * which fails that send. For the packages of binden only.
+ *
+ * @internal
+ */
+export function hear(source: object, change: 1 | -1): void {
   const count = (hearing.get(source) ?? 0) + change;
   if (count > 0) {
     hearing.set(source, count);
@@ -270,6 +305,18 @@ export const emitterMethods: IGuardMethods = Object.freeze({
 const refusals = new WeakSet<object>();
 
 /**
+ * Gives `refused` what the code of a source has thrown while its guard is
+ * installed (see `guard()`), unless it is an error that has decided a send
+ * (see `decided()`), which is not reported again. A function of the module,
+ * so that no listener of the guard holds `refused` (it may hold the response)
+ */
+function refuse(refused: (error: unknown) => void, error: unknown): void {
+  if (Object(error) !== error || !decisions.has(error as object)) {
+    refused(error);
+  }
+}
+
+/**
  * Removes the listener of `error` of a guard that is not installed (see
  * `guard()`): what the code of the source throws is given to `refused`
  */
@@ -282,7 +329,7 @@ function unguard(
   try {
     Reflect.apply(remove, source, ["error", failed]);
   } catch (error: unknown) {
-    refused(error);
+    refuse(refused, error);
   }
 }
 
@@ -309,7 +356,8 @@ function unguard(
  * the caller keeps a listener of its own (see `forwarder()`), or does not
  * release it. What the code of the source throws (also for the listener of
  * `close`, without which the guard stays) is given to `refused` (`report` by
- * default), never thrown.
+ * default), never thrown, unless it is an error that has decided a send
+ * (see `decided()`), which is not reported again.
  *
  * @internal
  */
@@ -351,7 +399,7 @@ export function guard(
     Reflect.apply(on, source, ["error", failed]);
   } catch (error: unknown) {
     refusals.add(source);
-    refused(error);
+    refuse(refused, error);
     // A throwing `on()` of its own may have added it
     unguard(source, remove, failed, refused);
     return false;
@@ -368,7 +416,7 @@ export function guard(
     Reflect.apply(on, source, ["close", close]);
   } catch (error: unknown) {
     // It stays, holding nothing but the report
-    refused(error);
+    refuse(refused, error);
     return true;
   }
   if (closed) {
@@ -429,14 +477,18 @@ export function forwarder(target: (error: unknown) => void): IForwarder {
 
 /**
  * Pauses a stream-like source that is no longer read: a `pause()` that
- * throws (e.g. once more, after the one that has failed its send) is
- * reported (see `ISourceReport`), never thrown into the events of the source
+ * throws (e.g. once more, after the one that has failed its send) is logged
+ * (see `IStreamLikeLogs`), never thrown into the events of the source
  */
-function pauseOf(source: object, pause: IMethod, report: ISourceReport): void {
+function pauseOf(
+  source: object,
+  pause: IMethod,
+  released: IStreamLikeLog,
+): void {
   try {
     Reflect.apply(pause, source, []);
   } catch (error: unknown) {
-    report(error);
+    released(error);
   }
 }
 
@@ -444,18 +496,18 @@ function pauseOf(source: object, pause: IMethod, report: ISourceReport): void {
  * Leaves a stream-like source that cannot be released: no listener of its
  * `error` is in place (it refuses the one of its guard, see `guard()`, and
  * the send has none), without which an error of its destroy would crash the
- * process. It is only paused (a `pause()` that throws is reported, see
- * `ISourceReport`), and `unreleased()` tells it: it is the application's to
- * release.
+ * process. It is only paused (a `pause()` that throws is logged, see
+ * `IStreamLikeLogs`), and `unreleased()` tells it: it is the application's
+ * to release.
  */
 function leave(
   source: object,
   { pause }: IStreamLikeMethods,
-  report: ISourceReport,
+  released: IStreamLikeLog,
   unreleased: () => void,
 ): void {
   unreleased();
-  pauseOf(source, pause, report);
+  pauseOf(source, pause, released);
 }
 
 /** Does nothing: the default of what tells that a source cannot be released (see `leave()`) */
@@ -467,17 +519,20 @@ function unnoticed(): void {
  * Releases a stream-like source that is not sent (e.g. to `HEAD`): it is
  * destroyed (without an error), or paused, and never read. A late error of
  * its destroy (or of its pause) is reported (see `guard()`). A source that
- * refuses its guard is left (see `leave()`): `unreleased()` tells it.
+ * refuses its guard is left (see `leave()`): `unreleased()` tells it. Code
+ * of the source that throws meanwhile is logged by `logs` (see
+ * `IStreamLikeLogs`).
  */
 export function releaseStreamLike(
   source: object,
   methods: IStreamLikeMethods,
   report: ISourceReport,
   unreleased: () => void = unnoticed,
+  logs: IStreamLikeLogs = logsOf(report),
 ): void {
   // Its guard listens before it is paused or destroyed
-  if (!guard(source, methods, report)) {
-    leave(source, methods, report, unreleased);
+  if (!guard(source, methods, report, false, logs.released)) {
+    leave(source, methods, logs.released, unreleased);
     return;
   }
   const { destroy, pause } = methods;
@@ -528,7 +583,9 @@ export function releaseStreamLike(
  * as for a cancellation, with it. A source that refuses the listener of
  * `error` of its guard keeps the one of the send (see `forwarder()`), and is
  * destroyed without the error that decides the send; one that has neither
- * is left (see `leave()`): `unreleased()` tells it.
+ * is left (see `leave()`): `unreleased()` tells it. A refusal of its guard,
+ * a `pause()` that throws once it is no longer read, and a removal that
+ * throws are logged by `logs` (see `IStreamLikeLogs`), not as late errors.
  */
 export function readStreamLike(
   source: object,
@@ -536,6 +593,7 @@ export function readStreamLike(
   reason: () => Error,
   report: ISourceReport,
   unreleased: () => void = unnoticed,
+  logs: IStreamLikeLogs = logsOf(report),
 ): Readable {
   /**
    * The listeners added to the source, by event, recorded before its `on()`
@@ -594,7 +652,7 @@ export function readStreamLike(
         } catch (error: unknown) {
           // Never thrown into the events of the source, nor out of a turn of
           // its own: once the send has settled, its listeners change nothing
-          report(error);
+          logs.removed(error);
         }
       }
     }
@@ -604,7 +662,7 @@ export function readStreamLike(
    * listens (`closed`: by its `close`)
    */
   const protect = (closed = false): boolean => {
-    guarded ??= guard(source, methods, report, closed);
+    guarded ??= guard(source, methods, report, closed, logs.released);
     return guarded;
   };
   /**
@@ -656,9 +714,9 @@ export function readStreamLike(
         const { destroy, pause } = methods;
         if (!safe && !kept) {
           // No listener of its `error` is in place
-          leave(source, methods, report, unreleased);
+          leave(source, methods, logs.released, unreleased);
         } else if (destroy === null) {
-          pauseOf(source, pause, report);
+          pauseOf(source, pause, logs.released);
         } else if (destroyed) {
           // By the application: not again
         } else if (kept) {
