@@ -364,6 +364,12 @@ export function readStreamLike(
         if (destroy === null) {
           call(pause);
         } else if (!destroyed) {
+          if (error !== null) {
+            // The error that decides the send (e.g. of a chunk that is not
+            // bytes, which the readable refuses): the guard does not report
+            // it again once the source emits it
+            decided(error);
+          }
           call(destroy, error ?? reason());
         }
       }
