@@ -11,7 +11,6 @@ import {
   pollUntil,
   sameBytes,
   serve,
-  sleep,
   within,
 } from "./helpers.js";
 import { type IncomingMessage, request } from "node:http";
@@ -59,12 +58,23 @@ function reader(stream: NodeJS.ReadableStream): IReader {
   };
 }
 
-/** Decompresses what a compressor has flushed (a stream that is not ended) */
+/**
+ * Decompresses what a compressor has flushed (a stream that is not ended):
+ * what the decompressor has emitted once its own flush has been called back
+ * (it has decompressed all that it has been written), not after a time,
+ * which a loaded machine may need more of
+ */
 async function flushed(coding: string, data: Buffer): Promise<string> {
   const stream = decompressor(coding);
   const read = reader(stream);
   stream.write(data);
-  await sleep(20);
+  await within(
+    new Promise<void>((resolve) => {
+      (stream as zlib.Zlib & Transform).flush(() => {
+        resolve();
+      });
+    }),
+  );
   stream.destroy();
   return read.text;
 }

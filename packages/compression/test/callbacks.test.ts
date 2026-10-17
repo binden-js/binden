@@ -472,12 +472,33 @@ suite("The callbacks of a compressed response that is destroyed", () => {
         const { promise: settled, resolve: settle } =
           Promise.withResolvers<null>();
         const served = await serve(
-          { app: { timeout: 200 } },
+          {},
           new Compression({ format: coding, threshold: 0 }),
           async (context: Context) => {
             const { response } = context;
             response.type("text/plain");
             const record = recorder(calls, response);
+            // Its deadline passes only once the client, which reads nothing,
+            // has backed the response up: the compressor is paused until the
+            // response drains, so that the write that waits then is never
+            // called back before. A fixed deadline could pass while the
+            // compressor still compresses a write (e.g. slowly, on a loaded
+            // machine), which then succeeds, and the writes after it are
+            // ignored. A drain of the response removes it until the response
+            // is backed up again
+            let armed = false;
+            response.on("drain", () => {
+              if (armed && !response.writableNeedDrain) {
+                armed = false;
+                context.setTimeout(0);
+              }
+            });
+            const watch = setInterval(() => {
+              if (!armed && response.writableNeedDrain) {
+                armed = true;
+                context.setTimeout(20);
+              }
+            }, 5).unref();
             try {
               for (let index = 0; index < 64; index += 1) {
                 const written = record(`${index}`);
@@ -492,6 +513,7 @@ suite("The callbacks of a compressed response that is destroyed", () => {
             } catch (error: unknown) {
               steps.push(codeOf(error));
             } finally {
+              clearInterval(watch);
               steps.push("finally");
               settle(null);
             }
