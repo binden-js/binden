@@ -337,9 +337,13 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   would be sent (to `HEAD`, with a `204`, `205` or `304` status, and with a `1xx` status, which
   rejects), and once the client goes away, also when the stream is shared (e.g. one `PassThrough`
   sent to several responses: the others lose it too), where binden 2.0.4 piped it (reading it for
-  a response without a body) and only unpiped it from a response that the client had left. Send
-  each response a stream of its own (e.g. a `PassThrough` that the shared stream is piped into).
-  The request of the response itself is only no longer read.
+  a response without a body) and only unpiped it from a response that the client had left. A
+  shared stream is also destroyed, where binden 2.0.4 delivered it whole to the other responses,
+  when another writer ends the response (e.g. its own `end()`), and when binden fails the send
+  itself (e.g. a body longer than its `Content-Length`): the stream is destroyed with that error,
+  which the other sends of the stream reject with. Send each response a stream of its own (e.g. a
+  `PassThrough` that the shared stream is piped into). The request of the response itself is only
+  no longer read.
 - `send()` (and `context.send()`) rejects with a `TypeError`, before anything is sent, for an
   object that is neither a `Buffer`, a `Uint8Array`, a `Readable` nor a stream-like source: it sent
   its `toString()` (e.g. `[object Object]`, or the text of a `URLSearchParams`). Send a string
@@ -548,6 +552,11 @@ application a `500`.
   rejects a body with `undefined` (`400`) or a `BindenError` (its status): an error that it lets
   through (e.g. the `SyntaxError` of `JSON.parse()`) is now a `500`.
 - Nothing limits the size of a body by default (as before): set `limit` and `encoded_limit`.
+- A body that the parser refuses before it has read it in full (e.g. over a limit, or with a coding
+  or a charset that it does not support) closes the connection after the reply, whoever replies
+  (the default error reply, or an `error_handler` of the application, also one that echoes the
+  request with `send(context.request)`). binden 2.0.4 with @binden/body 2.0.1 kept the connection,
+  and answered the next request on it.
 
 ```typescript
 import { BindenError } from "binden";
@@ -599,6 +608,10 @@ const values = new BodyParser({ strict: false, limit: 1024 * 1024 });
   rejects with a `500`: it was an empty or a malformed form.
 - A body with a content coding (a `Content-Encoding` other than `identity`) gets
   `415 Unsupported Media Type`: it was parsed without being decoded.
+- A body that the parser refuses before it has read it in full (e.g. over a limit) closes the
+  connection after the reply, whoever replies (the default error reply, or an `error_handler` of
+  the application, also one that echoes the request with `send(context.request)`). binden 2.0.4
+  with @binden/multipart 2.0.3 kept the connection, and answered the next request on it.
 - The parameters of the parts (e.g. the names of the files) are decoded as UTF-8 (busboy decodes
   them as Latin-1 by default): set `config.defParamCharset` to `"latin1"` to keep the former names.
 - A file name is cleaned: its control characters are removed, it is cut to 255 bytes, and an empty
