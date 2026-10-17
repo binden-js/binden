@@ -621,27 +621,22 @@ export class BindenResponse<
   /**
    * What restores the response as it was before each send in progress (see
    * `#pending`), by its key, in the order of their start: run by
-   * `[kCancel]()`, before the reply that replaces them. A send that settles
-   * once its cancellation has been recorded keeps it until then (see
-   * `#settled()`), so that this reply never inherits what it has set.
+   * `[kCancel]()` in the reverse order, before the reply that replaces them.
+   * A send that settles once its cancellation has been recorded keeps it
+   * until then (see `#settled()`), so that this reply never inherits what it
+   * has set. `null` for a send of a stream, which has nothing of its own to
+   * restore: `[kCancel]()` removes the framing of the bodies that are not
+   * sent, and the representation chosen for them, once for every send. A
+   * rollback holds nothing of its send (e.g. its source), which may have
+   * settled long before.
    */
-  readonly #rollbacks = new Map<object, () => void>();
+  readonly #rollbacks = new Map<object, (() => void) | null>();
   /**
    * The cancellations recorded for sends in progress (see
    * `[kCancelling]()`), by their key: such a send rejects with the reason,
    * however it settles, and is still restored by `[kCancel]()`
    */
   readonly #cancellations = new WeakMap<object, { readonly reason: Error }>();
-  /**
-   * The rollback of a send of a stream (see `#rollbacks`): without the
-   * framing of its body, which is not sent, nor the representation chosen
-   * for it (see `#forget()`). It holds nothing of the send (e.g. its source),
-   * which may have settled long before.
-   */
-  readonly #unsent = (): void => {
-    this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
-    this.#forget();
-  };
   /** The checks of the owners that may mutate the response (see `[kSeal]()`) */
   readonly #seals: ((owner: object | undefined) => boolean)[] = [];
   /** How the framework handles the works that own the response (see `[kOwnership]()`) */
@@ -2447,11 +2442,12 @@ export class BindenResponse<
   /**
    * Cancels the sends in progress (of a stream, or of a file), unless the
    * headers have been committed: each rejects with the reason, its source is
-   * released, and the response is restored as it was before it (its status,
-   * its headers and its framing, without the representation chosen for its
-   * body), also for a send that has settled once its cancellation was
-   * recorded (see `[kCancelling]()`), so that another reply can be sent at
-   * once
+   * released, and the response is restored as it was before the earliest of
+   * them (its status and its headers), without the framing of their bodies
+   * (also one set before them, e.g. by the application) nor the
+   * representation chosen for them, also for a send that has settled once
+   * its cancellation was recorded (see `[kCancelling]()`), so that another
+   * reply can be sent at once
    *
    * @internal
    */
@@ -2462,13 +2458,25 @@ export class BindenResponse<
       this.#piped = false;
       const release: (() => void)[] = [];
       this[kFramework](() => {
-        // Restored first, in the order of their start (e.g. a `sendFile()`,
-        // then the send of its file): also a send that has settled once its
-        // cancellation was recorded (see `#settled()`)
-        const rollbacks = [...this.#rollbacks.values()];
+        // Restored first, the latest first (e.g. the send of the file of a
+        // `sendFile()`, then that `sendFile()`), so that the response is as
+        // it was before the earliest: a later send (e.g. a second
+        // `sendFile()`, once the first has set the headers of its file) never
+        // reinstates what an earlier one has set. Also a send that has
+        // settled once its cancellation was recorded (see `#settled()`)
+        const rollbacks = [...this.#rollbacks.values()].reverse();
         this.#rollbacks.clear();
         for (const rollback of rollbacks) {
-          rollback();
+          rollback?.();
+        }
+        if (rollbacks.length > 0) {
+          // Then the framing of the bodies that are not sent, also one that
+          // was set before the earliest of them (e.g. a `Content-Length` of
+          // the application before a `sendFile()`), which no body of the
+          // reply that replaces them has: once, as the representation chosen
+          // for them, which that reply chooses again
+          this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
+          this.#forget();
         }
         for (const cancel of [...this.#pending.values()]) {
           cancel(reason, release);
@@ -3252,7 +3260,9 @@ export class BindenResponse<
         if (failure === null) {
           resolve();
         } else {
-          if (!this.headersSent) {
+          // Unless `[kCancel]()` cancels it (`release`): it has removed the
+          // framing, and forgotten the representation, once for every send
+          if (release === null && !this.headersSent) {
             this.#forget();
             this.#unframe(framed);
           }
@@ -3360,9 +3370,9 @@ export class BindenResponse<
           settle({ error, own: false });
         },
       );
-      // The framing of the body that is not sent, and its representation,
-      // which `[kCancel]()` removes first (see `#rollbacks`)
-      this.#rollbacks.set(key, this.#unsent);
+      // Nothing of its own to restore: `[kCancel]()` removes the framing of
+      // the body that is not sent, and its representation (see `#rollbacks`)
+      this.#rollbacks.set(key, null);
       this.#pending.set(key, (reason: unknown, release: (() => void)[]) => {
         settle({ error: reason, own: false }, release);
       });
@@ -3769,11 +3779,14 @@ export class BindenResponse<
    * (or a `412`) only, the ranges to a `200`. Before the headers are
    * committed, the framework may cancel it (see `[kCancel]()`): it then
    * rejects with the reason at once, its headers and status are those from
-   * before it, and a file opened later is closed. So is a file whose send
-   * would be ignored (once the response has ended, or once the work that has
-   * called it may no longer mutate the response, e.g. a failed error
-   * handler): it then resolves without sending anything, at once when it is
-   * called so (without reading its options, nor resolving its path).
+   * before it, or from before an earlier send in progress that is cancelled
+   * with it (e.g. another `sendFile()`), without the framing of a body (e.g.
+   * a `Content-Length` set before it), and a file opened later is closed. So
+   * is a file whose send would be ignored (once the response has ended, or
+   * once the work that has called it may no longer mutate the response, e.g.
+   * a failed error handler): it then resolves without sending anything, at
+   * once when it is called so (without reading its options, nor resolving
+   * its path).
    */
   public sendFile(
     path: URL | string,
