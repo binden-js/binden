@@ -1,8 +1,7 @@
-// Run by `guard-refusals.test.ts`, without a handler of the process: a
+// Run by `guard-refusals.test.ts`, without a handler of the process: code of a
 // stream-like source (an `EventEmitter` with the methods, and the `Readable`
-// of `readable-stream` 2, 3 and 4) whose own `on()` refuses the listener of
-// `error` of its guard, or every one, for each case of `cases`. Nothing may
-// crash the process, nothing of the send may
+// of `readable-stream` 2, 3 and 4) that throws while `send()` reads it, for
+// each case of `cases`. Nothing may crash the process, nothing of the send may
 // be left on the source but its guard (or, when the guard cannot be
 // installed, the listener of `error` of the send, which logs a late error),
 // and the send settles as it would with a Node.js `Readable`. One line per
@@ -132,11 +131,26 @@ function failing(source: ISource, key: string): void {
   });
 }
 
+/** Makes the `removeListener()` of a source throw for these events */
+function unremovable(source: ISource, events: readonly string[]): void {
+  const removeListener = Reflect.get(source, "removeListener") as IMethod;
+  Object.assign(source, {
+    removeListener(event: string, listener: () => void): unknown {
+      if (events.includes(event)) {
+        throw new Error(`No removal of ${event}`);
+      }
+      return Reflect.apply(removeListener, source, [event, listener]);
+    },
+  });
+}
+
 /** A case: what it does to the source before it is sent, and which sources it applies to */
 interface ICase {
   readonly sources: readonly string[];
   readonly method?: string;
   readonly deadline?: boolean;
+  /** The source, if not one of `libraries` */
+  create?(): ISource;
   /** What it does before the send (`key`: of the source and the case) */
   prepare(source: ISource, key: string): void;
   /**
@@ -152,6 +166,22 @@ const later = (source: ISource, key: string): void => {
   source.emit("error", new Error(`Late failure (${key})`));
 };
 const cases: Readonly<Record<string, ICase>> = {
+  // A listener of its `newListener` that throws for a listener of the send
+  ...Object.fromEntries(
+    ["close", "end", "data"].map((event) => [
+      `newListener-${event}`,
+      {
+        sources: all,
+        prepare: (source: ISource): void => {
+          source.on("newListener", (name: string) => {
+            if (name === event) {
+              throw new Error(`newListener(${event}) refused`);
+            }
+          });
+        },
+      },
+    ]),
+  ),
   // Its own `on()` throws only for the listener of `error` of its guard (the
   // second): the send settles by its end, or by its error, and its own
   // listener of `error` reports a later error
@@ -183,8 +213,15 @@ const cases: Readonly<Record<string, ICase>> = {
       failing(source, key);
     },
   },
-  // Its own `on()` throws for every listener of `error` (released to `HEAD`),
-  // and its destroy would fail later: it is never destroyed, only left
+  // Its own `on()` throws for every listener of `error`, and its destroy
+  // would fail later: it is never destroyed
+  every: {
+    sources: all,
+    prepare: (source: ISource, key: string): void => {
+      refusing(source, 1);
+      failing(source, key);
+    },
+  },
   "every-head": {
     sources: ["emitter"],
     method: "HEAD",
@@ -193,6 +230,114 @@ const cases: Readonly<Record<string, ICase>> = {
       failing(source, key);
     },
   },
+  // Its own `removeListener()` throws: sent whole
+  ...Object.fromEntries(
+    [
+      ["error", ["error"]],
+      ["end", ["end"]],
+      ["all", ["data", "end", "error", "close"]],
+    ].map(([name, events]) => [
+      `removeListener-${name as string}`,
+      {
+        sources: all,
+        prepare: (source: ISource): void => {
+          unremovable(source, events as string[]);
+          whole(source);
+        },
+        // Its listener of `error` that the send could not remove reports it
+        // (the guard of a source that has closed could not either)
+        ...(name === "end" ? {} : { later }),
+      },
+    ]),
+  ),
+  // Its own `pause()` throws once the response is full (its first chunk is
+  // larger than the high water mark of the response)
+  pause: {
+    sources: ["emitter"],
+    prepare: (source: ISource): void => {
+      Object.assign(source, {
+        pause: (): never => {
+          throw new Error("pause() refused");
+        },
+      });
+      setImmediate(() => {
+        source.emit("data", Buffer.alloc(1 << 20, 0x61));
+        source.emit("data", Buffer.alloc(1 << 20, 0x61));
+      });
+    },
+  },
+  // Without `destroy()`: paused once failed, which throws once more
+  "pause-undestroyable": {
+    sources: ["emitter"],
+    prepare: (source: ISource): void => {
+      Object.assign(source, {
+        destroy: null,
+        pause: (): never => {
+          throw new Error("pause() refused");
+        },
+      });
+      setImmediate(() => {
+        source.emit("data", Buffer.alloc(1 << 20, 0x61));
+        source.emit("data", Buffer.alloc(1 << 20, 0x61));
+      });
+    },
+  },
+  // Failed without being destroyed (`errored`, also of its state)
+  errored: {
+    sources: ["emitter"],
+    prepare: (source: ISource): void => {
+      Object.assign(source, { errored: new Error("Errored before") });
+    },
+  },
+  // Of `readable-stream` 4 without `autoDestroy`, whose chunk is refused
+  "errored-v4": {
+    sources: ["v4"],
+    prepare: (): void => {
+      // Errored already (see `create()`)
+    },
+    create: (): ISource => {
+      const { Readable } = require("readable-stream-v4") as {
+        Readable: IReadable;
+      };
+      const source = new Readable({
+        autoDestroy: false,
+        read(): void {
+          // Nothing to read
+        },
+      });
+      // Of the application, without which the error of the chunk would
+      // crash the process
+      source.on("error", () => null);
+      (source.push as (chunk: unknown) => boolean)(42);
+      return source;
+    },
+  },
+  "errored-state": {
+    sources: ["emitter"],
+    prepare: (source: ISource): void => {
+      Object.assign(source, {
+        _readableState: { errored: new Error("Errored before") },
+      });
+    },
+  },
+  // Its own `resume()` throws a falsy value
+  ...Object.fromEntries(
+    // eslint-disable-next-line no-undefined -- a thrown `undefined`
+    [null, undefined].map((value) => [
+      `resume-${String(value)}`,
+      {
+        sources: ["emitter"],
+        prepare: (source: ISource): void => {
+          Object.assign(source, {
+            resume: (): never => {
+              // eslint-disable-next-line @typescript-eslint/only-throw-error -- a falsy value on purpose
+              throw value;
+            },
+          });
+        },
+      },
+    ]),
+  ),
 };
 
 /** How a send has rejected: the code of its error, or else its message, or the value */
@@ -219,7 +364,7 @@ const middleware = async (context: Context): Promise<void> => {
   const [, library = "", name = ""] = context.url.pathname.split("/");
   const key = `${library} ${name}`;
   const spec = cases[name];
-  const source = libraries[library]();
+  const source = spec.create?.() ?? libraries[library]();
   sources.set(key, source);
   spec.prepare(source, key);
   // Every destroy, by the methods that the send reads (once prepared)

@@ -131,6 +131,20 @@ export function hasClosed(source: object): boolean {
   }
 }
 
+/**
+ * The error of a stream-like source that has failed before its end:
+ * `errored`, or the one of its state (e.g. of `readable-stream` 4, also
+ * once it has errored without being destroyed, with `autoDestroy: false`),
+ * `null` for none (nor for a falsy value, which Node.js drops as an error)
+ */
+function erroredOf(source: object): unknown {
+  const state = Reflect.get(source, "_readableState") as
+    { readonly errored?: unknown } | null | undefined;
+  const errored: unknown = Reflect.get(source, "errored") ?? state?.errored;
+  const failed = Boolean(errored);
+  return failed ? errored : null;
+}
+
 /** The listener of `error` of the guard of each source (see `guard()`) */
 const guards = new WeakMap<object, (error: unknown) => void>();
 
@@ -493,9 +507,13 @@ export function releaseStreamLike(
  * source emits then, and once the source has ended, failed or closed, but
  * the one of `error` on the next turn (which an error emitted after the end
  * or the close would otherwise crash the process without a listener of the
- * application, and is reported as a late error). A source that has ended
- * already is an empty body, and one destroyed before its end closes the
- * readable at once: neither is listened to. The guard
+ * application, and is reported as a late error). A removal that throws is
+ * reported (see `ISourceReport`). A source that has ended already is an
+ * empty body, one destroyed before its end closes the readable at once, and
+ * one that has failed without being destroyed (its `errored`, e.g. of
+ * `readable-stream` 4 with `autoDestroy: false`) destroys it at once with
+ * that error, which is not reported again (see `decided()`), and is
+ * released with it: none of them is listened to. The guard
  * of a source (see `guard()`) listens before the listeners of the send are
  * removed, and reports a later error of one that has ended (whose destroy,
  * e.g. by `autoDestroy`, may fail after the end), failed or closed, that it
@@ -503,17 +521,26 @@ export function releaseStreamLike(
  * (before the send, or by an `end` or a `close` once destroyed, whose
  * destroy may fail after the turn that decides the send).
  *
- * A source that refuses the listener of `error` of its guard keeps the one
- * of the send (see `forwarder()`), and is destroyed without the error that
- * decides the send.
+ * Code of the source that throws while its listeners are added (its own
+ * `on()`, e.g. by a listener of its `newListener`), or in its `pause()`,
+ * gives a readable destroyed with what it has thrown (a falsy value, which
+ * Node.js drops as an error, as a premature close), and releases the source
+ * as for a cancellation, with it. A source that refuses the listener of
+ * `error` of its guard keeps the one of the send (see `forwarder()`), and is
+ * destroyed without the error that decides the send; one that has neither
+ * is left (see `leave()`): `unreleased()` tells it.
  */
 export function readStreamLike(
   source: object,
   methods: IStreamLikeMethods,
   reason: () => Error,
   report: ISourceReport,
+  unreleased: () => void = unnoticed,
 ): Readable {
-  /** The listeners added to the source, by event */
+  /**
+   * The listeners added to the source, by event, recorded before its `on()`
+   * runs (which may add one, then throw)
+   */
   const listeners = new Map<string, (...args: never[]) => void>();
   /** Whether the source has ended, failed or closed (or is cancelled) */
   let settled = false;
@@ -521,8 +548,14 @@ export function readStreamLike(
   let destroyed = false;
   /** Whether its guard listens (see `protect()`), once installed */
   let guarded: boolean | null = null;
+  /**
+   * Whether the listener of `error` of the send is in place: its `on()` has
+   * returned, or it has heard an error
+   */
+  let listened = false;
   /** The listener of `error` of the send (see `detach()`) */
   const errors = forwarder((error: unknown) => {
+    listened = true;
     // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
     fail(error as Error);
   });
@@ -533,11 +566,18 @@ export function readStreamLike(
     event: string,
     listener: (...args: never[]) => void,
   ): void => {
-    call(methods.on, event, listener);
+    if (settled) {
+      // E.g. by an `error` that its `on()` has emitted at once
+      return;
+    }
     listeners.set(event, listener);
     if (event === "error") {
       // Until it is removed (see `release()`)
       hear(source, 1);
+    }
+    call(methods.on, event, listener);
+    if (event === "error") {
+      listened = true;
     }
   };
   /** Removes the listeners of these events that the source still has */
@@ -546,10 +586,16 @@ export function readStreamLike(
       const listener = listeners.get(event);
       if (typeof listener !== "undefined") {
         listeners.delete(event);
-        if (event === "error") {
-          hear(source, -1);
+        try {
+          call(methods.remove, event, listener);
+          if (event === "error") {
+            hear(source, -1);
+          }
+        } catch (error: unknown) {
+          // Never thrown into the events of the source, nor out of a turn of
+          // its own: once the send has settled, its listeners change nothing
+          report(error);
         }
-        call(methods.remove, event, listener);
       }
     }
   };
@@ -567,7 +613,7 @@ export function readStreamLike(
    * (`closed`: by its `close`): whether it is
    */
   const detach = (closed = false): boolean => {
-    const kept = !protect(closed);
+    const kept = !protect(closed) && listened;
     errors.detach(source, report);
     if (kept) {
       // Never removed (it holds nothing of the send): it reports a late
@@ -604,11 +650,15 @@ export function readStreamLike(
         settled = true;
         // Its guard listens before its listeners are removed, and before it
         // is paused or destroyed
+        const safe = protect();
         const kept = detach();
         release("data", "end", "close", "error");
         const { destroy, pause } = methods;
-        if (destroy === null) {
-          call(pause);
+        if (!safe && !kept) {
+          // No listener of its `error` is in place
+          leave(source, methods, report, unreleased);
+        } else if (destroy === null) {
+          pauseOf(source, pause, report);
         } else if (destroyed) {
           // By the application: not again
         } else if (kept) {
@@ -634,6 +684,16 @@ export function readStreamLike(
     readable.destroy(error);
   };
   /**
+   * A readable that nothing is read into, destroyed at once with `error`
+   * (see `BindenResponse.#unreadable()`), which the send rejects with: its
+   * guard never reports it, as if a send heard it
+   */
+  const unreadable = (error: unknown): Readable => {
+    hear(readable, 1);
+    readable.destroy(error as Error);
+    return readable;
+  };
+  /**
    * An `end` or a `close` of a source that has been destroyed, which is not
    * its end: the error of its destroy, which may follow, fails the readable,
    * or a premature close on the next turn (which changes nothing once the
@@ -657,7 +717,8 @@ export function readStreamLike(
     protect(hasClosed(source));
     readable.push(null);
     return readable;
-  } else if (isDestroyed(source)) {
+  }
+  if (isDestroyed(source)) {
     // Nothing more of it can be read (see `BindenResponse.#pipe()`), but its
     // destroy may still fail
     settled = true;
@@ -665,27 +726,46 @@ export function readStreamLike(
     readable.destroy();
     return readable;
   }
-  listen("error", errors.listener);
-  listen("close", () => {
-    // Before its end (once it has ended, it is no longer listened to)
-    if (isDestroyed(source)) {
-      stopped(true);
-    } else {
-      fail(premature(), true);
-    }
-  });
-  listen("end", () => {
-    if (isDestroyed(source)) {
-      stopped(false);
-    } else {
-      settle();
-      readable.push(null);
-    }
-  });
-  listen("data", (chunk: unknown) => {
-    if (!readable.push(chunk)) {
-      call(methods.pause);
-    }
-  });
+  const errored = erroredOf(source);
+  if (errored !== null) {
+    // Failed without being destroyed: nothing more of it can be read either,
+    // and it is released with its error, as for a cancellation (see
+    // `destroy`), which is not reported again
+    return unreadable(errored);
+  }
+  try {
+    listen("error", errors.listener);
+    listen("close", () => {
+      // Before its end (once it has ended, it is no longer listened to)
+      if (isDestroyed(source)) {
+        stopped(true);
+      } else {
+        fail(premature(), true);
+      }
+    });
+    listen("end", () => {
+      if (isDestroyed(source)) {
+        stopped(false);
+      } else {
+        settle();
+        readable.push(null);
+      }
+    });
+    listen("data", (chunk: unknown) => {
+      if (!readable.push(chunk)) {
+        try {
+          call(methods.pause);
+        } catch (error: unknown) {
+          // Code of the source that throws: as for a cancellation, with it
+          readable.destroy(error as Error);
+        }
+      }
+    });
+  } catch (error: unknown) {
+    // Code of the source (e.g. its own `on()`, or a listener of its
+    // `newListener`): released as for a cancellation, with what it has
+    // thrown (see `destroy`), whatever it has added removed
+    return unreadable(error);
+  }
   return readable;
 }

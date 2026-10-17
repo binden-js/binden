@@ -2738,6 +2738,9 @@ export class BindenResponse<
               kind,
               () => this.#abandoned(BindenResponse.#premature()),
               this.#report(),
+              () => {
+                this.#unreleased();
+              },
             ),
       );
     }

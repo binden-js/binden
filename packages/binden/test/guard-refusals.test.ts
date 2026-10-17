@@ -5,6 +5,7 @@ import {
   emitterMethods,
   guard,
   hasClosed,
+  readStreamLike,
   releaseStreamLike,
   streamLikeOf,
 } from "../src/stream-like.js";
@@ -47,6 +48,39 @@ function each(
   sources: readonly (typeof libraries)[number][] = libraries,
 ): string[] {
   return sources.map((library) => `${library} ${name} ${line(library)}`);
+}
+
+/**
+ * Whether a source of a library closes once destroyed or ended: not a
+ * `Readable` of `readable-stream` 2, whose guard stays (as long as it lives,
+ * holding nothing but the report of a late error)
+ */
+function closes(library: string): boolean {
+  return library !== "v2";
+}
+
+/** What the fixture of the stream-like sources has printed (run once) */
+let printed: Record<string, unknown> | null = null;
+
+/**
+ * What the fixture of the stream-like sources has printed for these cases,
+ * with its exit code and its errors (`counts`: its last line, the counts of
+ * every case)
+ */
+function streamLikes(
+  cases: readonly string[],
+  counts = false,
+): Record<string, unknown> {
+  printed ??= fixture("stream-like-refusals.ts");
+  const lines = String(printed.stdout).split("\n");
+  return {
+    status: printed.status,
+    lines: [
+      ...lines.filter((line) => cases.includes(line.split(" ")[1] ?? "")),
+      ...(counts ? lines.slice(-2) : []),
+    ],
+    stderr: printed.stderr,
+  };
 }
 
 suite("A source that refuses the listener of `error` of its guard", () => {
@@ -116,17 +150,107 @@ suite(
           () => "200 resolved destroyed= listeners=0/0/0/0 late=0",
           ["emitter"],
         ),
-        // The guards refused (once per source), and the sources left
-        "removals=0 refusals=10 left=1",
       ];
-      deepStrictEqual(fixture("stream-like-refusals.ts"), {
-        status: 0,
-        stdout: `${lines.join("\n")}\n`,
-        stderr: "",
-      });
+      deepStrictEqual(
+        streamLikes([
+          "guard-end",
+          "guard-error",
+          "guard-deadline",
+          "every-head",
+        ]),
+        { status: 0, lines, stderr: "" },
+      );
     });
   },
 );
+
+suite("Code of a stream-like source that throws while send() reads it", () => {
+  test("its `on()` (also a listener of its `newListener`), its `removeListener()`, its `pause()`, its `resume()` (a falsy value), or its state (failed without being destroyed): nothing crashes, nothing of the send is left, and the send settles as for a Node.js `Readable`", () => {
+    const lines = [
+      // Rejected with what has been thrown, and destroyed with it (not
+      // logged): only its guard stays (its listener of `error`, without its
+      // listener of `close`, which it refuses), until the turn after its close
+      ...each(
+        "newListener-close",
+        () =>
+          "500 rejected:newListener(close) refused destroyed=newListener(close) refused listeners=0/0/1/0 late=0",
+      ),
+      ...["end", "data"].flatMap((event) =>
+        each(
+          `newListener-${event}`,
+          (library) =>
+            `500 rejected:newListener(${event}) refused destroyed=newListener(${event}) refused listeners=0/0/${closes(library) ? "0/0" : "1/1"} late=0`,
+        ),
+      ),
+      // Every listener of `error` refused: never destroyed (its destroy
+      // would fail later), only left
+      ...each(
+        "every",
+        () =>
+          "500 rejected:No listener of error #1 destroyed= listeners=0/0/0/0 late=0",
+      ),
+      // A removal that throws is logged: the listener left stays harmless
+      // (that of `error` logs a later error once)
+      ...each(
+        "removeListener-error",
+        (library) =>
+          `200 resolved destroyed=${library === "v4" ? "undefined" : ""} listeners=0/0/2/1 late=1`,
+      ),
+      // Of `readable-stream` 4: closed by `autoDestroy`, its guard has left
+      ...each(
+        "removeListener-end",
+        () => "200 resolved destroyed= listeners=0/1/1/1 late=0",
+        ["emitter", "v2", "v3"],
+      ),
+      "v4 removeListener-end 200 resolved destroyed=undefined listeners=0/1/0/0 late=0",
+      ...each(
+        "removeListener-all",
+        (library) =>
+          `200 resolved destroyed=${library === "v4" ? "undefined" : ""} listeners=1/1/2/2 late=1`,
+      ),
+      // Its `pause()` throws once the response is full: the response,
+      // committed, is closed; destroyed with that error, or paused (which
+      // throws again, logged) without `destroy()`
+      "emitter pause 0 rejected:pause() refused destroyed=pause() refused listeners=0/0/0/0 late=0",
+      "emitter pause-undestroyable 0 rejected:pause() refused destroyed= listeners=0/0/1/1 late=0",
+      // Failed without being destroyed: rejected at once with its error, and
+      // released with it (not logged)
+      "emitter errored 500 rejected:Errored before destroyed=Errored before listeners=0/0/0/0 late=0",
+      'v4 errored-v4 500 rejected:ERR_INVALID_ARG_TYPE destroyed=The "chunk" argument must be of type string or an instance of Buffer or Uint8Array. Received type number (42) listeners=0/0/1/0 late=0',
+      "emitter errored-state 500 rejected:Errored before destroyed=Errored before listeners=0/0/0/0 late=0",
+      // A falsy value, which Node.js drops as an error: a premature close
+      ...["null", "undefined"].map(
+        (value) =>
+          `emitter resume-${value} 500 rejected:ERR_STREAM_PREMATURE_CLOSE destroyed=Premature close listeners=0/0/0/0 late=0`,
+      ),
+      // Of every case: the removals that have thrown, the guards refused
+      // (once per source), and the sources left
+      "removals=26 refusals=14 left=5",
+    ];
+    deepStrictEqual(
+      streamLikes(
+        [
+          "newListener-close",
+          "newListener-end",
+          "newListener-data",
+          "every",
+          "removeListener-error",
+          "removeListener-end",
+          "removeListener-all",
+          "pause",
+          "pause-undestroyable",
+          "errored",
+          "errored-v4",
+          "errored-state",
+          "resume-null",
+          "resume-undefined",
+        ],
+        true,
+      ),
+      { status: 0, lines: [...lines, ""], stderr: "" },
+    );
+  });
+});
 
 /** A stream-like source that is not a stream, whose calls are recorded */
 class Recorded extends EventEmitter {
@@ -224,6 +348,40 @@ suite("guard() of a source", () => {
 });
 
 suite("A stream-like source used without the framework", () => {
+  test("whose own `on()` emits an `error` at once: it settles, and no other listener is added", async () => {
+    const source = new Recorded();
+    const failure = new Error("Emitted at once");
+    const added: string[] = [];
+    Object.assign(source, {
+      on(event: string, listener: () => void): Recorded {
+        added.push(event);
+        EventEmitter.prototype.on.call(source, event, listener);
+        if (event === "error" && added.length === 1) {
+          source.emit("error", failure);
+        }
+        return source;
+      },
+    });
+    const readable = readStreamLike(
+      source,
+      methodsOf(source),
+      () => new Error("Cancelled"),
+      () => null,
+    );
+    const [error] = (await within(
+      new Promise<unknown[]>((resolve) => {
+        readable.once("error", (...args: unknown[]) => {
+          resolve(args);
+        });
+      }),
+    )) as [unknown];
+    // Its guard, after the listener of the send
+    deepStrictEqual(
+      [error, added, source.calls],
+      [failure, ["error", "error", "close"], []],
+    );
+  });
+
   for (const throws of [false, true]) {
     test(`released that refuses its guard, without a report of it: left, paused${throws ? " (a pause() that throws is reported)" : ""}`, () => {
       const source = new Recorded();
