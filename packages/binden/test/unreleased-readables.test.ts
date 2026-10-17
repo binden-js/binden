@@ -23,18 +23,19 @@ function fixture(name: string): Record<string, unknown> {
 }
 
 suite("A Node.js `Readable` that refuses every listener of `error`", () => {
-  test("is left untouched, never paused (a listener of its `pause` that fails it later would crash the process), and that is logged; one paused by its send fails later harmlessly", () => {
+  test("is left untouched, never paused nor resumed (a listener of its `pause` or its `resume` that fails it later would crash the process), and that is logged; one paused by its send fails later harmlessly", () => {
     // Sent (its send rejects with the refusal), paused by the application
     // before, released to `HEAD` or for an informational status, or ignored
-    // once the response has ended: never paused by binden, nor destroyed,
-    // and nothing of the send is left on it
+    // once the response has ended: never paused nor resumed by binden (its
+    // send adds no other listener before the one of its `error`), nor
+    // destroyed, and nothing of the send is left on it
     const line = (path: string, reply: string, flowing: string): string =>
-      `${path} ${reply} pauses=0 resumes=${flowing === "true" ? 1 : 0} flowing=${flowing} destroyed=false listeners=0/0/0/0`;
+      `${path} ${reply} pauses=0 resumes=0 flowing=${flowing} destroyed=false listeners=0/0/0/0`;
     deepStrictEqual(fixture("unreleased-readables.ts"), {
       status: 0,
       stdout:
         `${[
-          line("/send", "500 rejected:No listener of error (/send)", "true"),
+          line("/send", "500 rejected:No listener of error (/send)", "null"),
           line(
             "/paused",
             "500 rejected:No listener of error (/paused)",

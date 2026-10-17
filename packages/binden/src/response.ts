@@ -3468,6 +3468,12 @@ export class BindenResponse<
       };
       try {
         listening
+          // First: nothing of the source runs (e.g. the `resume()` that
+          // `on("data")` of Node.js calls, which emits `resume` to the
+          // listeners of the application) until a listener of its `error` is
+          // in place, without which a later error of it would crash the
+          // process (see `#unreleased()`)
+          .on("error", errors.listener)
           .on("data", (chunk: Uint8Array | string) => {
             operation.run(() => {
               if (settled || !operation.active) {
@@ -3511,7 +3517,6 @@ export class BindenResponse<
           .on("end", () => {
             operation.run(end);
           })
-          .on("error", errors.listener)
           .on("close", () => {
             // Destroyed before its end, without an `error` event (which
             // precedes the close): with its error (e.g. of `destroy(error)`,

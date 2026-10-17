@@ -110,7 +110,8 @@ suite("Code of a source that throws while send() reads it", () => {
     });
     deepStrictEqual(
       [status, outcome, added, resumes, source.destroyed],
-      [500, [failure, false], ["data", "end", "error"], 0, true],
+      // Its `error` first: nothing else once it has failed
+      [500, [failure, false], ["error"], 0, true],
     );
   });
 

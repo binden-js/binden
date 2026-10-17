@@ -1,11 +1,12 @@
 // Run by `unreleased-readables.test.ts`, without a handler of the process: a
 // Node.js `Readable` that refuses every listener of `error` (a listener of
 // its `newListener` throws), with listeners of the application of its
-// `pause` that fail it later (an `error` on the next turn), sent (fresh, or
-// paused by the application), released to `HEAD` or for an informational
-// status, or ignored once the response has ended. No listener of its
-// `error` can be in place: binden must leave it untouched, never paused,
-// since its error would crash the process. One line per path: `<path>
+// `pause` and its `resume` that fail it later (an `error` on the next turn),
+// sent (fresh, or paused by the application), released to `HEAD` or for an
+// informational status, or ignored once the response has ended. No listener
+// of its `error` can be in place: binden must leave it untouched, never
+// paused nor resumed (also by the `resume()` that `on("data")` of Node.js
+// calls), since its error would crash the process. One line per path: `<path>
 // <status> <outcome> pauses=<n> resumes=<n> flowing=<readableFlowing>
 // destroyed=<destroyed> listeners=<data>/<end>/<error>/<close>`, then the
 // count of the records of the sources left. Then one that refuses only the
@@ -80,6 +81,11 @@ function refusing(path: string, paused: boolean): Readable {
   });
   source.on("resume", () => {
     events.resumes += 1;
+    if (!listened) {
+      setImmediate(() => {
+        source.emit("error", new Error(`Failed after a resume (${path})`));
+      });
+    }
   });
   sources.set(path, { source, events });
   return source;
