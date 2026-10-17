@@ -3276,7 +3276,7 @@ export class BindenResponse<
        */
       const stop = (error: unknown, emitted: boolean | null): void => {
         if (emitted !== null) {
-          reportLate(data, error, emitted, this.#report());
+          reportLate(data, error, emitted, this.#report(data));
         }
         stopped = true;
         this.#discard(data);
@@ -3502,7 +3502,7 @@ export class BindenResponse<
     const { errored } = data;
     if (this.writableEnded) {
       if (errored !== null) {
-        reportLate(data, errored, false, this.#report());
+        reportLate(data, errored, false, this.#report(data));
       }
       return this.#finished(() => false);
     } else if (this.headersSent) {
@@ -3518,7 +3518,7 @@ export class BindenResponse<
    */
   #guardReleased(source: Readable): void {
     try {
-      guard(source, emitterMethods, this.#report(), hasClosed(source));
+      guard(source, emitterMethods, this.#report(source), hasClosed(source));
     } catch (error: unknown) {
       this.#ownership.debug("The release of a stream has failed", error);
     }
@@ -3622,12 +3622,14 @@ export class BindenResponse<
   }
 
   /**
-   * How a late error of a stream-like source that is not sent, or no longer,
-   * is reported (see `ISourceReport`): by the framework (see
-   * `IOwnership.released`), or not at all
+   * How a late error of a source that is not sent, or no longer, is reported
+   * (see `ISourceReport`): by the framework (see `IOwnership.released`, and
+   * `IOwnership.echoed` for the request of the response, which is never
+   * released), or not at all
    */
-  #report(): ISourceReport {
-    return this.#ownership.released ?? unreported;
+  #report(source?: unknown): ISourceReport {
+    const { echoed, released } = this.#ownership;
+    return (source === this.req ? echoed : released) ?? unreported;
   }
 
   /**

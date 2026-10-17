@@ -116,9 +116,7 @@ if (mode === "write") {
   } else {
     socket.destroy();
   }
-  const record = await captured.waitFor(
-    "A stream-like source has failed once released",
-  );
+  const record = await captured.waitFor("A released stream has failed");
   // The guard is removed on the turn after the close
   await sleep(10);
   server.close();

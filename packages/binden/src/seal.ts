@@ -164,6 +164,13 @@ export interface IOwnership {
    * the source may keep it as long as it lives (none: not reported)
    */
   readonly released?: ((error: unknown) => void) | undefined;
+  /**
+   * Logs (at `debug`) a late error of the request of the response once a
+   * send of it (an echo) no longer listens to it (e.g. its abort, once the
+   * client has gone away), as `released` does: the request is never
+   * released (none: not reported)
+   */
+  readonly echoed?: ((error: unknown) => void) | undefined;
 }
 
 /**
