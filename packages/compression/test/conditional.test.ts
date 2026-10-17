@@ -591,7 +591,11 @@ suite("Conditional requests of compressed responses", () => {
     const chunks = 16;
     await writeFile(big, Buffer.concat(Array(chunks).fill(chunk)));
     const captured = capture();
-    const outcomes: unknown[] = [];
+    // Per path: the client gets the empty `406` before the send of its
+    // request has settled, so the next request may run before it does
+    const outcomes = new Map<string, unknown[]>();
+    const settled = new Map<string, PromiseWithResolvers<null>>();
+    // The reads of the source that `/stream` sends
     let reads = 0;
     try {
       served = await serve(
@@ -599,11 +603,17 @@ suite("Conditional requests of compressed responses", () => {
         new Compression(),
         async (context: Context) => {
           const { response } = context;
+          const path = context.url.pathname;
+          // The reads of the source of this request
+          let own = 0;
           // A file, or a source whose chunks come at once
           const source = new Readable({
             read(): void {
-              reads += 1;
-              this.push(reads > chunks ? null : chunk);
+              own += 1;
+              if (path === "/stream") {
+                reads = own;
+              }
+              this.push(own > chunks ? null : chunk);
             },
           });
           const sent =
@@ -615,17 +625,20 @@ suite("Conditional requests of compressed responses", () => {
                     "Content-Length": chunks * chunk.length,
                   })
                   .send(source);
-          outcomes.push(
+          outcomes.set(path, [
             await sent.then(
               () => null,
               (error: unknown) => error,
             ),
             response.writableFinished,
-            source.destroyed || reads === 0,
-          );
+            source.destroyed || own === 0,
+          ]);
+          settled.get(path)?.resolve(null);
         },
       );
       for (const path of ["/file", "/stream"]) {
+        const done = Promise.withResolvers<null>();
+        settled.set(path, done);
         const refused = await fetchRaw(served.url, {
           path,
           headers: accepts.refused,
@@ -639,8 +652,12 @@ suite("Conditional requests of compressed responses", () => {
           ranges: none,
         });
         deepStrictEqual(refused.raw.length, 0);
+        await within(done.promise);
       }
-      deepStrictEqual(outcomes, [null, true, true, null, true, true]);
+      deepStrictEqual(
+        [...(outcomes.get("/file") ?? []), ...(outcomes.get("/stream") ?? [])],
+        [null, true, true, null, true, true],
+      );
       ok(reads < chunks, `${reads}`);
       deepStrictEqual(
         captured.records.filter(({ level }) => Number(level) >= 40),
