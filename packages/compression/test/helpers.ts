@@ -34,6 +34,31 @@ export async function within<T>(promise: Promise<T>, ms = 5000): Promise<T> {
 }
 
 /**
+ * Resolves once `check()` holds (polled every 5 ms), or rejects once it has
+ * not within `ms` milliseconds, judged after a turn of the pending I/O: a
+ * poller that ends by itself, whoever waits for it, so that a failure never
+ * keeps the process of a test alive
+ */
+export async function pollUntil(
+  check: () => boolean,
+  ms = 10_000,
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      if (check()) {
+        return;
+      }
+      throw new Error(`Not true within ${ms} ms: ${String(check)}`);
+    }
+    await sleep(5);
+  }
+}
+
+/**
  * Asserts that two buffers have the same bytes (without the diff of large
  * buffers, which takes the time of a hang)
  */

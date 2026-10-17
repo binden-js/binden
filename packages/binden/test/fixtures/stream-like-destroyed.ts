@@ -8,9 +8,9 @@
 // later): it is logged at `debug`.
 import { EventEmitter, once } from "node:events";
 import { type IncomingMessage, request } from "node:http";
+import { capture, pollUntil } from "../helpers.js";
 import type { AddressInfo } from "node:net";
 import { Binden } from "../../index.js";
-import { capture } from "../helpers.js";
 import { createRequire } from "node:module";
 
 setTimeout(() => {
@@ -151,11 +151,7 @@ const reported = (): string[] =>
       ({ msg }) => msg === "A stream-like source has failed once released",
     )
     .map(({ failure }) => String((failure as { message?: unknown }).message));
-while (reported().length < paths.length) {
-  await new Promise((resolve) => {
-    setTimeout(resolve, 10);
-  });
-}
+await pollUntil(() => reported().length >= paths.length);
 // Once the guards of the sources that close are removed
 await new Promise((resolve) => {
   setTimeout(resolve, 20);

@@ -37,6 +37,32 @@ export async function within<T>(promise: Promise<T>, ms = 2000): Promise<T> {
   }
 }
 
+/**
+ * Resolves once `check()` holds (polled every 5 ms), or rejects once it has
+ * not within `ms` milliseconds, judged after a turn of the pending I/O (e.g.
+ * after a stall of the process): a poller that ends by itself, whoever waits
+ * for it (e.g. a `within()` with a shorter deadline), so that a failure never
+ * keeps the process of a test alive
+ */
+export async function pollUntil(
+  check: () => boolean,
+  ms = 10_000,
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      if (check()) {
+        return;
+      }
+      throw new Error(`Not true within ${ms} ms: ${String(check)}`);
+    }
+    await sleep(5);
+  }
+}
+
 /** A promise that never settles (e.g. a middleware that hangs) */
 export function never<T = void>(): Promise<T> {
   return new Promise<T>(() => {

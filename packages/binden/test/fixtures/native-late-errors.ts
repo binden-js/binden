@@ -6,10 +6,10 @@
 // late error is logged at `debug`, and its guard is removed once it has
 // closed.
 import { type IncomingMessage, request } from "node:http";
+import { capture, pollUntil } from "../helpers.js";
 import type { AddressInfo } from "node:net";
 import { Binden } from "../../index.js";
 import { Readable } from "node:stream";
-import { capture } from "../helpers.js";
 import { once } from "node:events";
 
 setTimeout(() => {
@@ -84,11 +84,7 @@ const reported = (): string[] =>
       ({ msg }) => msg === "A stream-like source has failed once released",
     )
     .map(({ failure }) => String((failure as { message?: unknown }).message));
-while (reported().length < paths.length) {
-  await new Promise((resolve) => {
-    setTimeout(resolve, 10);
-  });
-}
+await pollUntil(() => reported().length >= paths.length);
 // Once the guards of the sources, which have closed, are removed
 await new Promise((resolve) => {
   setTimeout(resolve, 20);

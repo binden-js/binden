@@ -9,7 +9,15 @@ import {
 } from "../index.js";
 import { type Server, createServer } from "node:http";
 import { type Socket, connect } from "node:net";
-import { capture, listen, never, send, sleep, within } from "./helpers.js";
+import {
+  capture,
+  listen,
+  never,
+  pollUntil,
+  send,
+  sleep,
+  within,
+} from "./helpers.js";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
 import { mock, suite, test } from "node:test";
 import dns from "node:dns";
@@ -176,9 +184,7 @@ suite("shutdown()", () => {
     client.socket.write(
       "GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: localhost\r\n\r\n",
     );
-    while (started.length < 2) {
-      await sleep(5);
-    }
+    await pollUntil(() => started.length >= 2);
 
     const closing = shutdown(server);
     gates["/b"].open();
@@ -216,16 +222,12 @@ suite("shutdown()", () => {
     client.socket.write(
       "GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: localhost\r\n\r\n",
     );
-    while (started.length < 2) {
-      await sleep(5);
-    }
+    await pollUntil(() => started.length >= 2);
 
     const closing = shutdown(server);
     // The newest request of the connection once the server is closing
     client.socket.write("GET /c HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    while (requests.length < 3) {
-      await sleep(5);
-    }
+    await pollUntil(() => requests.length >= 3);
     gates["/a"].open();
     gates["/b"].open();
     await within(closing);

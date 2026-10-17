@@ -14,6 +14,7 @@ import {
   capture,
   listen,
   never,
+  pollUntil,
   send,
   sleep,
   within,
@@ -1144,13 +1145,7 @@ suite("A complete reply that waits for the response before it", () => {
       deepStrictEqual(await within(closed), false);
       await captured.waitFor("The deadline has passed. Destroying the socket");
       // The response before it is complete
-      await within(
-        (async (): Promise<void> => {
-          while (!data.includes("\r\n\r\nlate")) {
-            await sleep(5);
-          }
-        })(),
-      );
+      await pollUntil(() => data.includes("\r\n\r\nlate"));
       ok(data.startsWith("HTTP/1.1 503 Service Unavailable\r\n"), data);
     } finally {
       socket.destroy();

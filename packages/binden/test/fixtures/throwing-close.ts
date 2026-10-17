@@ -6,6 +6,7 @@ import { type AddressInfo, connect } from "node:net";
 import { Binden, type Context } from "../../index.js";
 import { Logger } from "@binden/logger";
 import { once } from "node:events";
+import { pollUntil } from "../helpers.js";
 
 const thrown: string[] = [];
 process.on("uncaughtException", (error: Error) => {
@@ -46,11 +47,7 @@ const socket = connect(port, "127.0.0.1").resume();
 await once(socket, "connect");
 socket.write("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
 await once(socket, "close");
-while (!events.includes("cleanup")) {
-  await new Promise((resolve) => {
-    setTimeout(resolve, 5);
-  });
-}
+await pollUntil(() => events.includes("cleanup"));
 server.close();
 const logged = lines.filter((line) =>
   line.includes("The request has completed"),

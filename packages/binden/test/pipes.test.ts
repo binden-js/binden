@@ -13,6 +13,7 @@ import {
   capture,
   listen,
   never,
+  pollUntil,
   sleep,
   within,
 } from "./helpers.js";
@@ -358,9 +359,7 @@ suite("A pipe into the response", () => {
               const replies: Promise<IRaw>[] = [];
               for (const path of order) {
                 replies.push(exchange(port, { path }));
-                while (waiting.length < replies.length) {
-                  await sleep(5);
-                }
+                await pollUntil(() => waiting.length >= replies.length);
               }
               // Both pipe in the same turn, in that order
               start.resolve(null);
@@ -553,9 +552,7 @@ suite("A pipe into the response", () => {
             },
             async ({ port }) => {
               const replies = Promise.all([exchange(port), exchange(port)]);
-              while (count.waiting < 2) {
-                await sleep(5);
-              }
+              await pollUntil(() => count.waiting >= 2);
               // Both pipe in the same turn
               start.resolve(null);
               const [first, second] = await replies;
@@ -1664,9 +1661,7 @@ suite("A pipe into the response", () => {
             async ({ port }) => {
               const refusedReply = exchange(port, { path: "/refused" });
               const accepted = exchange(port);
-              while (count.piped < 2) {
-                await sleep(5);
-              }
+              await pollUntil(() => count.piped >= 2);
               const failed = await refusedReply;
               deepStrictEqual([failed.status, failed.body], [500, ""]);
               ok(!source.destroyed);

@@ -7,8 +7,8 @@
 import { Binden, type IStreamLike } from "../../index.js";
 import { EventEmitter, once } from "node:events";
 import { type IncomingMessage, request } from "node:http";
+import { capture, pollUntil } from "../helpers.js";
 import type { AddressInfo } from "node:net";
-import { capture } from "../helpers.js";
 import { createRequire } from "node:module";
 
 setTimeout(() => {
@@ -122,11 +122,7 @@ const reported = (): string[] =>
     )
     .map(({ failure }) => String((failure as { message?: unknown }).message));
 // The destroys that fail 2 s later
-while (reported().length < 7) {
-  await new Promise((resolve) => {
-    setTimeout(resolve, 20);
-  });
-}
+await pollUntil(() => reported().length >= 7);
 // Once their guards are removed: on the turn after their `close`
 await new Promise((resolve) => {
   setTimeout(resolve, 20);

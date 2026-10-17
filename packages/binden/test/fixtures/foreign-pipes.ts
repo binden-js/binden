@@ -10,6 +10,7 @@ import { Binden, type BindenResponse, type Context } from "../../index.js";
 import { PassThrough, pipeline } from "node:stream";
 import { once } from "node:events";
 import { pipeline as pipelineAsync } from "node:stream/promises";
+import { pollUntil } from "../helpers.js";
 
 for (const event of ["unhandledRejection", "uncaughtException"]) {
   process.on(event, (error: unknown) => {
@@ -104,11 +105,7 @@ const results: string[] = [];
 for (const form of ["promise", "callback"]) {
   for (const foreign of [true, false]) {
     const b = request("/b");
-    while (waiting.length === 0) {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 5);
-      });
-    }
+    await pollUntil(() => waiting.length > 0);
     const a = request(`/a?form=${form}${foreign ? "&foreign" : ""}`);
     results.push(
       `${form}${foreign ? "+foreign" : ""} A=${await a.received} B=${await b.received}`,

@@ -9,6 +9,7 @@ import {
   framed,
   gzips,
   none,
+  pollUntil,
   serve,
   sleep,
   text,
@@ -157,13 +158,7 @@ suite("The encoding of a chunk", () => {
           captured.entries
             .filter(({ msg }) => msg === "The request has completed")
             .map(({ status }) => status);
-        await within(
-          (async (): Promise<void> => {
-            while (completed().length < 8) {
-              await sleep(5);
-            }
-          })(),
-        );
+        await pollUntil(() => completed().length >= 8);
         outcome.push(completed());
       });
       // One compressor by reply: none for a refused write
@@ -563,13 +558,7 @@ suite("The encoding of a chunk", () => {
       const received = await fetchRaw(url, {
         headers: { "Accept-Encoding": accept },
       });
-      await within(
-        (async (): Promise<void> => {
-          while (calls.length < 3) {
-            await sleep(5);
-          }
-        })(),
-      );
+      await pollUntil(() => calls.length >= 3);
       await sleep(20);
 
       deepStrictEqual(received.body, "hihi!", accept);

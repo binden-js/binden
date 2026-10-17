@@ -16,6 +16,7 @@ import {
   capture,
   listen,
   never,
+  pollUntil,
   sleep,
   within,
 } from "./helpers.js";
@@ -995,13 +996,7 @@ suite("Ownership of the response once the exchange is sealed", () => {
         (app) => {
           app.use(async (context: Context) => {
             const sent = reasonOf(context.response.sendFile(file));
-            await within(
-              (async (): Promise<void> => {
-                while (handles.length === 0) {
-                  await sleep(1);
-                }
-              })(),
-            );
+            await pollUntil(() => handles.length > 0);
             // Its send would be ignored: as `send()`, it resolves
             context.response.end("other");
             released.open();

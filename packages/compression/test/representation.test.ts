@@ -6,10 +6,9 @@ import {
   fetchRaw,
   gzips,
   none,
+  pollUntil,
   serve,
-  sleep,
   text,
-  within,
 } from "./helpers.js";
 import { PassThrough, type Readable } from "node:stream";
 import { after, afterEach, before, mock, suite, test } from "node:test";
@@ -126,13 +125,7 @@ suite("The representation chosen before the commit", () => {
         const { response } = context;
         const sent = response.sendFile(file, { validator });
         // Chosen, and its stream created
-        await within(
-          (async (): Promise<void> => {
-            while (streams.length === 0) {
-              await sleep(5);
-            }
-          })(),
-        );
+        await pollUntil(() => streams.length > 0);
         states.push(
           response.headersSent,
           response.getHeader("Content-Encoding"),

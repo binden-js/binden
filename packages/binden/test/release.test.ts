@@ -1,5 +1,5 @@
 import { Binden, BindenAbortError, type Context } from "../index.js";
-import { capture, listen, send, sleep, within } from "./helpers.js";
+import { capture, listen, pollUntil, send, sleep, within } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
@@ -180,13 +180,7 @@ suite("A Node.js `Readable` that a response does not send", () => {
         [20, "The source has failed to close"],
       );
       // Removed on the turn after its `close`
-      await within(
-        (async (): Promise<void> => {
-          while (source.listenerCount("error") > 0) {
-            await sleep(5);
-          }
-        })(),
-      );
+      await pollUntil(() => source.listenerCount("error") === 0);
       deepStrictEqual(source.listenerCount("close"), 0);
       deepStrictEqual(
         captured.records.filter(
@@ -404,13 +398,7 @@ suite("The request of a response, sent as its body (an echo)", () => {
         0,
       ]);
       const request = await within(echoed.promise);
-      await within(
-        (async (): Promise<void> => {
-          while (request.listenerCount("error") > 0) {
-            await sleep(5);
-          }
-        })(),
-      );
+      await pollUntil(() => request.listenerCount("error") === 0);
       ok(request.closed);
     } finally {
       raw.close();
@@ -494,13 +482,7 @@ suite("The request of a response, sent as its body (an echo)", () => {
           }
           const sent = outcomeOf(context.send(context.request));
           // Its client does not read the reply yet
-          await within(
-            (async (): Promise<void> => {
-              while (!context.request.isPaused()) {
-                await sleep(5);
-              }
-            })(),
-          );
+          await pollUntil(() => context.request.isPaused());
           paused.resolve(null);
           context.response.end();
           outcome.resolve(await sent);

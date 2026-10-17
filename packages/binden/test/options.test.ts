@@ -10,6 +10,7 @@ import {
   capture,
   listen,
   never,
+  pollUntil,
   send,
   sleep,
 } from "./helpers.js";
@@ -258,9 +259,7 @@ suite("Request ids", () => {
           received += chunk;
         });
         client.write("GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n");
-        while (!received.includes("Content-Length: 1")) {
-          await sleep(5);
-        }
+        await pollUntil(() => received.includes("Content-Length: 1"));
         const closing = shutdown(server, { timeout: 1000 });
         client.write("GET /ok HTTP/1.1\r\nHost: localhost\r\n\r\n");
         await sleep(20);

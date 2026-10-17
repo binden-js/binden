@@ -3,10 +3,9 @@ import {
   capture,
   converse,
   fetchRaw,
+  pollUntil,
   serve,
-  sleep,
   text,
-  within,
 } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import { Compression } from "../index.js";
@@ -87,13 +86,7 @@ suite("The access log of a compressed response", () => {
           .map(({ id, body_bytes: bytes }) => [id, bytes]),
       );
     // Logged once each response is closed
-    await within(
-      (async (): Promise<void> => {
-        while (completed().size < sent.size) {
-          await sleep(5);
-        }
-      })(),
-    );
+    await pollUntil(() => completed().size >= sent.size);
 
     deepStrictEqual(completed(), sent);
     // Compressed, but for `HEAD`, `406` and `identity`
