@@ -1,4 +1,9 @@
-import { Binden, type Context, type IStreamLike } from "../index.js";
+import {
+  Binden,
+  type Context,
+  type IStreamLike,
+  releasedFailure,
+} from "../index.js";
 import { type ICaptured, capture, listen, send, within } from "./helpers.js";
 import { suite, test } from "node:test";
 import { EventEmitter } from "node:events";
@@ -116,10 +121,9 @@ suite("A send of a Readable that binden fails itself", () => {
       "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
     );
     await within(closed);
-    const message = "A stream-like source has failed once released";
     deepStrictEqual(
       [
-        captured.records.filter(({ msg }) => msg === message),
+        captured.records.filter(({ msg }) => msg === releasedFailure),
         source.listenerCount("error"),
       ],
       [[], 1],
@@ -142,9 +146,7 @@ suite("A send of a Readable that binden fails itself", () => {
       [500, "ERR_HTTP_CONTENT_LENGTH_MISMATCH"],
     );
     fail();
-    const record = await captured.waitFor(
-      "A stream-like source has failed once released",
-    );
+    const record = await captured.waitFor(releasedFailure);
     deepStrictEqual([record.level, codeOf(record.failure)], [20, "EIO"]);
   });
 
@@ -235,9 +237,8 @@ suite("A send of a stream-like source that binden fails itself", () => {
       await new Promise((resolve) => {
         setImmediate(resolve);
       });
-      const message = "A stream-like source has failed once released";
       deepStrictEqual(
-        captured.records.filter(({ msg }) => msg === message),
+        captured.records.filter(({ msg }) => msg === releasedFailure),
         [],
       );
     } finally {

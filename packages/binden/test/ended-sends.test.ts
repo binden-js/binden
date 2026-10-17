@@ -1,12 +1,9 @@
-import { Binden, type Context } from "../index.js";
+import { Binden, type Context, releasedFailure } from "../index.js";
 import { type ICaptured, capture, listen, within } from "./helpers.js";
 import { PassThrough, Readable } from "node:stream";
 import { converse, get } from "./connection.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
-
-/** The message of a late error of a source that a send no longer reads */
-const late = "A stream-like source has failed once released";
 
 /** A body larger than the buffers of a connection on any platform */
 const large = 16 << 20;
@@ -22,7 +19,7 @@ function outcomeOf(promise: Promise<void>): Promise<unknown> {
 /** The code (or else the message) of each late error of a source logged so far */
 function reported(captured: ICaptured): unknown[] {
   return captured.records
-    .filter(({ msg }) => msg === late)
+    .filter(({ msg }) => msg === releasedFailure)
     .map(({ failure }) => {
       const { code, message } = failure as {
         code?: unknown;

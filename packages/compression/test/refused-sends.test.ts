@@ -1,14 +1,11 @@
 import { type AddressInfo, connect } from "node:net";
-import { Binden, type Context } from "binden";
+import { Binden, type Context, releasedFailure } from "binden";
 import { PassThrough, Readable } from "node:stream";
 import { suite, test } from "node:test";
 import { Compression } from "../index.js";
 import { capture } from "./helpers.js";
 import { deepStrictEqual } from "node:assert/strict";
 import { once } from "node:events";
-
-/** The message of a late error of a source that a send no longer reads */
-const late = "A stream-like source has failed once released";
 
 /**
  * Writes the requests on one connection to `127.0.0.1`, and reads until the
@@ -139,7 +136,8 @@ suite(
               received.match(/HTTP\/1\.1 \d{3}/gu),
               closed,
               await outcome.promise,
-              captured.records.filter(({ msg }) => msg === late).length,
+              captured.records.filter(({ msg }) => msg === releasedFailure)
+                .length,
             ],
             [
               [

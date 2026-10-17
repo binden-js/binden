@@ -11,7 +11,12 @@
 // response). Prints how the send has settled and the listeners of `error`
 // left on the request once it has closed, then the level and the code of
 // what the guard has logged.
-import { Binden, BindenResponse, type Context } from "../../index.js";
+import {
+  Binden,
+  BindenResponse,
+  type Context,
+  releasedFailure,
+} from "../../index.js";
 import { type Socket, connect } from "node:net";
 import { Duplex } from "node:stream";
 import { IncomingMessage } from "node:http";
@@ -116,7 +121,7 @@ if (mode === "write") {
   } else {
     socket.destroy();
   }
-  const record = await captured.waitFor("A released stream has failed");
+  const record = await captured.waitFor(releasedFailure);
   // The guard is removed on the turn after the close
   await sleep(10);
   server.close();

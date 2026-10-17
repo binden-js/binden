@@ -1,4 +1,9 @@
-import { Binden, BindenAbortError, type Context } from "../index.js";
+import {
+  Binden,
+  BindenAbortError,
+  type Context,
+  releasedFailure,
+} from "../index.js";
 import { capture, listen, pollUntil, send, sleep, within } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
@@ -167,20 +172,21 @@ suite("A Node.js `Readable` that a response does not send", () => {
         [true, null, 1, 1],
       );
       failing.resolve(null);
-      const record = await captured.waitFor(
-        "A stream-like source has failed once released",
-      );
+      const record = await captured.waitFor(releasedFailure);
+      // One neutral message, whatever the released stream
       deepStrictEqual(
-        [record.level, (record.failure as { message: string }).message],
-        [20, "The source has failed to close"],
+        [
+          record.msg,
+          record.level,
+          (record.failure as { message: string }).message,
+        ],
+        ["A released stream has failed", 20, "The source has failed to close"],
       );
       // Removed on the turn after its `close`
       await pollUntil(() => source.listenerCount("error") === 0);
       deepStrictEqual(source.listenerCount("close"), 0);
       deepStrictEqual(
-        captured.records.filter(
-          ({ msg }) => msg === "A stream-like source has failed once released",
-        ).length,
+        captured.records.filter(({ msg }) => msg === releasedFailure).length,
         1,
       );
       deepStrictEqual(warnings, []);

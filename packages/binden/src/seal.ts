@@ -158,10 +158,11 @@ export interface IOwnership {
   /** Logs (at `debug`) what is done with a pipe, with the reason */
   note(message: string, reason: string): void;
   /**
-   * Logs (at `debug`) a late error of a stream-like source that is not sent,
-   * or no longer (e.g. its `destroy()` fails asynchronously): a function of
-   * its own scope, which holds neither the request nor the response, since
-   * the source may keep it as long as it lives (none: not reported)
+   * Logs (at `debug`, with `releasedFailure`) a late error of a source that
+   * is not sent, or no longer (e.g. its `destroy()` fails asynchronously): a
+   * function of its own scope, which holds neither the request nor the
+   * response, since the source may keep it as long as it lives (none: not
+   * reported)
    */
   readonly released?: ((error: unknown) => void) | undefined;
   /**
@@ -172,6 +173,16 @@ export interface IOwnership {
    */
   readonly echoed?: ((error: unknown) => void) | undefined;
 }
+
+/**
+ * The message of a late error of a stream that a send has released (see
+ * `IOwnership.released`): one neutral message, whatever the stream (a
+ * Node.js `Readable`, a stream-like source, or the request of the response,
+ * which is never destroyed). Not part of the public API.
+ *
+ * @internal
+ */
+export const releasedFailure = "A released stream has failed";
 
 /**
  * The key of the internal method that sets how the framework handles the

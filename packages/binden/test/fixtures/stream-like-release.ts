@@ -4,7 +4,7 @@
 // without a listener of the application, must not crash the process: it is
 // logged at `debug`, also 2 s later, and after the `close` of the source
 // (within the turn). A source of an ignored send is not touched at all.
-import { Binden, type IStreamLike } from "../../index.js";
+import { Binden, type IStreamLike, releasedFailure } from "../../index.js";
 import { EventEmitter, once } from "node:events";
 import { type IncomingMessage, request } from "node:http";
 import { capture, pollUntil } from "../helpers.js";
@@ -117,9 +117,7 @@ for (const [method, path] of [
 /** The late errors that have been logged */
 const reported = (): string[] =>
   captured.records
-    .filter(
-      ({ msg }) => msg === "A stream-like source has failed once released",
-    )
+    .filter(({ msg }) => msg === releasedFailure)
     .map(({ failure }) => String((failure as { message?: unknown }).message));
 // The destroys that fail 2 s later
 await pollUntil(() => reported().length >= 7);

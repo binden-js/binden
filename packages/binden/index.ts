@@ -34,6 +34,7 @@ export {
   kOperation,
   kRepresentation,
   kValidateHead,
+  releasedFailure,
 } from "./src/seal.js";
 export {
   type IFramingState,

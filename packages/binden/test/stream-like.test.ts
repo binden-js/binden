@@ -5,6 +5,7 @@ import {
   type Context,
   type IBindenOptions,
   type IStreamLike,
+  releasedFailure,
 } from "../index.js";
 import { EventEmitter, once } from "node:events";
 import {
@@ -746,13 +747,10 @@ function counts(source: EventEmitter): number[] {
   );
 }
 
-/** The message of a late error of a released source (see `ISourceReport`) */
-const released = "A stream-like source has failed once released";
-
 /** The messages of the late errors of released sources that a logger has logged */
 function reported(captured: ReturnType<typeof capture>): unknown[] {
   return captured.records
-    .filter(({ msg }) => msg === released)
+    .filter(({ msg }) => msg === releasedFailure)
     .map(({ failure }) => (failure as { message?: unknown }).message);
 }
 
@@ -843,7 +841,7 @@ suite("send() of a stream-like source", () => {
         // Its guard: of `error` and `close`
         deepStrictEqual(counts(source), [0, 0, 1, 1]);
         source.emit("error", new Error("Late"));
-        await captured.waitFor(released);
+        await captured.waitFor(releasedFailure);
         deepStrictEqual(reported(captured), ["Late"]);
         // Until the turn after its close
         source.emit("close");
@@ -1335,7 +1333,7 @@ suite("send() of a stream-like source that will not be sent", () => {
       const { status, body } = await fetchBytes(listening.port);
       deepStrictEqual([status, body.toString()], [200, "ended"]);
       deepStrictEqual(await within(outcomes.promise), ["resolved", "resolved"]);
-      await captured.waitFor("A stream-like source has failed once released");
+      await captured.waitFor(releasedFailure);
       await captured.waitFor("The release of a stream has failed");
     } finally {
       await listening.close();

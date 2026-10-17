@@ -1,4 +1,9 @@
-import { Binden, type Context, type IStreamLike } from "../index.js";
+import {
+  Binden,
+  type Context,
+  type IStreamLike,
+  releasedFailure,
+} from "../index.js";
 import { capture, listen, send, within } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
@@ -9,9 +14,6 @@ const require = createRequire(import.meta.url);
 
 /** Long enough never to expire on a loaded machine: it only guards against a hang */
 const deadline = 10_000;
-
-/** What the guard of a source logs for a late error of it */
-const released = "A stream-like source has failed once released";
 
 /** A stream-like source (not a Node.js `Readable`) */
 type ISource = EventEmitter & IStreamLike;
@@ -115,7 +117,7 @@ suite("A send of a stream-like source whose chunk is not bytes", () => {
         ok((await within(emitted.promise, deadline)) === failure);
         await within(unguarded.promise, deadline);
         deepStrictEqual(
-          captured.records.filter(({ msg }) => msg === released),
+          captured.records.filter(({ msg }) => msg === releasedFailure),
           [],
         );
       } finally {
