@@ -207,11 +207,13 @@ suite("Code of a stream-like source that throws while send() reads it", () => {
           "500 rejected:No listener of error #1 destroyed= listeners=0/0/0/0 late=0",
       ),
       // A removal that throws is logged: the listener left stays harmless
-      // (that of `error` logs a later error once)
+      // (that of `error` logs a later error once). Of `readable-stream` 4:
+      // closed by `autoDestroy`, its guard has left, its listener of `close`
+      // removed on its own once the removal of the other one has thrown
       ...each(
         "removeListener-error",
         (library) =>
-          `200 resolved destroyed=${library === "v4" ? "undefined" : ""} listeners=0/0/2/1 late=1`,
+          `200 resolved destroyed=${library === "v4" ? "undefined" : ""} listeners=0/0/2/${library === "v4" ? 0 : 1} late=1`,
       ),
       // Of `readable-stream` 4: closed by `autoDestroy`, its guard has left
       ...each(
@@ -246,9 +248,10 @@ suite("Code of a stream-like source that throws while send() reads it", () => {
         (value) =>
           `emitter resume-${value} 500 rejected:ERR_STREAM_PREMATURE_CLOSE destroyed=Premature close listeners=0/0/1/1 late=0`,
       ),
-      // Of every case: the removals that have thrown, the guards refused
-      // (once per source), the sources left, and the strings logged
-      "removals=26 refusals=15 left=5 strings=1",
+      // Of every case: the removals that have thrown (each of the guard of
+      // `readable-stream` 4 on its own), the guards refused (once per
+      // source), the sources left, and the strings logged
+      "removals=27 refusals=15 left=5 strings=1",
     ];
     deepStrictEqual(
       streamLikes(

@@ -55,10 +55,20 @@ export interface IStreamLikeMethods {
 
 /**
  * How a late error of a source that is not sent, or no longer, is reported
- * (see `guard()`): a function that holds neither the request nor the
- * response, since a source may keep it as long as it lives
+ * (see `guard()`), or, with a `message` of its own, another failure that the
+ * guard of the source logs (e.g. a removal of one of its listeners that
+ * throws, see `removalFailure`), which is not a late error: a function that
+ * holds neither the request nor the response, since a source may keep it as
+ * long as it lives
  */
-export type ISourceReport = (error: unknown) => void;
+export type ISourceReport = (error: unknown, message?: string) => void;
+
+/**
+ * The message of a removal of a listener of a stream that throws, as binden
+ * logs it for a Node.js `Readable` (see `BindenResponse`), also for one of
+ * the listeners of a guard (see `guard()`), which is not a late error
+ */
+const removalFailure = "The removal of a listener of a stream has failed";
 
 /**
  * How a response logs (`debug`) what code of a source has thrown while it is
@@ -486,6 +496,47 @@ function unguard(
 }
 
 /**
+ * A log that never throws (see `IStreamLikeLogs`): a logger of the
+ * application that throws (e.g. its own `debug()`) leaves no release of a
+ * stream-like source half done (e.g. the readable of `readStreamLike()`
+ * without the error that decides its send, or listeners left on the source),
+ * and throws neither into the events of the source nor out of a turn of its
+ * own. Nothing more can be told then.
+ */
+function quietly<T extends unknown[]>(
+  log: (...args: T) => void,
+): (...args: T) => void {
+  return (...args: T): void => {
+    try {
+      log(...args);
+    } catch {
+      // The logger has failed: nothing more can be told
+    }
+  };
+}
+
+/**
+ * Removes a listener of the guard of a source that has closed (see
+ * `guard()`): a removal that throws is logged as such by the report, which
+ * holds only the logger (see `ISourceReport`, `removalFailure`), never as a
+ * late error, and nothing is thrown out of the turn of the guard (also when
+ * the logger throws, see `quietly()`)
+ */
+function leave(
+  source: object,
+  remove: IMethod,
+  event: string,
+  listener: (...args: never[]) => void,
+  report: ISourceReport,
+): void {
+  try {
+    Reflect.apply(remove, source, [event, listener]);
+  } catch (error: unknown) {
+    quietly(report)(error, removalFailure);
+  }
+}
+
+/**
  * Keeps a late `error` of a source that is not sent, or no longer (released,
  * cancelled, or destroyed by the application), from crashing the process
  * without a listener of the application: its `destroy()` (or its `pause()`) may
@@ -504,7 +555,9 @@ function unguard(
  * state cannot tell it (e.g. of `readable-stream` 2 or 3, of `through2`, or an
  * emitter of its own) keeps its guard as long as it lives: such a source may
  * emit an error after its `close` (e.g. of a write once binden has destroyed
- * it, or of a second destroy), each reported once. One guard per source,
+ * it, or of a second destroy), each reported once. When it leaves, each of
+ * its listeners is removed on its own: a removal that throws is logged as such
+ * by the report (see `leave()`), never as a late error. One guard per source,
  * however many sends release it. For the packages of binden only.
  *
  * Returns whether its listener of `error` is in place, and only then is the
@@ -546,13 +599,10 @@ export function guard(
       // of a second destroy), and keeps its guard
       if (guards.get(source) === failed && hasClosed(source)) {
         guards.delete(source);
-        try {
-          Reflect.apply(remove, source, ["error", failed]);
-          Reflect.apply(remove, source, ["close", close]);
-        } catch (error: unknown) {
-          // Never thrown out of a turn of its own
-          report(error);
-        }
+        // Each on its own: a removal that throws (e.g. by a listener of its
+        // `removeListener`) leaves the other one to be removed
+        leave(source, remove, "error", failed, report);
+        leave(source, remove, "close", close, report);
       }
     });
   };
@@ -634,26 +684,6 @@ export function forwarder(target: (error: unknown) => void): IForwarder {
         }
       };
     },
-  };
-}
-
-/**
- * A log that never throws (see `IStreamLikeLogs`): a logger of the
- * application that throws (e.g. its own `debug()`) leaves no release of a
- * stream-like source half done (e.g. the readable of `readStreamLike()`
- * without the error that decides its send, or listeners left on the source),
- * and throws neither into the events of the source nor out of a turn of its
- * own. Nothing more can be told then.
- */
-function quietly<T extends unknown[]>(
-  log: (...args: T) => void,
-): (...args: T) => void {
-  return (...args: T): void => {
-    try {
-      log(...args);
-    } catch {
-      // The logger has failed: nothing more can be told
-    }
   };
 }
 

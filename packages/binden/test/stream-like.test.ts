@@ -901,7 +901,7 @@ suite("send() of a stream-like source", () => {
     );
   });
 
-  test("to HEAD: its guard reports an error emitted after its close within the turn, and is removed once its state tells that it has closed (a removal that throws is reported)", async () => {
+  test("to HEAD: its guard reports an error emitted after its close within the turn, and is removed once its state tells that it has closed (each removal that throws is logged as a removal, not as a late error)", async () => {
     const captured = capture();
     const removed: string[] = [];
     // Closed twice, then an error
@@ -943,7 +943,18 @@ suite("send() of a stream-like source", () => {
           deepStrictEqual(received.status, 200);
         }
         await nextTurn();
-        deepStrictEqual(reported(captured), ["After close", "Cannot remove"]);
+        deepStrictEqual(
+          [
+            reported(captured),
+            captured.records
+              .filter(
+                ({ msg }) =>
+                  msg === "The removal of a listener of a stream has failed",
+              )
+              .map(({ failure }) => (failure as { message?: unknown }).message),
+          ],
+          [["After close"], ["Cannot remove", "Cannot remove"]],
+        );
         deepStrictEqual(
           [closing.eventNames(), removed],
           [[], ["error", "close"]],

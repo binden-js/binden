@@ -509,16 +509,18 @@ export class Binden<
    * `Exchange.onLateFailure()`, e.g. a listener of `end` that one has left on
    * a shared source), and a late error of a stream that it has released,
    * the request included once a send of it no longer listens to it (see
-   * `IOwnership.released`)
+   * `IOwnership.released`). Given a message of its own, it logs the failure
+   * with that one (e.g. a removal of a listener of the guard of a stream that
+   * throws, which is not a late error)
    */
   static #lateReport(
     logger: ILogger,
     id: string,
     details: boolean,
     message: string,
-  ): (error: unknown) => void {
-    return (error): void => {
-      logger.child({ trace_id: id }).debug(message, {
+  ): (error: unknown, logged?: string) => void {
+    return (error, logged = message): void => {
+      logger.child({ trace_id: id }).debug(logged, {
         failure: snapshot(error, { location: "send", request_id: id, details }),
       });
     };

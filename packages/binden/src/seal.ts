@@ -164,9 +164,12 @@ export interface IOwnership {
    * once a send of it (an echo) no longer listens to it (e.g. its abort, once
    * the client has gone away), which is never destroyed. A function of its
    * own scope, which holds neither the request nor the response, since the
-   * source may keep it as long as it lives (none: not reported)
+   * source may keep it as long as it lives (none: not reported). Given a
+   * message, it logs the failure with that one instead (e.g. a removal of a
+   * listener of the guard of the source that throws, which is not a late
+   * error)
    */
-  readonly released?: ((error: unknown) => void) | undefined;
+  readonly released?: ((error: unknown, message?: string) => void) | undefined;
 }
 
 /**
