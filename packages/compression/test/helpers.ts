@@ -20,8 +20,12 @@ export function sleep(ms: number): Promise<void> {
   });
 }
 
-/** The result of a promise, which must settle within `ms` milliseconds */
-export async function within<T>(promise: Promise<T>, ms = 5000): Promise<T> {
+/**
+ * The result of a promise, which must settle within `ms` milliseconds. The
+ * default only guards against a hang, with a deadline that a loaded machine
+ * does not reach: a test that asserts a timing passes its own
+ */
+export async function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
   const { promise: expired, reject } = Promise.withResolvers<never>();
   const timer = setTimeout(() => {
     reject(new Error(`Not settled within ${ms} ms`));
@@ -198,13 +202,9 @@ export function capture(): ICaptured {
       });
     },
     waitFor: async (count: number): Promise<void> => {
-      const deadline = Date.now() + 5000;
-      while (lines.length < count) {
-        if (Date.now() > deadline) {
-          throw new Error(`${lines.length} records: ${lines.join("")}`);
-        }
-        await sleep(5);
-      }
+      await pollUntil(() => lines.length >= count).catch(() => {
+        throw new Error(`${lines.length} records: ${lines.join("")}`);
+      });
     },
   };
 }
@@ -277,7 +277,7 @@ export function fetchRaw(
     new Promise<IReceived>((resolve, reject) => {
       const sent = request(
         new URL(path, url),
-        { agent: false, headers, method, signal: AbortSignal.timeout(5000) },
+        { agent: false, headers, method, signal: AbortSignal.timeout(10_000) },
         (response: IncomingMessage) => {
           const chunks: Buffer[] = [];
           response
@@ -340,7 +340,7 @@ export async function exchange(
   socket.on("data", (chunk: Buffer) => chunks.push(chunk));
   const closed = once(socket, "close");
   socket.resume();
-  await within(closed, 5000);
+  await within(closed);
   const received = Buffer.concat(chunks);
   const index = received.indexOf("\r\n\r\n");
   return {

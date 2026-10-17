@@ -11,6 +11,7 @@ import fsp, { type FileHandle, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { once } from "node:events";
+import { pollUntil } from "../helpers.js";
 import { request } from "node:http";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -162,22 +163,18 @@ const get = (path: string): Promise<string> =>
 
 /**
  * Whether every `sendFile()` of a scenario has settled, and every file that
- * they have opened is closed, within 2 s
+ * they have opened is closed, within 10 s (a guard against a hang)
  */
-const settled = async (of: IScenario, requests: number): Promise<boolean> => {
-  const deadline = Date.now() + 2000;
-  while (
-    of.outcomes.length < requests ||
-    of.opening > 0 ||
-    of.handles.some(({ fd }) => fd !== -1)
-  ) {
-    if (Date.now() > deadline) {
-      return false;
-    }
-    await sleep(5);
-  }
-  return true;
-};
+const settled = (of: IScenario, requests: number): Promise<boolean> =>
+  pollUntil(
+    () =>
+      of.outcomes.length >= requests &&
+      of.opening === 0 &&
+      of.handles.every(({ fd }) => fd === -1),
+  ).then(
+    () => true,
+    () => false,
+  );
 
 const before = descriptors();
 const lines: string[] = [];

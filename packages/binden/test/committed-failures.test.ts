@@ -1,6 +1,6 @@
 import { Binden, type Context } from "../index.js";
 import { PassThrough, Readable } from "node:stream";
-import { capture, listen, sleep, within } from "./helpers.js";
+import { capture, ioTurn, listen, pollUntil, within } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { connect } from "node:net";
@@ -8,20 +8,22 @@ import { once } from "node:events";
 
 /**
  * Writes raw requests on one connection: what it receives until the server
- * closes it, or until nothing has come for 300 ms (then still open)
+ * closes it, or until it has received what passes `expected` (then whether
+ * the connection is still open, after a turn of the pending I/O). Never a
+ * silence, which a stall of the process would make look longer than it is
  */
 async function exchange(
   port: number,
   data: string,
+  expected: (received: string) => boolean = (): boolean => false,
 ): Promise<{ received: string; closed: boolean }> {
   const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
-  const state = { received: "", closed: false, last: Date.now() };
+  const state = { received: "", closed: false };
   socket
     .setEncoding("latin1")
     .on("data", (chunk: string) => {
       state.received += chunk;
-      state.last = Date.now();
     })
     .on("error", () => {
       // Closed by the server: `close` follows
@@ -30,15 +32,15 @@ async function exchange(
       state.closed = true;
     });
   socket.write(data);
-  const deadline = Date.now() + 5000;
-  while (
-    !state.closed &&
-    Date.now() - state.last < 300 &&
-    Date.now() < deadline
-  ) {
-    await sleep(5);
+  try {
+    // Else what has come within 10 s, which the assertions show
+    await pollUntil(() => state.closed || expected(state.received)).catch(
+      () => null,
+    );
+    await ioTurn();
+  } finally {
+    socket.destroy();
   }
-  socket.destroy();
   return {
     received: state.received.replace(
       /^(?:Date|Keep-Alive): [^\r]*\r\n/gimu,
@@ -183,6 +185,8 @@ suite(
         const { received, closed } = await exchange(
           listening.port,
           `GET / HTTP/1.1\r\nHost: localhost\r\n\r\n${next}`,
+          // The next response, complete
+          (data) => data.endsWith("\r\n\r\nnext"),
         );
         deepStrictEqual(await within(outcome.promise), [
           "ERR_STREAM_PREMATURE_CLOSE",

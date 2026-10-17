@@ -118,7 +118,7 @@ suite("request ids", () => {
     deepStrictEqual(lower.id, "abc");
   });
 
-  test("a real connection", { timeout: 5000 }, async () => {
+  test("a real connection", { timeout: 10_000 }, async () => {
     const Request = withOptions(
       validateRequestOptions({ request_id: { trust_incoming: true } }),
     );

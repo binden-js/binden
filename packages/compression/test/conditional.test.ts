@@ -706,7 +706,7 @@ suite("Conditional requests of compressed responses", () => {
         const sent = request(url, {
           agent: false,
           headers: accepts.gzip,
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(10_000),
         }).end();
         const [response] = (await once(sent, "response")) as [IncomingMessage];
         deepStrictEqual(response.headers["content-encoding"], "gzip");

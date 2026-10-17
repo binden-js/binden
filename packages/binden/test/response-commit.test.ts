@@ -398,7 +398,7 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     });
     const received = await new Promise<string[]>((resolve, reject) => {
       const parts: string[] = [];
-      get(app.url, { signal: AbortSignal.timeout(5000) }, (response) => {
+      get(app.url, { signal: AbortSignal.timeout(10_000) }, (response) => {
         parts.push(String(response.headers["set-cookie"]));
         response
           .setEncoding("utf8")
@@ -436,7 +436,7 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     await new Promise<void>((resolve, reject) => {
       request(
         app.url,
-        { method: "HEAD", signal: AbortSignal.timeout(5000) },
+        { method: "HEAD", signal: AbortSignal.timeout(10_000) },
         (response) => {
           headers();
           response.resume().once("end", resolve);

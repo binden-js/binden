@@ -1,5 +1,5 @@
 import { type Context, type IBindenOptions, shutdown } from "binden";
-import { type IServed, gzips, serve, sleep } from "./helpers.js";
+import { type IServed, gzips, pollUntil, serve, sleep } from "./helpers.js";
 import { afterEach, suite, test } from "node:test";
 import { Compression } from "../index.js";
 import { connect } from "node:net";
@@ -8,12 +8,12 @@ import { once } from "node:events";
 import { randomBytes } from "node:crypto";
 import type zlib from "node:zlib";
 
-/** Resolves once `ready()` holds, polled every 5 ms, or after `ms` milliseconds */
-async function until(ready: () => boolean, ms = 3000): Promise<void> {
-  const deadline = Date.now() + ms;
-  while (!ready() && Date.now() < deadline) {
-    await sleep(5);
-  }
+/**
+ * Resolves once `ready()` holds, or after 10 s (the assertions that follow
+ * show what is missing)
+ */
+async function until(ready: () => boolean): Promise<void> {
+  await pollUntil(ready).catch(() => null);
 }
 
 /** What has become of a reply that waits for the one before it */

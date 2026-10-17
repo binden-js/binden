@@ -67,7 +67,7 @@ function fetch(
       headers,
       host: "127.0.0.1",
       port,
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10_000),
     })
       .on("information", ({ statusCode }) => {
         informational.push(statusCode);
@@ -134,7 +134,7 @@ async function headOf(port: number, data: string): Promise<string> {
   });
   socket.write(data);
   try {
-    return await within(promise, 5000);
+    return await within(promise);
   } finally {
     socket.destroy();
   }
@@ -817,13 +817,11 @@ suite("Ownership of the response once the exchange is sealed", () => {
     /** Resolves once every handle is closed */
     const closed = async (handles: FileHandle[]): Promise<void> => {
       // Not polled forever: a file that stays open fails the test
-      const deadline = Date.now() + 2000;
-      while (handles.length === 0 || handles.some(({ fd }) => fd !== -1)) {
-        if (Date.now() > deadline) {
-          throw new Error("A file is still open");
-        }
-        await sleep(5);
-      }
+      await pollUntil(
+        () => handles.length > 0 && handles.every(({ fd }) => fd === -1),
+      ).catch(() => {
+        throw new Error("A file is still open");
+      });
     };
 
     /**

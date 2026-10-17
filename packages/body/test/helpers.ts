@@ -88,7 +88,7 @@ export async function send(
       headers,
       body,
       dispatcher,
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10_000),
     });
     const text = await response.body.text();
     return {
@@ -113,8 +113,12 @@ export function sleep(ms: number): Promise<void> {
   });
 }
 
-/** The value of a promise, or a failure once `ms` milliseconds have passed */
-export async function within<T>(promise: Promise<T>, ms = 5000): Promise<T> {
+/**
+ * The value of a promise, or a failure once `ms` milliseconds have passed. The
+ * default only guards against a hang, with a deadline that a loaded machine
+ * does not reach: a test that asserts a timing passes its own
+ */
+export async function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
   const signal = AbortSignal.timeout(ms);
   const { promise: expired, reject } = Promise.withResolvers<never>();
   const expire = (): void => {

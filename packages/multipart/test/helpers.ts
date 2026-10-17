@@ -65,8 +65,12 @@ export function never<T = void>(): Promise<T> {
   });
 }
 
-/** The result of a promise, which must settle within `ms` milliseconds */
-export async function within<T>(promise: Promise<T>, ms = 5000): Promise<T> {
+/**
+ * The result of a promise, which must settle within `ms` milliseconds. The
+ * default only guards against a hang, with a deadline that a loaded machine
+ * does not reach: a test that asserts a timing passes its own
+ */
+export async function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
   const { promise: expired, reject } = Promise.withResolvers<never>();
   const timer = setTimeout(() => {
     reject(new Error(`Not settled within ${ms} ms`));
@@ -78,14 +82,25 @@ export async function within<T>(promise: Promise<T>, ms = 5000): Promise<T> {
   }
 }
 
-/** Resolves once `check()` is true, which it must be within `ms` milliseconds */
+/**
+ * Resolves once `check()` is true, which it must be within `ms` milliseconds
+ * (10 s by default: a guard against a hang), judged after a turn of the
+ * pending I/O (after a stall of the process, the timers run before the I/O
+ * that has completed meanwhile)
+ */
 export async function eventually(
   check: () => Promise<boolean> | boolean,
-  ms = 2000,
+  ms = 10_000,
 ): Promise<void> {
   const deadline = Date.now() + ms;
   while (!(await check())) {
     if (Date.now() > deadline) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      if (await check()) {
+        return;
+      }
       throw new Error(`Not true within ${ms} ms`);
     }
     await sleep(5);
@@ -147,7 +162,7 @@ function exchange(
   agent: Agent,
   { method, headers, body: data }: Required<Omit<ISendOptions, "agent">>,
 ): Promise<IReply> {
-  const signal = AbortSignal.timeout(5000);
+  const signal = AbortSignal.timeout(10_000);
   return new Promise<IReply>((resolve, reject) => {
     httpRequest(url, { agent, method, headers, signal })
       .once("error", reject)
@@ -214,7 +229,7 @@ export function upload(url: string, ...chunks: string[]): Promise<unknown[]> {
     const client = httpRequest(url, {
       method: "POST",
       headers: { "Content-Type": type, "Content-Length": 1 << 20 },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10_000),
     });
     client
       .once("response", (response) => {

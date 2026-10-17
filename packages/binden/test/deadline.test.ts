@@ -65,27 +65,29 @@ async function client(port: number): Promise<IClient> {
   socket.on("close", () => {
     closed = true;
   });
+  /** The end of the first response received, once it is complete */
+  const framed = (): number | null => {
+    const end = data.indexOf("\r\n\r\n");
+    const length = /^Content-Length: (?<length>\d+)$/imu.exec(
+      data.slice(0, end),
+    )?.groups?.length;
+    return end !== -1 &&
+      typeof length !== "undefined" &&
+      data.length >= end + 4 + Number(length)
+      ? end + 4 + Number(length)
+      : null;
+  };
   const response = async (): Promise<{ head: string; body: string }> => {
-    const deadline = Date.now() + 5000;
-    for (;;) {
-      const end = data.indexOf("\r\n\r\n");
-      const length = /^Content-Length: (?<length>\d+)$/imu.exec(
-        data.slice(0, end),
-      )?.groups?.length;
-      if (
-        end !== -1 &&
-        typeof length !== "undefined" &&
-        data.length >= end + 4 + Number(length)
-      ) {
-        const head = data.slice(0, end);
-        const body = data.slice(end + 4, end + 4 + Number(length));
-        data = data.slice(end + 4 + Number(length));
-        return { head, body };
-      } else if (closed || Date.now() > deadline) {
-        throw new Error(`No complete response: ${JSON.stringify(data)}`);
-      }
-      await sleep(5);
+    await pollUntil(() => closed || framed() !== null).catch(() => null);
+    const complete = framed();
+    if (complete === null) {
+      throw new Error(`No complete response: ${JSON.stringify(data)}`);
     }
+    const end = data.indexOf("\r\n\r\n");
+    const head = data.slice(0, end);
+    const body = data.slice(end + 4, complete);
+    data = data.slice(complete);
+    return { head, body };
   };
   return {
     request: (path: string): Promise<{ head: string; body: string }> => {
@@ -154,7 +156,7 @@ async function converse(
     data += chunk;
   });
   socket.write(requests);
-  await within(once(socket, "close"), 5000);
+  await within(once(socket, "close"));
   const responses: { head: string; body: string }[] = [];
   while (data !== "") {
     const end = data.indexOf("\r\n\r\n");
@@ -612,10 +614,7 @@ suite("The deadline", () => {
         socket.write("GET / HTTP/1.1\r\nHost: a\r\n\r\n");
         await within(sending.promise);
         socket.destroy();
-        const deadline = Date.now() + 5000;
-        while (rejected.length === 0 && Date.now() < deadline) {
-          await sleep(5);
-        }
+        await pollUntil(() => rejected.length > 0).catch(() => null);
         deepStrictEqual(
           (rejected[0] as { code?: unknown }).code,
           "ERR_STREAM_PREMATURE_CLOSE",
@@ -1291,7 +1290,7 @@ suite("A sealed reply that waits for the response before it", () => {
         await once(socket, "connect");
         socket.write(requests);
         // Once its deadline has passed
-        await sleep(80);
+        await pollUntil(() => events.length >= 2);
         deepStrictEqual(events, ["read body", "request closed"]);
         socket.destroy();
         deepStrictEqual(await within(cleaned), false);

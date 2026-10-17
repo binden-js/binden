@@ -19,13 +19,13 @@ import { Logger, type LoggerOptions } from "@binden/logger";
 import { Server, request as httpRequest } from "node:http";
 import { afterEach, beforeEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert";
+import { pollUntil, sleep } from "./helpers.js";
 import type { AddressInfo } from "node:net";
 import { Agent } from "node:https";
 import { Readable } from "node:stream";
 import fetch from "node-fetch";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { sleep } from "./helpers.js";
 
 class CustomMiddleware extends Middleware {
   public readonly id: string;
@@ -152,7 +152,7 @@ suite("Binden", () => {
       const response = await fetch(path.toString(), {
         agent,
         headers,
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
       deepStrictEqual(response.status, 200);
       const data = await response.text();
@@ -177,7 +177,7 @@ suite("Binden", () => {
     try {
       trusting.app.use(record);
       const headers = { Forwarded: "for=1.2.3.4;proto=https" };
-      const signal = AbortSignal.timeout(5000);
+      const signal = AbortSignal.timeout(10_000);
 
       await fetch(url, { headers, signal });
       await fetch(trusting.url, { headers, signal });
@@ -356,7 +356,7 @@ suite("Binden", () => {
 
       // A deadline: a crashing error handler would never reply
       const response = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, DefaultErrorCode);
@@ -380,7 +380,7 @@ suite("Binden", () => {
       });
 
       const response = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, 400);
@@ -400,7 +400,7 @@ suite("Binden", () => {
       });
 
       const response = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, 400);
@@ -420,7 +420,7 @@ suite("Binden", () => {
       });
 
       const response = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, DefaultErrorCode);
@@ -448,7 +448,7 @@ suite("Binden", () => {
 
       const response = await fetch(`${logged.url}/path?token=SECRET_QUERY`, {
         headers: { "X-Api-Key": "SECRET_KEY", "User-Agent": "binden-test" },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, DefaultErrorCode);
@@ -476,7 +476,7 @@ suite("Binden", () => {
       });
 
       const response = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, 401);
@@ -500,7 +500,7 @@ suite("Binden", () => {
       });
 
       const response = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, 503);
@@ -522,7 +522,7 @@ suite("Binden", () => {
       });
 
       const response = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, 418);
@@ -552,7 +552,7 @@ suite("Binden", () => {
 
     for (const path of Object.keys(thrown)) {
       const response = await fetch(`${url}${path}`, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
       deepStrictEqual(response.status, 500, path);
       deepStrictEqual(await response.text(), "", path);
@@ -564,7 +564,7 @@ suite("Binden", () => {
       throw new BindenError(499);
     });
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
 
     deepStrictEqual(response.status, 499);
     await response.text();
@@ -576,7 +576,7 @@ suite("Binden", () => {
       throw new BindenError(401, { expose: true });
     });
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
 
     deepStrictEqual(response.status, 401);
     ok(response.headers.get("Set-Cookie")?.startsWith("session=1;") === true);
@@ -597,7 +597,7 @@ suite("Binden", () => {
       // The truncated body is not taken as complete (and not left open): the
       // client may not even get the headers
       const outcome = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       })
         .then(async (response) => response.text())
         .then(
@@ -625,7 +625,7 @@ suite("Binden", () => {
       });
 
       const outcome = await fetch(logged.url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       })
         .then(async (response) => response.text())
         .then(
@@ -633,17 +633,13 @@ suite("Binden", () => {
           (error: unknown) => (error as Error).name,
         );
       ok(outcome !== "complete" && outcome !== "AbortError", outcome);
-      const deadline = Date.now() + 5000;
-      while (
-        !logged
+      await pollUntil(() =>
+        logged
           .output()
           .includes(
             "The response has been destroyed: nothing replaces the reply",
-          ) &&
-        Date.now() < deadline
-      ) {
-        await sleep(5);
-      }
+          ),
+      ).catch(() => null);
       ok(
         logged
           .output()
@@ -666,16 +662,10 @@ suite("Binden", () => {
         throw new BindenError(400);
       });
 
-      await rejects(fetch(logged.url, { signal: AbortSignal.timeout(5000) }));
-      const deadline = Date.now() + 5000;
-      while (
-        !logged.output().includes("The error reply has not been sent") &&
-        Date.now() < deadline
-      ) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 10);
-        });
-      }
+      await rejects(fetch(logged.url, { signal: AbortSignal.timeout(10_000) }));
+      await pollUntil(() =>
+        logged.output().includes("The error reply has not been sent"),
+      ).catch(() => null);
       ok(logged.output().includes("The error reply has not been sent"));
     } finally {
       await logged.close();
@@ -814,7 +804,7 @@ suite("Binden", () => {
     app.use("/no-content", (context: Context) => {
       context.status(204).setHeader("X-Header", "Value").done = true;
     });
-    const signal = AbortSignal.timeout(5000);
+    const signal = AbortSignal.timeout(10_000);
 
     const empty = await fetch(`${url}/empty`, { signal });
     deepStrictEqual(empty.status, 200);
@@ -854,7 +844,7 @@ suite("Binden", () => {
       slow().pipe(context.response);
       context.done = true;
     });
-    const signal = AbortSignal.timeout(5000);
+    const signal = AbortSignal.timeout(10_000);
 
     deepStrictEqual(
       await (await fetch(`${url}/send`, { signal })).text(),
@@ -876,7 +866,7 @@ suite("Binden", () => {
       // A replacement must be a context of the same request
       return first;
     });
-    const signal = AbortSignal.timeout(5000);
+    const signal = AbortSignal.timeout(10_000);
 
     deepStrictEqual(await (await fetch(url, { signal })).text(), "first");
     const second = await fetch(url, { signal });
@@ -891,7 +881,7 @@ suite("Binden", () => {
       (context: Context) => context.send("replaced"),
     );
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     deepStrictEqual(await response.text(), "replaced");
   });
 
@@ -1204,7 +1194,9 @@ suite("Binden", () => {
 
       app.use(new WM(), new EM());
 
-      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10_000),
+      });
 
       deepStrictEqual(response.status, 201);
       deepStrictEqual(response.headers.get("Content-Type"), html);
@@ -1227,7 +1219,9 @@ suite("Binden", () => {
         throw new BindenError(400, { expose: true, message: "Bad request" });
       });
 
-      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10_000),
+      });
 
       deepStrictEqual(response.status, 400);
       deepStrictEqual(response.headers.get("Content-Encoding"), null);
@@ -1246,7 +1240,9 @@ suite("Binden", () => {
         await context.send(failing);
       });
 
-      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10_000),
+      });
 
       deepStrictEqual(response.status, 503);
     });

@@ -65,7 +65,7 @@ async function partial(
       req.write(chunk);
     }
     const [response] = (await once(req, "response", {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(10_000),
     })) as [IncomingMessage];
     response.resume();
     return {

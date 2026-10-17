@@ -48,7 +48,7 @@ async function raw(url: string, data: string): Promise<string> {
   socket.on("data", (chunk: Buffer) => chunks.push(chunk));
   const closed = once(socket, "close");
   socket.write(data);
-  await within(closed, 5000);
+  await within(closed);
   return Buffer.concat(chunks).toString("latin1");
 }
 

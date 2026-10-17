@@ -128,7 +128,7 @@ describe("Multipart (file_filter)", () => {
       const client = httpRequest(url, {
         method: "POST",
         headers: { "Content-Type": type, "Content-Length": data.length },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
       client
         .once("response", (response) => {

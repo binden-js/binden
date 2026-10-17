@@ -195,8 +195,8 @@ suite("A paused Readable", () => {
         );
         deepStrictEqual(await within(waiting.promise), [true, false, 0]);
         socket.resume();
-        deepStrictEqual(await within(outcome.promise, 5000), "resolved");
-        await within(once(socket, "close"), 5000);
+        deepStrictEqual(await within(outcome.promise), "resolved");
+        await within(once(socket, "close"));
         ok(tail.endsWith("4\r\ntail\r\n0\r\n\r\n"), tail);
         deepStrictEqual(reads, 1);
       } finally {

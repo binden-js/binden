@@ -33,7 +33,7 @@ async function converse(port: number, requests: string): Promise<string> {
     data += chunk;
   });
   socket.write(requests);
-  await within(once(socket, "close"), 5000);
+  await within(once(socket, "close"));
   return data;
 }
 
@@ -176,7 +176,7 @@ suite("Informational responses to HTTP/1.0", () => {
     socket.write(
       `GET / HTTP/${version}\r\nHost: a\r\nConnection: close\r\n\r\n`,
     );
-    await within(once(socket, "close"), 5000);
+    await within(once(socket, "close"));
     return data;
   }
 
@@ -451,7 +451,7 @@ suite("Informational responses, then a native write in any encoding", () => {
         data += chunk;
       });
       socket.write(requests);
-      await within(once(socket, "close"), 5000);
+      await within(once(socket, "close"));
       // The callbacks of the last writes run once they are flushed
       await sleep(20);
       return { data, calls };

@@ -77,7 +77,7 @@ suite("Keep-alive", () => {
           path,
           host: "127.0.0.1",
           port,
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(10_000),
         },
         (response) => {
           let body = "";

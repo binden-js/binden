@@ -25,7 +25,7 @@ async function respond(url: string): Promise<IncomingMessage> {
   const sent = request(url, {
     agent: false,
     headers: gzip,
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(10_000),
   }).end();
   const [response] = (await within(once(sent, "response"))) as [
     IncomingMessage,
@@ -73,7 +73,7 @@ suite("Streaming through the compressor", () => {
         const sent = request(new URL(path, url), {
           agent,
           headers: gzip,
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(10_000),
         }).end();
         const [response] = (await within(once(sent, "response"))) as [
           IncomingMessage,

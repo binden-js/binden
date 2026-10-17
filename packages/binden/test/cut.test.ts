@@ -26,7 +26,9 @@ interface IConversation {
 
 /**
  * Writes requests on one connection, and reads every byte until the server
- * closes it, or until nothing comes for `idle` milliseconds
+ * closes it, or until nothing comes for `idle` milliseconds (judged after a
+ * turn of the pending I/O: after a stall of the process, its timer runs
+ * before the data that has come meanwhile is read)
  */
 async function converse(
   port: number,
@@ -37,10 +39,19 @@ async function converse(
   await once(socket, "connect");
   let data = "";
   const { promise: quiet, resolve } = Promise.withResolvers<boolean>();
-  let timer = setTimeout(resolve, idle, false);
+  const expire = (): void => {
+    const seen = data.length;
+    setImmediate(() => {
+      // Else the data that has come re-armed the timer
+      if (data.length === seen) {
+        resolve(false);
+      }
+    });
+  };
+  let timer = setTimeout(expire, idle);
   const arm = (): void => {
     clearTimeout(timer);
-    timer = setTimeout(resolve, idle, false);
+    timer = setTimeout(expire, idle);
   };
   socket.setEncoding("latin1").on("data", (chunk: string) => {
     data += chunk;
@@ -52,7 +63,7 @@ async function converse(
   const closed = once(socket, "close").then(() => true);
   socket.write(requests);
   try {
-    const ended = await within(Promise.race([closed, quiet]), 5000);
+    const ended = await within(Promise.race([closed, quiet]));
     return { data: data.replaceAll(/\r\nDate: [^\r]*/gu, ""), closed: ended };
   } finally {
     clearTimeout(timer);
@@ -229,7 +240,7 @@ suite("A write() or an end() that throws once the head is committed", () => {
       try {
         await rejects(
           fetch(`http://127.0.0.1:${listening.port}/mismatch`, {
-            signal: AbortSignal.timeout(5000),
+            signal: AbortSignal.timeout(10_000),
           }),
           (error: unknown) =>
             error instanceof TypeError && error.message === "fetch failed",

@@ -625,7 +625,7 @@ suite("Trusted proxies", () => {
     deepStrictEqual(bare.host, "origin.test");
   });
 
-  test("several `Host` field lines", { timeout: 5000 }, async () => {
+  test("several `Host` field lines", { timeout: 10_000 }, async () => {
     const server = createServer({ IncomingMessage: BindenRequest });
     const { promise, resolve } = Promise.withResolvers<unknown>();
     server.once("request", (request, response) => {
@@ -657,7 +657,7 @@ suite("Trusted proxies", () => {
     }
   });
 
-  test("a real connection", { timeout: 5000 }, async () => {
+  test("a real connection", { timeout: 10_000 }, async () => {
     const options = validateRequestOptions({
       trust_proxy: { trust: true, headers: "x-forwarded" },
     });

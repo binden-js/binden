@@ -25,7 +25,7 @@ async function converse(port: number, requests: string): Promise<string> {
     data += chunk;
   });
   socket.write(requests);
-  await within(once(socket, "close"), 5000);
+  await within(once(socket, "close"));
   return data.replaceAll(/\r\nDate: [^\r]*/gu, "");
 }
 
@@ -519,8 +519,8 @@ suite("A head that Node.js refuses", () => {
 });
 
 suite("An end() that throws", () => {
-  /** Reads everything from one connection until the server closes it, within `ms` */
-  async function read(port: number, data: string, ms: number): Promise<string> {
+  /** Reads everything from one connection until the server closes it, within 10 s */
+  async function read(port: number, data: string): Promise<string> {
     const socket = connect(port, "127.0.0.1");
     await once(socket, "connect");
     const chunks: Buffer[] = [];
@@ -528,7 +528,7 @@ suite("An end() that throws", () => {
     const closed = once(socket, "close");
     socket.write(data);
     try {
-      await within(closed, ms);
+      await within(closed);
     } finally {
       socket.destroy();
     }
@@ -608,7 +608,6 @@ suite("An end() that throws", () => {
           const data = await read(
             listening.port,
             `GET /${end}/${reply} HTTP/1.0\r\nHost: a\r\n\r\n`,
-            2000,
           );
           ok(
             data.startsWith("HTTP/1.1 500 Internal Server Error\r\n"),
@@ -652,7 +651,6 @@ suite("An end() that throws", () => {
       const data = await read(
         listening.port,
         "GET / HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
-        2000,
       );
       ok(data.startsWith("HTTP/1.1 200 OK\r\n"), data.slice(0, 200));
       ok(data.endsWith(`\r\n\r\n${page}`), String(data.length));
@@ -730,7 +728,6 @@ suite("An end() that throws", () => {
       const data = await read(
         listening.port,
         "GET / HTTP/1.0\r\nHost: a\r\n\r\n",
-        2000,
       );
       ok(data.startsWith("HTTP/1.1 500 Internal Server Error\r\n"), data);
       deepStrictEqual(corks, [1, 1]);

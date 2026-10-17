@@ -4,6 +4,7 @@ import {
   compressors,
   fetchRaw,
   gzips,
+  pollUntil,
   serve,
   sleep,
   text,
@@ -62,18 +63,14 @@ function recorder(
     };
 }
 
-/** Resolves once `count` callbacks have been called (rejects after 5 s) */
+/** Resolves once `count` callbacks have been called (rejects after 10 s) */
 async function calledBack(
   calls: readonly ICall[],
   count: number,
 ): Promise<void> {
-  const deadline = Date.now() + 5000;
-  while (calls.length < count) {
-    if (Date.now() > deadline) {
-      throw new Error(`${calls.length} of ${count} callbacks called`);
-    }
-    await sleep(5);
-  }
+  await pollUntil(() => calls.length >= count).catch(() => {
+    throw new Error(`${calls.length} of ${count} callbacks called`);
+  });
 }
 
 /** The calls in the order of their names (their order differs by path) */
@@ -297,16 +294,12 @@ async function slowClient(
 
 /**
  * Resolves once the writes of a response wait for its `drain`: the client
- * reads nothing, and the compressor is paused (rejects after 5 s)
+ * reads nothing, and the compressor is paused (rejects after 10 s)
  */
 async function full(response: Context["response"]): Promise<void> {
-  const deadline = Date.now() + 5000;
-  while (!response.writableNeedDrain) {
-    if (Date.now() > deadline) {
-      throw new Error("The response has not been backed up");
-    }
-    await sleep(5);
-  }
+  await pollUntil(() => response.writableNeedDrain).catch(() => {
+    throw new Error("The response has not been backed up");
+  });
 }
 
 /**

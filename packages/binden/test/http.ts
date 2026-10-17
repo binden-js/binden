@@ -92,7 +92,7 @@ export async function listen({
         const req = httpRequest(`${url}${path}`, {
           method,
           headers,
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(10_000),
         });
         req
           .on("response", (response) => {

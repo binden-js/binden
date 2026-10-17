@@ -48,12 +48,11 @@ async function connection(port: number): Promise<IConnection> {
     socket,
     received: (): string => data,
     waitFor: async (text: string): Promise<void> => {
-      const deadline = Date.now() + 5000;
-      while (!data.includes(text)) {
-        if (Date.now() > deadline || socket.destroyed) {
-          throw new Error(`Not received: ${text} (${data})`);
-        }
-        await sleep(5);
+      await pollUntil(() => data.includes(text) || socket.destroyed).catch(
+        () => null,
+      );
+      if (!data.includes(text)) {
+        throw new Error(`Not received: ${text} (${data})`);
       }
     },
     closed: once(socket, "close").then(() => {

@@ -252,7 +252,7 @@ describe("Multipart (stream storage)", () => {
       const client = httpRequest(url, {
         method: "POST",
         headers: { "Content-Type": type, "Transfer-Encoding": "chunked" },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
       client
         .once("response", (response) => {

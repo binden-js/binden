@@ -14,7 +14,7 @@ interface IRaw {
   write(text: string): void;
   /**
    * Resolves with what has been received once it passes the check (or once
-   * the server has closed the connection), within 5 s
+   * the server has closed the connection), within 10 s
    */
   until(check: (data: string) => boolean): Promise<string>;
   /** Whether the server has closed the connection */
@@ -44,15 +44,10 @@ async function connection(port: number): Promise<IRaw> {
       socket.write(text);
     },
     until: async (check: (received: string) => boolean): Promise<string> => {
-      const deadline = Date.now() + 5000;
-      for (;;) {
-        if (check(data) || closed) {
-          return data;
-        } else if (Date.now() > deadline) {
-          throw new Error(`Not received: ${JSON.stringify(data)}`);
-        }
-        await sleep(5);
-      }
+      await pollUntil(() => check(data) || closed).catch(() => {
+        throw new Error(`Not received: ${JSON.stringify(data)}`);
+      });
+      return data;
     },
     get closed(): boolean {
       return closed;

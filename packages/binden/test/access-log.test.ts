@@ -12,6 +12,7 @@ import {
   capture,
   listen,
   never,
+  pollUntil,
   send,
   sleep,
 } from "./helpers.js";
@@ -61,10 +62,7 @@ function records(captured: ICaptured): Record<string, unknown>[] {
 
 /** Waits for the access records of `count` requests */
 async function waitFor(captured: ICaptured, count: number): Promise<void> {
-  const deadline = Date.now() + 5000;
-  while (records(captured).length < count && Date.now() < deadline) {
-    await sleep(5);
-  }
+  await pollUntil(() => records(captured).length >= count).catch(() => null);
 }
 
 suite("Access log", () => {

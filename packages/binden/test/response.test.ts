@@ -710,7 +710,7 @@ suite("BindenResponse", () => {
     try {
       const response = await fetch(`http://127.0.0.1:${local}`, {
         method: "HEAD",
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
 
       deepStrictEqual(response.status, 200);
@@ -1259,7 +1259,7 @@ suite("BindenResponse", () => {
       const response = await fetch(url, {
         method,
         headers,
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       });
       const body = await response.text();
       await serverPromise;
@@ -1524,7 +1524,7 @@ suite("BindenResponse", () => {
           });
         });
         const response = await fetch(url, {
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(10_000),
         });
         deepStrictEqual(await response.text(), msg.toString());
         await sent;

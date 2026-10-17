@@ -8,6 +8,7 @@ import {
   type IServed,
   decode,
   fetchRaw,
+  pollUntil,
   sameBytes,
   serve,
   sleep,
@@ -51,13 +52,9 @@ function reader(stream: NodeJS.ReadableStream): IReader {
       return received;
     },
     until: async (expected: string): Promise<void> => {
-      const deadline = Date.now() + 5000;
-      while (!received.includes(expected)) {
-        if (Date.now() > deadline) {
-          throw new Error(`Not received within 5 s: ${received}`);
-        }
-        await sleep(5);
-      }
+      await pollUntil(() => received.includes(expected)).catch(() => {
+        throw new Error(`Not received within 10 s: ${received}`);
+      });
     },
   };
 }
@@ -82,7 +79,7 @@ async function respond(
     agent: false,
     headers,
     method,
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(10_000),
   }).end();
   const [response] = (await within(once(sent, "response"))) as [
     IncomingMessage,

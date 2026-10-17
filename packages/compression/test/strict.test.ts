@@ -3,6 +3,7 @@ import {
   type ICaptured,
   type IServed,
   capture,
+  pollUntil,
   serve,
   sleep,
   within,
@@ -27,7 +28,9 @@ interface IConversation {
 
 /**
  * Writes requests on one connection, and reads every byte until the server
- * closes it, or until nothing comes for `idle` milliseconds
+ * closes it, or until nothing comes for `idle` milliseconds (judged after a
+ * turn of the pending I/O: after a stall of the process, its timer runs
+ * before the data that has come meanwhile is read)
  */
 async function talk(
   port: number,
@@ -38,11 +41,20 @@ async function talk(
   await once(socket, "connect");
   let data = "";
   const { promise: quiet, resolve } = Promise.withResolvers<boolean>();
-  let timer = setTimeout(resolve, idle, false);
+  const expire = (): void => {
+    const seen = data.length;
+    setImmediate(() => {
+      // Else the data that has come re-armed the timer
+      if (data.length === seen) {
+        resolve(false);
+      }
+    });
+  };
+  let timer = setTimeout(expire, idle);
   socket.setEncoding("latin1").on("data", (chunk: string) => {
     data += chunk;
     clearTimeout(timer);
-    timer = setTimeout(resolve, idle, false);
+    timer = setTimeout(expire, idle);
   });
   socket.on("error", () => {
     // E.g. reset by the server: what it has sent is read
@@ -50,7 +62,7 @@ async function talk(
   const closed = once(socket, "close").then(() => true);
   socket.write(requests);
   try {
-    const ended = await within(Promise.race([closed, quiet]), 5000);
+    const ended = await within(Promise.race([closed, quiet]));
     return { data: data.replaceAll(/\r\nDate: [^\r]*/gu, ""), closed: ended };
   } finally {
     clearTimeout(timer);
@@ -217,10 +229,7 @@ suite(
             ({ msg, id }) =>
               msg === "The request has completed" && id === ids[0],
           );
-        const deadline = Date.now() + 5000;
-        while (completed().length === 0 && Date.now() < deadline) {
-          await sleep(5);
-        }
+        await pollUntil(() => completed().length > 0).catch(() => null);
         deepStrictEqual(outcomes, [
           "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
           true,
@@ -243,7 +252,7 @@ suite(
         await rejects(
           fetch(`${url}/mismatch`, {
             headers: { "Accept-Encoding": "gzip" },
-            signal: AbortSignal.timeout(5000),
+            signal: AbortSignal.timeout(10_000),
           }),
           (error: unknown) =>
             error instanceof TypeError && error.message === "fetch failed",

@@ -12,6 +12,7 @@ import {
   capture,
   listen,
   never,
+  pollUntil,
   send,
   sleep,
   within,
@@ -471,9 +472,7 @@ suite("The observers of the framework on a response", () => {
       async ({ port }) => {
         const reply = await send(port);
         deepStrictEqual([reply.status, reply.body], [503, "deadline"]);
-        for (let tick = 0; tick < 100 && events.length < 3; tick += 1) {
-          await sleep(5);
-        }
+        await pollUntil(() => events.length >= 3).catch(() => null);
         deepStrictEqual(events, ["early close", "reply", "cleanup"]);
       },
     );

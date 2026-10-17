@@ -24,8 +24,12 @@ export function sleep(ms: number): Promise<void> {
   });
 }
 
-/** The result of a promise, which must settle within `ms` milliseconds */
-export async function within<T>(promise: Promise<T>, ms = 2000): Promise<T> {
+/**
+ * The result of a promise, which must settle within `ms` milliseconds. The
+ * default only guards against a hang, with a deadline that a loaded machine
+ * does not reach: a test that asserts a timing passes its own
+ */
+export async function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
   const { promise: expired, reject } = Promise.withResolvers<never>();
   const timer = setTimeout(() => {
     reject(new Error(`Not settled within ${ms} ms`));
@@ -38,11 +42,23 @@ export async function within<T>(promise: Promise<T>, ms = 2000): Promise<T> {
 }
 
 /**
+ * Resolves after a turn of the pending I/O (`setImmediate()`): once a stall
+ * of the process (e.g. a loaded machine) has passed, the timers run before
+ * the I/O that has come meanwhile is read, so that silence (or an expired
+ * deadline) is judged only after this turn
+ */
+export function ioTurn(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+/**
  * Resolves once `check()` holds (polled every 5 ms), or rejects once it has
- * not within `ms` milliseconds, judged after a turn of the pending I/O (e.g.
- * after a stall of the process): a poller that ends by itself, whoever waits
- * for it (e.g. a `within()` with a shorter deadline), so that a failure never
- * keeps the process of a test alive
+ * not within `ms` milliseconds, judged after a turn of the pending I/O (see
+ * `ioTurn()`): a poller that ends by itself, whoever waits for it (e.g. a
+ * `within()` with a shorter deadline), so that a failure never keeps the
+ * process of a test alive
  */
 export async function pollUntil(
   check: () => boolean,
@@ -51,9 +67,7 @@ export async function pollUntil(
   const deadline = Date.now() + ms;
   while (!check()) {
     if (Date.now() > deadline) {
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      await ioTurn();
       if (check()) {
         return;
       }
@@ -77,7 +91,10 @@ export interface ICaptured {
   readonly records: Record<string, unknown>[];
   /** The records written so far, as written */
   output(): string;
-  /** Resolves once a record with this message has been written */
+  /**
+   * Resolves once a record with this message has been written (within `ms`,
+   * 10 s by default)
+   */
   waitFor(message: string, ms?: number): Promise<Record<string, unknown>>;
 }
 
@@ -103,18 +120,14 @@ export function capture(level = "debug"): ICaptured {
     output: (): string => lines.join(""),
     waitFor: async (
       message: string,
-      ms = 5000,
+      ms = 10_000,
     ): Promise<Record<string, unknown>> => {
-      const deadline = Date.now() + ms;
-      let found = records().find(({ msg }) => msg === message);
-      while (!found) {
-        if (Date.now() > deadline) {
-          throw new Error(`No record "${message}": ${lines.join("")}`);
-        }
-        await sleep(5);
-        found = records().find(({ msg }) => msg === message);
-      }
-      return found;
+      const find = (): Record<string, unknown> | undefined =>
+        records().find(({ msg }) => msg === message);
+      await pollUntil(() => typeof find() !== "undefined", ms).catch(() => {
+        throw new Error(`No record "${message}": ${lines.join("")}`);
+      });
+      return find() as Record<string, unknown>;
     },
   };
 }
@@ -164,7 +177,10 @@ export interface IReceived {
   readonly body: string;
 }
 
-/** Sends a request (on a new connection to `HOST`) and reads the response within `ms` */
+/**
+ * Sends a request (on a new connection to `HOST`) and reads the response within
+ * `ms` (10 s by default: a guard against a hang)
+ */
 export function send(
   port: number,
   {
@@ -172,7 +188,7 @@ export function send(
     method = "GET",
     headers = {},
     body = null,
-    ms = 5000,
+    ms = 10_000,
   }: {
     path?: string;
     method?: string;

@@ -6,7 +6,15 @@ import {
   type IBindenOptions,
 } from "../index.js";
 import { EventEmitter, once } from "node:events";
-import { type ICaptured, capture, listen, never, sleep } from "./helpers.js";
+import {
+  type ICaptured,
+  capture,
+  ioTurn,
+  listen,
+  never,
+  pollUntil,
+  sleep,
+} from "./helpers.js";
 import { PassThrough, Readable, pipeline } from "node:stream";
 import { createServer, get } from "node:http";
 import { deepStrictEqual, ok } from "node:assert/strict";
@@ -97,9 +105,24 @@ interface IRaw {
   readonly closed: boolean;
 }
 
+/** Whether a complete response has come (framed by its length, or by its last chunk) */
+function complete(raw: string): boolean {
+  const end = raw.indexOf("\r\n\r\n");
+  if (end === -1) {
+    return false;
+  }
+  const length = /^Content-Length: (?<n>\d+)$/imu.exec(raw.slice(0, end))
+    ?.groups?.n;
+  return typeof length === "undefined"
+    ? raw.endsWith("\r\n0\r\n\r\n")
+    : raw.length >= end + 4 + Number(length);
+}
+
 /**
- * Sends a request on a new connection, then reads what comes within `ms`
- * (or until the connection is closed)
+ * Sends a request on a new connection, then reads what comes until the
+ * connection is closed, or for `ms` once a complete response has come (it
+ * may take longer on a loaded machine: within 10 s), so that what would
+ * follow it is seen (judged after a turn of the pending I/O)
  */
 async function exchange(
   port: number,
@@ -117,10 +140,14 @@ async function exchange(
   socket.write(
     `${method} / HTTP/1.1\r\nHost: localhost\r\nContent-Length: ${body.length}\r\n\r\n${body}`,
   );
+  await pollUntil(() => received.closed || complete(received.raw)).catch(
+    () => null,
+  );
   const deadline = Date.now() + ms;
   while (!received.closed && Date.now() < deadline) {
     await sleep(5);
   }
+  await ioTurn();
   socket.destroy();
   return {
     raw: received.raw
@@ -431,14 +458,11 @@ suite(
             socket.write(
               "GET /first HTTP/1.1\r\nHost: localhost\r\n\r\nGET / HTTP/1.1\r\nHost: localhost\r\n\r\n",
             );
-            const deadline = Date.now() + 3000;
-            while (
-              !raw.endsWith("REAL\r\n0\r\n\r\n") &&
-              Date.now() < deadline
-            ) {
-              await sleep(5);
-            }
+            await pollUntil(() => raw.endsWith("REAL\r\n0\r\n\r\n")).catch(
+              () => null,
+            );
             await sleep(20);
+            await ioTurn();
             const { closed } = socket;
             socket.destroy();
             deepStrictEqual(

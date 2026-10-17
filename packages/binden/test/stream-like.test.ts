@@ -7,7 +7,14 @@ import {
   type IStreamLike,
 } from "../index.js";
 import { EventEmitter, once } from "node:events";
-import { type IListening, capture, listen, sleep, within } from "./helpers.js";
+import {
+  type IListening,
+  capture,
+  listen,
+  pollUntil,
+  sleep,
+  within,
+} from "./helpers.js";
 import {
   type IStreamLikeMethods,
   emitterMethods,
@@ -162,7 +169,7 @@ function fetchBytes(
         path,
         host: "127.0.0.1",
         port,
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10_000),
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -244,17 +251,6 @@ function fixture(name: string, ...flags: string[]): Record<string, unknown> {
   return { status, stdout, stderr };
 }
 
-/** Waits until a condition holds: it fails (and stops polling) once `ms` have passed */
-async function until(condition: () => boolean, ms = 2000): Promise<void> {
-  const deadline = performance.now() + ms;
-  while (!condition()) {
-    if (performance.now() > deadline) {
-      throw new Error(`Not true within ${ms} ms`);
-    }
-    await sleep(5);
-  }
-}
-
 /** The next turn: once the deferred `error` listener of a source is removed */
 function nextTurn(): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -301,7 +297,7 @@ for (const [library, create] of libraries) {
               source.end();
             }, 10);
             await context.send(source);
-            await until(
+            await pollUntil(
               () => leftOf(recorded).length === (closesAtEnd(library) ? 0 : 2),
             );
             outcomes.push(recorded.added.map(([event]) => event).sort());
@@ -319,7 +315,7 @@ for (const [library, create] of libraries) {
               received.headers["content-length"],
               declared ? String(whole.length) : none,
             );
-            await until(() => outcomes.length === 3);
+            await pollUntil(() => outcomes.length === 3);
           },
         );
         // Never destroyed once it has ended: its guard listens before the
@@ -346,7 +342,7 @@ for (const [library, create] of libraries) {
         async ({ port }) => {
           // Before any byte: the error is replied
           deepStrictEqual((await fetchBytes(port)).status, 500);
-          await until(() => recorded.destroys.length > 0);
+          await pollUntil(() => recorded.destroys.length > 0);
           deepStrictEqual(
             recorded.destroys.map(
               (error) => (error as { code?: unknown }).code,
@@ -397,7 +393,7 @@ for (const [library, create] of libraries) {
             socket.pause();
             // The client reads nothing: the response fills up, then the
             // source
-            await until(
+            await pollUntil(
               () =>
                 producer.blocked && recorded.pauses > 0 && source.isPaused(),
               5000,
@@ -442,8 +438,8 @@ for (const [library, create] of libraries) {
         async ({ port }) => {
           const received = await fetchBytes(port);
           deepStrictEqual(received.status, 503);
-          await until(() => destroyed(source) && reason() !== null);
-          await until(() => recorded.left().length === 0);
+          await pollUntil(() => destroyed(source) && reason() !== null);
+          await pollUntil(() => recorded.left().length === 0);
           deepStrictEqual((reason() as BindenAbortError).reason, "deadline");
           // Of the send, and of its guard
           deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
@@ -483,13 +479,13 @@ for (const [library, create] of libraries) {
               data += chunk;
             });
             socket.write("GET / HTTP/1.1\r\nHost: a\r\n\r\n");
-            await until(() => data.includes("part"));
+            await pollUntil(() => data.includes("part"));
           } finally {
             socket.destroy();
           }
           const error = await within(sent.promise);
           ok(error instanceof Error);
-          await until(() => destroyed(source) && reason() !== null);
+          await pollUntil(() => destroyed(source) && reason() !== null);
           await nextTurn();
           deepStrictEqual(
             (reason() as BindenAbortError).reason,
@@ -504,7 +500,7 @@ for (const [library, create] of libraries) {
       const source = create();
       source.end();
       source.resume();
-      await until(
+      await pollUntil(
         () =>
           Reflect.get(
             Reflect.get(source, "_readableState") as object,
@@ -673,7 +669,7 @@ for (const [library, create] of libraries) {
                   received,
                 );
               }
-              await until(() => rejected !== null);
+              await pollUntil(() => rejected !== null);
               deepStrictEqual(
                 (rejected as { code?: unknown }).code,
                 failure ? "E_DESTROYED" : "ERR_STREAM_PREMATURE_CLOSE",
@@ -706,8 +702,8 @@ for (const [library, create] of libraries) {
               [received.status, received.body.toString()],
               [status, ""],
             );
-            await until(() => destroyed(source));
-            await until(() => recorded.left().length === 0);
+            await pollUntil(() => destroyed(source));
+            await pollUntil(() => recorded.left().length === 0);
             // Only by its guard
             deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
               "close",
@@ -799,7 +795,7 @@ suite("send() of a stream-like source", () => {
           ],
           [503, 200],
         );
-        await until(() => reported(captured).length === 2);
+        await pollUntil(() => reported(captured).length === 2);
         deepStrictEqual(reported(captured), [
           "Failed to pause",
           "Failed to pause",
@@ -1149,7 +1145,7 @@ suite("send() of a stream-like source that will not be sent", () => {
       await rejects(response.status(103).send(sent), TypeError);
     }
     ok(destroyed(source));
-    await until(() => recorded.left().length === 0);
+    await pollUntil(() => recorded.left().length === 0);
     deepStrictEqual(recorded.added.map(([event]) => event).sort(), [
       "close",
       "error",

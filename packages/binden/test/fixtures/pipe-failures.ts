@@ -8,6 +8,7 @@ import { type AddressInfo, connect } from "node:net";
 import { Binden, type Context } from "../../index.js";
 import { Readable, pipeline } from "node:stream";
 import { once } from "node:events";
+import { pollUntil } from "../helpers.js";
 
 for (const event of ["unhandledRejection", "uncaughtException"]) {
   process.on(event, (error: unknown) => {
@@ -18,7 +19,7 @@ for (const event of ["unhandledRejection", "uncaughtException"]) {
 setTimeout(() => {
   process.stderr.write("Timed out\n");
   process.exit(2);
-}, 10_000).unref();
+}, 25_000).unref();
 
 const invalid = "bad\n";
 const never = (): Promise<void> =>
@@ -75,7 +76,23 @@ const server = app.createServer().listen(0, "127.0.0.1");
 await once(server, "listening");
 const { port } = server.address() as AddressInfo;
 
-/** The status lines received on a connection, and whether it was closed */
+/** Whether a complete response has come (framed by its `Content-Length`) */
+function complete(data: string): boolean {
+  const end = data.indexOf("\r\n\r\n");
+  const length = /^Content-Length: (?<n>\d+)$/imu.exec(data.slice(0, end))
+    ?.groups?.n;
+  return (
+    end !== -1 &&
+    typeof length !== "undefined" &&
+    data.length >= end + 4 + Number(length)
+  );
+}
+
+/**
+ * The status lines received on a connection, and whether it was closed: once
+ * it has, or 300 ms after a complete response (which a loaded machine may
+ * delay: within 5 s), judged after a turn of the pending I/O
+ */
 async function exchange(path: string): Promise<string> {
   const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
@@ -84,13 +101,15 @@ async function exchange(path: string): Promise<string> {
     data += chunk;
   });
   socket.write(`GET ${path} HTTP/1.1\r\nHost: localhost\r\n\r\n`);
-  const closed = once(socket, "close").then(() => "closed");
-  const state = await Promise.race([
-    closed,
-    new Promise((resolve) => {
-      setTimeout(resolve, 300, "open");
-    }),
-  ]);
+  const connection = { closed: false };
+  socket.once("close", () => {
+    connection.closed = true;
+  });
+  await pollUntil(() => connection.closed || complete(data), 5000).catch(
+    () => null,
+  );
+  await pollUntil(() => connection.closed, 300).catch(() => null);
+  const state = connection.closed ? "closed" : "open";
   socket.destroy();
   const statuses = data.match(/HTTP\/1\.1 \d{3}/gu) ?? [];
   return `${statuses.map((line) => line.slice(9)).join("+")}(${String(state)})`;

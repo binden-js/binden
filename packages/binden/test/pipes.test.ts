@@ -11,6 +11,7 @@ import {
   type ICaptured,
   type IListening,
   capture,
+  ioTurn,
   listen,
   never,
   pollUntil,
@@ -97,7 +98,7 @@ function bodyOf(head: string, rest: string): [string, boolean] {
  */
 async function exchange(
   port: number,
-  { path = "/", linger = 30, ms = 5000 } = {},
+  { path = "/", linger = 30, ms = 10_000 } = {},
 ): Promise<IRaw> {
   const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
@@ -135,6 +136,8 @@ async function exchange(
       await sleep(5);
     }
     await sleep(linger);
+    // What has come meanwhile (e.g. its close), once a stall has passed
+    await ioTurn();
     return parse();
   } finally {
     socket.destroy();
@@ -2226,9 +2229,7 @@ suite("A pipe into the response", () => {
         async ({ port }) => {
           const reply = await slowly(port, 300);
           deepStrictEqual([reply.body.length, reply.complete], [size, true]);
-          for (let tick = 0; tick < 100 && outcomes.length === 0; tick += 1) {
-            await sleep(5);
-          }
+          await pollUntil(() => outcomes.length > 0).catch(() => null);
           deepStrictEqual(outcomes, ["sent"]);
         },
       );
