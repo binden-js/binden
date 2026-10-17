@@ -3,6 +3,7 @@
 // cancellation has destroyed it, must not crash the process
 import { EventEmitter, once } from "node:events";
 import { type IncomingMessage, request } from "node:http";
+import { ioTurn, pollUntil } from "../helpers.js";
 import type { AddressInfo } from "node:net";
 import { Binden } from "../../index.js";
 import { createRequire } from "node:module";
@@ -41,24 +42,29 @@ const app = new Binden({ timeout: 50 }).use(async (context) => {
   const { pathname } = context.url;
   if (pathname === "/closed") {
     // A `PassThrough` of `readable-stream` 2 emits its `end` and `close`,
-    // then the `error` of its destroy
+    // then the `error` of its destroy, on the turn after the request has
+    // started its send: without the deadline, which a loaded machine could
+    // pass first (its error is replied)
+    context.setTimeout(0);
     const source = new v2.PassThrough();
     sources.set(pathname, source);
-    setTimeout(() => {
+    setImmediate(() => {
       source.destroy(new Error("Destroyed"));
-    }, 10);
+    });
     await context.send(source);
   } else if (pathname === "/custom") {
-    // A source of its own that emits `close`, then an error
+    // A source of its own that emits `close`, then an error, on the turn
+    // after the request has started its send (without the deadline)
+    context.setTimeout(0);
     const source = Object.assign(new EventEmitter(), {
       pause: (): null => null,
       resume: (): null => null,
     });
     sources.set(pathname, source);
-    setTimeout(() => {
+    setImmediate(() => {
       source.emit("close");
       process.nextTick(() => source.emit("error", new Error("Closed")));
-    }, 10);
+    });
     await context.send(source);
   } else if (pathname === "/deadline") {
     // Destroyed with the reason of the deadline, which it emits
@@ -96,10 +102,12 @@ for (const path of ["/closed", "/custom", "/deadline", "/late"]) {
   statuses.push(response.statusCode ?? 0);
 }
 
-// Once every source has emitted its error
-await new Promise((resolve) => {
-  setTimeout(resolve, 100);
-});
+// Once every source has emitted its error: the last one, of `/late`, once
+// its destroy has completed (then it closes), and its guard has left (on the
+// turn after its close)
+const late = sources.get("/late") as IStream & { readonly closed: boolean };
+await pollUntil(() => late.closed, 5000).catch(() => null);
+await ioTurn();
 server.close();
 process.stdout.write(
   `${statuses.join(" ")}\n${[...sources.values()]
