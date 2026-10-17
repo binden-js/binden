@@ -638,6 +638,26 @@ export function forwarder(target: (error: unknown) => void): IForwarder {
 }
 
 /**
+ * A log that never throws (see `IStreamLikeLogs`): a logger of the
+ * application that throws (e.g. its own `debug()`) leaves no release of a
+ * stream-like source half done (e.g. the readable of `readStreamLike()`
+ * without the error that decides its send, or listeners left on the source),
+ * and throws neither into the events of the source nor out of a turn of its
+ * own. Nothing more can be told then.
+ */
+function quietly<T extends unknown[]>(
+  log: (...args: T) => void,
+): (...args: T) => void {
+  return (...args: T): void => {
+    try {
+      log(...args);
+    } catch {
+      // The logger has failed: nothing more can be told
+    }
+  };
+}
+
+/**
  * Releases a stream-like source that is no longer read, by its `destroy()`
  * (with `args`) or its `pause()`: what it throws (e.g. a `pause()` once
  * more, after the one that has failed its send) is logged (see
@@ -759,7 +779,9 @@ export function releaseStreamLike(
  * send; one that has neither is left untouched (see `releaseStreamLike()`):
  * `unreleased()` tells it. A refusal of its guard, a `pause()` that throws
  * once it is no longer read, and a removal that throws are logged by `logs`
- * (see `IStreamLikeLogs`), not as late errors.
+ * (see `IStreamLikeLogs`), not as late errors. A log that throws (also
+ * `unreleased()`, e.g. a logger of the application whose own `debug()`
+ * throws) is ignored, and the release goes on (see `quietly()`).
  */
 export function readStreamLike(
   source: object,
@@ -769,6 +791,11 @@ export function readStreamLike(
   unreleased: () => void = unnoticed,
   logs: IStreamLikeLogs = logsOf(report),
 ): Readable {
+  // What tells of its release never throws (see `quietly()`), also from its
+  // destroy (see `destroy`), which then calls back all the same
+  const released = quietly(logs.released);
+  const removed = quietly(logs.removed);
+  const untouched = quietly(unreleased);
   /**
    * The listeners added to the source, by event, recorded before its `on()`
    * runs (which may add one, then throw)
@@ -832,7 +859,7 @@ export function readStreamLike(
         } catch (error: unknown) {
           // Never thrown into the events of the source, nor out of a turn of
           // its own: once the send has settled, its listeners change nothing
-          logs.removed(error);
+          removed(error);
         } finally {
           if (event === "error") {
             // The send no longer hears it, also when the removal has thrown
@@ -850,7 +877,7 @@ export function readStreamLike(
    * listens (`closed`: by its `close`)
    */
   const protect = (closed = false): boolean => {
-    guarded ??= guard(source, methods, report, closed, logs.released);
+    guarded ??= guard(source, methods, report, closed, released);
     return guarded;
   };
   /**
@@ -912,24 +939,24 @@ export function readStreamLike(
           if (!safe && !kept) {
             // No listener of its `error` is in place: untouched (see
             // `releaseStreamLike()`)
-            unreleased();
+            untouched();
           } else if (destroy === null) {
-            releaseBy(source, pause, logs.released);
+            releaseBy(source, pause, released);
           } else if (destroyed) {
             // By the application: not again
           } else if (kept) {
             // Only the listener of the send hears it: without the error that
             // decides the send, which the send has failed with already
-            releaseBy(source, destroy, logs.released);
+            releaseBy(source, destroy, released);
           } else if (undecided && error !== null) {
             // What the send decides (see `unreadable()`): also an `Error`
             // that carries what its code has thrown (see `destroyWith()`)
-            releaseBy(source, destroy, logs.released, error);
+            releaseBy(source, destroy, released, error);
           } else if (error === null && resolutions.has(readable)) {
             // Its send has resolved (see `resolved()`): without an error, as
             // a Node.js `Readable` is, never with the reason of a
             // cancellation
-            releaseBy(source, destroy, logs.released);
+            releaseBy(source, destroy, released);
           } else if (error === null) {
             // The reason of its cancellation (also for a falsy value that its
             // code has thrown, a premature close), an error of binden: no
@@ -937,7 +964,7 @@ export function readStreamLike(
             // Formatted before the source has it, which may keep it
             const failure = formatted(reason());
             decided(failure);
-            releaseBy(source, destroy, logs.released, failure);
+            releaseBy(source, destroy, released, failure);
           } else {
             // The error that decides the send (e.g. of a chunk that is not
             // bytes, which the readable refuses, or what a `pause()` of the
@@ -946,7 +973,7 @@ export function readStreamLike(
             // of the application, e.g. that it destroys each of its streams
             // with, see `decidedFor()`)
             decidedFor(source, error);
-            releaseBy(source, destroy, logs.released, error);
+            releaseBy(source, destroy, released, error);
           }
         });
       }
@@ -1001,10 +1028,10 @@ export function readStreamLike(
       }
     } catch (error: unknown) {
       // Its state cannot be read (e.g. a getter of its own that throws)
-      logs.released(error);
+      released(error);
       return;
     }
-    releaseBy(source, methods.destroy ?? methods.pause, logs.released);
+    releaseBy(source, methods.destroy ?? methods.pause, released);
   };
   /**
    * A readable that nothing is read into, destroyed at once with `error`
