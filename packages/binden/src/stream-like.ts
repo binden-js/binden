@@ -697,30 +697,31 @@ export function releaseStreamLike(
 
 /**
  * A stream-like source (see `IStreamLike`) read as a Node.js `Readable`, which
- * `send()` sends as such. Its `data` is pushed with backpressure: the source
- * is paused once the readable is full (e.g. while the response is), and
- * resumed once it is read. A `data` that is neither a string nor bytes (e.g.
- * `null`, never taken as its end) destroys it with a `TypeError`
- * (`ERR_INVALID_ARG_TYPE`). Its `end` ends the readable, and its `error`, or
- * a `close` before its end, destroys it with that error (or
- * `ERR_STREAM_PREMATURE_CLOSE`); a source that has failed without being
- * destroyed (e.g. without `autoDestroy`) is then released under its guard, as
- * for a cancellation, but without its error. An `end` or a `close` of a
- * source that has been destroyed (e.g. `readable-stream` 2 emits both before
- * the `error` of its `destroy()`) is not its end: the error that follows
- * within a turn destroys the readable, or else `ERR_STREAM_PREMATURE_CLOSE`.
- * Destroyed
- * before (a cancellation: the deadline, the client gone away, another
- * reply), the readable destroys the source with the reason of the
- * cancellation (`reason()`), recorded before as decided (see `decided()`),
- * so that its guard does not report it once the source emits it, or pauses
- * a source that cannot be destroyed. A destroy (or a pause) that throws is
- * logged (see `IStreamLikeLogs`), and the readable is destroyed with the
- * error that decides the send all the same. That error (an `error` of the
- * source, or the one that the readable is destroyed with) is pending before
- * the guard of the source is installed (see `decide()`): code of the source
- * that emits it, or throws it again, meanwhile (e.g. a listener of its
- * `newListener`) is neither reported nor logged when it is an object.
+ * `send()` sends as such. Its `data` is pushed with backpressure: the source is
+ * paused once the readable is full (e.g. while the response is), and resumed
+ * once it is read. A `data` that is neither a string nor bytes (e.g. `null`,
+ * never taken as its end) destroys it with a `TypeError`
+ * (`ERR_INVALID_ARG_TYPE`), and one that the readable cannot take (its `push()`
+ * throws, e.g. for a view of an `ArrayBuffer` that has been detached) with what
+ * it throws, never thrown into the `data` of the source. Its `end` ends the
+ * readable, and its `error`, or a `close` before its end, destroys it with that
+ * error (or `ERR_STREAM_PREMATURE_CLOSE`); a source that has failed without
+ * being destroyed (e.g. without `autoDestroy`) is then released under its
+ * guard, as for a cancellation, but without its error. An `end` or a `close` of
+ * a source that has been destroyed (e.g. `readable-stream` 2 emits both before
+ * the `error` of its `destroy()`) is not its end: the error that follows within
+ * a turn destroys the readable, or else `ERR_STREAM_PREMATURE_CLOSE`. Destroyed
+ * before (a cancellation: the deadline, the client gone away, another reply),
+ * the readable destroys the source with the reason of the cancellation
+ * (`reason()`), recorded before as decided (see `decided()`), so that its guard
+ * does not report it once the source emits it, or pauses a source that cannot
+ * be destroyed. A destroy (or a pause) that throws is logged (see
+ * `IStreamLikeLogs`), and the readable is destroyed with the error that decides
+ * the send all the same. That error (an `error` of the source, or the one that
+ * the readable is destroyed with) is pending before the guard of the source is
+ * installed (see `decide()`): code of the source that emits it, or throws it
+ * again, meanwhile (e.g. a listener of its `newListener`) is neither reported
+ * nor logged when it is an object.
  *
  * Every listener that it adds is removed through the source (by its
  * `removeListener()` or `off()`): at once for a cancellation, whatever the
@@ -1102,13 +1103,18 @@ export function readStreamLike(
         // Never its end (`null`), nor dropped (`undefined`), as a `push()`
         // would take them: refused as any other value that is not bytes
         destroyWith(invalidChunk(chunk));
-      } else if (!readable.push(chunk)) {
-        try {
+        return;
+      }
+      try {
+        if (!readable.push(chunk)) {
           call(methods.pause);
-        } catch (error: unknown) {
-          // Code of the source that throws: as for a cancellation, with it
-          destroyWith(error);
         }
+      } catch (error: unknown) {
+        // A chunk that the readable cannot take (e.g. a view of an
+        // `ArrayBuffer` that has been detached), or code of the source that
+        // throws: as for a cancellation, with it, never thrown into the
+        // `data` of the source
+        destroyWith(error);
       }
     });
   } catch (error: unknown) {
