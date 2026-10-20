@@ -249,10 +249,11 @@ function own<T extends Error>(error: T): T {
 function invalidChunk(chunk: unknown): TypeError {
   const received = chunk === null ? "null" : typeof chunk;
   const message = `The chunk of a stream-like source must be a string or bytes (received ${received})`;
-  const error = Object.assign(new TypeError(message), {
-    code: "ERR_INVALID_ARG_TYPE",
-  });
-  return own(formatStack(error));
+  return own(
+    Object.assign(formatStack(new TypeError(message)), {
+      code: "ERR_INVALID_ARG_TYPE",
+    }),
+  );
 }
 
 /**
@@ -260,10 +261,11 @@ function invalidChunk(chunk: unknown): TypeError {
  * stack formatted (see `formatStack()`)
  */
 function premature(): Error {
-  const error = Object.assign(new Error("Premature close"), {
-    code: "ERR_STREAM_PREMATURE_CLOSE",
-  });
-  return own(formatStack(error));
+  return own(
+    Object.assign(formatStack(new Error("Premature close")), {
+      code: "ERR_STREAM_PREMATURE_CLOSE",
+    }),
+  );
 }
 
 /**
