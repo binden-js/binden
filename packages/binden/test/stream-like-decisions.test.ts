@@ -396,6 +396,8 @@ suite(
           readable.once("error", resolve);
         }),
       );
+      // Reported on a later turn
+      await ioTurn();
       deepStrictEqual([failure === thrown, reported], [true, ["Another"]]);
     });
 
@@ -568,10 +570,11 @@ suite(
           readable.once("error", resolve);
         }),
       );
+      await ioTurn();
       deepStrictEqual([failure.cause === thrown, reported], [true, []]);
     });
 
-    test("is not taken for an `undefined` that a source emits later as its error: its guard reports it", () => {
+    test("is not taken for an `undefined` that a source emits later as its error: its guard reports it", async () => {
       const reported: unknown[] = [];
       const source = Object.assign(new Emitter(), { readableEnded: true });
       readStreamLike(
@@ -581,6 +584,7 @@ suite(
         (error) => reported.push(error),
       );
       source.emit("error", none);
+      await ioTurn();
       deepStrictEqual(reported, [none]);
     });
   },

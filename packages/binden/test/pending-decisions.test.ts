@@ -66,7 +66,7 @@ function refusing(event: string, value: unknown): EventEmitter {
 }
 
 suite("decide()", () => {
-  test("returns what its call returns, and its decision ends once the call has returned or thrown", () => {
+  test("returns what its call returns, and its decision ends once the call has returned or thrown", async () => {
     const failure = new Error("Decided");
     const [reports, report] = reporter();
     const source = new EventEmitter();
@@ -83,14 +83,17 @@ suite("decide()", () => {
         }),
       { message: "Thrown" },
     );
+    // Not even on a later turn
+    await ioTurn();
     deepStrictEqual([returned, reports], ["returned", []]);
     // No longer decided: reported, once
     source.emit("error", failure);
     source.emit("error", failure);
+    await ioTurn();
     deepStrictEqual(reports, [failure]);
   });
 
-  test("of an error of one source: another source that emits it meanwhile reports it", () => {
+  test("of an error of one source: another source that emits it meanwhile reports it", async () => {
     const failure = new Error("Decided for one source");
     const [reports, report] = reporter();
     const [first, second] = [new EventEmitter(), new EventEmitter()];
@@ -100,10 +103,11 @@ suite("decide()", () => {
       first.emit("error", failure);
       second.emit("error", failure);
     });
+    await ioTurn();
     deepStrictEqual(reports, [failure]);
   });
 
-  test("never of a primitive (only an object can be decided): it is reported, and a refusal with it is logged", () => {
+  test("never of a primitive (only an object can be decided): it is reported, and a refusal with it is logged", async () => {
     const [reports, report] = reporter();
     const [refusals, refused] = reporter();
     const source = new EventEmitter();
@@ -115,10 +119,11 @@ suite("decide()", () => {
     decide(refuses, "thrown", () =>
       guard(refuses, emitterMethods, report, false, refused),
     );
+    await ioTurn();
     deepStrictEqual([reports, refusals], [["emitted"], ["thrown"]]);
   });
 
-  test("nests with the same error of the same source: an inner decision that ends first leaves the outer one pending (R2-1)", () => {
+  test("nests with the same error of the same source: an inner decision that ends first leaves the outer one pending (R2-1)", async () => {
     const failure = new Error("Decided twice");
     const [reports, report] = reporter();
     const source = new EventEmitter();
@@ -130,12 +135,14 @@ suite("decide()", () => {
       // Still decided by the outer one
       source.emit("error", failure);
     });
+    await ioTurn();
     deepStrictEqual(reports, []);
     source.emit("error", failure);
+    await ioTurn();
     deepStrictEqual(reports, [failure]);
   });
 
-  test("nests: a send of the same source with the same error that its destroy starts, whose decision ends first, leaves the outer one pending (R2-1)", () => {
+  test("nests: a send of the same source with the same error that its destroy starts, whose decision ends first, leaves the outer one pending (R2-1)", async () => {
     const failure = new Error("Failed before the send");
     const [reports, report] = reporter();
     // Failed without being destroyed (its `errored`): its send destroys it
@@ -164,13 +171,14 @@ suite("decide()", () => {
       cancelled,
       report,
     ).on("error", () => null);
+    await ioTurn();
     deepStrictEqual(
       [outer.errored, inner.map(({ errored }) => errored), reports],
       [failure, [failure], []],
     );
   });
 
-  test("nests with another error of the same source: each ends with its own call", () => {
+  test("nests with another error of the same source: each ends with its own call", async () => {
     const [outer, inner] = [new Error("Outer"), new Error("Inner")];
     const [reports, report] = reporter();
     const source = new EventEmitter();
@@ -183,12 +191,13 @@ suite("decide()", () => {
       source.emit("error", outer);
       source.emit("error", inner);
     });
+    await ioTurn();
     deepStrictEqual(reports, [inner]);
   });
 });
 
 suite("decidedFor()", () => {
-  test("records an error for its source only: not reported for it, but for another source that emits it (R1 F2)", () => {
+  test("records an error for its source only: not reported for it, but for another source that emits it (R1 F2)", async () => {
     const failure = new Error("One error of the application for every stream");
     const [reports, report] = reporter();
     const [first, second] = [new EventEmitter(), new EventEmitter()];
@@ -197,6 +206,7 @@ suite("decidedFor()", () => {
     decidedFor(first, failure);
     first.emit("error", failure);
     second.emit("error", failure);
+    await ioTurn();
     deepStrictEqual(reports, [failure]);
   });
 
@@ -214,13 +224,14 @@ suite("decidedFor()", () => {
     deepStrictEqual([guarded, refusals], [[false, false], [failure]]);
   });
 
-  test("never of a primitive (only an object can be recorded): it is reported each time", () => {
+  test("never of a primitive (only an object can be recorded): it is reported each time", async () => {
     const [reports, report] = reporter();
     const source = new EventEmitter();
     guard(source, emitterMethods, report);
     decidedFor(source, "emitted");
     source.emit("error", "emitted");
     source.emit("error", "emitted");
+    await ioTurn();
     deepStrictEqual(reports, ["emitted", "emitted"]);
   });
 });
@@ -228,7 +239,7 @@ suite("decidedFor()", () => {
 suite(
   "A stream-like source whose `pause()` throws an error of the application, which decides its send",
   () => {
-    test("is destroyed with it, which is not reported for it, but for another source that emits it (R1 F2)", () => {
+    test("is destroyed with it, which is not reported for it, but for another source that emits it (R1 F2)", async () => {
       const failure = new Error("One error of the application");
       const [reports, report] = reporter();
       const source = Object.assign(new Source(), {
@@ -248,6 +259,7 @@ suite(
       guard(other, emitterMethods, report);
       source.emit("error", failure);
       other.emit("error", failure);
+      await ioTurn();
       deepStrictEqual(
         [readable.errored, source.destroys, reports],
         [failure, [[failure]], [failure]],

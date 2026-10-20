@@ -115,7 +115,7 @@ suite("guard() of a source whose code refuses it", () => {
 });
 
 suite("hear() of a source", () => {
-  test("while a send hears it (however many), its guard does not report its error: once none does, it does", () => {
+  test("while a send hears it (however many), its guard does not report its error: once none does, it does", async () => {
     const late: unknown[] = [];
     const source = new Source();
     guard(source, emitterMethods, (error) => late.push(error));
@@ -126,6 +126,8 @@ suite("hear() of a source", () => {
     source.emit("error", "heard by one");
     hear(source, -1);
     source.emit("error", "heard by none");
+    // Reported on a later turn
+    await ioTurn();
     deepStrictEqual(late, ["heard by none"]);
   });
 });

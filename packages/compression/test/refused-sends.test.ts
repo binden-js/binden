@@ -1,9 +1,9 @@
 import { type AddressInfo, connect } from "node:net";
 import { Binden, type Context, releasedFailure } from "binden";
 import { PassThrough, Readable } from "node:stream";
+import { capture, ioTurn } from "./helpers.js";
 import { suite, test } from "node:test";
 import { Compression } from "../index.js";
-import { capture } from "./helpers.js";
 import { deepStrictEqual } from "node:assert/strict";
 import { once } from "node:events";
 
@@ -131,11 +131,14 @@ suite(
             port,
             `${queued ? "GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n" : ""}${refusing}GET /next HTTP/1.1\r\nHost: localhost\r\n\r\n`,
           );
+          const settled = await outcome.promise;
+          // A late error is logged on a later turn
+          await ioTurn();
           deepStrictEqual(
             [
               received.match(/HTTP\/1\.1 \d{3}/gu),
               closed,
-              await outcome.promise,
+              settled,
               captured.records.filter(({ msg }) => msg === releasedFailure)
                 .length,
             ],

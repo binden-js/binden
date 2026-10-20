@@ -208,6 +208,8 @@ suite(
         // Once its listener of `error` is removed, on the next turn
         await ioTurn();
         source.emit("error", new Error("Later"));
+        // Reported on a later turn
+        await ioTurn();
         deepStrictEqual(
           [reported, source.listenerCount("error")],
           // Its guard, and the listener of the send that is left

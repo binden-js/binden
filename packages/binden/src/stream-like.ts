@@ -377,13 +377,45 @@ function isKnown(source: object, error: unknown): boolean {
 }
 
 /**
- * Reports a late error of a source (see `ISourceReport`) once: never an error
- * that is known for it (see `isKnown()`): one that has decided a send, one
- * that a send of it decides meanwhile, or one that has been reported for that
- * source already (e.g. by its send, before the source emits it to its guard),
- * also for a readable of a stream-like source (see `links`). Only an object
- * can be recorded, as by `decided()`: any other value (e.g. a string) is
- * reported each time.
+ * A log that never throws (see `IStreamLikeLogs`): a logger of the
+ * application that throws (e.g. its own `debug()`) leaves no release of a
+ * stream-like source half done (e.g. the readable of `readStreamLike()`
+ * without the error that decides its send, or listeners left on the source),
+ * and throws neither into the events of the source nor out of a turn of its
+ * own. Nothing more can be told then.
+ */
+function quietly<T extends unknown[]>(
+  log: (...args: T) => void,
+): (...args: T) => void {
+  return (...args: T): void => {
+    try {
+      log(...args);
+    } catch {
+      // The logger has failed: nothing more can be told
+    }
+  };
+}
+
+/**
+ * Reports a late error of a source (see `ISourceReport`) once, on a later
+ * turn (every report of a late error, whatever makes it: the guard of the
+ * source, see `guard()`, the listener of a send once it is detached, see
+ * `forwarder()`, or its send, see `reportLate()`), never an error that is
+ * known for it (see `isKnown()`): one that has decided a send, one that a
+ * send of it decides meanwhile, or one that has been reported for that source
+ * already (e.g. by its send, before the source emits it to its guard), also
+ * for a readable of a stream-like source (see `links`). Known when it is
+ * brought, it is dropped at once; else it is checked again on that turn,
+ * once the event that has brought it has reached every listener of the
+ * source, and so has what they schedule within the turn (e.g. the `error` of
+ * a readable of `readStreamLike()` that it destroys, which reaches its send
+ * on the next tick), whichever listens first, or emits it again meanwhile: a
+ * send of the source that it has decided since has recorded it then, and it
+ * is dropped. Only an object can be recorded, as by `decided()`: any other
+ * value (e.g. a string) is reported each time. Until then, it holds the
+ * source, the error and the report (see `ISourceReport`), nothing else; a
+ * report that throws (e.g. a logger of the application whose own `debug()`
+ * throws) is ignored (see `quietly()`), never thrown out of its turn.
  */
 function reportOnce(
   source: object,
@@ -392,19 +424,24 @@ function reportOnce(
 ): void {
   if (isKnown(source, error)) {
     return;
-  } else if (Object(error) === error) {
-    record(source, error as object);
   }
-  report(error);
+  setImmediate(() => {
+    if (isKnown(source, error)) {
+      return;
+    } else if (Object(error) === error) {
+      record(source, error as object);
+    }
+    quietly(report)(error);
+  });
 }
 
 /**
  * Reports a late error of a source (see `ISourceReport`) that its send no
  * longer fails with (e.g. once the response has been ended, see
- * `BindenResponse.#pipe()`): it is reported once, whatever reports it (also
+ * `BindenResponse.#pipe()`): on a later turn, once, whatever reports it (also
  * the guard of the source, which does not while a send hears it, see
- * `hear()`), and never once it has decided a send (see `reportOnce()`). For
- * the packages of binden only.
+ * `hear()`), and never once it has decided a send, also meanwhile (see
+ * `reportOnce()`). For the packages of binden only.
  *
  * @internal
  */
@@ -477,26 +514,6 @@ function unguard(
   } catch (error: unknown) {
     refuse(source, refused, error);
   }
-}
-
-/**
- * A log that never throws (see `IStreamLikeLogs`): a logger of the
- * application that throws (e.g. its own `debug()`) leaves no release of a
- * stream-like source half done (e.g. the readable of `readStreamLike()`
- * without the error that decides its send, or listeners left on the source),
- * and throws neither into the events of the source nor out of a turn of its
- * own. Nothing more can be told then.
- */
-function quietly<T extends unknown[]>(
-  log: (...args: T) => void,
-): (...args: T) => void {
-  return (...args: T): void => {
-    try {
-      log(...args);
-    } catch {
-      // The logger has failed: nothing more can be told
-    }
-  };
 }
 
 /**

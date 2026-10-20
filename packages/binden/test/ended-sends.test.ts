@@ -1,5 +1,5 @@
 import { Binden, type Context, releasedFailure } from "../index.js";
-import { type ICaptured, capture, listen, within } from "./helpers.js";
+import { type ICaptured, capture, ioTurn, listen, within } from "./helpers.js";
 import { PassThrough, Readable } from "node:stream";
 import { converse, get } from "./connection.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
@@ -111,7 +111,10 @@ async function run(
       complete,
       hold,
     });
-    return [received, closed, await within(outcome.promise), captured];
+    const settled = await within(outcome.promise);
+    // A late error is reported on a later turn (see `reportLate()`)
+    await ioTurn();
+    return [received, closed, settled, captured];
   } finally {
     await listening.close();
   }

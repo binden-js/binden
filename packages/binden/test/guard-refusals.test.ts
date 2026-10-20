@@ -341,7 +341,7 @@ suite("guard() of a source", () => {
     );
   });
 
-  test("of a source guarded meanwhile (e.g. by a listener of its `newListener` that releases it): one guard", () => {
+  test("of a source guarded meanwhile (e.g. by a listener of its `newListener` that releases it): one guard", async () => {
     const source = new EventEmitter();
     const reports: unknown[] = [];
     const report = (error: unknown): void => {
@@ -353,6 +353,8 @@ suite("guard() of a source", () => {
     });
     const guarded = guard(source, emitterMethods, report);
     source.emit("error", new Error("Failed"));
+    // Reported on a later turn
+    await ioTurn();
     deepStrictEqual(
       [
         guarded,
@@ -365,7 +367,7 @@ suite("guard() of a source", () => {
     );
   });
 
-  test("forwarder(): forwards to its target until it is detached, then reports a late error as a guard does: not a decided one, nor one that the guard of the source reports", () => {
+  test("forwarder(): forwards to its target until it is detached, then reports a late error as a guard does: not a decided one, nor one that the guard of the source reports", async () => {
     const source = new EventEmitter();
     const forwarded: unknown[] = [];
     const reports: unknown[] = [];
@@ -382,6 +384,8 @@ suite("guard() of a source", () => {
     forward.listener("Late");
     guard(source, emitterMethods, () => null);
     forward.listener("Guarded");
+    // Reported on a later turn
+    await ioTurn();
     deepStrictEqual([forwarded, reports], [["Heard"], ["Late"]]);
   });
 

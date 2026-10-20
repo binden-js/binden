@@ -292,6 +292,8 @@ suite(
         ["A stream-like source has failed", true, [0, 0, 1, 1]],
       );
       source.emit("error", new Error("Later"));
+      // Reported on a later turn
+      await ioTurn();
       deepStrictEqual([recorded.late, recorded.released], [["Later"], []]);
     });
 
@@ -321,6 +323,7 @@ suite(
           source.emit("error", thrown);
         }
         const error = (await failure) as Error;
+        await ioTurn();
         deepStrictEqual(
           [error.message, error.cause === thrown, recorded.late],
           ["A stream-like source has failed", true, []],

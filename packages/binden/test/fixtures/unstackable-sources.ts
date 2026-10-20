@@ -113,6 +113,8 @@ for (const path of ["/setup", "/pause"]) {
   const source = sources.get(path) as Source;
   const before = captured.records.length;
   source.emit("error", new Error("Later"));
+  // Reported on a later turn
+  await new Promise(setImmediate);
   const late = captured.records
     .slice(before)
     .filter(({ msg }) => msg === releasedFailure)

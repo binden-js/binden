@@ -75,7 +75,7 @@ function outcomeOf(promise: Promise<void>): Promise<unknown> {
 }
 
 suite("A late error of a source is reported once", () => {
-  test("by its guard, then by its send (reportLate()): once", () => {
+  test("by its guard, then by its send (reportLate()): once", async () => {
     const reports: unknown[] = [];
     const report = (error: unknown): void => {
       reports.push(error);
@@ -85,10 +85,12 @@ suite("A late error of a source is reported once", () => {
     guard(source, emitterMethods, report);
     source.emit("error", failure);
     reportLate(source, failure, report);
+    // Reported on a later turn
+    await ioTurn();
     deepStrictEqual(reports, [failure]);
   });
 
-  test("by its send (reportLate()), then by its guard once the source emits it: once", () => {
+  test("by its send (reportLate()), then by its guard once the source emits it: once", async () => {
     const reports: unknown[] = [];
     const report = (error: unknown): void => {
       reports.push(error);
@@ -100,10 +102,14 @@ suite("A late error of a source is reported once", () => {
     source.emit("error", failure);
     // Again (e.g. a source that emits its error twice)
     source.emit("error", failure);
+    await ioTurn();
+    // Once more, once it has been reported
+    source.emit("error", failure);
+    await ioTurn();
     deepStrictEqual(reports, [failure]);
   });
 
-  test("never once it has decided a send, by its send nor by its guard", () => {
+  test("never once it has decided a send, by its send nor by its guard", async () => {
     const reports: unknown[] = [];
     const report = (error: unknown): void => {
       reports.push(error);
@@ -114,10 +120,11 @@ suite("A late error of a source is reported once", () => {
     guard(source, emitterMethods, report);
     reportLate(source, failure, report);
     source.emit("error", failure);
+    await ioTurn();
     deepStrictEqual(reports, []);
   });
 
-  test("once for each source that has failed with it", () => {
+  test("once for each source that has failed with it", async () => {
     const reports: unknown[] = [];
     const sources = [new EventEmitter(), new EventEmitter()];
     const failure = new Error("Shared");
@@ -130,13 +137,14 @@ suite("A late error of a source is reported once", () => {
         reports.push([source, error]);
       });
     }
+    await ioTurn();
     deepStrictEqual(reports, [
       [sources[0], failure],
       [sources[1], failure],
     ]);
   });
 
-  test("a value that is not an object (which cannot be recorded) is reported each time", () => {
+  test("a value that is not an object (which cannot be recorded) is reported each time", async () => {
     const reports: unknown[] = [];
     const report = (error: unknown): void => {
       reports.push(error);
@@ -145,6 +153,7 @@ suite("A late error of a source is reported once", () => {
     guard(source, emitterMethods, report);
     reportLate(source, "failed", report);
     source.emit("error", "failed");
+    await ioTurn();
     deepStrictEqual(reports, ["failed", "failed"]);
   });
 
@@ -176,6 +185,7 @@ suite("A late error of a source is reported once", () => {
     source.emit("error", failure);
     await ioTurn();
     source.emit("error", failure);
+    await ioTurn();
     deepStrictEqual(reports, [failure]);
   });
 });
