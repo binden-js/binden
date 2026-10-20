@@ -337,6 +337,94 @@ const destroyReadable = Reflect.get(Readable.prototype, "destroy") as (
   this: Readable,
 ) => unknown;
 
+/**
+ * The getter of `stack` of the engine: on the versions of Node.js that
+ * binden supports, every native error (also an instance of a subclass, a
+ * `DOMException` or an object of `Error.captureStackTrace()`) has it as an
+ * accessor of its own. It formats the stack once it is first read (by
+ * `Error.prepareStackTrace`, which may be of the application, and may throw:
+ * the stack is not formatted then), and returns it as formatted afterwards.
+ */
+function engineStack(): unknown {
+  const probe = {};
+  Error.captureStackTrace(probe);
+  // An object in any case (none would be `{}`)
+  const descriptor = Object(
+    Reflect.getOwnPropertyDescriptor(probe, "stack"),
+  ) as object;
+  return Reflect.get(descriptor, "get");
+}
+
+/** The getter of `stack` of the engine (see `engineStack()`) */
+const nativeStack = engineStack();
+
+/**
+ * Formats the stack of a value by the getter of the engine (see
+ * `engineStack()`): whether it is formatted. A `prepareStackTrace` of the
+ * application may throw: the stack is not formatted then, and Node.js would
+ * run it again.
+ */
+function formats(value: unknown): boolean {
+  try {
+    Reflect.get(Object(value) as object, "stack", value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether Node.js reads the `stack` of a value without running code of the
+ * application, as it does to destroy a `Readable` with it (before the
+ * stream is destroyed, and again once its `_destroy()` has called back): a
+ * value whose `stack` (its own, or of the nearest prototype that has one) is
+ * a value, a value without a `stack`, or one whose `stack` is the getter of
+ * the engine (see `engineStack()`), read here first: once formatted, its
+ * stack is kept, and Node.js reads it as it is. Never through a proxy (its
+ * traps are code of the application), nor by a getter of the application,
+ * which is not called (it may return a string here, and throw once Node.js
+ * reads it).
+ */
+function readsSafely(value: unknown): boolean {
+  for (
+    let link: object | null = Object(value) as object;
+    link !== null;
+    link = Reflect.getPrototypeOf(link)
+  ) {
+    if (isProxy(link)) {
+      return false;
+    }
+    const descriptor = Reflect.getOwnPropertyDescriptor(link, "stack");
+    if (typeof descriptor !== "undefined") {
+      return (
+        "value" in descriptor ||
+        (Reflect.get(descriptor, "get") === nativeStack && formats(value))
+      );
+    }
+  }
+  return true;
+}
+
+/**
+ * What a `Readable` is destroyed with in place of a value whose `stack`
+ * Node.js cannot read safely (see `readsSafely()`): an `Error` that carries
+ * it as its `cause`, formatted (see `formatStack()`), decided as well (see
+ * `decided()`), whose stack is its header when a `prepareStackTrace` of the
+ * application fails to format it (Node.js would run it again)
+ */
+function carrierOf(cause: unknown): Error {
+  const carrier = formatStack(new Error("A stream has failed", { cause }));
+  if (!readsSafely(carrier)) {
+    Object.defineProperty(carrier, "stack", {
+      configurable: true,
+      value: "Error: A stream has failed",
+      writable: true,
+    });
+  }
+  decided(carrier);
+  return carrier;
+}
+
 /** The report of a late error of a source of a response that is not owned */
 function unreported(): void {
   // Nobody to tell
@@ -3299,29 +3387,25 @@ export class BindenResponse<
         }
       };
       /**
-       * Destroys the source under its guard, by its own `destroy()`, with the
-       * error that binden has failed the send with (`failure`), or without
-       * one. A value that Node.js cannot take as an error (it reads its
-       * `stack`, e.g. by a getter that throws) makes it throw before anything
-       * is destroyed: the source is then destroyed with an `Error` whose
-       * `cause` it is, decided as well (see `decided()`), as for a stream-like
-       * source, so that it is destroyed in any case (e.g. its file closed).
-       * What it throws otherwise (also once it is destroyed) is thrown.
+       * Destroys the source under its guard, by one call of its own
+       * `destroy()`, with the error that binden has failed the send with
+       * (`failure`), or without one. Node.js reads the `stack` of that error
+       * (before anything is destroyed, and again once its `_destroy()` has
+       * called back): it is the error itself only when Node.js reads it
+       * without running code of the application (see `readsSafely()`), and
+       * otherwise an `Error` that carries it as its `cause` (see
+       * `carrierOf()`), so that the source is destroyed in any case (e.g. its
+       * file closed). What its `destroy()` throws is thrown (see `drop`).
        */
       const destroyWith = (
         failure: { readonly error: unknown } | null,
       ): void => {
-        try {
-          data.destroy(failure?.error as Error | undefined);
-        } catch (error: unknown) {
-          if (failure === null || data.destroyed) {
-            throw error;
-          }
-          const wrapped = formatStack(
-            new Error("A stream has failed", { cause: failure.error }),
-          );
-          decided(wrapped);
-          data.destroy(wrapped);
+        if (failure === null) {
+          data.destroy();
+        } else if (readsSafely(failure.error)) {
+          data.destroy(failure.error as Error);
+        } else {
+          data.destroy(carrierOf(failure.error));
         }
       };
       /**
