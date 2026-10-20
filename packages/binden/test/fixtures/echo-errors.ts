@@ -28,10 +28,21 @@ setTimeout(() => {
   process.exit(2);
 }, 10_000).unref();
 
-/** Settles after `ms` milliseconds */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+/**
+ * Settles once the request has closed, on the turn after its close: when the
+ * guard of the request, whose listener of `close` comes before the one added
+ * here, has removed itself on that turn (an immediate that runs before the
+ * one queued here, unlike a timer, which a loaded machine may run first). No
+ * listener of `error` is added (unlike `once()`).
+ */
+async function closed(request: IncomingMessage): Promise<void> {
+  if (!request.closed) {
+    await new Promise((resolve) => {
+      request.once("close", resolve);
+    });
+  }
+  await new Promise((resolve) => {
+    setImmediate(resolve);
   });
 }
 
@@ -84,7 +95,7 @@ if (mode === "write") {
   });
   const outcome = await sent;
   // The guard is removed on the turn after the close
-  await sleep(10);
+  await closed(request);
   process.stdout.write(`${outcome} ${request.listenerCount("error")}\n`);
 } else {
   const captured = capture();
@@ -123,7 +134,7 @@ if (mode === "write") {
   }
   const record = await captured.waitFor(releasedFailure);
   // The guard is removed on the turn after the close
-  await sleep(10);
+  await closed(request);
   server.close();
   process.stdout.write(
     `${outcome} ${request.listenerCount("error")}\n${String(record.level)} ${String((record.failure as { code?: unknown }).code)}\n`,
