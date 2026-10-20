@@ -853,12 +853,17 @@ export function readStreamLike(
   /** The listener of `error` of the send (see `detach()`) */
   const errors = forwarder((error: unknown) => {
     listened = true;
-    // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
-    fail(error);
-    // Only while it is read: once the send has settled, this listener is
-    // detached (see `detach()`)
-    // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
-    dropFailed();
+    // One decision, until the source that it fails is released: code of the
+    // source that emits that error again meanwhile (e.g. its own destroy())
+    // is not reported (see `decide()`), whatever reaches the send first
+    decide(source, error, () => {
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
+      fail(error);
+      // Only while it is read: once the send has settled, this listener is
+      // detached (see `detach()`)
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
+      dropFailed();
+    });
   });
   const call = (method: IMethod, ...args: unknown[]): void => {
     Reflect.apply(method, source, args);
@@ -1051,7 +1056,8 @@ export function readStreamLike(
    * false`), so that what it holds is freed, as for a cancellation (see
    * `destroy`), but without its error, which it has emitted already: under
    * its guard, or else the listener of `error` of the send, which has heard
-   * it, and is kept (see `detach()`)
+   * it, and is kept (see `detach()`). That error is still pending (see
+   * `errors`): a destroy of its own that emits it again is not reported.
    */
   const dropFailed = (): void => {
     try {
