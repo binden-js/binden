@@ -73,6 +73,7 @@ import {
   reportLate,
   resolved,
   streamLikeOf,
+  uncarried,
 } from "./stream-like.js";
 import {
   IncomingMessage,
@@ -3196,7 +3197,13 @@ export class BindenResponse<
       // Read once (e.g. a getter of the source)
       const { destroyed, errored } = data;
       if (destroyed || errored !== null) {
-        return this.#unreadable(data, destroyed, errored);
+        // The value that the readable of a stream-like source stands for, in
+        // place of its carrier (see `uncarried()`)
+        return this.#unreadable(
+          data,
+          destroyed,
+          uncarried(errored) as Error | null,
+        );
       }
     }
     const operation = this.#operation();
@@ -3252,14 +3259,16 @@ export class BindenResponse<
       /**
        * The listener of `error` of the send (every error, also one emitted
        * while the source is destroyed later), which holds nothing of the
-       * send once it has settled (see `forwarder()`)
+       * send once it has settled (see `forwarder()`). The readable of a
+       * stream-like source fails the send with the value of its source, in
+       * place of its carrier (see `uncarried()`)
        */
       const errors = forwarder((error: unknown) => {
         heard = true;
         listened = true;
         operation.run(() => {
           // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
-          fail(error, false, true);
+          fail(uncarried(error), false, true);
         });
       });
       /**

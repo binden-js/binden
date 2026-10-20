@@ -148,7 +148,13 @@ function lateOf(records: readonly Record<string, unknown>[]): unknown[] {
 suite(
   "A send of a stream-like source that fails with an error of binden, whose application destroys another stream with it",
   () => {
-    for (const [name, fail] of failures) {
+    // Not for what code of the source throws: the send rejects with that
+    // value itself, an object of the application (see
+    // `stream-like-safe-stacks.test.ts`), not with the error of binden that
+    // carries it
+    for (const [name, fail] of failures.filter(
+      ([named]) => !named.startsWith("code"),
+    )) {
       test(`${name}: the send rejects with it, which is not logged for the other stream (R3.22-2)`, async () => {
         const captured = capture();
         let failure: unknown = null;
@@ -171,13 +177,9 @@ suite(
             return;
           }
           const source = new Source();
-          if (name.startsWith("code")) {
+          setImmediate(() => {
             fail(source);
-          } else {
-            setImmediate(() => {
-              fail(source);
-            });
-          }
+          });
           await context.send(source).catch((error: unknown) => {
             failure = error;
           });

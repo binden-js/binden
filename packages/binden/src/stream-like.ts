@@ -1,6 +1,6 @@
+import { carrierOf, formatStack, readsSafely } from "./exchange.js";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
-import { formatStack } from "./exchange.js";
 
 /** A listener of an event of a stream-like source (see `IStreamLike`) */
 export type IStreamLikeListener = (...args: unknown[]) => unknown;
@@ -266,6 +266,46 @@ function premature(): Error {
       code: "ERR_STREAM_PREMATURE_CLOSE",
     }),
   );
+}
+
+/**
+ * The values of stream-like sources that the readables of `readStreamLike()`
+ * have been destroyed for, by the carriers that they have been destroyed
+ * with in their place (see `safely()`)
+ */
+const carriers = new WeakMap<object, unknown>();
+
+/**
+ * What a readable of `readStreamLike()` is destroyed with for a value of its
+ * source (an error that it emits, or what its code throws), as the send of a
+ * Node.js `Readable` destroys its source (see `readsSafely()`): the value
+ * itself only when Node.js reads its `stack` without running code of the
+ * application, otherwise its carrier (see `carrierOf()`: an error of binden,
+ * decided as by `own()`, with a stack that Node.js reads as it is, also when
+ * a `prepareStackTrace` of the application fails), which the send takes for
+ * that value (see `uncarried()`)
+ */
+function safely(value: unknown): unknown {
+  if (readsSafely(value)) {
+    return value;
+  }
+  const carrier = carrierOf(value);
+  carriers.set(carrier, value);
+  return carrier;
+}
+
+/**
+ * The value that an error of a readable of `readStreamLike()` stands for:
+ * the value of its source that a carrier carries (see `safely()`), which
+ * the send rejects with (and decides, see `decidedFor()`), as the send of a
+ * Node.js `Readable` does, or else the error itself. For the packages of
+ * binden only.
+ *
+ * @internal
+ */
+export function uncarried(error: unknown): unknown {
+  const carrier = error as object;
+  return carriers.has(carrier) ? carriers.get(carrier) : error;
 }
 
 /**
@@ -851,23 +891,28 @@ function hooked(hooks: { current: IReadableHooks | null }): Readable {
  * an `end` or a `close` once destroyed, whose destroy may fail after the turn
  * that decides the send).
  *
- * Code of the source that throws while its listeners are added (its own
- * `on()`, e.g. by a listener of its `newListener`), or in its `pause()`,
- * gives a readable destroyed with what it has thrown (a falsy value, which
- * Node.js drops as an error, as a premature close, with which the source is
- * destroyed, decided; a value that Node.js cannot take as an error, e.g.
- * whose `stack` getter throws, wrapped in an `Error` whose `cause` it is),
- * and releases the source as for a cancellation, with it. A source that
- * refuses the listener of `error` of its guard keeps the one of the send
- * (see `forwarder()`), and is destroyed without the error that decides the
- * send; one that has neither is left untouched (see `releaseStreamLike()`):
- * `unreleased()` tells it. A refusal of its guard, a `pause()` that throws
- * once it is no longer read, and a removal that throws are logged by `logs`
- * (see `IStreamLikeLogs`), not as late errors. A log that throws (also
- * `unreleased()`, e.g. a logger of the application whose own `debug()`
- * throws) is ignored, and the release goes on (see `quietly()`). Once
- * destroyed, the readable holds none of them, nor `reason()` (see
- * `hooked()`).
+ * Code of the source that throws while its listeners are added (its own `on()`,
+ * e.g. by a listener of its `newListener`), or in its `pause()`, gives a
+ * readable destroyed with what it has thrown (a falsy value, which Node.js
+ * drops as an error, as a premature close, with which the source is destroyed,
+ * decided), and releases the source as for a cancellation, with it. The
+ * readable is destroyed once, with a value of the source (its error, or what
+ * its code has thrown) only when Node.js reads its `stack` without running code
+ * of the application, otherwise with its carrier, an `Error` whose `cause` it
+ * is (see `safely()`, e.g. for a `stack` getter, which may return a string once
+ * and throw then, or a `prepareStackTrace` of the application that throws), and
+ * so is the source then: the send takes the carrier for the value (see
+ * `uncarried()`), as the send of a Node.js `Readable` rejects with it, whatever
+ * it destroys its source with. A source that refuses the listener of `error` of
+ * its guard keeps the one of the send (see `forwarder()`), and is destroyed
+ * without the error that decides the send; one that has neither is left
+ * untouched (see `releaseStreamLike()`): `unreleased()` tells it. A refusal of
+ * its guard, a `pause()` that throws once it is no longer read, and a removal
+ * that throws are logged by `logs` (see `IStreamLikeLogs`), not as late errors.
+ * A log that throws (also `unreleased()`, e.g. a logger of the application
+ * whose own `debug()` throws) is ignored, and the release goes on (see
+ * `quietly()`). Once destroyed, the readable holds none of them, nor `reason()`
+ * (see `hooked()`).
  */
 export function readStreamLike(
   source: object,
@@ -1017,11 +1062,12 @@ export function readStreamLike(
       destroy: (error, callback): void => {
         if (!settled) {
           settled = true;
-          // The error that it is destroyed with decides the send: pending
+          // The error that it is destroyed with decides the send (for a
+          // carrier, the value that it carries, see `uncarried()`): pending
           // before its guard is installed, and while it is released, so that
           // its code that emits it or throws it meanwhile (e.g. a listener of
           // its `newListener`, or its destroy) is not reported (see `decide()`)
-          decide(source, error, () => {
+          decide(source, uncarried(error), () => {
             // Its guard listens before its listeners are removed, and before
             // it is paused or destroyed, once the listener of `error` of the
             // send no longer fails it (see `detach()`)
@@ -1042,8 +1088,9 @@ export function readStreamLike(
               // decides the send, which the send has failed with already
               releaseBy(source, destroy, released);
             } else if (undecided && error !== null) {
-              // What the send decides (see `unreadable()`): also an `Error`
-              // that carries what its code has thrown (see `destroyWith()`)
+              // What the send decides (see `unreadable()`), as the readable
+              // has it: never a value whose `stack` Node.js cannot read
+              // safely, but its carrier (see `destroyWith()`)
               releaseBy(source, destroy, released, error);
             } else if (error === null && resolutions.has(readable)) {
               // Its send has resolved (see `resolved()`): without an error, as
@@ -1080,20 +1127,16 @@ export function readStreamLike(
   links.set(readable, source);
   /**
    * Destroys the readable with an error of the source, or with what its code
-   * has thrown: a value that Node.js cannot take as an error (it reads its
-   * `stack`, e.g. by a getter that throws) is wrapped in an `Error` whose
-   * `cause` it is (an error of binden, see `own()`), so that the readable is
-   * destroyed in any case, and the listeners of the send are released (see
-   * `destroy`)
+   * has thrown, by one call of its `destroy()`: with that value itself only
+   * when Node.js reads its `stack` (once before the readable is destroyed,
+   * and again once `destroy` has called back) without running code of the
+   * application, otherwise with its carrier (see `safely()`), which the send
+   * takes for that value, so that the readable is destroyed in any case,
+   * emits its `error` and its `close`, and releases the source (see
+   * `destroy`) with that same value
    */
   const destroyWith = (error: unknown): void => {
-    try {
-      readable.destroy(error as Error);
-    } catch {
-      // An error of binden (see `own()`), which the send rejects with
-      const message = "A stream-like source has failed";
-      readable.destroy(own(formatStack(new Error(message, { cause: error }))));
-    }
+    readable.destroy(safely(error) as Error);
   };
   /**
    * Fails the readable with an error of the source (`closed`: by its

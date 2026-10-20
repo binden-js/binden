@@ -289,7 +289,7 @@ suite(
             source.listenerCount(event),
           ),
         ],
-        ["A stream-like source has failed", true, [0, 0, 1, 1]],
+        ["A stream has failed", true, [0, 0, 1, 1]],
       );
       source.emit("error", new Error("Later"));
       // Reported on a later turn
@@ -326,7 +326,7 @@ suite(
         await ioTurn();
         deepStrictEqual(
           [error.message, error.cause === thrown, recorded.late],
-          ["A stream-like source has failed", true, []],
+          ["A stream has failed", true, []],
           how,
         );
       }
@@ -336,8 +336,8 @@ suite(
       deepStrictEqual(fixture("unstackable-sources.ts"), {
         status: 0,
         stdout:
-          "/setup 500 rejected:A stream-like source has failed late=Later\n" +
-          "/pause 200 rejected:A stream-like source has failed late=Later\n",
+          "/setup 500 rejected:original threw= late=Later\n" +
+          "/pause 200 rejected:original threw= late=Later\n",
         stderr: "",
       });
     });
