@@ -27,6 +27,13 @@ const mediaType = new RegExp(`^${token}/${token}$`, "u");
 /** The name of a parameter */
 const parameterName = new RegExp(`^${token}$`, "u");
 
+/** The options of a valid media type, and all its parameters by name */
+interface IChecked {
+  charset: string | null;
+  boundary: string | null;
+  readonly parameters: ReadonlyMap<string, string>;
+}
+
 /** The `Content-Type` header (RFC 9110, section 8.3) */
 export class ContentType implements IContentType {
   readonly #type: string;
@@ -46,47 +53,19 @@ export class ContentType implements IContentType {
     boundary = null,
     parameters = {},
   }: IContentType) {
-    if (!mediaType.test(type)) {
-      throw formatStack(new TypeError(`Invalid media type: ${type}`));
-    }
-    const all = new Map<string, string>();
-    for (const [name, value] of Object.entries(parameters)) {
-      const key = name.toLowerCase();
-      if (!all.has(key)) {
-        all.set(key, value);
-      }
+    const checked = ContentType.#checked({
+      type,
+      charset,
+      boundary,
+      parameters,
+    });
+    if (typeof checked === "string") {
+      throw formatStack(new TypeError(checked));
     }
     this.#type = type;
-    this.#boundary = null;
-    this.#charset = null;
-    // `boundary` (of `multipart/form-data` only, in any case) and `charset`
-    // (of the other types) are the options themselves
-    if (type.toLowerCase() === "multipart/form-data") {
-      if (typeof boundary !== "string" || !boundary) {
-        throw formatStack(new TypeError("`boundary` is missing"));
-      }
-      this.#boundary = boundary;
-      all.set("boundary", boundary);
-      all.delete("charset");
-    } else {
-      all.delete("boundary");
-      if (typeof charset === "string" && charset) {
-        this.#charset = charset;
-        all.set("charset", charset);
-      } else {
-        all.delete("charset");
-      }
-    }
-    for (const [name, value] of all) {
-      if (!parameterName.test(name)) {
-        throw formatStack(new TypeError(`Invalid parameter name: ${name}`));
-      } else if (!fieldValue.test(value)) {
-        throw formatStack(
-          new TypeError(`Invalid value of the parameter ${name}`),
-        );
-      }
-    }
-    this.#parameters = all;
+    this.#boundary = checked.boundary;
+    this.#charset = checked.charset;
+    this.#parameters = checked.parameters;
   }
 
   /** The media type (in lowercase when parsed) */
@@ -138,17 +117,68 @@ export class ContentType implements IContentType {
       }
     }
 
-    try {
-      return new ContentType({
-        type,
-        charset: parameters.get("charset") ?? null,
-        boundary: parameters.get("boundary") ?? null,
-        parameters: Object.fromEntries(parameters),
-      });
-    } catch {
-      // E.g. not a media type, or `multipart/form-data` without a boundary
-      return null;
+    const init = {
+      type,
+      charset: parameters.get("charset") ?? null,
+      boundary: parameters.get("boundary") ?? null,
+      parameters: Object.fromEntries(parameters),
+    };
+    // Checked first: an invalid header (e.g. not a media type, or
+    // `multipart/form-data` without a boundary) creates no error, whose stack
+    // would be formatted (see `formatStack()`)
+    return typeof ContentType.#checked(init) === "string"
+      ? null
+      : new ContentType(init);
+  }
+
+  /**
+   * The state of a valid media type (see the constructor): its `charset`, its
+   * `boundary` and all its parameters by their names in lowercase (the first
+   * one of a name wins, but the options), or why it is invalid
+   */
+  static #checked({
+    type,
+    charset = null,
+    boundary = null,
+    parameters = {},
+  }: IContentType): IChecked | string {
+    if (!mediaType.test(type)) {
+      return `Invalid media type: ${type}`;
     }
+    const all = new Map<string, string>();
+    for (const [name, value] of Object.entries(parameters)) {
+      const key = name.toLowerCase();
+      if (!all.has(key)) {
+        all.set(key, value);
+      }
+    }
+    // `boundary` (of `multipart/form-data` only, in any case) and `charset`
+    // (of the other types) are the options themselves
+    const state: IChecked = { charset: null, boundary: null, parameters: all };
+    if (type.toLowerCase() === "multipart/form-data") {
+      if (typeof boundary !== "string" || !boundary) {
+        return "`boundary` is missing";
+      }
+      state.boundary = boundary;
+      all.set("boundary", boundary);
+      all.delete("charset");
+    } else {
+      all.delete("boundary");
+      if (typeof charset === "string" && charset) {
+        state.charset = charset;
+        all.set("charset", charset);
+      } else {
+        all.delete("charset");
+      }
+    }
+    for (const [name, value] of all) {
+      if (!parameterName.test(name)) {
+        return `Invalid parameter name: ${name}`;
+      } else if (!fieldValue.test(value)) {
+        return `Invalid value of the parameter ${name}`;
+      }
+    }
+    return state;
   }
 
   /** A token as is, anything else as a quoted string */

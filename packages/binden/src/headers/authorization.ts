@@ -36,17 +36,9 @@ export class Authorization implements IAuthorization {
    * Anything else throws a `TypeError`.
    */
   public constructor({ type, credentials = null }: IAuthorization) {
-    if (!Authorization.isValidType(type)) {
-      throw formatStack(
-        new TypeError(`Unsupported authentication scheme: ${String(type)}`),
-      );
-    } else if (
-      credentials !== null &&
-      (credentials === "" ||
-        credentials !== credentials.trim() ||
-        !fieldValue.test(credentials))
-    ) {
-      throw formatStack(new TypeError("Invalid credentials"));
+    const refusal = Authorization.#refusal({ type, credentials });
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
     }
     this.#type = type;
     this.#credentials = credentials;
@@ -91,15 +83,29 @@ export class Authorization implements IAuthorization {
     }
 
     const credentials = rest.trim();
-    try {
-      return new Authorization({
-        type,
-        credentials: credentials === "" ? null : credentials,
-      });
-    } catch {
-      // E.g. control characters
-      return null;
+    const init = { type, credentials: credentials === "" ? null : credentials };
+    // Checked first: invalid credentials (e.g. with control characters)
+    // create no error, whose stack would be formatted (see `formatStack()`)
+    return Authorization.#refusal(init) === null
+      ? new Authorization(init)
+      : null;
+  }
+
+  /**
+   * Why a header is invalid (see the constructor), `null` when it is valid
+   */
+  static #refusal({ type, credentials = null }: IAuthorization): string | null {
+    if (!Authorization.isValidType(type)) {
+      return `Unsupported authentication scheme: ${String(type)}`;
+    } else if (
+      credentials !== null &&
+      (credentials === "" ||
+        credentials !== credentials.trim() ||
+        !fieldValue.test(credentials))
+    ) {
+      return "Invalid credentials";
     }
+    return null;
   }
 
   /** The supported schemes by their lowercase names */

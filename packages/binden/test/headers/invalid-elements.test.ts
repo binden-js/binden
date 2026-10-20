@@ -2,6 +2,9 @@ import {
   Accept,
   AcceptCharset,
   AcceptLanguage,
+  Authorization,
+  ContentRange,
+  ContentType,
   Cookie,
   Forwarded,
 } from "../../index.js";
@@ -58,6 +61,39 @@ suite(
           Forwarded.parse('for="\\\u0001", for=a').filter(
             (element) => element !== null,
           ),
+        1,
+      ],
+      [
+        "Content-Type",
+        (): unknown[] =>
+          [
+            "x",
+            "multipart/form-data",
+            "text/plain; a=\u0001",
+            "text/plain; charset=utf-8",
+          ]
+            .map((input) => ContentType.fromString(input))
+            .filter((element) => element !== null),
+        1,
+      ],
+      [
+        "Content-Range",
+        (): unknown[] =>
+          [
+            "bytes 5-1/9",
+            "bytes 0-9/5",
+            "bytes 0-99999999999999999999/1",
+            "bytes */99999999999999999999",
+            "bytes 0-1/9",
+          ].flatMap((input) => ContentRange.fromString(input)),
+        1,
+      ],
+      [
+        "Authorization",
+        (): unknown[] =>
+          ["Basic a\u0001b", "Basic abc=="]
+            .map((input) => Authorization.fromString(input))
+            .filter((element) => element !== null),
         1,
       ],
     ] as const) {

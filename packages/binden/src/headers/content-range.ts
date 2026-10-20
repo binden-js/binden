@@ -17,33 +17,9 @@ export class ContentRange extends Range implements IContentRange {
    * and the size of the content: anything else throws a `TypeError`
    */
   public constructor({ start = null, end = null, size }: IContentRange) {
-    if (typeof start === "number" && !Number.isSafeInteger(start)) {
-      throw formatStack(new TypeError("`start` is not an integer"));
-    } else if (typeof start === "number" && start < 0) {
-      throw formatStack(new TypeError("`start` is less than zero"));
-    } else if (typeof end === "number" && !Number.isSafeInteger(end)) {
-      throw formatStack(new TypeError("`end` is not an integer"));
-    } else if (typeof end === "number" && end < 0) {
-      throw formatStack(new TypeError("`end` is less than zero"));
-    } else if (size !== "*" && !Number.isSafeInteger(size)) {
-      throw formatStack(new TypeError("`size` is not an integer"));
-    } else if (size !== "*" && size < 0) {
-      throw formatStack(new TypeError("`size` is less than zero"));
-    } else if (typeof end === "number" && size !== "*" && end >= size) {
-      throw formatStack(new TypeError("`end` is greater than `size`"));
-    } else if (start === null && end === null && size === "*") {
-      // `bytes *\/*` is not a content range (RFC 9110, section 14.4)
-      throw formatStack(new TypeError("An unsatisfied range needs a `size`"));
-    } else if (typeof start !== "number" && typeof end === "number") {
-      throw formatStack(new TypeError("`start` is missing"));
-    } else if (typeof start === "number" && typeof end !== "number") {
-      throw formatStack(new TypeError("`end` is missing"));
-    } else if (
-      typeof start === "number" &&
-      typeof end === "number" &&
-      end < start
-    ) {
-      throw formatStack(new TypeError("`end` is less than `start`"));
+    const refusal = ContentRange.#refusal({ start, end, size });
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
     }
 
     super({ start, end });
@@ -80,22 +56,62 @@ export class ContentRange extends Range implements IContentRange {
       input ?? "",
     )?.groups ?? {};
 
-    try {
-      if (typeof length === "string") {
-        return [new ContentRange({ size: Number(length) })];
-      } else if (typeof first === "string" && typeof last === "string") {
-        return [
-          new ContentRange({
-            start: Number(first),
-            end: Number(last),
-            size: size === "*" ? size : Number(size),
-          }),
-        ];
-      }
-    } catch {
-      // E.g. `bytes 1-0/5`, or a position that is not a safe integer
+    const init: IContentRange | null =
+      typeof length === "string"
+        ? { size: Number(length) }
+        : typeof first === "string" && typeof last === "string"
+          ? {
+              start: Number(first),
+              end: Number(last),
+              size: size === "*" ? size : Number(size),
+            }
+          : null;
+    // Checked first: an invalid range (e.g. `bytes 1-0/5`, or a position that
+    // is not a safe integer) creates no error, whose stack would be formatted
+    // (see `formatStack()`). A valid one is a valid `Range` as well.
+    return init !== null && ContentRange.#refusal(init) === null
+      ? [new ContentRange(init)]
+      : [];
+  }
+
+  /**
+   * Why a content range is invalid (see the constructor), `null` when it is
+   * valid (and so is its range)
+   */
+  static #refusal({
+    start = null,
+    end = null,
+    size,
+  }: IContentRange): string | null {
+    if (typeof start === "number" && !Number.isSafeInteger(start)) {
+      return "`start` is not an integer";
+    } else if (typeof start === "number" && start < 0) {
+      return "`start` is less than zero";
+    } else if (typeof end === "number" && !Number.isSafeInteger(end)) {
+      return "`end` is not an integer";
+    } else if (typeof end === "number" && end < 0) {
+      return "`end` is less than zero";
+    } else if (size !== "*" && !Number.isSafeInteger(size)) {
+      return "`size` is not an integer";
+    } else if (size !== "*" && size < 0) {
+      return "`size` is less than zero";
+    } else if (typeof end === "number" && size !== "*" && end >= size) {
+      return "`end` is greater than `size`";
+    } else if (start === null && end === null && size === "*") {
+      // `bytes *\/*` is not a content range (RFC 9110, section 14.4)
+      return "An unsatisfied range needs a `size`";
+    } else if (typeof start !== "number" && typeof end === "number") {
+      return "`start` is missing";
+    } else if (typeof start === "number" && typeof end !== "number") {
+      return "`end` is missing";
+    } else if (
+      typeof start === "number" &&
+      typeof end === "number" &&
+      end < start
+    ) {
+      return "`end` is less than `start`";
     }
-    return [];
+    return null;
   }
 }
 
