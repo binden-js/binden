@@ -808,6 +808,51 @@ export function releaseStreamLike(
   releaseBy(source, methods.destroy ?? methods.pause, logs.released);
 }
 
+/** A listener of an event of a stream-like source that `readStreamLike()` adds */
+type IAdded = (...args: never[]) => void;
+
+/**
+ * A listener that the readable of a stream-like source adds to it (see
+ * `readStreamLike()`), and what forgets its handler once it is removed (see
+ * `relay()`)
+ */
+interface IRelay {
+  /** The listener that the source has */
+  readonly listener: IAdded;
+  /** Forgets its handler: the listener does nothing from then on */
+  drop(): void;
+}
+
+/**
+ * A listener of a stream-like source that calls `handler` until it is
+ * dropped (see `IRelay`), once the readable of `readStreamLike()` removes
+ * it: one that a removal that throws (e.g. a `removeListener()` of the
+ * source) leaves on the source then holds nothing of the readable, nor of its
+ * send (a function of its own scope, as the hooks of the readable, see
+ * `hooked()`). A Node.js `Readable` keeps such a listener of its own, which
+ * is the application's.
+ */
+function relay(handler: IAdded): IRelay {
+  const holder: { current: IAdded | null } = { current: handler };
+  return {
+    listener: (...args: never[]): void => {
+      holder.current?.(...args);
+    },
+    drop: (): void => {
+      holder.current = null;
+    },
+  };
+}
+
+/**
+ * Forgets nothing: the listener of `error` of a send holds nothing of it once
+ * it is detached (see `forwarder()`), and reports the later errors of a
+ * source that a removal that throws leaves it on
+ */
+function forwarded(): void {
+  // Nothing to forget
+}
+
 /** The hooks of a readable of `readStreamLike()` (see `hooked()`) */
 interface IReadableHooks {
   /** Reads more of the source */
@@ -873,23 +918,24 @@ function hooked(hooks: { current: IReadableHooks | null }): Readable {
  * one of `error` on the next turn (which an error emitted after the end or the
  * close would otherwise crash the process without a listener of the
  * application, and is reported as a late error). A removal that throws is
- * logged by `logs` (see `IStreamLikeLogs`). A source that has ended already is
- * an empty body, one destroyed before its end closes the readable at once (with
- * its error, its `errored`, without being destroyed again), and one that has
- * failed without being destroyed (its `errored`, e.g. of `readable-stream` 4
- * with `autoDestroy: false`) destroys it at once with that error, and is
- * released with it: none of them is listened to. Such an error is decided by
- * the send (see `BindenResponse.#unreadable()`), which rejects with it, or
- * reports it once (also for the source, see `reportOnce()`) when the response
- * has ended meanwhile (e.g. by code of the source): no guard reports it
- * meanwhile (e.g. emitted at once by the destroy of the source, or thrown again
- * by its code while the guard is installed). The guard of a source (see
- * `guard()`) listens before the listeners of the send are removed, and reports
- * a later error of one that has ended (whose destroy, e.g. by `autoDestroy`,
- * may fail after the end), failed or closed, that it cancels (also without
- * `destroy()`), or that the application has destroyed (before the send, or by
- * an `end` or a `close` once destroyed, whose destroy may fail after the turn
- * that decides the send).
+ * logged by `logs` (see `IStreamLikeLogs`), and the listener that it leaves
+ * holds nothing of the send (see `relay()`, `forwarder()`). A source that has
+ * ended already is an empty body, one destroyed before its end closes the
+ * readable at once (with its error, its `errored`, without being destroyed
+ * again), and one that has failed without being destroyed (its `errored`, e.g.
+ * of `readable-stream` 4 with `autoDestroy: false`) destroys it at once with
+ * that error, and is released with it: none of them is listened to. Such an
+ * error is decided by the send (see `BindenResponse.#unreadable()`), which
+ * rejects with it, or reports it once (also for the source, see `reportOnce()`)
+ * when the response has ended meanwhile (e.g. by code of the source): no guard
+ * reports it meanwhile (e.g. emitted at once by the destroy of the source, or
+ * thrown again by its code while the guard is installed). The guard of a source
+ * (see `guard()`) listens before the listeners of the send are removed, and
+ * reports a later error of one that has ended (whose destroy, e.g. by
+ * `autoDestroy`, may fail after the end), failed or closed, that it cancels
+ * (also without `destroy()`), or that the application has destroyed (before the
+ * send, or by an `end` or a `close` once destroyed, whose destroy may fail
+ * after the turn that decides the send).
  *
  * Code of the source that throws while its listeners are added (its own `on()`,
  * e.g. by a listener of its `newListener`), or in its `pause()`, gives a
@@ -929,9 +975,11 @@ export function readStreamLike(
   const untouched = quietly(unreleased);
   /**
    * The listeners added to the source, by event, recorded before its `on()`
-   * runs (which may add one, then throw)
+   * runs (which may add one, then throw): each through a relay (see
+   * `relay()`), dropped once it is removed, but the one of `error` (see
+   * `forwarder()`)
    */
-  const listeners = new Map<string, (...args: never[]) => void>();
+  const listeners = new Map<string, IRelay>();
   /** Whether the source has ended, failed or closed (or is cancelled) */
   let settled = false;
   /** Whether it has emitted an `end` or a `close` once destroyed */
@@ -972,20 +1020,21 @@ export function readStreamLike(
   const call = (method: IMethod, ...args: unknown[]): void => {
     Reflect.apply(method, source, args);
   };
-  const listen = (
-    event: string,
-    listener: (...args: never[]) => void,
-  ): void => {
+  const listen = (event: string, handler: IAdded): void => {
     if (settled) {
       // E.g. by an `error` that its `on()` has emitted at once
       return;
     }
-    listeners.set(event, listener);
+    const added =
+      event === "error"
+        ? { listener: handler, drop: forwarded }
+        : relay(handler);
+    listeners.set(event, added);
     if (event === "error") {
       // Until it is removed (see `release()`)
       hear(source, 1);
     }
-    call(methods.on, event, listener);
+    call(methods.on, event, added.listener);
     if (event === "error") {
       listened = true;
     }
@@ -993,11 +1042,13 @@ export function readStreamLike(
   /** Removes the listeners of these events that the source still has */
   const release = (...names: readonly string[]): void => {
     for (const event of names) {
-      const listener = listeners.get(event);
-      if (typeof listener !== "undefined") {
+      const added = listeners.get(event);
+      if (typeof added !== "undefined") {
         listeners.delete(event);
+        // Also when its removal throws, and leaves it on the source
+        added.drop();
         try {
-          call(methods.remove, event, listener);
+          call(methods.remove, event, added.listener);
         } catch (error: unknown) {
           // Never thrown into the events of the source, nor out of a turn of
           // its own: once the send has settled, its listeners change nothing
