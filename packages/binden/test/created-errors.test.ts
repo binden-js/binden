@@ -8,25 +8,53 @@ import { spawnSync } from "node:child_process";
 /** The directory of the packages of the monorepo */
 const packages = join(import.meta.dirname, "..", "..");
 
-/** A construction of an error: `new …Error(` */
-const construction = /\bnew\s+(?<name>[\w$]*Error)\s*\(/gu;
+/**
+ * The creations of an error that the scan finds, each with what it creates
+ * (`null`: the name that it has matched). A static scan cannot follow every
+ * value (e.g. a constructor passed as an argument): the errors that V8 or
+ * Node.js create in a refusal of binden are also checked when it runs (see
+ * `fixtures/created-error-retention.ts`).
+ */
+const creations: readonly (readonly [RegExp, string | null])[] = [
+  // A construction, with or without `new` (a built-in constructor may be
+  // called), of a name that ends with `Error` or `Exception`, maybe qualified
+  // (e.g. `globalThis.TypeError`)
+  [
+    /(?:\bnew\s+)?(?<![\w$.])(?:[\w$]+\s*\.\s*)*(?<name>(?:[A-Z][\w$]*)?(?:Error|Exception))\s*\(/gu,
+    null,
+  ],
+  // Of a class expression (e.g. `new (class extends Error {})()`)
+  [/\bnew\s*\(/gu, "class expression"],
+  [/\bReflect\s*\.\s*construct\s*\(/gu, "Reflect.construct"],
+  // An abort without a reason, whose `AbortError` Node.js creates (but one
+  // quoted in a comment, e.g. `Exchange.abort()`)
+  [/\.abort\s*\(\s*\)(?!`)/gu, "abort()"],
+  // A constructor kept in a variable, whose constructions are not seen
+  [
+    /\b(?:const|let|var)\s+[\w$]+\s*=\s*(?:[\w$]+\s*\.\s*)*(?<name>(?:[A-Z][\w$]*)?(?:Error|Exception))\s*[,;]/gu,
+    null,
+  ],
+];
 
 /**
- * The constructions of errors (see `construction`) of a source that are not
- * formatted when they are created, as `file:line name`: each one is passed
- * to `formatStack()` at once, but a `BindenError`, which formats itself
+ * The creations of errors (see `creations`) of a source that are not
+ * formatted when they are created, as `file:line name`, in their order: each
+ * one is passed to `formatStack()` at once, but a `BindenError`, which
+ * formats itself
  */
 function unformatted(file: string, source: string): string[] {
-  const found: string[] = [];
-  for (const { index, groups } of source.matchAll(construction)) {
-    const name = groups?.name ?? "";
-    const before = source.slice(0, index).trimEnd();
-    if (name !== "BindenError" && !before.endsWith("formatStack(")) {
-      const line = before.split("\n").length;
-      found.push(`${file}:${line} ${name}`);
+  const found: [number, string][] = [];
+  for (const [pattern, label] of creations) {
+    for (const { index, groups } of source.matchAll(pattern)) {
+      const name = label ?? groups?.name ?? "";
+      const before = source.slice(0, index);
+      if (name !== "BindenError" && !/\bformatStack\(\s*$/u.test(before)) {
+        const line = before.split("\n").length;
+        found.push([index, `${file}:${line} ${name}`]);
+      }
     }
   }
-  return found;
+  return found.toSorted(([a], [b]) => a - b).map(([, entry]) => entry);
 }
 
 /**
@@ -94,7 +122,11 @@ suite("Every error that a package of binden creates", () => {
         .filter(([file]) => file.startsWith(`${name}/`))
         .reduce(
           (count, [, source]) =>
-            count + [...source.matchAll(construction)].length,
+            count +
+            creations.reduce(
+              (sum, [pattern]) => sum + [...source.matchAll(pattern)].length,
+              0,
+            ),
           0,
         );
     for (const name of [
@@ -109,7 +141,7 @@ suite("Every error that a package of binden creates", () => {
     deepStrictEqual(found, []);
   });
 
-  test("the scan finds every construction of an error that is not formatted at once", () => {
+  test("the scan finds every creation of an error that is not formatted at once", () => {
     const source = [
       'throw new TypeError("not formatted");',
       'throw formatStack(new RangeError("formatted"));',
@@ -119,11 +151,39 @@ suite("Every error that a package of binden creates", () => {
       ");",
       'throw Object.assign(new Error("not formatted"), {});',
       'callback(new AggregateError([], "not formatted"));',
+      // Without `new`
+      'throw TypeError("not formatted");',
+      'throw formatStack(URIError("formatted"));',
+      'throw new DOMException("not formatted", "AbortError");',
+      // Qualified
+      'throw new globalThis.TypeError("not formatted");',
+      'throw formatStack(new globalThis.SyntaxError("formatted"));',
+      'throw Reflect.construct(RangeError, ["not formatted"]);',
+      'throw formatStack(Reflect.construct(RangeError, ["formatted"]));',
+      "controller.abort();",
+      'controller.abort(formatStack(new BindenAbortError("deadline")));',
+      "// See `Exchange.abort()`",
+      // Another function whose name ends with `formatStack`
+      'throw unformatStack(new Error("not formatted"));',
+      'throw new (class Own extends Error {})("not formatted");',
+      "const Constructor = TypeError;",
+      'throw new Constructor("not seen");',
+      // Neither creates an error
+      "reportError(error);",
+      "const failed = error instanceof TypeError;",
     ].join("\n");
     deepStrictEqual(unformatted("source.ts", source), [
       "source.ts:1 TypeError",
       "source.ts:7 Error",
       "source.ts:8 AggregateError",
+      "source.ts:9 TypeError",
+      "source.ts:11 DOMException",
+      "source.ts:12 TypeError",
+      "source.ts:14 Reflect.construct",
+      "source.ts:16 abort()",
+      "source.ts:19 Error",
+      "source.ts:20 class expression",
+      "source.ts:21 TypeError",
     ]);
   });
 });
