@@ -3521,21 +3521,24 @@ export class BindenResponse<
        * `reportLate()`; `emitted`: whether an event of the source has
        * brought it, `null` for none), by the send also when the source has
        * emitted it: the send hears it (see `hear()`), so its guard does not
-       * report it. It is reported on a later turn, once the event that may
-       * have brought it has reached every listener of the source: a live
-       * send of the source (e.g. of another response) that fails with that
-       * error in the same event has decided it for the source then (see
-       * `fail`), and it is not reported, whichever of them listens first
+       * report it. It is reported on a later turn (see `reportLate()`), once
+       * the event that may have brought it has reached every listener of the
+       * source: a live send of the source (e.g. of another response) that
+       * fails with that error in the same event has decided it for the source
+       * then (see `fail`), and it is not reported, whichever of them listens
+       * first. The guard of the source is installed while the send decides
+       * that error (see `decide()`): code of the source that throws that same
+       * object for a listener of the guard (e.g. a listener of its
+       * `newListener`) is not logged as a refusal of the guard as well
        */
       const stop = (error: unknown, emitted: boolean | null): void => {
         if (emitted !== null) {
-          const report = this.#report();
-          setImmediate(() => {
-            reportLate(data, error, report);
-          });
+          reportLate(data, error, this.#report());
         }
         stopped = true;
-        this.#discard(data, listened);
+        decide(data, error, () => {
+          this.#discard(data, listened);
+        });
       };
       /**
        * Fails the send: once anything is sent, or the headers are committed
