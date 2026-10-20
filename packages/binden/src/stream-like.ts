@@ -939,11 +939,6 @@ export function readStreamLike(
   /** Whether its guard listens (see `protect()`), once installed */
   let guarded: boolean | null = null;
   /**
-   * Whether the send decides the error that the readable is destroyed with
-   * (see `unreadable()`), not the readable
-   */
-  let undecided = false;
-  /**
    * Whether the listener of `error` of the send is in place: its `on()` has
    * returned, or it has heard an error
    */
@@ -1106,17 +1101,27 @@ export function readStreamLike(
               // Only the listener of the send hears it: without the error that
               // decides the send, which the send has failed with already
               releaseBy(source, destroy, released);
-            } else if (undecided && error !== null) {
-              // What the send decides (see `unreadable()`), as the readable
-              // has it: never a value whose `stack` Node.js cannot read
-              // safely, but its carrier (see `destroyWith()`)
+            } else if (error !== null) {
+              // The error that decides the send, as the readable has it (never
+              // a value whose `stack` Node.js cannot read safely, but its
+              // carrier, see `destroyWith()`): e.g. what a `pause()` of the
+              // source has thrown, of a chunk that the readable cannot take,
+              // or the error of a source that has failed before (see
+              // `unreadable()`). Pending while it is released (see above), a
+              // value of the application is decided for the source only once
+              // the send rejects with it (see `decidedFor()`, by the send),
+              // and is otherwise a late error (e.g. displaced by a
+              // cancellation of the send, or once the response has ended),
+              // reported once. An error of binden (e.g. of a chunk that is not
+              // bytes, or a carrier) is decided for every source already (see
+              // `own()`)
               releaseBy(source, destroy, released, error);
-            } else if (error === null && resolutions.has(readable)) {
+            } else if (resolutions.has(readable)) {
               // Its send has resolved (see `resolved()`): without an error, as
               // a Node.js `Readable` is, never with the reason of a
               // cancellation
               releaseBy(source, destroy, released);
-            } else if (error === null) {
+            } else {
               // The reason of its cancellation (also for a falsy value that its
               // code has thrown, a premature close), an error of binden: no
               // guard reports it once the source emits it (see `decided()`).
@@ -1124,16 +1129,6 @@ export function readStreamLike(
               const failure = formatStack(reason());
               decided(failure);
               releaseBy(source, destroy, released, failure);
-            } else {
-              // The error that decides the send (e.g. what a `pause()` of the
-              // source has thrown, or of a chunk that the readable cannot
-              // take): its guard does not report it once the source emits it,
-              // but the one of another source does (a value of the application,
-              // e.g. that it destroys each of its streams with, see
-              // `decidedFor()`). An error of binden (e.g. of a chunk that is not
-              // bytes) is decided for every source already (see `own()`)
-              decidedFor(source, error);
-              releaseBy(source, destroy, released, error);
             }
           });
         }
@@ -1202,7 +1197,6 @@ export function readStreamLike(
    * (e.g. destroyed already, see `destroy`).
    */
   const unreadable = (error: unknown): Readable => {
-    undecided = true;
     // Meanwhile, its guard does not report it, whatever reports it (e.g. a
     // refusal of the listener of its `close`, or its destroy)
     decide(source, error, () => {

@@ -239,7 +239,7 @@ suite("decidedFor()", () => {
 suite(
   "A stream-like source whose `pause()` throws an error of the application, which decides its send",
   () => {
-    test("is destroyed with it, which is not reported for it, but for another source that emits it (R1 F2)", async () => {
+    test("is destroyed with it, which is not reported for it once its send has rejected with it, but for another source that emits it (R1 F2, R23-C1)", async () => {
       const failure = new Error("One error of the application");
       const [reports, report] = reporter();
       const source = Object.assign(new Source(), {
@@ -255,6 +255,9 @@ suite(
       ).on("error", () => null);
       // More than its high water mark: it is full, and paused
       source.emit("data", Buffer.alloc(readable.readableHighWaterMark));
+      // As the send does once it rejects with it (see `brought` of the
+      // response): only then is it decided for the source
+      decidedFor(readable, failure);
       const other = new EventEmitter();
       guard(other, emitterMethods, report);
       source.emit("error", failure);
