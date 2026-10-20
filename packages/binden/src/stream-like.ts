@@ -145,25 +145,6 @@ function isDestroyed(source: object): boolean {
 }
 
 /**
- * The error of a chunk of a stream-like source that a response cannot send:
- * neither a string nor bytes (e.g. `null`, which would end the readable)
- */
-function invalidChunk(chunk: unknown): TypeError {
-  const received = chunk === null ? "null" : typeof chunk;
-  const message = `The chunk of a stream-like source must be a string or bytes (received ${received})`;
-  return Object.assign(new TypeError(message), {
-    code: "ERR_INVALID_ARG_TYPE",
-  });
-}
-
-/** The error of a close before the end */
-function premature(): Error {
-  return Object.assign(new Error("Premature close"), {
-    code: "ERR_STREAM_PREMATURE_CLOSE",
-  });
-}
-
-/**
  * Whether a source has emitted its `close`: `closeEmitted` of its state
  * (e.g. of a Node.js `Readable`, or of `readable-stream` 4, but not 2 nor 3,
  * whose state does not tell), for its guard (see `guard()`)
@@ -244,6 +225,45 @@ export function decided(error: unknown): void {
   if (Object(error) === error) {
     decisions.add(error as object);
   }
+}
+
+/**
+ * An error of binden for a stream-like source (see `readStreamLike()`), once
+ * it is created: decided for every source (see `decided()`), as the other
+ * errors of binden that decide a send (e.g. a body longer than its
+ * `Content-Length`), so that no guard reports it, whatever stream emits it
+ * (e.g. another one that the application destroys with the error that the
+ * send has rejected with), and returned
+ */
+function own<T extends Error>(error: T): T {
+  decided(error);
+  return error;
+}
+
+/**
+ * The error of a chunk of a stream-like source that a response cannot send:
+ * neither a string nor bytes (e.g. `null`, which would end the readable), an
+ * error of binden (see `own()`), its stack formatted before anything has it
+ * (see `formatStack()`)
+ */
+function invalidChunk(chunk: unknown): TypeError {
+  const received = chunk === null ? "null" : typeof chunk;
+  const message = `The chunk of a stream-like source must be a string or bytes (received ${received})`;
+  const error = Object.assign(new TypeError(message), {
+    code: "ERR_INVALID_ARG_TYPE",
+  });
+  return own(formatStack(error));
+}
+
+/**
+ * The error of a close before the end, an error of binden (see `own()`), its
+ * stack formatted (see `formatStack()`)
+ */
+function premature(): Error {
+  const error = Object.assign(new Error("Premature close"), {
+    code: "ERR_STREAM_PREMATURE_CLOSE",
+  });
+  return own(formatStack(error));
 }
 
 /**
@@ -1004,12 +1024,13 @@ export function readStreamLike(
             decided(failure);
             releaseBy(source, destroy, released, failure);
           } else {
-            // The error that decides the send (e.g. of a chunk that is not
-            // bytes, which the readable refuses, or what a `pause()` of the
-            // source has thrown): its guard does not report it once the
-            // source emits it, but the one of another source does (an error
-            // of the application, e.g. that it destroys each of its streams
-            // with, see `decidedFor()`)
+            // The error that decides the send (e.g. what a `pause()` of the
+            // source has thrown, or of a chunk that the readable cannot
+            // take): its guard does not report it once the source emits it,
+            // but the one of another source does (a value of the application,
+            // e.g. that it destroys each of its streams with, see
+            // `decidedFor()`). An error of binden (e.g. of a chunk that is not
+            // bytes) is decided for every source already (see `own()`)
             decidedFor(source, error);
             releaseBy(source, destroy, released, error);
           }
@@ -1025,16 +1046,17 @@ export function readStreamLike(
    * Destroys the readable with an error of the source, or with what its code
    * has thrown: a value that Node.js cannot take as an error (it reads its
    * `stack`, e.g. by a getter that throws) is wrapped in an `Error` whose
-   * `cause` it is, so that the readable is destroyed in any case, and the
-   * listeners of the send are released (see `destroy`)
+   * `cause` it is (an error of binden, see `own()`), so that the readable is
+   * destroyed in any case, and the listeners of the send are released (see
+   * `destroy`)
    */
   const destroyWith = (error: unknown): void => {
     try {
       readable.destroy(error as Error);
     } catch {
-      readable.destroy(
-        new Error("A stream-like source has failed", { cause: error }),
-      );
+      // An error of binden (see `own()`), which the send rejects with
+      const message = "A stream-like source has failed";
+      readable.destroy(own(formatStack(new Error(message, { cause: error }))));
     }
   };
   /**
