@@ -46,7 +46,8 @@ function sources(): Map<string, string> {
         .map((file) => join("src", file)),
     ];
     for (const file of files) {
-      const path = join(name, file);
+      // With `/` on every platform (Windows joins with `\`)
+      const path = join(name, file).replaceAll("\\", "/");
       all.set(path, readFileSync(join(packages, path), "utf8"));
     }
   }
