@@ -74,23 +74,34 @@ export class Cookie implements ICookie {
    * `SameSite=Lax`): a name, a value or an attribute that could add attributes
    * to `Set-Cookie` throws a `TypeError`
    */
-  public constructor(init: ICookie) {
-    const refusal = Cookie.#refusal(init);
+  public constructor({
+    key,
+    value,
+    expires = null,
+    max_age = null,
+    domain = null,
+    path = "/",
+    secure = false,
+    http_only = true,
+    same_site = "Lax",
+    partitioned = false,
+  }: ICookie) {
+    // Each attribute is read once (e.g. by a getter): the values checked are
+    // the ones kept, and so is the copy of the date (whose methods could tell
+    // another time than its own, e.g. of a subclass)
+    const date = expires instanceof Date ? new Date(expires) : null;
+    const refusal = Cookie.#refusal({
+      key,
+      value,
+      expires: date,
+      max_age,
+      domain,
+      path,
+      same_site,
+    });
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    const {
-      key,
-      value,
-      expires = null,
-      max_age = null,
-      domain = null,
-      path = "/",
-      secure = false,
-      http_only = true,
-      same_site = "Lax",
-      partitioned = false,
-    } = init;
 
     this.#key = key;
     this.#value = value;
@@ -101,7 +112,7 @@ export class Cookie implements ICookie {
     this.#http_only = Boolean(http_only);
     this.#same_site = same_site;
     this.#partitioned = Boolean(partitioned);
-    this.#expires = expires instanceof Date ? new Date(expires) : null;
+    this.#expires = date;
   }
 
   /**

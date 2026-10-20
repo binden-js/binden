@@ -36,21 +36,15 @@ export class Accept implements IAccept {
    * parameters (a token as name, other than `q`, and a value without control
    * characters) and its weight (a qvalue). Invalid ones throw a `TypeError`.
    */
-  public constructor(init: IAccept) {
-    const refusal = Accept.#refusal(init);
-    if (refusal !== null) {
-      throw formatStack(new TypeError(refusal));
-    }
-    const { type, parameters = {}, q_value = null } = init;
-    const all = new Map<string, string>();
-    for (const [name, value] of Object.entries(parameters)) {
-      const key = name.toLowerCase();
-      if (!all.has(key)) {
-        all.set(key, value);
-      }
+  public constructor({ type, parameters = {}, q_value = null }: IAccept) {
+    // Each value is read once (e.g. by a getter), and so are the parameters:
+    // the values checked are the ones kept
+    const checked = Accept.#checked({ type, parameters, q_value });
+    if (typeof checked === "string") {
+      throw formatStack(new TypeError(checked));
     }
     this.#type = type;
-    this.#parameters = all;
+    this.#parameters = checked;
     this.#q_value = q_value;
   }
 
@@ -122,18 +116,22 @@ export class Accept implements IAccept {
         parameters: Object.fromEntries(parameters),
         q_value,
       };
-      return Accept.#refusal(init) === null ? [new Accept(init)] : [];
+      return typeof Accept.#checked(init) === "string"
+        ? []
+        : [new Accept(init)];
     });
   }
 
   /**
-   * Why an element is invalid (see the constructor), `null` when it is valid
+   * The parameters of a valid element (see the constructor) by their names in
+   * lowercase (the first one of a name wins), each read once, or why the
+   * element is invalid
    */
-  static #refusal({
+  static #checked({
     type,
     parameters = {},
     q_value = null,
-  }: IAccept): string | null {
+  }: IAccept): ReadonlyMap<string, string> | string {
     const [main = "", subtype = "", ...rest] = type.split("/");
     if (
       rest.length > 0 ||
@@ -145,15 +143,18 @@ export class Accept implements IAccept {
     } else if (!isQvalue(q_value)) {
       return `\`q_value\` is not a qvalue: ${q_value}`;
     }
+    const all = new Map<string, string>();
     for (const [name, value] of Object.entries(parameters)) {
       const key = name.toLowerCase();
       if (!token.test(key) || key === "q") {
         return `Invalid parameter name: ${name}`;
       } else if (!fieldValue.test(value)) {
         return `Invalid value of the parameter ${name}`;
+      } else if (!all.has(key)) {
+        all.set(key, value);
       }
     }
-    return null;
+    return all;
   }
 
   /** A media type, without wildcards nor a weight, or a `TypeError` */

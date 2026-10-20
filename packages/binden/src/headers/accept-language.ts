@@ -22,12 +22,13 @@ export class AcceptLanguage implements IAcceptLanguage {
    * one of letters) and its weight (a qvalue). Invalid ones throw a
    * `TypeError`.
    */
-  public constructor(init: IAcceptLanguage) {
-    const refusal = AcceptLanguage.#refusal(init);
+  public constructor({ language, q_value = null }: IAcceptLanguage) {
+    // Each value is read once (e.g. by a getter): the values checked are the
+    // ones kept
+    const refusal = AcceptLanguage.#refusal({ language, q_value });
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    const { language, q_value = null } = init;
     this.#language = language;
     this.#q_value = q_value;
   }

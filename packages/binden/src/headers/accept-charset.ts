@@ -18,12 +18,13 @@ export class AcceptCharset implements IAcceptCharset {
    * A charset (a token, or `*`) and its weight (a qvalue). Invalid ones throw
    * a `TypeError`.
    */
-  public constructor(init: IAcceptCharset) {
-    const refusal = AcceptCharset.#refusal(init);
+  public constructor({ charset, q_value = null }: IAcceptCharset) {
+    // Each value is read once (e.g. by a getter): the values checked are the
+    // ones kept
+    const refusal = AcceptCharset.#refusal({ charset, q_value });
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    const { charset, q_value = null } = init;
     this.#charset = charset;
     this.#q_value = q_value;
   }

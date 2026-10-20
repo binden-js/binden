@@ -38,17 +38,25 @@ export class Forwarded implements IForwarded {
    * control characters but tabs), sent as quoted strings when they are not
    * tokens. Anything else throws a `TypeError`.
    */
-  public constructor(init: IForwarded) {
-    const refusal = Forwarded.#refusal(init);
+  public constructor({ by, host, secret, proto, ..._ }: IForwarded) {
+    // Each value is read once (e.g. by a getter): the values checked are the
+    // ones kept
+    const parameters = {
+      for: _.for,
+      by: by ?? null,
+      host: host ?? null,
+      secret: secret ?? null,
+      proto: proto ?? null,
+    };
+    const refusal = Forwarded.#refusal(parameters);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    const { by, host, secret, proto, ..._ } = init;
-    this.#for = _.for;
-    this.#by = by ?? null;
-    this.#host = host ?? null;
-    this.#secret = secret ?? null;
-    this.#proto = proto ?? null;
+    this.#for = parameters.for;
+    this.#by = parameters.by;
+    this.#host = parameters.host;
+    this.#secret = parameters.secret;
+    this.#proto = parameters.proto;
   }
 
   /** The client of the proxy (`for`), `unknown` when the element has none */
