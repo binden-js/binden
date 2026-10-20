@@ -3445,6 +3445,26 @@ export class BindenResponse<
         }
       };
       /**
+       * Decides an error that the source has brought (by an event of it, or
+       * thrown by its code) for that source (see `decidedFor()`), unless a
+       * cancellation recorded for the send (see `[kCancelling]()`, e.g. of a
+       * failed error handler or of a failed pipe) replaces it with another
+       * reason, which the send rejects with: the error then decides nothing,
+       * and is a late error, reported once on a later turn (see
+       * `reportLate()`)
+       */
+      const brought = (error: unknown): void => {
+        const cancellation = this.#cancellations.get(key);
+        if (
+          typeof cancellation === "undefined" ||
+          cancellation.reason === error
+        ) {
+          decidedFor(data, error);
+        } else {
+          reportLate(data, error, this.#report());
+        }
+      };
+      /**
        * Settles the send once: it resolves without a `failure`, otherwise it
        * rejects with its error, whatever it is (e.g. the `null` that code of
        * the source has thrown, or the reason of a cancellation). Only then, a
@@ -3478,7 +3498,7 @@ export class BindenResponse<
           // code that throws it again then is not logged (see `guard()`), nor
           // is it reported once the source emits it (see `drop`), but it may
           // still be a late error of another source (see `decidedFor()`)
-          decidedFor(data, failure.error);
+          brought(failure.error);
         } else if (failure.own) {
           // An error of binden (e.g. a body longer than its
           // `Content-Length`), decided as above for every source
@@ -3580,7 +3600,7 @@ export class BindenResponse<
           // For this source only: the same object of the application (e.g.
           // one that it destroys each of its streams with) may still be a
           // late error of another source
-          decidedFor(data, error);
+          brought(error);
         }
         settle({ error, own });
       };
