@@ -766,6 +766,35 @@ export function releaseStreamLike(
   releaseBy(source, methods.destroy ?? methods.pause, logs.released);
 }
 
+/** The hooks of a readable of `readStreamLike()` (see `hooked()`) */
+interface IReadableHooks {
+  /** Reads more of the source */
+  read(): void;
+  /** Releases the source once the readable is destroyed */
+  destroy(error: Error | null, callback: (error?: Error | null) => void): void;
+}
+
+/**
+ * A Node.js `Readable` that runs its hooks (`hooks.current`) until it is
+ * destroyed, and forgets them then: once destroyed (Node.js neither reads it
+ * nor destroys it again), it holds nothing of them, nor of what they hold
+ * (e.g. the response that sends it, which the reason of its cancellation and
+ * its logs hold), so that what keeps it (e.g. a pending report of a late
+ * error of its source, see `reportOnce()`) keeps nothing of the response
+ */
+function hooked(hooks: { current: IReadableHooks | null }): Readable {
+  return new Readable({
+    read(): void {
+      (hooks.current as IReadableHooks).read();
+    },
+    destroy(error, callback): void {
+      const current = hooks.current as IReadableHooks;
+      hooks.current = null;
+      current.destroy(error, callback);
+    },
+  });
+}
+
 /**
  * A stream-like source (see `IStreamLike`) read as a Node.js `Readable`, which
  * `send()` sends as such. Its `data` is pushed with backpressure: the source is
@@ -834,7 +863,9 @@ export function releaseStreamLike(
  * once it is no longer read, and a removal that throws are logged by `logs`
  * (see `IStreamLikeLogs`), not as late errors. A log that throws (also
  * `unreleased()`, e.g. a logger of the application whose own `debug()`
- * throws) is ignored, and the release goes on (see `quietly()`).
+ * throws) is ignored, and the release goes on (see `quietly()`). Once
+ * destroyed, the readable holds none of them, nor `reason()` (see
+ * `hooked()`).
  */
 export function readStreamLike(
   source: object,
@@ -971,73 +1002,76 @@ export function readStreamLike(
       release("error");
     });
   };
-  const readable = new Readable({
-    // Reads more of the source: it flows again (never once it has settled:
-    // the readable has ended or is destroyed)
-    read: (): void => {
-      call(methods.resume);
-    },
-    // Destroyed before the source has settled: it is cancelled, and its own
-    // cleanup ends at once (the destroy of the source may emit nothing)
-    destroy: (error, callback): void => {
-      if (!settled) {
-        settled = true;
-        // The error that it is destroyed with decides the send: pending
-        // before its guard is installed, and while it is released, so that
-        // its code that emits it or throws it meanwhile (e.g. a listener of
-        // its `newListener`, or its destroy) is not reported (see `decide()`)
-        decide(source, error, () => {
-          // Its guard listens before its listeners are removed, and before
-          // it is paused or destroyed, once the listener of `error` of the
-          // send no longer fails it (see `detach()`)
-          const kept = detach();
-          const safe = protect();
-          release("data", "end", "close", "error");
-          const { destroy, pause } = methods;
-          if (!safe && !kept) {
-            // No listener of its `error` is in place: untouched (see
-            // `releaseStreamLike()`)
-            untouched();
-          } else if (destroy === null) {
-            releaseBy(source, pause, released);
-          } else if (destroyed) {
-            // By the application: not again
-          } else if (kept) {
-            // Only the listener of the send hears it: without the error that
-            // decides the send, which the send has failed with already
-            releaseBy(source, destroy, released);
-          } else if (undecided && error !== null) {
-            // What the send decides (see `unreadable()`): also an `Error`
-            // that carries what its code has thrown (see `destroyWith()`)
-            releaseBy(source, destroy, released, error);
-          } else if (error === null && resolutions.has(readable)) {
-            // Its send has resolved (see `resolved()`): without an error, as
-            // a Node.js `Readable` is, never with the reason of a
-            // cancellation
-            releaseBy(source, destroy, released);
-          } else if (error === null) {
-            // The reason of its cancellation (also for a falsy value that its
-            // code has thrown, a premature close), an error of binden: no
-            // guard reports it once the source emits it (see `decided()`).
-            // Formatted before the source has it, which may keep it
-            const failure = formatStack(reason());
-            decided(failure);
-            releaseBy(source, destroy, released, failure);
-          } else {
-            // The error that decides the send (e.g. what a `pause()` of the
-            // source has thrown, or of a chunk that the readable cannot
-            // take): its guard does not report it once the source emits it,
-            // but the one of another source does (a value of the application,
-            // e.g. that it destroys each of its streams with, see
-            // `decidedFor()`). An error of binden (e.g. of a chunk that is not
-            // bytes) is decided for every source already (see `own()`)
-            decidedFor(source, error);
-            releaseBy(source, destroy, released, error);
-          }
-        });
-      }
-      // With the error that decides the send, never one of its release
-      callback(error);
+  // Once destroyed, it holds nothing of the send (see `hooked()`)
+  const readable = hooked({
+    current: {
+      // Reads more of the source: it flows again (never once it has settled:
+      // the readable has ended or is destroyed)
+      read: (): void => {
+        call(methods.resume);
+      },
+      // Destroyed before the source has settled: it is cancelled, and its
+      // own cleanup ends at once (the destroy of the source may emit nothing)
+      destroy: (error, callback): void => {
+        if (!settled) {
+          settled = true;
+          // The error that it is destroyed with decides the send: pending
+          // before its guard is installed, and while it is released, so that
+          // its code that emits it or throws it meanwhile (e.g. a listener of
+          // its `newListener`, or its destroy) is not reported (see `decide()`)
+          decide(source, error, () => {
+            // Its guard listens before its listeners are removed, and before
+            // it is paused or destroyed, once the listener of `error` of the
+            // send no longer fails it (see `detach()`)
+            const kept = detach();
+            const safe = protect();
+            release("data", "end", "close", "error");
+            const { destroy, pause } = methods;
+            if (!safe && !kept) {
+              // No listener of its `error` is in place: untouched (see
+              // `releaseStreamLike()`)
+              untouched();
+            } else if (destroy === null) {
+              releaseBy(source, pause, released);
+            } else if (destroyed) {
+              // By the application: not again
+            } else if (kept) {
+              // Only the listener of the send hears it: without the error that
+              // decides the send, which the send has failed with already
+              releaseBy(source, destroy, released);
+            } else if (undecided && error !== null) {
+              // What the send decides (see `unreadable()`): also an `Error`
+              // that carries what its code has thrown (see `destroyWith()`)
+              releaseBy(source, destroy, released, error);
+            } else if (error === null && resolutions.has(readable)) {
+              // Its send has resolved (see `resolved()`): without an error, as
+              // a Node.js `Readable` is, never with the reason of a
+              // cancellation
+              releaseBy(source, destroy, released);
+            } else if (error === null) {
+              // The reason of its cancellation (also for a falsy value that its
+              // code has thrown, a premature close), an error of binden: no
+              // guard reports it once the source emits it (see `decided()`).
+              // Formatted before the source has it, which may keep it
+              const failure = formatStack(reason());
+              decided(failure);
+              releaseBy(source, destroy, released, failure);
+            } else {
+              // The error that decides the send (e.g. what a `pause()` of the
+              // source has thrown, or of a chunk that the readable cannot
+              // take): its guard does not report it once the source emits it,
+              // but the one of another source does (a value of the application,
+              // e.g. that it destroys each of its streams with, see
+              // `decidedFor()`). An error of binden (e.g. of a chunk that is not
+              // bytes) is decided for every source already (see `own()`)
+              decidedFor(source, error);
+              releaseBy(source, destroy, released, error);
+            }
+          });
+        }
+        // With the error that decides the send, never one of its release
+        callback(error);
+      },
     },
   });
   // Its late errors are the ones of the source (see `reportOnce()`)
