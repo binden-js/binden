@@ -504,6 +504,33 @@ const logger = new Logger({ level: "debug", error_details: true });
 const app = new Binden({ logger, log_error_details: true });
 ```
 
+The stack of a `BindenError` is formatted in its constructor (see
+[Lifecycle](https://github.com/binden-js/binden/tree/main/packages/binden#lifecycle)), so that
+an error that is kept retains nothing of its frames: its header (`BindenError: <message>`) is
+fixed then. A `message` or a `name` that the application changes later, and an
+`Error.prepareStackTrace` installed later (e.g. by `source-map-support` or an APM agent; one
+installed before still formats it), no longer apply to its `stack`, which binden 2.0.4 left to
+V8 to format when it was first read. Pass the message through the options, or create an
+instance of a subclass, whose stack the constructor of `BindenError` does not format, so that
+its own constructor gives it its header (e.g. its `name`):
+
+```typescript
+import { BindenError } from "binden";
+
+// `error.message = "No user 42"` after `new BindenError(404)` no longer changes its stack
+const notFound = new BindenError(404, { message: "No user 42" });
+
+class ValidationError extends BindenError {
+  public constructor(message: string) {
+    super(400, { message });
+    this.name = "ValidationError";
+  }
+}
+
+// Its stack starts with "ValidationError: Invalid email"
+const invalid = new ValidationError("Invalid email");
+```
+
 ## @binden/logger
 
 - The default serializers log an allowlist of details: an `error` is its type, a known `code` and
