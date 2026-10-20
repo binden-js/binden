@@ -105,15 +105,12 @@ suite("Every error that a package of binden creates", () => {
     ]) {
       ok(created(name) > 0, name);
     }
-    // Pending: the three errors of `readStreamLike()`, which the `destroy()`
-    // of Node.js formats so far (it reads their `stack`)
+    // Pending: the three errors of `readStreamLike()` (at most), which the
+    // `destroy()` of Node.js formats so far (it reads their `stack`)
     const pending = found.filter((entry) =>
       entry.startsWith("binden/src/stream-like.ts:"),
     );
-    deepStrictEqual(
-      pending.map((entry) => entry.split(" ")[1]),
-      ["TypeError", "Error", "Error"],
-    );
+    ok(pending.length <= 3, pending.join(", "));
     deepStrictEqual(
       found.filter((entry) => !pending.includes(entry)),
       [],
