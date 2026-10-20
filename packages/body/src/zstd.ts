@@ -1,11 +1,11 @@
 // The decoding of the `zstd` content coding (RFC 8878) for `BodyParser`: an
 // internal module, which the package does not export
+import { BindenError, formatStack } from "binden";
 import {
   type ZstdDecompress,
   constants,
   createZstdDecompress,
 } from "node:zlib";
-import { BindenError } from "binden";
 import { Duplex } from "node:stream";
 
 /**
@@ -265,7 +265,7 @@ export class ZstdFrames {
     } else if (magic >>> 4 === ZSTD_SKIPPABLE) {
       this.#to("size", 4);
     } else {
-      throw new Error(ZSTD_INVALID);
+      throw formatStack(new Error(ZSTD_INVALID));
     }
     this.#budget.frames += 1;
     if (this.#budget.frames > ZSTD_MAX_FRAMES) {
@@ -285,7 +285,7 @@ export class ZstdFrames {
   #descriptor(): void {
     const descriptor = this.#field.readUInt8(0);
     if ((descriptor & 0x08) !== 0) {
-      throw new Error(ZSTD_INVALID);
+      throw formatStack(new Error(ZSTD_INVALID));
     }
     const content = descriptor >>> 6;
     this.#single = (descriptor & 0x20) !== 0;
@@ -307,7 +307,7 @@ export class ZstdFrames {
       const base = 2 ** (10 + (descriptor >>> 3));
       this.#window = base + (base / 8) * (descriptor & 0x07);
       if (this.#window > ZSTD_WINDOW_MAX) {
-        throw new Error(ZSTD_WINDOW);
+        throw formatStack(new Error(ZSTD_WINDOW));
       }
       at = 1;
     }
@@ -315,7 +315,7 @@ export class ZstdFrames {
       this.#dictionary > 0 &&
       this.#field.readUIntLE(at, this.#dictionary) !== 0
     ) {
-      throw new Error(ZSTD_DICTIONARY);
+      throw formatStack(new Error(ZSTD_DICTIONARY));
     }
     this.#keep(this.#need);
     this.#to("fcs", this.#fcs);
@@ -336,7 +336,7 @@ export class ZstdFrames {
           : BigInt(this.#field.readUIntLE(0, size) + (size === 2 ? 256 : 0));
       if (this.#single) {
         if (declared > BigInt(ZSTD_WINDOW_MAX)) {
-          throw new Error(ZSTD_WINDOW);
+          throw formatStack(new Error(ZSTD_WINDOW));
         }
         this.#window = Number(declared);
       }
@@ -370,7 +370,7 @@ export class ZstdFrames {
       type === 3 ||
       (type === 1 ? 1 : size) > Math.min(this.#window, ZSTD_BLOCK_MAX)
     ) {
-      throw new Error(ZSTD_INVALID);
+      throw formatStack(new Error(ZSTD_INVALID));
     }
     this.#last = (header & 0x01) === 1;
     if (!this.#decoding && size > 0) {
@@ -390,7 +390,7 @@ export class ZstdFrames {
       this.#checksum &&
       this.#field.readUInt32LE(0) !== ZSTD_EMPTY_CHECKSUM
     ) {
-      throw new Error(ZSTD_CHECKSUM);
+      throw formatStack(new Error(ZSTD_CHECKSUM));
     }
   }
 
@@ -519,7 +519,7 @@ export class ZstdDecoding extends Duplex {
       if (end) {
         decoder.once("end", () => {
           if (declared !== null && BigInt(this.#produced) !== declared) {
-            callback(new Error(ZSTD_SIZE));
+            callback(formatStack(new Error(ZSTD_SIZE)));
             return;
           }
           this.#decoder = null;
@@ -549,7 +549,7 @@ export class ZstdDecoding extends Duplex {
           this.#declared !== null &&
           BigInt(this.#produced) > this.#declared
         ) {
-          this.destroy(new Error(ZSTD_SIZE));
+          this.destroy(formatStack(new Error(ZSTD_SIZE)));
         } else if (!this.push(chunk)) {
           decoder.pause();
         }
@@ -563,7 +563,7 @@ export class ZstdDecoding extends Duplex {
 
   #final(callback: (error?: Error | null) => void): void {
     if (this.#consumed === 0 || !this.#frames.complete) {
-      callback(new Error(ZSTD_TRUNCATED));
+      callback(formatStack(new Error(ZSTD_TRUNCATED)));
       return;
     }
     this.push(null);

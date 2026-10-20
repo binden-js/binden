@@ -1,4 +1,5 @@
 import { fieldValue, split, unquote } from "./list.js";
+import { formatStack } from "../exchange.js";
 
 /** A media type of `Content-Type` and its parameters */
 export interface IContentType {
@@ -46,7 +47,7 @@ export class ContentType implements IContentType {
     parameters = {},
   }: IContentType) {
     if (!mediaType.test(type)) {
-      throw new TypeError(`Invalid media type: ${type}`);
+      throw formatStack(new TypeError(`Invalid media type: ${type}`));
     }
     const all = new Map<string, string>();
     for (const [name, value] of Object.entries(parameters)) {
@@ -62,7 +63,7 @@ export class ContentType implements IContentType {
     // (of the other types) are the options themselves
     if (type.toLowerCase() === "multipart/form-data") {
       if (typeof boundary !== "string" || !boundary) {
-        throw new TypeError("`boundary` is missing");
+        throw formatStack(new TypeError("`boundary` is missing"));
       }
       this.#boundary = boundary;
       all.set("boundary", boundary);
@@ -78,9 +79,11 @@ export class ContentType implements IContentType {
     }
     for (const [name, value] of all) {
       if (!parameterName.test(name)) {
-        throw new TypeError(`Invalid parameter name: ${name}`);
+        throw formatStack(new TypeError(`Invalid parameter name: ${name}`));
       } else if (!fieldValue.test(value)) {
-        throw new TypeError(`Invalid value of the parameter ${name}`);
+        throw formatStack(
+          new TypeError(`Invalid value of the parameter ${name}`),
+        );
       }
     }
     this.#parameters = all;

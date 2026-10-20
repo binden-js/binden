@@ -1,4 +1,5 @@
 import type { Context, IParams } from "./context.js";
+import { formatStack } from "./exchange.js";
 
 /** What a middleware returns: nothing, or the context of the next middlewares */
 type IMiddlewareReturnType<
@@ -44,9 +45,9 @@ export abstract class Middleware<
     ignore_errors = false,
   }: IMiddlewareParams = {}) {
     if (typeof disabled !== "boolean") {
-      throw new TypeError("`disabled` is not a boolean");
+      throw formatStack(new TypeError("`disabled` is not a boolean"));
     } else if (typeof ignore_errors !== "boolean") {
-      throw new TypeError("`ignore_errors` is not a boolean");
+      throw formatStack(new TypeError("`ignore_errors` is not a boolean"));
     }
     this.disabled = disabled;
     this.ignore_errors = ignore_errors;

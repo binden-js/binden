@@ -14,6 +14,7 @@ import type { Readable } from "node:stream";
 import { constants } from "node:fs";
 import { contentTypeOf } from "./mime.js";
 import { fileURLToPath } from "node:url";
+import { formatStack } from "./exchange.js";
 import { parseHttpDate } from "./headers/http-date.js";
 import { split } from "./headers/list.js";
 
@@ -94,7 +95,7 @@ const windows = process.platform === "win32";
 /** Throws a `TypeError` unless the option is a boolean (or not set) */
 function boolean(value: unknown, name: string): void {
   if (typeof value !== "undefined" && typeof value !== "boolean") {
-    throw new TypeError(`\`${name}\` is not a boolean`);
+    throw formatStack(new TypeError(`\`${name}\` is not a boolean`));
   }
 }
 
@@ -104,11 +105,15 @@ function parseRoot(root: unknown): string | null {
     return null;
   } else if (root instanceof URL) {
     if (root.protocol !== "file:") {
-      throw new TypeError(`Protocol ${root.protocol} is not supported`);
+      throw formatStack(
+        new TypeError(`Protocol ${root.protocol} is not supported`),
+      );
     }
     return fileURLToPath(root);
   } else if (typeof root !== "string" || root === "") {
-    throw new TypeError("`root` is not a non-empty string or a URL");
+    throw formatStack(
+      new TypeError("`root` is not a non-empty string or a URL"),
+    );
   }
   return root;
 }
@@ -129,41 +134,49 @@ function parseOptions({
   boolean(last_modified, "last_modified");
   boolean(immutable, "immutable");
   if (!policies.has(dotfiles)) {
-    throw new TypeError("`dotfiles` is not one of allow, deny and ignore");
+    throw formatStack(
+      new TypeError("`dotfiles` is not one of allow, deny and ignore"),
+    );
   } else if (typeof validator !== "undefined" && !strongTag.test(validator)) {
-    throw new TypeError("`validator` is not a strong entity-tag");
+    throw formatStack(new TypeError("`validator` is not a strong entity-tag"));
   } else if (
     typeof cache_control !== "undefined" &&
     (typeof max_age !== "undefined" || typeof immutable !== "undefined")
   ) {
-    throw new TypeError("`cache_control` excludes `max_age` and `immutable`");
+    throw formatStack(
+      new TypeError("`cache_control` excludes `max_age` and `immutable`"),
+    );
   } else if (
     typeof cache_control !== "undefined" &&
     !fieldValue.test(cache_control)
   ) {
-    throw new TypeError("`cache_control` is not a valid field value");
+    throw formatStack(
+      new TypeError("`cache_control` is not a valid field value"),
+    );
   } else if (typeof max_age !== "undefined" && !Number.isSafeInteger(max_age)) {
-    throw new TypeError("`max_age` is not an integer");
+    throw formatStack(new TypeError("`max_age` is not an integer"));
   } else if (typeof max_age !== "undefined" && max_age < 0) {
-    throw new RangeError("`max_age` is negative");
+    throw formatStack(new RangeError("`max_age` is negative"));
   } else if (
     typeof immutable !== "undefined" &&
     typeof max_age === "undefined"
   ) {
-    throw new TypeError("`immutable` needs `max_age`");
+    throw formatStack(new TypeError("`immutable` needs `max_age`"));
   }
 
   let type: false | string | null = null;
   if (typeof content_type === "string") {
     const parsed = ContentType.fromString(content_type);
     if (parsed === null) {
-      throw new TypeError(`Invalid media type: ${content_type}`);
+      throw formatStack(new TypeError(`Invalid media type: ${content_type}`));
     }
     type = parsed.toString();
   } else if (content_type === false) {
     type = false;
   } else if (typeof content_type !== "undefined") {
-    throw new TypeError("`content_type` is not a string or `false`");
+    throw formatStack(
+      new TypeError("`content_type` is not a string or `false`"),
+    );
   }
 
   return {
@@ -248,7 +261,9 @@ async function locate(
   if (root === null) {
     if (path instanceof URL) {
       if (path.protocol !== "file:") {
-        throw new TypeError(`Protocol ${path.protocol} is not supported`);
+        throw formatStack(
+          new TypeError(`Protocol ${path.protocol} is not supported`),
+        );
       }
       return {
         file: new URL(path.href),
@@ -256,11 +271,13 @@ async function locate(
         contained: false,
       };
     } else if (typeof path !== "string") {
-      throw new TypeError("The path is not a string or a URL");
+      throw formatStack(new TypeError("The path is not a string or a URL"));
     }
     return { file: path, name: path, contained: false };
   } else if (typeof path !== "string") {
-    throw new TypeError("With `root`, the path must be a relative string");
+    throw formatStack(
+      new TypeError("With `root`, the path must be a relative string"),
+    );
   }
 
   const segments = relativeSegments(path, windows);
@@ -570,7 +587,9 @@ export async function sendFileTo(
     if (!stats.isFile()) {
       throw location.contained
         ? new BindenError(404)
-        : new Error("Provided path does not correspond to a regular file");
+        : formatStack(
+            new Error("Provided path does not correspond to a regular file"),
+          );
     }
 
     const { mtime, size } = stats;

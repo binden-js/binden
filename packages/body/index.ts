@@ -6,6 +6,7 @@ import {
   type Context,
   type IMiddlewareParams,
   Middleware,
+  formatStack,
   serializers,
 } from "binden";
 import { Duplex, Transform, Writable, finished, pipeline } from "node:stream";
@@ -205,13 +206,15 @@ function codingsOf(header: string | undefined): ContentEncoding[] | null {
 /** A limit: a non-negative integer, or `Infinity` */
 function validateLimit(name: string, value: unknown): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    throw new TypeError(`\`${name}\` is not a number`);
+    throw formatStack(new TypeError(`\`${name}\` is not a number`));
   } else if (
     value !== Infinity &&
     !(Number.isSafeInteger(value) && value >= 0)
   ) {
-    throw new RangeError(
-      `\`${name}\` is not a non-negative integer or \`Infinity\``,
+    throw formatStack(
+      new RangeError(
+        `\`${name}\` is not a non-negative integer or \`Infinity\``,
+      ),
     );
   }
   return value;
@@ -219,7 +222,7 @@ function validateLimit(name: string, value: unknown): number {
 
 function validateBoolean(name: string, value: unknown): boolean {
   if (typeof value !== "boolean") {
-    throw new TypeError(`\`${name}\` is not a boolean`);
+    throw formatStack(new TypeError(`\`${name}\` is not a boolean`));
   }
   return value;
 }
@@ -227,11 +230,13 @@ function validateBoolean(name: string, value: unknown): boolean {
 /** The entries of a list of `type`, in lowercase */
 function validateTypes(type: unknown): readonly string[] {
   if (!Array.isArray(type)) {
-    throw new TypeError("`type` is not an array or a function");
+    throw formatStack(new TypeError("`type` is not an array or a function"));
   }
   return type.map((entry: unknown) => {
     if (typeof entry !== "string" || !mediaRange.test(entry)) {
-      throw new TypeError(`Invalid media type in \`type\`: ${String(entry)}`);
+      throw formatStack(
+        new TypeError(`Invalid media type in \`type\`: ${String(entry)}`),
+      );
     }
     return entry.toLowerCase();
   });
@@ -280,7 +285,7 @@ function guard(decoder: IDecoding, trailing: (() => boolean)[]): Transform {
   return new Transform({
     transform(chunk: Buffer, _encoding, callback): void {
       if (decoder.readableEnded) {
-        callback(new Error(TRAILING));
+        callback(formatStack(new Error(TRAILING)));
         return;
       }
       given += chunk.byteLength;
@@ -327,9 +332,9 @@ export class BodyParser<T = unknown> extends Middleware {
   }: IBodyParserOptions<T> = {}) {
     super(rest);
     if (typeof parse !== "undefined" && typeof parse !== "function") {
-      throw new TypeError("`parse` is not a function");
+      throw formatStack(new TypeError("`parse` is not a function"));
     } else if (typeof verify !== "undefined" && typeof verify !== "function") {
-      throw new TypeError("`verify` is not a function");
+      throw formatStack(new TypeError("`verify` is not a function"));
     }
     this.#limit = validateLimit("limit", limit);
     this.#encoded_limit = validateLimit("encoded_limit", encoded_limit);
@@ -341,7 +346,9 @@ export class BodyParser<T = unknown> extends Middleware {
 
     if (typeof type === "function") {
       if (raw) {
-        throw new TypeError("`raw` cannot be used with a `type` function");
+        throw formatStack(
+          new TypeError("`raw` cannot be used with a `type` function"),
+        );
       }
       this.#type = type;
       this.#types = null;
@@ -644,7 +651,7 @@ export class BodyParser<T = unknown> extends Middleware {
           const invalid = new BindenError(400, { cause: error });
           fail(invalid, "The body cannot be decoded");
         } else if (trailing.some((left) => left())) {
-          const cause = new Error(TRAILING);
+          const cause = formatStack(new Error(TRAILING));
           const invalid = new BindenError(400, { cause });
           fail(invalid, "The body cannot be decoded");
         } else if (settle()) {

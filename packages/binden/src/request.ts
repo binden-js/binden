@@ -21,6 +21,7 @@ import IfModifiedSince from "./headers/if-modified-since.js";
 import { IncomingMessage } from "node:http";
 import Range from "./headers/range.js";
 import { TLSSocket } from "node:tls";
+import { formatStack } from "./exchange.js";
 import { randomUUID } from "node:crypto";
 import { token } from "./headers/list.js";
 
@@ -125,7 +126,7 @@ function optionalObject(value: unknown, name: string): Record<string, unknown> {
   if (typeof value === "undefined") {
     return {};
   } else if (typeof value !== "object" || value === null) {
-    throw new TypeError(`\`${name}\` is not an object`);
+    throw formatStack(new TypeError(`\`${name}\` is not an object`));
   }
   return value as Record<string, unknown>;
 }
@@ -158,8 +159,8 @@ function checkAllowedHost(entry: unknown): string {
     (named && normal !== name.toLowerCase()) ||
     (port !== "" && (value < 1 || value > 65535))
   ) {
-    throw new TypeError(
-      `\`allowed_hosts\` has an invalid host: ${String(entry)}`,
+    throw formatStack(
+      new TypeError(`\`allowed_hosts\` has an invalid host: ${String(entry)}`),
     );
   }
   return port === "" ? normal : `${normal}:${value}`;
@@ -172,9 +173,13 @@ function checkAllowedHosts(value: unknown): IAllowedHosts | null {
   } else if (typeof value === "function") {
     return value as (host: string) => boolean;
   } else if (!Array.isArray(value)) {
-    throw new TypeError("`allowed_hosts` is not an array or a function");
+    throw formatStack(
+      new TypeError("`allowed_hosts` is not an array or a function"),
+    );
   } else if (value.length === 0) {
-    throw new RangeError("`allowed_hosts` is empty: no request is allowed");
+    throw formatStack(
+      new RangeError("`allowed_hosts` is empty: no request is allowed"),
+    );
   }
   return Object.freeze(value.map((entry: unknown) => checkAllowedHost(entry)));
 }
@@ -202,11 +207,13 @@ function checkRequestId(value: unknown): IRequestIdSettings | null {
     echo = true,
   } = optionalObject(value, "request_id");
   if (typeof header !== "string" || !token.test(header)) {
-    throw new TypeError("`request_id.header` is not a field name");
+    throw formatStack(new TypeError("`request_id.header` is not a field name"));
   } else if (typeof trust_incoming !== "boolean") {
-    throw new TypeError("`request_id.trust_incoming` is not a boolean");
+    throw formatStack(
+      new TypeError("`request_id.trust_incoming` is not a boolean"),
+    );
   } else if (typeof echo !== "boolean") {
-    throw new TypeError("`request_id.echo` is not a boolean");
+    throw formatStack(new TypeError("`request_id.echo` is not a boolean"));
   }
   return Object.freeze({ header: header.toLowerCase(), trust_incoming, echo });
 }
@@ -232,14 +239,16 @@ export function validateRequestOptions(
   } = optionalObject(input, "options");
   const { max_keys = 1000 } = optionalObject(query, "query");
   if (typeof encoded_slashes !== "boolean") {
-    throw new TypeError("`encoded_slashes` is not a boolean");
+    throw formatStack(new TypeError("`encoded_slashes` is not a boolean"));
   } else if (typeof max_keys !== "number") {
-    throw new TypeError("`query.max_keys` is not a number");
+    throw formatStack(new TypeError("`query.max_keys` is not a number"));
   } else if (
     max_keys !== Number.POSITIVE_INFINITY &&
     !(Number.isSafeInteger(max_keys) && max_keys > 0)
   ) {
-    throw new RangeError("`query.max_keys` is not a positive integer");
+    throw formatStack(
+      new RangeError("`query.max_keys` is not a positive integer"),
+    );
   }
   return Object.freeze({
     trust_proxy: checkTrustProxy(trust_proxy),

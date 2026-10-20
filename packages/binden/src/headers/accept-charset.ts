@@ -1,4 +1,5 @@
 import { isQvalue, preferred, token, weighted } from "./list.js";
+import { formatStack } from "../exchange.js";
 
 /** An element of `Accept-Charset` */
 export interface IAcceptCharset {
@@ -17,12 +18,12 @@ export class AcceptCharset implements IAcceptCharset {
    * A charset (a token, or `*`) and its weight (a qvalue). Invalid ones throw
    * a `TypeError`.
    */
-  public constructor({ charset, q_value = null }: IAcceptCharset) {
-    if (!token.test(charset)) {
-      throw new TypeError(`Invalid charset: ${charset}`);
-    } else if (!isQvalue(q_value)) {
-      throw new TypeError(`\`q_value\` is not a qvalue: ${q_value}`);
+  public constructor(init: IAcceptCharset) {
+    const refusal = AcceptCharset.#refusal(init);
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
     }
+    const { charset, q_value = null } = init;
     this.#charset = charset;
     this.#q_value = q_value;
   }
@@ -66,7 +67,7 @@ export class AcceptCharset implements IAcceptCharset {
   ): string | false {
     for (const offer of offers) {
       if (!token.test(offer) || offer === "*") {
-        throw new TypeError(`Invalid charset: ${offer}`);
+        throw formatStack(new TypeError(`Invalid charset: ${offer}`));
       }
     }
     if (typeof input === "undefined") {
@@ -81,12 +82,25 @@ export class AcceptCharset implements IAcceptCharset {
   /** The valid elements of the header, in their order */
   static #parse(input?: string[] | string): AcceptCharset[] {
     return weighted(input).flatMap(({ value: charset, q_value }) => {
-      try {
-        return [new AcceptCharset({ charset, q_value })];
-      } catch {
-        return [];
-      }
+      // Checked first: an invalid element (e.g. of a client) creates no
+      // error, whose stack would be formatted (see `formatStack()`)
+      const init = { charset, q_value };
+      return AcceptCharset.#refusal(init) === null
+        ? [new AcceptCharset(init)]
+        : [];
     });
+  }
+
+  /**
+   * Why an element is invalid (see the constructor), `null` when it is valid
+   */
+  static #refusal({ charset, q_value = null }: IAcceptCharset): string | null {
+    if (!token.test(charset)) {
+      return `Invalid charset: ${charset}`;
+    } else if (!isQvalue(q_value)) {
+      return `\`q_value\` is not a qvalue: ${q_value}`;
+    }
+    return null;
   }
 }
 

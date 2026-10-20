@@ -1,3 +1,4 @@
+import { formatStack } from "../exchange.js";
 /** A cookie: its name, value and attributes (RFC 6265) */
 export interface ICookie {
   /** The name of the cookie: a token */
@@ -73,34 +74,23 @@ export class Cookie implements ICookie {
    * `SameSite=Lax`): a name, a value or an attribute that could add attributes
    * to `Set-Cookie` throws a `TypeError`
    */
-  public constructor({
-    key,
-    value,
-    expires = null,
-    max_age = null,
-    domain = null,
-    path = "/",
-    secure = false,
-    http_only = true,
-    same_site = "Lax",
-    partitioned = false,
-  }: ICookie) {
-    // An invalid name or attribute could add attributes to `Set-Cookie`
-    if (!token.test(key)) {
-      throw new TypeError(`Invalid cookie name: ${key}`);
-    } else if (!cookieValue.test(value)) {
-      throw new TypeError("Invalid cookie value");
-    } else if (max_age !== null && !Number.isSafeInteger(max_age)) {
-      throw new TypeError(`Invalid cookie Max-Age: ${max_age}`);
-    } else if (expires instanceof Date && Number.isNaN(expires.getTime())) {
-      throw new TypeError("Invalid cookie Expires");
-    } else if (domain !== null && !domainValue.test(domain)) {
-      throw new TypeError(`Invalid cookie Domain: ${domain}`);
-    } else if (path !== null && !attributeValue.test(path)) {
-      throw new TypeError(`Invalid cookie Path: ${path}`);
-    } else if (!sameSite.has(same_site)) {
-      throw new TypeError(`Invalid cookie SameSite: ${same_site}`);
+  public constructor(init: ICookie) {
+    const refusal = Cookie.#refusal(init);
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
     }
+    const {
+      key,
+      value,
+      expires = null,
+      max_age = null,
+      domain = null,
+      path = "/",
+      secure = false,
+      http_only = true,
+      same_site = "Lax",
+      partitioned = false,
+    } = init;
 
     this.#key = key;
     this.#value = value;
@@ -112,6 +102,37 @@ export class Cookie implements ICookie {
     this.#same_site = same_site;
     this.#partitioned = Boolean(partitioned);
     this.#expires = expires instanceof Date ? new Date(expires) : null;
+  }
+
+  /**
+   * Why a cookie is invalid (see the constructor), `null` when it is valid
+   */
+  static #refusal({
+    key,
+    value,
+    expires = null,
+    max_age = null,
+    domain = null,
+    path = "/",
+    same_site = "Lax",
+  }: ICookie): string | null {
+    // An invalid name or attribute could add attributes to `Set-Cookie`
+    if (!token.test(key)) {
+      return `Invalid cookie name: ${key}`;
+    } else if (!cookieValue.test(value)) {
+      return "Invalid cookie value";
+    } else if (max_age !== null && !Number.isSafeInteger(max_age)) {
+      return `Invalid cookie Max-Age: ${max_age}`;
+    } else if (expires instanceof Date && Number.isNaN(expires.getTime())) {
+      return "Invalid cookie Expires";
+    } else if (domain !== null && !domainValue.test(domain)) {
+      return `Invalid cookie Domain: ${domain}`;
+    } else if (path !== null && !attributeValue.test(path)) {
+      return `Invalid cookie Path: ${path}`;
+    } else if (!sameSite.has(same_site)) {
+      return `Invalid cookie SameSite: ${same_site}`;
+    }
+    return null;
   }
 
   /** The name of the cookie */
@@ -220,11 +241,13 @@ export class Cookie implements ICookie {
 
       // An empty value is a value (RFC 6265, section 4.1.1)
       if (index > 0 && !names.has(key)) {
-        try {
-          output.push(new Cookie({ key, value }));
+        // Checked first: an invalid cookie (e.g. of a client) is skipped,
+        // and creates no error, whose stack would be formatted (see
+        // `formatStack()`)
+        const init = { key, value };
+        if (Cookie.#refusal(init) === null) {
+          output.push(new Cookie(init));
           names.add(key);
-        } catch {
-          // Not a valid cookie: skipped
         }
       }
     }

@@ -1,5 +1,6 @@
 import { type IMiddleware, Middleware } from "./middleware.js";
 import type { IParams } from "./context.js";
+import { formatStack } from "./exchange.js";
 
 /** The options of a `Router` */
 export interface IRouterOptions {
@@ -28,7 +29,7 @@ export class Router<
    */
   public constructor({ guarded = false }: IRouterOptions = {}) {
     if (typeof guarded !== "boolean") {
-      throw new TypeError("`guarded` is not a boolean");
+      throw formatStack(new TypeError("`guarded` is not a boolean"));
     }
     this.#guarded = guarded;
     this.#middlewares = new Map<string, IMiddleware<State, Params>[]>();
@@ -81,7 +82,7 @@ export class Router<
       if (!(
         middleware instanceof Middleware || typeof middleware === "function"
       )) {
-        throw new TypeError("Middleware is not supported");
+        throw formatStack(new TypeError("Middleware is not supported"));
       }
     }
 
@@ -178,11 +179,13 @@ export class Router<
    */
   static #method(method: unknown): string {
     if (typeof method !== "string" || !token.test(method)) {
-      throw new TypeError(`Method ${String(method)} is not a valid token`);
+      throw formatStack(
+        new TypeError(`Method ${String(method)} is not a valid token`),
+      );
     }
     const upper = method.toUpperCase();
     if (upper === "CONNECT") {
-      throw new TypeError("Method CONNECT is not supported");
+      throw formatStack(new TypeError("Method CONNECT is not supported"));
     }
     return upper;
   }

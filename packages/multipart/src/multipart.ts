@@ -3,6 +3,7 @@ import {
   BindenError,
   type Context,
   Middleware,
+  formatStack,
 } from "binden";
 import {
   DiskStore,
@@ -422,7 +423,9 @@ class Parser {
       this.#stop.signal,
     );
     if (typeof accepted !== "boolean") {
-      throw new TypeError("`file_filter` has not returned a boolean");
+      throw formatStack(
+        new TypeError("`file_filter` has not returned a boolean"),
+      );
     }
     return accepted;
   }

@@ -1,6 +1,7 @@
 import { SocketAddress, isIPv4, isIPv6 } from "node:net";
 import Forwarded from "./headers/forwarded.js";
 import type { IncomingHttpHeaders } from "node:http";
+import { formatStack } from "./exchange.js";
 
 /**
  * Whether the address of a hop (`0` is the peer, then the addresses of the
@@ -124,7 +125,7 @@ export function strictBoolean(result: unknown, name: string): boolean {
   ) {
     Promise.resolve(result).catch(() => null);
   }
-  throw new TypeError(`\`${name}\` has not returned a boolean`);
+  throw formatStack(new TypeError(`\`${name}\` has not returned a boolean`));
 }
 
 /** `true`, `false`, a function, or a non-negative safe integer */
@@ -135,9 +136,13 @@ function checkTrust(trust: unknown): ITrustFn | boolean | number {
   ) {
     return trust;
   } else if (typeof trust === "number") {
-    throw new RangeError("`trust_proxy` is not a non-negative integer");
+    throw formatStack(
+      new RangeError("`trust_proxy` is not a non-negative integer"),
+    );
   } else if (typeof trust !== "function") {
-    throw new TypeError("`trust_proxy` is not a boolean, number or function");
+    throw formatStack(
+      new TypeError("`trust_proxy` is not a boolean, number or function"),
+    );
   }
   return trust as ITrustFn;
 }
@@ -152,8 +157,10 @@ export function checkTrustProxy(value: unknown): IProxyTrust {
   }
   const { trust, headers = "forwarded" } = value as Record<string, unknown>;
   if (headers !== "forwarded" && headers !== "x-forwarded") {
-    throw new TypeError(
-      '`trust_proxy.headers` is not "forwarded" or "x-forwarded"',
+    throw formatStack(
+      new TypeError(
+        '`trust_proxy.headers` is not "forwarded" or "x-forwarded"',
+      ),
     );
   }
   return Object.freeze({ trust: checkTrust(trust), headers });

@@ -1,4 +1,5 @@
 import { fieldValue, quote, split, splitFromEnd, unquote } from "./list.js";
+import { formatStack } from "../exchange.js";
 
 /** The parameters of a `Forwarded` element */
 export interface IForwarded {
@@ -37,14 +38,12 @@ export class Forwarded implements IForwarded {
    * control characters but tabs), sent as quoted strings when they are not
    * tokens. Anything else throws a `TypeError`.
    */
-  public constructor({ by, host, secret, proto, ..._ }: IForwarded) {
-    const parameters = { for: _.for, by, host, secret, proto };
-    for (const [name, value] of Object.entries(parameters)) {
-      const optional = name !== "for" && (value ?? null) === null;
-      if (!optional && !(typeof value === "string" && fieldValue.test(value))) {
-        throw new TypeError(`Invalid \`${name}\` parameter`);
-      }
+  public constructor(init: IForwarded) {
+    const refusal = Forwarded.#refusal(init);
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
     }
+    const { by, host, secret, proto, ..._ } = init;
     this.#for = _.for;
     this.#by = by ?? null;
     this.#host = host ?? null;
@@ -129,18 +128,38 @@ export class Forwarded implements IForwarded {
       }
       parameters.set(key, unquote(value));
     }
-    try {
-      return new Forwarded({
-        for: parameters.get("for") ?? "unknown",
-        by: parameters.get("by") ?? null,
-        host: parameters.get("host") ?? null,
-        proto: parameters.get("proto") ?? null,
-        secret: parameters.get("secret") ?? null,
-      });
-    } catch {
-      // E.g. control characters in a quoted string
-      return null;
+    const init = {
+      for: parameters.get("for") ?? "unknown",
+      by: parameters.get("by") ?? null,
+      host: parameters.get("host") ?? null,
+      proto: parameters.get("proto") ?? null,
+      secret: parameters.get("secret") ?? null,
+    };
+    // Checked first: an invalid element (e.g. with control characters in a
+    // quoted string) creates no error, whose stack would be formatted (see
+    // `formatStack()`)
+    return Forwarded.#refusal(init) === null ? new Forwarded(init) : null;
+  }
+
+  /**
+   * Why the parameters of an element are invalid (see the constructor),
+   * `null` when they are valid
+   */
+  static #refusal({
+    by,
+    host,
+    secret,
+    proto,
+    ..._
+  }: IForwarded): string | null {
+    const parameters = { for: _.for, by, host, secret, proto };
+    for (const [name, value] of Object.entries(parameters)) {
+      const optional = name !== "for" && (value ?? null) === null;
+      if (!optional && !(typeof value === "string" && fieldValue.test(value))) {
+        return `Invalid \`${name}\` parameter`;
+      }
     }
+    return null;
   }
 }
 

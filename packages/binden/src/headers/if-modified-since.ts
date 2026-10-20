@@ -1,3 +1,4 @@
+import { formatStack } from "../exchange.js";
 import { parseHttpDate } from "./http-date.js";
 
 /** The date of `If-Modified-Since` */
@@ -18,9 +19,9 @@ export class IfModifiedSince implements IIfModifiedSince {
     const value = new Date(date);
     const year = value.getUTCFullYear();
     if (Number.isNaN(year)) {
-      throw new TypeError("Invalid date");
+      throw formatStack(new TypeError("Invalid date"));
     } else if (year < 0 || year > 9999) {
-      throw new TypeError("The date is not an HTTP-date");
+      throw formatStack(new TypeError("The date is not an HTTP-date"));
     }
     this.#date = value;
   }

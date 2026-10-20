@@ -1,4 +1,5 @@
 import { preferred, qvalue, token } from "./list.js";
+import { formatStack } from "../exchange.js";
 
 /** The content codings of `Accept-Encoding` that are known (and `*`) */
 export type IAcceptEncodings =
@@ -23,9 +24,13 @@ export class AcceptEncoding implements IAcceptEncoding {
    */
   public constructor({ encoding, q_value = null }: IAcceptEncoding) {
     if (!AcceptEncoding.#encodings.includes(encoding)) {
-      throw new TypeError(`Unknown content coding: ${String(encoding)}`);
+      throw formatStack(
+        new TypeError(`Unknown content coding: ${String(encoding)}`),
+      );
     } else if (q_value !== null && !qvalue.test(`${q_value}`)) {
-      throw new TypeError(`\`q_value\` is not a qvalue: ${q_value}`);
+      throw formatStack(
+        new TypeError(`\`q_value\` is not a qvalue: ${q_value}`),
+      );
     }
     this.#encoding = encoding;
     this.#q_value = q_value;
@@ -77,7 +82,7 @@ export class AcceptEncoding implements IAcceptEncoding {
   ): string | false {
     for (const offer of offers) {
       if (!token.test(offer) || offer === "*") {
-        throw new TypeError(`Invalid content coding: ${offer}`);
+        throw formatStack(new TypeError(`Invalid content coding: ${offer}`));
       }
     }
     if (typeof input === "undefined") {

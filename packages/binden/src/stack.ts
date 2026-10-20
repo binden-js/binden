@@ -2,6 +2,7 @@ import { type IMiddleware, Middleware } from "./middleware.js";
 import { type IPattern, type IRouteParams, compile } from "./route.js";
 import type { IParams } from "./context.js";
 import { Router } from "./router.js";
+import { formatStack } from "./exchange.js";
 import { isDeepStrictEqual } from "node:util";
 
 /** A middleware or a router of a stack, for its state and its parameters */
@@ -145,11 +146,11 @@ export class Stack<State extends object = Record<string, unknown>> {
       !items.length ||
       (!first && typeof _path !== "string" && !(_path instanceof RegExp))
     ) {
-      throw new TypeError("Unsupported Middleware/Router");
+      throw formatStack(new TypeError("Unsupported Middleware/Router"));
     }
     for (const item of items) {
       if (!isItem(item)) {
-        throw new TypeError("Unsupported Middleware/Router");
+        throw formatStack(new TypeError("Unsupported Middleware/Router"));
       }
     }
     this.#add({
@@ -175,7 +176,7 @@ export class Stack<State extends object = Record<string, unknown>> {
     }
     for (const item of items) {
       if (!isItem(item)) {
-        throw new TypeError("Unsupported Middleware/Router");
+        throw formatStack(new TypeError("Unsupported Middleware/Router"));
       }
     }
     this.#add({
@@ -202,12 +203,16 @@ export class Stack<State extends object = Record<string, unknown>> {
     for (const item of items) {
       if (item instanceof Stack) {
         if (roots.has(item)) {
-          throw new TypeError("An application (`Binden`) cannot be mounted");
+          throw formatStack(
+            new TypeError("An application (`Binden`) cannot be mounted"),
+          );
         } else if (item === this || Stack.#reaches(item, this)) {
-          throw new TypeError("A stack cannot be mounted in itself");
+          throw formatStack(
+            new TypeError("A stack cannot be mounted in itself"),
+          );
         }
       } else if (!isItem(item)) {
-        throw new TypeError("Unsupported Middleware/Router/Stack");
+        throw formatStack(new TypeError("Unsupported Middleware/Router/Stack"));
       }
     }
     this.#add({

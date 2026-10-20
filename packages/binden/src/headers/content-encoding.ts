@@ -1,3 +1,4 @@
+import { formatStack } from "../exchange.js";
 /** The known content codings */
 export type IEncodings =
   "br" | "compress" | "deflate" | "gzip" | "x-gzip" | "zstd";
@@ -15,7 +16,9 @@ export class ContentEncoding implements IContentEncoding {
   /** A known content coding (in lowercase), or a `TypeError` */
   public constructor({ encoding }: IContentEncoding) {
     if (!ContentEncoding.#encodings.has(encoding)) {
-      throw new TypeError(`Unknown content coding: ${String(encoding)}`);
+      throw formatStack(
+        new TypeError(`Unknown content coding: ${String(encoding)}`),
+      );
     }
     this.#encoding = encoding;
   }

@@ -16,6 +16,7 @@ export {
   BindenAbortError,
   type IAbortReason,
   type IExchangeReport,
+  formatStack,
 } from "./src/exchange.js";
 export * from "./src/binden.js";
 export * from "./src/middleware.js";

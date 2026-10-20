@@ -1,7 +1,7 @@
 import { type BigIntStats, type WriteStream, constants } from "node:fs";
+import { BindenError, formatStack } from "binden";
 import fs, { type FileHandle } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { BindenError } from "binden";
 import type { IFileInfo } from "./options.js";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -177,20 +177,22 @@ export class StoredFile implements IStoredFile {
    */
   public async persist(target: string): Promise<void> {
     if (typeof target !== "string" || target === "") {
-      throw new TypeError("`target` is not a non-empty string");
+      throw formatStack(new TypeError("`target` is not a non-empty string"));
     }
     const path = resolve(target);
     await this.written;
     await this.#exclusive(async () => {
       if (this.#target !== null) {
         if (this.#target !== path) {
-          throw new Error("The file has already been persisted elsewhere");
+          throw formatStack(
+            new Error("The file has already been persisted elsewhere"),
+          );
         }
         return;
       }
       const temp = this.#temp;
       if (temp === null) {
-        throw new Error("The file has been removed");
+        throw formatStack(new Error("The file has been removed"));
       }
       await this.#move(temp, path);
       // Owned by the application from now on: never removed by the cleanup
@@ -422,7 +424,9 @@ export class DiskStore {
         .catch((error: unknown) => errors.push(error));
     }
     if (errors.length > 0) {
-      throw new AggregateError(errors, "The files have not all been removed");
+      throw formatStack(
+        new AggregateError(errors, "The files have not all been removed"),
+      );
     }
   }
 }

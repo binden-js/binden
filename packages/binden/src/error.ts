@@ -1,4 +1,5 @@
 import { STATUS_CODES } from "node:http";
+import { formatStack } from "./exchange.js";
 
 /** The options of a `BindenError` */
 export interface IBindenErrorOptions extends ErrorOptions {
@@ -43,18 +44,20 @@ function copyHeaders(
     headers === null ||
     Array.isArray(headers)
   ) {
-    throw new TypeError("`headers` is not an object");
+    throw formatStack(new TypeError("`headers` is not an object"));
   }
   const copy: [string, string | readonly string[]][] = [];
   const names = new Set<string>();
   for (const [name, value] of Object.entries(headers)) {
     const lower = name.toLowerCase();
     if (!token.test(name)) {
-      throw new TypeError(`Invalid header name: ${name}`);
+      throw formatStack(new TypeError(`Invalid header name: ${name}`));
     } else if (forbidden.has(lower)) {
-      throw new TypeError(`The \`${name}\` header cannot be set by an error`);
+      throw formatStack(
+        new TypeError(`The \`${name}\` header cannot be set by an error`),
+      );
     } else if (names.has(lower)) {
-      throw new TypeError(`Duplicate header: ${name}`);
+      throw formatStack(new TypeError(`Duplicate header: ${name}`));
     }
     const values: unknown[] = Array.isArray(value) ? value : [value];
     if (
@@ -63,7 +66,9 @@ function copyHeaders(
           typeof item === "string" && fieldValue.test(item),
       )
     ) {
-      throw new TypeError(`Invalid value of the \`${name}\` header`);
+      throw formatStack(
+        new TypeError(`Invalid value of the \`${name}\` header`),
+      );
     }
     names.add(lower);
     copy.push([
@@ -83,7 +88,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-/** An HTTP error: its status code (400 to 599) is the status of the reply */
+/**
+ * An HTTP error: its status code (400 to 599) is the status of the reply. Its
+ * stack is formatted in its constructor, unless it is an instance of a
+ * subclass, which keeps the header that its own constructor gives it
+ */
 export class BindenError extends Error {
   readonly #code: string | null;
   readonly #headers: Readonly<Record<string, string | readonly string[]>>;
@@ -109,20 +118,20 @@ export class BindenError extends Error {
     }: IBindenErrorOptions = {},
   ) {
     if (!Number.isInteger(status)) {
-      throw new TypeError("Invalid status code");
+      throw formatStack(new TypeError("Invalid status code"));
     } else if (status > 599) {
-      throw new RangeError("Status code is greater than 599");
+      throw formatStack(new RangeError("Status code is greater than 599"));
     } else if (status < 400) {
-      throw new RangeError("Status code is less than 400");
+      throw formatStack(new RangeError("Status code is less than 400"));
     } else if (typeof code !== "undefined" && typeof code !== "string") {
-      throw new TypeError("`code` is not a string");
+      throw formatStack(new TypeError("`code` is not a string"));
     } else if (typeof expose !== "boolean") {
-      throw new TypeError("`expose` is not a boolean");
+      throw formatStack(new TypeError("`expose` is not a boolean"));
     } else if (typeof json !== "undefined" && !isPlainObject(json)) {
       // E.g. an array or a string, which `json` is not sent as
-      throw new TypeError("`json` is not a plain object");
+      throw formatStack(new TypeError("`json` is not a plain object"));
     } else if (typeof message !== "undefined" && typeof message !== "string") {
-      throw new TypeError("`message` is not a string");
+      throw formatStack(new TypeError("`message` is not a string"));
     }
     const copy = copyHeaders(headers);
 
@@ -138,6 +147,14 @@ export class BindenError extends Error {
     this.#expose = expose;
     this.#json = json ?? null;
     this.#status = status;
+    if (new.target === BindenError) {
+      // Formatted at once (see `formatStack()`), whoever creates it (binden,
+      // its packages or the application): kept, it retains nothing of its
+      // frames (e.g. the request whose URL it refuses). Not an instance of a
+      // subclass, whose own constructor may still give its stack its header
+      // (e.g. its `name`), once this one has returned
+      formatStack(this);
+    }
   }
 
   /** The machine-readable reason of the error, if any */

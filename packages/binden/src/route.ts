@@ -1,5 +1,6 @@
 import { BindenError } from "./error.js";
 import type { IParams } from "./context.js";
+import { formatStack } from "./exchange.js";
 
 /** The segments of a route pattern (a union of strings) */
 export type IRouteSegments<Pattern extends string> =
@@ -66,12 +67,14 @@ function unescape(segment: string, pattern: string): string {
     if (char === "\\") {
       const next = segment.charAt(index + 1);
       if (next !== ":" && next !== "*") {
-        throw new TypeError(`Invalid escape in ${pattern}`);
+        throw formatStack(new TypeError(`Invalid escape in ${pattern}`));
       }
       literal += next;
       index += 1;
     } else if (char === ":" || char === "*") {
-      throw new TypeError(`An unescaped \`${char}\` in ${pattern}`);
+      throw formatStack(
+        new TypeError(`An unescaped \`${char}\` in ${pattern}`),
+      );
     } else {
       literal += char;
     }
@@ -86,7 +89,9 @@ function unescape(segment: string, pattern: string): string {
  */
 export function compile(pattern: unknown, kind: "mount" | "route"): IPattern {
   if (typeof pattern !== "string" || !pattern.startsWith("/")) {
-    throw new TypeError(`The ${kind} pattern does not start with \`/\``);
+    throw formatStack(
+      new TypeError(`The ${kind} pattern does not start with \`/\``),
+    );
   }
   const raw = pattern.slice(1).split("/");
   if (kind === "mount" && raw.at(-1) === "") {
@@ -101,13 +106,21 @@ export function compile(pattern: unknown, kind: "mount" | "route"): IPattern {
     if (sigil === ":" || sigil === "*") {
       const param = segment.slice(1);
       if (!name.test(param)) {
-        throw new TypeError(`Invalid parameter name in ${pattern}`);
+        throw formatStack(
+          new TypeError(`Invalid parameter name in ${pattern}`),
+        );
       } else if (names.has(param)) {
-        throw new TypeError(`Duplicate parameter name in ${pattern}`);
+        throw formatStack(
+          new TypeError(`Duplicate parameter name in ${pattern}`),
+        );
       } else if (sigil === "*" && kind === "mount") {
-        throw new TypeError(`A mount prefix has no \`*\` (${pattern})`);
+        throw formatStack(
+          new TypeError(`A mount prefix has no \`*\` (${pattern})`),
+        );
       } else if (sigil === "*" && index !== raw.length - 1) {
-        throw new TypeError(`\`*${param}\` is not the last segment`);
+        throw formatStack(
+          new TypeError(`\`*${param}\` is not the last segment`),
+        );
       }
       names.add(param);
       if (sigil === "*") {

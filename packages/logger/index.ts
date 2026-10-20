@@ -44,6 +44,23 @@ export interface ILogger {
   child(bindings: Record<string, unknown>): ILogger;
 }
 
+/**
+ * Formats the stack of an error that this package has just created, before
+ * it is thrown, as binden formats its own: V8 formats it once it is first
+ * read, and until then its frames hold their objects (e.g. the options of a
+ * logger, as the arguments of its constructor), which an error kept by the
+ * application would retain as long as it lives
+ */
+function formatStack<T extends Error>(error: T): T {
+  try {
+    Reflect.get(error, "stack");
+  } catch {
+    // A `prepareStackTrace` of the application that throws: the stack is
+    // left to it
+  }
+  return error;
+}
+
 /** The built-in error classes, the nearest of which is the type of an error */
 const errorTypes: ReadonlyMap<object, string> = new Map<object, string>([
   [AggregateError.prototype, "AggregateError"],
@@ -150,7 +167,7 @@ export function createSerializers({
   error_details = false,
 }: { error_details?: boolean | undefined } = {}): ISerializers {
   if (typeof error_details !== "boolean") {
-    throw new TypeError("`error_details` is not a boolean");
+    throw formatStack(new TypeError("`error_details` is not a boolean"));
   }
   // The type of an error, a known `code` and its `status` (and, with
   // `error_details`, its message, its stack and any `code`)
@@ -241,7 +258,7 @@ export class Logger implements ILogger {
     if (typeof logger !== "undefined") {
       Logger.#checkPino(logger, all);
     } else if (typeof error_details !== "boolean") {
-      throw new TypeError("`error_details` is not a boolean");
+      throw formatStack(new TypeError("`error_details` is not a boolean"));
     } else if (typeof options.level !== "undefined") {
       const { customLevels = {}, useOnlyCustomLevels = false } = options;
       Logger.#checkLevel(options.level, {
@@ -382,7 +399,7 @@ export class Logger implements ILogger {
       typeof level !== "string" ||
       (level !== "silent" && !Object.hasOwn(known, level))
     ) {
-      throw new TypeError(`Unknown level: ${String(level)}`);
+      throw formatStack(new TypeError(`Unknown level: ${String(level)}`));
     }
   }
 
@@ -407,13 +424,15 @@ export class Logger implements ILogger {
       logger === null ||
       !methods.every((name) => typeof property(logger, name) === "function")
     ) {
-      throw new TypeError("`logger` is not a `pino` logger");
+      throw formatStack(new TypeError("`logger` is not a `pino` logger"));
     }
     const [other] = Object.entries(options).filter(
       ([name, value]) => name !== "logger" && typeof value !== "undefined",
     );
     if (typeof other !== "undefined") {
-      throw new TypeError(`\`logger\` cannot be combined with \`${other[0]}\``);
+      throw formatStack(
+        new TypeError(`\`logger\` cannot be combined with \`${other[0]}\``),
+      );
     }
   }
 

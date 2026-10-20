@@ -6,6 +6,7 @@ import {
   token,
   weighted,
 } from "./list.js";
+import { formatStack } from "../exchange.js";
 
 /** An element of `Accept`: a media range, its parameters and weight */
 export interface IAccept {
@@ -35,26 +36,16 @@ export class Accept implements IAccept {
    * parameters (a token as name, other than `q`, and a value without control
    * characters) and its weight (a qvalue). Invalid ones throw a `TypeError`.
    */
-  public constructor({ type, parameters = {}, q_value = null }: IAccept) {
-    const [main = "", subtype = "", ...rest] = type.split("/");
-    if (
-      rest.length > 0 ||
-      !token.test(main) ||
-      !token.test(subtype) ||
-      (main === "*" && subtype !== "*")
-    ) {
-      throw new TypeError(`Invalid media range: ${type}`);
-    } else if (!isQvalue(q_value)) {
-      throw new TypeError(`\`q_value\` is not a qvalue: ${q_value}`);
+  public constructor(init: IAccept) {
+    const refusal = Accept.#refusal(init);
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
     }
+    const { type, parameters = {}, q_value = null } = init;
     const all = new Map<string, string>();
     for (const [name, value] of Object.entries(parameters)) {
       const key = name.toLowerCase();
-      if (!token.test(key) || key === "q") {
-        throw new TypeError(`Invalid parameter name: ${name}`);
-      } else if (!fieldValue.test(value)) {
-        throw new TypeError(`Invalid value of the parameter ${name}`);
-      } else if (!all.has(key)) {
+      if (!all.has(key)) {
         all.set(key, value);
       }
     }
@@ -124,14 +115,45 @@ export class Accept implements IAccept {
   /** The valid elements of the header, in their order */
   static #parse(input?: string[] | string): Accept[] {
     return weighted(input).flatMap(({ value, parameters, q_value }) => {
-      try {
-        const type = value.toLowerCase();
-        const all = Object.fromEntries(parameters);
-        return [new Accept({ type, parameters: all, q_value })];
-      } catch {
-        return [];
-      }
+      // Checked first: an invalid element (e.g. of a client) creates no
+      // error, whose stack would be formatted (see `formatStack()`)
+      const init = {
+        type: value.toLowerCase(),
+        parameters: Object.fromEntries(parameters),
+        q_value,
+      };
+      return Accept.#refusal(init) === null ? [new Accept(init)] : [];
     });
+  }
+
+  /**
+   * Why an element is invalid (see the constructor), `null` when it is valid
+   */
+  static #refusal({
+    type,
+    parameters = {},
+    q_value = null,
+  }: IAccept): string | null {
+    const [main = "", subtype = "", ...rest] = type.split("/");
+    if (
+      rest.length > 0 ||
+      !token.test(main) ||
+      !token.test(subtype) ||
+      (main === "*" && subtype !== "*")
+    ) {
+      return `Invalid media range: ${type}`;
+    } else if (!isQvalue(q_value)) {
+      return `\`q_value\` is not a qvalue: ${q_value}`;
+    }
+    for (const [name, value] of Object.entries(parameters)) {
+      const key = name.toLowerCase();
+      if (!token.test(key) || key === "q") {
+        return `Invalid parameter name: ${name}`;
+      } else if (!fieldValue.test(value)) {
+        return `Invalid value of the parameter ${name}`;
+      }
+    }
+    return null;
   }
 
   /** A media type, without wildcards nor a weight, or a `TypeError` */
@@ -150,7 +172,7 @@ export class Accept implements IAccept {
       type === "*" ||
       subtype === "*"
     ) {
-      throw new TypeError(`Invalid media type: ${offer}`);
+      throw formatStack(new TypeError(`Invalid media type: ${offer}`));
     }
     return { type, subtype, parameters: new Map(element.parameters) };
   }

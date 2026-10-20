@@ -7,6 +7,7 @@ import {
   type IRepresentation,
   type IResponseOperation,
   bodyHeaders,
+  formatStack,
   framingLength,
   kListen,
   kNegotiator,
@@ -180,7 +181,7 @@ function hasBody(response: IResponse): boolean {
 /** The error of an encoding that binden refuses (see `encodingOf()`), as binden throws it */
 function unknownEncoding(encoding: unknown): Error {
   return Object.assign(
-    new TypeError(`Unknown encoding: ${encoding as string}`),
+    formatStack(new TypeError(`Unknown encoding: ${encoding as string}`)),
     { code: "ERR_UNKNOWN_ENCODING" },
   );
 }
@@ -281,7 +282,7 @@ function ignore(args: readonly unknown[]): void {
 
 /** The error of a write after `end()` */
 function writeAfterEnd(): Error {
-  return Object.assign(new Error("write after end"), {
+  return Object.assign(formatStack(new Error("write after end")), {
     code: "ERR_STREAM_WRITE_AFTER_END",
   });
 }
@@ -292,7 +293,9 @@ function writeAfterEnd(): Error {
  */
 function destroyed(method: "end" | "write"): Error {
   return Object.assign(
-    new Error(`Cannot call ${method} after a stream was destroyed`),
+    formatStack(
+      new Error(`Cannot call ${method} after a stream was destroyed`),
+    ),
     { code: "ERR_STREAM_DESTROYED" },
   );
 }

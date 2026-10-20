@@ -4,6 +4,7 @@ import {
   type Context,
   type IMiddlewareParams,
   Middleware,
+  formatStack,
 } from "binden";
 import { CompressedResponse, type ISettings, skip } from "./src/response.js";
 import {
@@ -76,7 +77,7 @@ function checkObject(name: string, value: unknown): void {
     typeof value !== "undefined" &&
     (typeof value !== "object" || value === null || Array.isArray(value))
   ) {
-    throw new TypeError(`\`${name}\` is not an object`);
+    throw formatStack(new TypeError(`\`${name}\` is not an object`));
   }
 }
 
@@ -90,8 +91,10 @@ function checkEncodings(encodings: unknown): readonly ICompressEncodings[] {
     ) ||
     new Set(encodings).size !== encodings.length
   ) {
-    throw new TypeError(
-      "`encodings` is not a non-empty list of distinct codings (br, deflate, gzip, zstd)",
+    throw formatStack(
+      new TypeError(
+        "`encodings` is not a non-empty list of distinct codings (br, deflate, gzip, zstd)",
+      ),
     );
   }
   return Object.freeze([...(encodings as ICompressEncodings[])]);
@@ -125,17 +128,23 @@ export class Compression extends Middleware {
     } = options;
     super(rest);
     if (!formats.includes(format)) {
-      throw new TypeError(
-        "`format` is not one of auto, br, deflate, gzip and zstd",
+      throw formatStack(
+        new TypeError(
+          "`format` is not one of auto, br, deflate, gzip and zstd",
+        ),
       );
     } else if (typeof encodings !== "undefined" && format !== "auto") {
-      throw new TypeError("`encodings` applies to the `auto` format only");
+      throw formatStack(
+        new TypeError("`encodings` applies to the `auto` format only"),
+      );
     } else if (typeof threshold !== "number") {
-      throw new TypeError("`threshold` is not a number");
+      throw formatStack(new TypeError("`threshold` is not a number"));
     } else if (!Number.isSafeInteger(threshold) || threshold < 0) {
-      throw new RangeError("`threshold` is not a non-negative integer");
+      throw formatStack(
+        new RangeError("`threshold` is not a non-negative integer"),
+      );
     } else if (typeof filter !== "function") {
-      throw new TypeError("`filter` is not a function");
+      throw formatStack(new TypeError("`filter` is not a function"));
     }
     checkObject("gzip", gzip);
     checkObject("deflate", deflate);
@@ -148,7 +157,9 @@ export class Compression extends Middleware {
         : checkEncodings(encodings);
     const used = format === "auto" ? offered : [format];
     if (used.includes("zstd") && !hasZstd()) {
-      throw new TypeError("zstd is not supported by this version of Node.js");
+      throw formatStack(
+        new TypeError("zstd is not supported by this version of Node.js"),
+      );
     }
 
     const compressors: ICompressorOptions = Object.freeze({
@@ -204,7 +215,7 @@ export class Compression extends Middleware {
  */
 export function skipCompression(response: BindenResponse): void {
   if (!(response instanceof BindenResponse)) {
-    throw new TypeError("The response is not a `BindenResponse`");
+    throw formatStack(new TypeError("The response is not a `BindenResponse`"));
   }
   skip(response);
 }

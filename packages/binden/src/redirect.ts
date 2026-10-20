@@ -1,3 +1,4 @@
+import { formatStack } from "./exchange.js";
 /** The status codes of a redirect */
 export type IRedirectStatus = 301 | 302 | 303 | 307 | 308;
 
@@ -40,10 +41,14 @@ export function redirectLocation(
 ): string {
   const input = location instanceof URL ? location.href : location;
   if (typeof input !== "string" || input === "") {
-    throw new TypeError("The location is not a non-empty string or a URL");
+    throw formatStack(
+      new TypeError("The location is not a non-empty string or a URL"),
+    );
   } else if (forbidden.test(input)) {
-    throw new TypeError(
-      "The location has a control character, whitespace or a backslash",
+    throw formatStack(
+      new TypeError(
+        "The location has a control character, whitespace or a backslash",
+      ),
     );
   }
 
@@ -59,15 +64,19 @@ export function redirectLocation(
   const url = new URL(input, base);
 
   if (userinfo) {
-    throw new TypeError("The location has userinfo");
+    throw formatStack(new TypeError("The location has userinfo"));
   } else if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new TypeError(`The location has the scheme ${url.protocol}`);
+    throw formatStack(
+      new TypeError(`The location has the scheme ${url.protocol}`),
+    );
   } else if (
     !allow_external &&
     (network || (absolute && url.origin !== origin))
   ) {
-    throw new TypeError(
-      "The location is external: set `allow_external` to allow it",
+    throw formatStack(
+      new TypeError(
+        "The location is external: set `allow_external` to allow it",
+      ),
     );
   }
 

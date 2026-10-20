@@ -1,4 +1,5 @@
 import { isQvalue, preferred, weighted } from "./list.js";
+import { formatStack } from "../exchange.js";
 
 /** An element of `Accept-Language` */
 export interface IAcceptLanguage {
@@ -21,12 +22,12 @@ export class AcceptLanguage implements IAcceptLanguage {
    * one of letters) and its weight (a qvalue). Invalid ones throw a
    * `TypeError`.
    */
-  public constructor({ language, q_value = null }: IAcceptLanguage) {
-    if (language !== "*" && !tag.test(language)) {
-      throw new TypeError(`Invalid language range: ${language}`);
-    } else if (!isQvalue(q_value)) {
-      throw new TypeError(`\`q_value\` is not a qvalue: ${q_value}`);
+  public constructor(init: IAcceptLanguage) {
+    const refusal = AcceptLanguage.#refusal(init);
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
     }
+    const { language, q_value = null } = init;
     this.#language = language;
     this.#q_value = q_value;
   }
@@ -71,7 +72,7 @@ export class AcceptLanguage implements IAcceptLanguage {
   ): string | false {
     for (const offer of offers) {
       if (!tag.test(offer)) {
-        throw new TypeError(`Invalid language tag: ${offer}`);
+        throw formatStack(new TypeError(`Invalid language tag: ${offer}`));
       }
     }
     if (typeof input === "undefined") {
@@ -92,12 +93,28 @@ export class AcceptLanguage implements IAcceptLanguage {
   /** The valid elements of the header, in their order */
   static #parse(input?: string[] | string): AcceptLanguage[] {
     return weighted(input).flatMap(({ value: language, q_value }) => {
-      try {
-        return [new AcceptLanguage({ language, q_value })];
-      } catch {
-        return [];
-      }
+      // Checked first: an invalid element (e.g. of a client) creates no
+      // error, whose stack would be formatted (see `formatStack()`)
+      const init = { language, q_value };
+      return AcceptLanguage.#refusal(init) === null
+        ? [new AcceptLanguage(init)]
+        : [];
     });
+  }
+
+  /**
+   * Why an element is invalid (see the constructor), `null` when it is valid
+   */
+  static #refusal({
+    language,
+    q_value = null,
+  }: IAcceptLanguage): string | null {
+    if (language !== "*" && !tag.test(language)) {
+      return `Invalid language range: ${language}`;
+    } else if (!isQvalue(q_value)) {
+      return `\`q_value\` is not a qvalue: ${q_value}`;
+    }
+    return null;
   }
 }
 

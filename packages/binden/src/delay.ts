@@ -1,3 +1,4 @@
+import { formatStack } from "./exchange.js";
 /** The greatest delay of a Node.js timer */
 export const MAX_DELAY = 2 ** 31 - 1;
 
@@ -7,8 +8,10 @@ export const MAX_DELAY = 2 ** 31 - 1;
  */
 export function validateDelay(name: string, value: unknown, min: number): void {
   if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new TypeError(`\`${name}\` is not an integer`);
+    throw formatStack(new TypeError(`\`${name}\` is not an integer`));
   } else if (value < min || value > MAX_DELAY) {
-    throw new RangeError(`\`${name}\` is not between ${min} and ${MAX_DELAY}`);
+    throw formatStack(
+      new RangeError(`\`${name}\` is not between ${min} and ${MAX_DELAY}`),
+    );
   }
 }

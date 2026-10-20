@@ -1,9 +1,9 @@
+import { BindenAbortError, formatStack } from "./exchange.js";
 import {
   type ILogger,
   Logger,
   serializers as defaultSerializers,
 } from "@binden/logger";
-import { BindenAbortError } from "./exchange.js";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
 import { constants } from "node:os";
@@ -246,7 +246,7 @@ export function createSerializers({
   error_details = false,
 }: { readonly error_details?: boolean | undefined } = {}): IBindenSerializers {
   if (typeof error_details !== "boolean") {
-    throw new TypeError("`error_details` is not a boolean");
+    throw formatStack(new TypeError("`error_details` is not a boolean"));
   }
   const error = (value: unknown): Record<string, unknown> => {
     const logged = snapshot(value, {

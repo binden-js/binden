@@ -1,4 +1,5 @@
 import { fieldValue } from "./list.js";
+import { formatStack } from "../exchange.js";
 
 /** The supported authentication schemes, in their usual casing */
 export type IAuthenticationType =
@@ -36,14 +37,16 @@ export class Authorization implements IAuthorization {
    */
   public constructor({ type, credentials = null }: IAuthorization) {
     if (!Authorization.isValidType(type)) {
-      throw new TypeError(`Unsupported authentication scheme: ${String(type)}`);
+      throw formatStack(
+        new TypeError(`Unsupported authentication scheme: ${String(type)}`),
+      );
     } else if (
       credentials !== null &&
       (credentials === "" ||
         credentials !== credentials.trim() ||
         !fieldValue.test(credentials))
     ) {
-      throw new TypeError("Invalid credentials");
+      throw formatStack(new TypeError("Invalid credentials"));
     }
     this.#type = type;
     this.#credentials = credentials;

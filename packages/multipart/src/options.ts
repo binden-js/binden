@@ -1,5 +1,5 @@
 import type { BusboyConfig, Limits } from "busboy";
-import type { Context, IMiddlewareParams } from "binden";
+import { type Context, type IMiddlewareParams, formatStack } from "binden";
 import type { Readable } from "node:stream";
 import { resolve } from "node:path";
 
@@ -202,11 +202,11 @@ function checkObject(
   keys: ReadonlySet<string>,
 ): Record<string, unknown> {
   if (!isObject(value)) {
-    throw new TypeError(`\`${name}\` is not an object`);
+    throw formatStack(new TypeError(`\`${name}\` is not an object`));
   }
   for (const key of Object.keys(value)) {
     if (!keys.has(key)) {
-      throw new TypeError(`Unknown option: \`${name}.${key}\``);
+      throw formatStack(new TypeError(`Unknown option: \`${name}.${key}\``));
     }
   }
   return value;
@@ -215,12 +215,14 @@ function checkObject(
 /** A size: a non-negative integer, or `Infinity` */
 function checkSize(value: unknown, name: string): number {
   if (typeof value !== "number") {
-    throw new TypeError(`\`${name}\` is not a number`);
+    throw formatStack(new TypeError(`\`${name}\` is not a number`));
   } else if (
     value !== Number.POSITIVE_INFINITY &&
     !(Number.isSafeInteger(value) && value >= 0)
   ) {
-    throw new RangeError(`\`${name}\` is not a non-negative integer`);
+    throw formatStack(
+      new RangeError(`\`${name}\` is not a non-negative integer`),
+    );
   }
   return value;
 }
@@ -228,9 +230,11 @@ function checkSize(value: unknown, name: string): number {
 /** The size of a buffer: a non-negative integer */
 function checkBuffer(value: unknown, name: string): number {
   if (typeof value !== "number") {
-    throw new TypeError(`\`${name}\` is not a number`);
+    throw formatStack(new TypeError(`\`${name}\` is not a number`));
   } else if (!(Number.isSafeInteger(value) && value >= 0)) {
-    throw new RangeError(`\`${name}\` is not a non-negative integer`);
+    throw formatStack(
+      new RangeError(`\`${name}\` is not a non-negative integer`),
+    );
   }
   return value;
 }
@@ -238,9 +242,11 @@ function checkBuffer(value: unknown, name: string): number {
 /** A charset that busboy decodes */
 function checkCharset(value: unknown, name: string): string {
   if (typeof value !== "string") {
-    throw new TypeError(`\`${name}\` is not a string`);
+    throw formatStack(new TypeError(`\`${name}\` is not a string`));
   } else if (!charsets.has(value.toLowerCase())) {
-    throw new RangeError(`\`${name}\` is not a charset that busboy decodes`);
+    throw formatStack(
+      new RangeError(`\`${name}\` is not a charset that busboy decodes`),
+    );
   }
   return value;
 }
@@ -272,7 +278,7 @@ function checkConfig(value: unknown): IMultipartConfig {
     typeof preservePath !== "undefined" &&
     typeof preservePath !== "boolean"
   ) {
-    throw new TypeError("`config.preservePath` is not a boolean");
+    throw formatStack(new TypeError("`config.preservePath` is not a boolean"));
   }
   return {
     defParamCharset: checkCharset(defParamCharset, "config.defParamCharset"),
@@ -299,15 +305,17 @@ function checkStorage(value: unknown): IMode {
   const { dir, on_file } = storage;
   if ("on_file" in storage) {
     if ("dir" in storage) {
-      throw new TypeError("`storage.dir` and `storage.on_file` are exclusive");
+      throw formatStack(
+        new TypeError("`storage.dir` and `storage.on_file` are exclusive"),
+      );
     } else if (typeof on_file !== "function") {
-      throw new TypeError("`storage.on_file` is not a function");
+      throw formatStack(new TypeError("`storage.on_file` is not a function"));
     }
     return { kind: "stream", on_file: on_file as IStreamStorage["on_file"] };
   } else if (typeof dir === "undefined") {
     return { kind: "disk", dir: null };
   } else if (typeof dir !== "string" || dir === "") {
-    throw new TypeError("`storage.dir` is not a non-empty string");
+    throw formatStack(new TypeError("`storage.dir` is not a non-empty string"));
   }
   return { kind: "disk", dir: resolve(dir) };
 }
@@ -332,11 +340,11 @@ export function validateOptions(input: unknown): {
     storage = "memory",
   } = checkObject(input, "options", optionNames);
   if (typeof throw_limits !== "boolean") {
-    throw new TypeError("`throw_limits` is not a boolean");
+    throw formatStack(new TypeError("`throw_limits` is not a boolean"));
   } else if (file_filter !== null && typeof file_filter !== "function") {
-    throw new TypeError("`file_filter` is not a function");
+    throw formatStack(new TypeError("`file_filter` is not a function"));
   } else if (filtered !== "reject" && filtered !== "skip") {
-    throw new TypeError('`filtered` is not "reject" or "skip"');
+    throw formatStack(new TypeError('`filtered` is not "reject" or "skip"'));
   }
   return {
     middleware: {

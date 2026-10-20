@@ -22,13 +22,15 @@ import type { Socket } from "node:net";
 export type IAbortReason = "client_closed" | "deadline" | "shutdown";
 
 /**
- * Formats the stack of an error that binden has just created, before it hands
- * it over (e.g. the reason of an aborted signal, or the error that a send
- * rejects with, or destroys its source with): V8 formats it once it is first
- * read, and until then its frames hold their objects (e.g. the response, as
- * the receiver of its methods), which an error kept by the application, or
- * by a source (e.g. minipass, which keeps the one it is destroyed with),
- * would retain as long as it lives. For the packages of binden only.
+ * Formats the stack of an error that binden, or one of its packages, has just
+ * created, before it throws it, rejects with it or hands it over (each one:
+ * e.g. the `TypeError` of an argument, the reason of an aborted signal, or
+ * the error that a send rejects with, or destroys its source with): V8
+ * formats it once it is first read, and until then its frames hold their
+ * objects (e.g. the response, as the receiver of its methods), which an
+ * error kept by the application, or by a source (e.g. minipass, which keeps
+ * the one it is destroyed with), would retain as long as it lives. A plain
+ * `BindenError` formats itself. For the packages of binden only.
  *
  * @internal
  */
@@ -290,7 +292,9 @@ export class Exchange implements ITokenIssuer {
       exchanges.set(request, exchange);
       return exchange;
     } else if (found.#response !== response) {
-      throw new TypeError("The response is not the one of the request");
+      throw formatStack(
+        new TypeError("The response is not the one of the request"),
+      );
     }
     return found;
   }
@@ -595,11 +599,13 @@ export class Exchange implements ITokenIssuer {
     if (!this.may_reply) {
       return;
     } else if (!Number.isInteger(ms)) {
-      throw new TypeError("The timeout is not an integer");
+      throw formatStack(new TypeError("The timeout is not an integer"));
     } else if (ms < 0 || ms > MAX_DELAY) {
-      throw new RangeError(`The timeout is not between 0 and ${MAX_DELAY}`);
+      throw formatStack(
+        new RangeError(`The timeout is not between 0 and ${MAX_DELAY}`),
+      );
     } else if (this.#phase !== "running") {
-      throw new TypeError("The request has been completed");
+      throw formatStack(new TypeError("The request has been completed"));
     }
     this.#clearTimer();
     if (ms > 0 && !this.#controller.signal.aborted) {
@@ -623,9 +629,9 @@ export class Exchange implements ITokenIssuer {
    */
   public onCleanup(cleanup: () => unknown): void {
     if (typeof cleanup !== "function") {
-      throw new TypeError("The cleanup is not a function");
+      throw formatStack(new TypeError("The cleanup is not a function"));
     } else if (this.#phase !== "running") {
-      throw new TypeError("The request has been completed");
+      throw formatStack(new TypeError("The request has been completed"));
     }
     this.#cleanups.push(cleanup);
   }

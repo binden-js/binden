@@ -1,3 +1,4 @@
+import { formatStack } from "../exchange.js";
 import { trimOws } from "./list.js";
 
 /** A range of `Range`: its first and last positions, either one optional */
@@ -33,14 +34,16 @@ export class Range implements IRange {
       ["end", end],
     ] as const) {
       if (value !== null && !(Number.isSafeInteger(value) && value >= 0)) {
-        throw new TypeError(`\`${name}\` is not a non-negative integer`);
+        throw formatStack(
+          new TypeError(`\`${name}\` is not a non-negative integer`),
+        );
       }
     }
     // Only an unsatisfied `ContentRange` has neither
     if (new.target === Range && start === null && end === null) {
-      throw new TypeError("A range has a `start` or an `end`");
+      throw formatStack(new TypeError("A range has a `start` or an `end`"));
     } else if (start !== null && end !== null && end < start) {
-      throw new TypeError("`end` is less than `start`");
+      throw formatStack(new TypeError("`end` is less than `start`"));
     }
     this.#unit = "bytes";
     this.#start = start;

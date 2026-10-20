@@ -157,7 +157,7 @@ export type IBindenOptions<State extends object = Record<string, unknown>> =
         });
 
 /** Thrown through the stack once the request has been aborted: the stack stops */
-const ABORTED = new Error("The request has been aborted");
+const ABORTED = formatStack(new Error("The request has been aborted"));
 
 /** The route of the access log for the replies of the framework (e.g. `404`) */
 const UNMATCHED = "<unmatched>";
@@ -281,17 +281,17 @@ export class Binden<
     Binden.#boolean("auto_head", auto_head);
     Binden.#boolean("log_error_details", log_error_details);
     if (typeof logger !== "undefined" && !isLogger(logger)) {
-      throw new TypeError("`logger` is not a logger");
+      throw formatStack(new TypeError("`logger` is not a logger"));
     }
     if (
       typeof error_handler !== "undefined" &&
       typeof error_handler !== "function"
     ) {
-      throw new TypeError("`error_handler` is not a function");
+      throw formatStack(new TypeError("`error_handler` is not a function"));
     } else if (typeof state !== "undefined" && typeof state !== "function") {
-      throw new TypeError("`state` is not a function");
+      throw formatStack(new TypeError("`state` is not a function"));
     } else if (typeof routing !== "object" || (routing as unknown) === null) {
-      throw new TypeError("`routing` is not an object");
+      throw formatStack(new TypeError("`routing` is not an object"));
     }
     const { case_sensitive = true, strict = true } = routing;
     this.#access = Binden.#accessOptions(access_log);
@@ -719,7 +719,7 @@ export class Binden<
     allow: IAllow,
   ): Promise<boolean> {
     if (chain.includes(stack)) {
-      throw new Error("A stack is mounted in itself");
+      throw formatStack(new Error("A stack is mounted in itself"));
     }
     chain.push(stack);
 
@@ -1364,8 +1364,8 @@ export class Binden<
       ) {
         // E.g. a context kept from a previous request: its response is not
         // the one to reply with
-        throw new TypeError(
-          "A middleware returned the context of another request",
+        throw formatStack(
+          new TypeError("A middleware returned the context of another request"),
         );
       }
       return next;
@@ -1441,9 +1441,13 @@ export class Binden<
       if (typeof property(state, "then") === "function") {
         // E.g. of an `async` factory: its rejection is observed
         Promise.resolve(state).catch(() => null);
-        throw new TypeError("The state of the request is a promise");
+        throw formatStack(
+          new TypeError("The state of the request is a promise"),
+        );
       } else if (typeof state !== "object" || state === null) {
-        throw new TypeError("The state of the request is not an object");
+        throw formatStack(
+          new TypeError("The state of the request is not an object"),
+        );
       }
       return { state, failure: null };
     } catch (error: unknown) {
@@ -1458,16 +1462,22 @@ export class Binden<
     } else if (option === true) {
       return { level: "info", path: "template" };
     } else if (typeof option !== "object" || option === null) {
-      throw new TypeError("`access_log` is not a boolean or an object");
+      throw formatStack(
+        new TypeError("`access_log` is not a boolean or an object"),
+      );
     }
     const { level = "info", path = "template" } = option as Record<
       string,
       unknown
     >;
     if (level !== "info" && level !== "debug") {
-      throw new TypeError("`access_log.level` is not `info` or `debug`");
+      throw formatStack(
+        new TypeError("`access_log.level` is not `info` or `debug`"),
+      );
     } else if (path !== "template" && path !== "path") {
-      throw new TypeError("`access_log.path` is not `template` or `path`");
+      throw formatStack(
+        new TypeError("`access_log.path` is not `template` or `path`"),
+      );
     }
     return { level, path };
   }
@@ -1561,7 +1571,7 @@ export class Binden<
   /** A boolean option */
   static #boolean(name: string, value: unknown): void {
     if (typeof value !== "boolean") {
-      throw new TypeError(`\`${name}\` is not a boolean`);
+      throw formatStack(new TypeError(`\`${name}\` is not a boolean`));
     }
   }
 }

@@ -132,7 +132,7 @@ export function validateResponseOptions({
   etag = false,
 }: { readonly etag?: boolean | undefined } = {}): Readonly<IResponseOptions> {
   if (typeof etag !== "boolean") {
-    throw new TypeError("`etag` is not a boolean");
+    throw formatStack(new TypeError("`etag` is not a boolean"));
   }
   return Object.freeze({ etag });
 }
@@ -154,7 +154,9 @@ function contentDisposition(filename?: string): string {
     filename === "" ||
     !filename.isWellFormed()
   ) {
-    throw new TypeError("The filename is not a non-empty well-formed string");
+    throw formatStack(
+      new TypeError("The filename is not a non-empty well-formed string"),
+    );
   }
   const ascii = filename.replaceAll(/[^\x20-\x7E]|["\\]/gu, "_");
   const encoded = [...new TextEncoder().encode(filename)]
@@ -1278,7 +1280,7 @@ export class BindenResponse<
     if (!this.#allows()) {
       return this;
     } else if (!isStatus(code)) {
-      throw new TypeError(`Status code ${code} is invalid`);
+      throw formatStack(new TypeError(`Status code ${code} is invalid`));
     }
     this.statusCode = code;
     return this;
@@ -1308,7 +1310,7 @@ export class BindenResponse<
         ? ContentType.fromString(media_type)
         : null;
     if (parsed === null) {
-      throw new TypeError(`Invalid media type: ${media_type}`);
+      throw formatStack(new TypeError(`Invalid media type: ${media_type}`));
     }
     return this.setHeader("Content-Type", parsed.toString());
   }
@@ -1334,7 +1336,7 @@ export class BindenResponse<
     }
     for (const field of fields) {
       if (!fieldName.test(field)) {
-        throw new TypeError(`Invalid field name: ${field}`);
+        throw formatStack(new TypeError(`Invalid field name: ${field}`));
       }
     }
     const raw = this.getHeader("Vary");
@@ -1542,9 +1544,12 @@ export class BindenResponse<
     }
     const message = typeof reason === "string" ? reason : this.statusMessage;
     if (typeof message === "string" && invalidReason.test(message)) {
-      throw Object.assign(new TypeError("Invalid character in statusMessage"), {
-        code: "ERR_INVALID_CHAR",
-      });
+      throw Object.assign(
+        formatStack(new TypeError("Invalid character in statusMessage")),
+        {
+          code: "ERR_INVALID_CHAR",
+        },
+      );
     }
     const given = typeof reason === "string" ? headers : (headers ?? reason);
     const pairs: unknown[] = Array.isArray(given)
@@ -1553,9 +1558,12 @@ export class BindenResponse<
         : given
       : Object.entries(given ?? {}).flat();
     if (pairs.length % 2 !== 0) {
-      throw Object.assign(new TypeError("The argument 'headers' is invalid"), {
-        code: "ERR_INVALID_ARG_VALUE",
-      });
+      throw Object.assign(
+        formatStack(new TypeError("The argument 'headers' is invalid")),
+        {
+          code: "ERR_INVALID_ARG_VALUE",
+        },
+      );
     }
     /** The `Content-Length` values given, which replace the ones set */
     const lengths: unknown[] = [];
@@ -1575,7 +1583,7 @@ export class BindenResponse<
       lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
     );
     if (refusal !== null) {
-      throw Object.assign(new TypeError(refusal), {
+      throw Object.assign(formatStack(new TypeError(refusal)), {
         code: "ERR_HTTP_INVALID_HEADER_VALUE",
       });
     }
@@ -1819,7 +1827,7 @@ export class BindenResponse<
       )
     ) {
       throw Object.assign(
-        new TypeError(`Unknown encoding: ${encoding as string}`),
+        formatStack(new TypeError(`Unknown encoding: ${encoding as string}`)),
         { code: "ERR_UNKNOWN_ENCODING" },
       );
     } else if (
@@ -2701,8 +2709,10 @@ export class BindenResponse<
       // Object]`), nor a source that cannot be read with backpressure or
       // released (its methods are not called)
       return Promise.reject(
-        new TypeError(
-          "The data is not a string, a number, a Buffer, a Uint8Array, a Readable nor a stream-like source (with on(), pause(), resume(), and removeListener() or off())",
+        formatStack(
+          new TypeError(
+            "The data is not a string, a number, a Buffer, a Uint8Array, a Readable nor a stream-like source (with on(), pause(), resume(), and removeListener() or off())",
+          ),
         ),
       );
     } else if (
@@ -2710,14 +2720,16 @@ export class BindenResponse<
       !Buffer.isEncoding(encoding)
     ) {
       return Promise.reject(
-        new TypeError(`Unknown encoding: ${String(encoding)}`),
+        formatStack(new TypeError(`Unknown encoding: ${String(encoding)}`)),
       );
     } else if (BindenResponse.#informational(this.statusCode)) {
       // Not a final response: the client would wait for the final one
       this.#release(data, kind);
       return Promise.reject(
-        new TypeError(
-          `Status code ${this.statusCode} is informational (use writeEarlyHints())`,
+        formatStack(
+          new TypeError(
+            `Status code ${this.statusCode} is informational (use writeEarlyHints())`,
+          ),
         ),
       );
     }
@@ -2903,12 +2915,12 @@ export class BindenResponse<
       type === "symbol" ||
       type === "bigint"
     ) {
-      throw new TypeError(`A ${type} is not a JSON value`);
+      throw formatStack(new TypeError(`A ${type} is not a JSON value`));
     }
     const body: unknown =
       typeof stringify === "undefined" ? JSON.stringify(data) : stringify(data);
     if (typeof body !== "string") {
-      throw new TypeError("The JSON text is not a string");
+      throw formatStack(new TypeError("The JSON text is not a string"));
     }
     await this.setHeader("Content-Type", ct_json).send(body);
   }
@@ -2958,9 +2970,11 @@ export class BindenResponse<
     if (!this.#allows()) {
       return;
     } else if (!isRedirectStatus(status)) {
-      throw new TypeError(`Status code ${String(status)} is not a redirect`);
+      throw formatStack(
+        new TypeError(`Status code ${String(status)} is not a redirect`),
+      );
     } else if (typeof allow_external !== "boolean") {
-      throw new TypeError("`allow_external` is not a boolean");
+      throw formatStack(new TypeError("`allow_external` is not a boolean"));
     }
     const { base, origin } = this.#base();
     const value = redirectLocation(location, base, origin, allow_external);
@@ -3841,10 +3855,9 @@ export class BindenResponse<
    * `formatStack()`): a send rejects with it, or destroys its source with it
    */
   static #premature(): Error {
-    const error = Object.assign(new Error("Premature close"), {
+    return Object.assign(formatStack(new Error("Premature close")), {
       code: "ERR_STREAM_PREMATURE_CLOSE",
     });
-    return formatStack(error);
   }
 
   /**
@@ -3853,10 +3866,9 @@ export class BindenResponse<
    */
   static #mismatch(size: number, length: number): Error {
     const message = `The body (${size} bytes) does not match its Content-Length (${length} bytes)`;
-    const error = Object.assign(new Error(message), {
+    return Object.assign(formatStack(new Error(message)), {
       code: "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
     });
-    return formatStack(error);
   }
 
   /**

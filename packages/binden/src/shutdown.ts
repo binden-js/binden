@@ -1,7 +1,7 @@
 import { type EventEmitter, errorMonitor } from "node:events";
+import { type Exchange, formatStack } from "./exchange.js";
 import { kFramework, kListen } from "./seal.js";
 import type { BindenResponse } from "./response.js";
-import type { Exchange } from "./exchange.js";
 import type { Server as HttpServer } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import type { Socket } from "node:net";
@@ -203,7 +203,7 @@ async function bound(
     .once("error", failed);
   const timer = setTimeout(() => {
     const message = `The server has not started listening within ${timeout} ms`;
-    resolve({ error: new Error(message) });
+    resolve({ error: formatStack(new Error(message)) });
     server.close();
   }, timeout);
   try {
@@ -295,8 +295,10 @@ async function close(
   const failed = done
     ? failure
     : {
-        error: new Error(
-          `The cleanup of the requests has not completed within ${cleanup_timeout} ms`,
+        error: formatStack(
+          new Error(
+            `The cleanup of the requests has not completed within ${cleanup_timeout} ms`,
+          ),
         ),
       };
   if (failed !== null) {
