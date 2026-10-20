@@ -7,7 +7,11 @@
 // returns a string on its first read and throws on the second, emitted
 // (`/emit-once`) or thrown by its `pause()` (`/pause-once`), or an error that
 // it emits (`/pst-emit`), or a chunk that is not bytes (`/pst-chunk`), while
-// a `prepareStackTrace` of the application throws, must reject the send (with
+// a `prepareStackTrace` of the application throws, or a `stack` getter that
+// throws, thrown by its `resume()` (`/resume`, `/resume-once` for one that
+// throws from its second read), also once the readable has room again
+// (`/drain`), or by a getter of its own `destroyed` once it ends (`/end`) or
+// closes (`/close`), must reject the send (with
 // that value: `original`), release its listeners, throw nothing into its
 // events (`threw=`), and leave its guard, so that a later error of the source
 // is logged and does not crash the process. Prints, by path (the arguments,
@@ -65,6 +69,10 @@ class Source extends EventEmitter {
   public readonly thrown: unknown;
   /** What its events have thrown into the code that emits them */
   public readonly threw: unknown[] = [];
+  /** How many times it has been resumed */
+  #resumes = 0;
+  /** Whether its `destroyed` getter throws */
+  #armed = false;
 
   public constructor(where: string) {
     super();
@@ -92,11 +100,38 @@ class Source extends EventEmitter {
   }
 
   public resume(): this {
+    this.#resumes += 1;
+    if (
+      this.#where.startsWith("/resume") ||
+      (this.#where === "/drain" && this.#resumes > 1)
+    ) {
+      throw this.thrown;
+    } else if (this.#where === "/drain") {
+      // More than the readable takes: it is read once the response drains
+      setImmediate(() => {
+        for (let chunk = 0; chunk < 8; chunk += 1) {
+          this.fire("data", Buffer.alloc(262_144, 0x61));
+        }
+      });
+    }
     return this;
   }
 
   public destroy(): this {
     return this;
+  }
+
+  public get destroyed(): boolean {
+    if (this.#armed) {
+      throw this.thrown;
+    }
+    return false;
+  }
+
+  /** Ends or closes, once its `destroyed` getter throws */
+  public stop(event: string): void {
+    this.#armed = true;
+    this.fire(event, null);
   }
 
   /** Emits an event, recording what it throws (`failing`: while a `prepareStackTrace` throws) */
@@ -135,6 +170,9 @@ const app = new Binden({
     } else if (pathname === "/pst-chunk") {
       clearInterval(timer);
       source.fire("data", null, true);
+    } else if (pathname === "/end" || pathname === "/close") {
+      clearInterval(timer);
+      source.stop(pathname.slice(1));
     } else if (!pathname.startsWith("/pause") || chunks > 2000) {
       clearInterval(timer);
     } else {
@@ -164,12 +202,18 @@ for (const path of paths.length === 0 ? ["/setup", "/pause"] : paths) {
     received += chunk;
   });
   socket.on("error", () => null);
+  // Before anything is read (e.g. a reply that comes before the send has
+  // settled for the fixture, once the client reads)
+  const closed = once(socket, "close");
   socket.write(`GET ${path} HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n`);
-  // The client reads nothing until the send has settled: the response fills
-  socket.pause();
+  if (path.startsWith("/pause")) {
+    // The client reads nothing until the send has settled: the response
+    // fills (but once the readable has room again, `/drain`)
+    socket.pause();
+  }
   await pollUntil(() => outcomes.has(path));
   socket.resume();
-  await once(socket, "close");
+  await closed;
   const source = sources.get(path) as Source;
   const before = captured.records.length;
   source.emit("error", new Error("Later"));

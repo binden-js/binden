@@ -963,6 +963,17 @@ export function readStreamLike(
       dropFailed();
     });
   });
+  /**
+   * Calls a method of the source. Every call into code of the source throws
+   * nothing out of the adapter once it is read: its `on()` (see `listen`) and
+   * what its getters throw before (`hasEnded()`, `isDestroyed()` and
+   * `erroredOf()`, before anything is added) reject the send, its `pause()`
+   * (see its `data`) and its `resume()` (see `read`) destroy the readable
+   * (see `destroyWith()`), the getters of its state that it reads afterwards
+   * are caught (see `destroyedOnce()`, `dropFailed()`, `hasClosed()`), and
+   * what its removals, its release and its guard throw is logged (see
+   * `release()`, `releaseBy()`, `guard()`)
+   */
   const call = (method: IMethod, ...args: unknown[]): void => {
     Reflect.apply(method, source, args);
   };
@@ -1055,7 +1066,15 @@ export function readStreamLike(
       // Reads more of the source: it flows again (never once it has settled:
       // the readable has ended or is destroyed)
       read: (): void => {
-        call(methods.resume);
+        try {
+          call(methods.resume);
+        } catch (error: unknown) {
+          // Its own `resume()` (the first one, or once the readable has room
+          // again): as its `pause()`, never thrown out of `read()` of
+          // Node.js, which would destroy the readable with it as it is
+          // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is read, below
+          destroyWith(error);
+        }
       },
       // Destroyed before the source has settled: it is cancelled, and its
       // own cleanup ends at once (the destroy of the source may emit nothing)
@@ -1210,6 +1229,25 @@ export function readStreamLike(
       });
     }
   };
+  /**
+   * Whether the source has been destroyed (see `isDestroyed()`) once it has
+   * ended or closed (`closed`): `null` when its code throws (e.g. a getter of
+   * its own `destroyed`), which destroys the readable (see `destroyWith()`),
+   * and releases the source, as for a cancellation, with what it has thrown,
+   * under its guard (`closed`: by its `close`), never thrown into its events.
+   * That value decides the send meanwhile (see `decide()`).
+   */
+  const destroyedOnce = (closed: boolean): boolean | null => {
+    try {
+      return isDestroyed(source);
+    } catch (error: unknown) {
+      decide(source, error, () => {
+        protect(closed);
+        destroyWith(error);
+      });
+      return null;
+    }
+  };
   if (hasEnded(source)) {
     // Its destroy may still fail (e.g. by `autoDestroy` once it has ended)
     settled = true;
@@ -1251,16 +1289,18 @@ export function readStreamLike(
     listen("error", errors.listener);
     listen("close", () => {
       // Before its end (once it has ended, it is no longer listened to)
-      if (isDestroyed(source)) {
+      const gone = destroyedOnce(true);
+      if (gone === true) {
         stopped(true);
-      } else {
+      } else if (gone === false) {
         fail(premature(), true);
       }
     });
     listen("end", () => {
-      if (isDestroyed(source)) {
+      const gone = destroyedOnce(false);
+      if (gone === true) {
         stopped(false);
-      } else {
+      } else if (gone === false) {
         settle();
         readable.push(null);
       }
