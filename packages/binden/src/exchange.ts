@@ -17,6 +17,8 @@ import type { BindenResponse } from "./response.js";
 import { EventEmitter } from "node:events";
 import type { IncomingMessage } from "node:http";
 import type { Socket } from "node:net";
+import { decided } from "./stream-like.js";
+import { isProxy } from "node:util/types";
 
 /** Why the work of a request has been abandoned */
 export type IAbortReason = "client_closed" | "deadline" | "shutdown";
@@ -42,6 +44,99 @@ export function formatStack<T extends Error>(error: T): T {
     // left to it
   }
   return error;
+}
+
+/**
+ * The getter of `stack` of the engine: on the versions of Node.js that
+ * binden supports, every native error (also an instance of a subclass, a
+ * `DOMException` or an object of `Error.captureStackTrace()`) has it as an
+ * accessor of its own. It formats the stack once it is first read (by
+ * `Error.prepareStackTrace`, which may be of the application, and may throw:
+ * the stack is not formatted then), and returns it as formatted afterwards.
+ */
+function engineStack(): unknown {
+  const probe = {};
+  Error.captureStackTrace(probe);
+  // An object in any case (none would be `{}`)
+  const descriptor = Object(
+    Reflect.getOwnPropertyDescriptor(probe, "stack"),
+  ) as object;
+  return Reflect.get(descriptor, "get");
+}
+
+/** The getter of `stack` of the engine (see `engineStack()`) */
+const nativeStack = engineStack();
+
+/**
+ * Formats the stack of a value by the getter of the engine (see
+ * `engineStack()`): whether it is formatted. A `prepareStackTrace` of the
+ * application may throw: the stack is not formatted then, and Node.js would
+ * run it again.
+ */
+function formats(value: unknown): boolean {
+  try {
+    Reflect.get(Object(value) as object, "stack", value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether Node.js reads the `stack` of a value without running code of the
+ * application, as it does to destroy a `Readable` with it (before the
+ * stream is destroyed, and again once its `_destroy()` has called back): a
+ * value whose `stack` (its own, or of the nearest prototype that has one) is
+ * a value, a value without a `stack`, or one whose `stack` is the getter of
+ * the engine (see `engineStack()`), read here first: once formatted, its
+ * stack is kept, and Node.js reads it as it is. Never through a proxy (its
+ * traps are code of the application), nor by a getter of the application,
+ * which is not called (it may return a string here, and throw once Node.js
+ * reads it). For the packages of binden only.
+ *
+ * @internal
+ */
+export function readsSafely(value: unknown): boolean {
+  for (
+    let link: object | null = Object(value) as object;
+    link !== null;
+    link = Reflect.getPrototypeOf(link)
+  ) {
+    if (isProxy(link)) {
+      return false;
+    }
+    const descriptor = Reflect.getOwnPropertyDescriptor(link, "stack");
+    if (typeof descriptor !== "undefined") {
+      return (
+        "value" in descriptor ||
+        (Reflect.get(descriptor, "get") === nativeStack && formats(value))
+      );
+    }
+  }
+  return true;
+}
+
+/**
+ * What a `Readable` is destroyed with in place of a value whose `stack`
+ * Node.js cannot read safely (see `readsSafely()`): an `Error` that carries
+ * it as its `cause`, formatted (see `formatStack()`), decided as well (see
+ * `decided()`), whose stack is its header when a `prepareStackTrace` of the
+ * application fails to format it (Node.js would run it again). For the
+ * packages of binden only.
+ *
+ * @internal
+ */
+export function carrierOf(cause: unknown): Error {
+  const carrier = formatStack(new Error("A stream has failed", { cause }));
+  if (!readsSafely(carrier)) {
+    Object.defineProperty(carrier, "stack", {
+      configurable: true,
+      value: "Error: A stream has failed",
+      writable: true,
+    });
+  }
+  decided(carrier);
+  return carrier;
 }
 
 /** The reason of `context.signal` once the request is aborted */
