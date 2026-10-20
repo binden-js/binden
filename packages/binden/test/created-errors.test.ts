@@ -216,6 +216,16 @@ suite(
         "BindenError 400",
       ],
       ["throw", "the `BindenError` of `context.throw()`", "BindenError 418"],
+      [
+        "redirect",
+        "the `TypeError` of `response.redirect()` for a location that is not a URL",
+        "TypeError",
+      ],
+      [
+        "json",
+        "the `TypeError` of `JSON.stringify()` that `response.json()` rejects with",
+        "TypeError",
+      ],
     ] as const) {
       test(how, () => {
         // 60 requests, whose errors are kept

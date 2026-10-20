@@ -167,7 +167,8 @@ suite("redirect", () => {
         1 as unknown as string,
         "TypeError: The location is not a non-empty string or a URL",
       ],
-      ["http://[::1", "TypeError: Invalid URL"],
+      ["http://[::1", "TypeError: The location is not a valid URL"],
+      ["http://a:99999/", "TypeError: The location is not a valid URL"],
     ];
     for (const [location, expected] of cases) {
       // Also with `allow_external`

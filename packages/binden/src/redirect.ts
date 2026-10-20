@@ -30,8 +30,8 @@ const forbidden = /[\p{Cc}\s\\]/u;
  * resolved against the URL of the request (`base`). A relative reference stays
  * relative (its path, query and fragment). Locations on other origins than
  * `origin` (`null` when it is not known) and network-path references need
- * `allow_external`; userinfo, controls, whitespace, backslashes and schemes
- * other than `http` and `https` throw a `TypeError`.
+ * `allow_external`; an invalid URL, userinfo, controls, whitespace,
+ * backslashes and schemes other than `http` and `https` throw a `TypeError`.
  */
 export function redirectLocation(
   location: URL | string,
@@ -61,6 +61,12 @@ export function redirectLocation(
   const userinfo =
     (absolute || network) &&
     /^[^/?#]*@/u.test(input.replace(scheme, "").replace(/^\/+/u, ""));
+  // Checked first: the error of `new URL()` (`ERR_INVALID_URL`, which
+  // Node.js creates while the frames of the response are on the stack) would
+  // not be formatted (see `formatStack()`)
+  if (!URL.canParse(input, base)) {
+    throw formatStack(new TypeError("The location is not a valid URL"));
+  }
   const url = new URL(input, base);
 
   if (userinfo) {

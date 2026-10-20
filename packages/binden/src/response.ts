@@ -337,6 +337,20 @@ const destroyReadable = Reflect.get(Readable.prototype, "destroy") as (
   this: Readable,
 ) => unknown;
 
+/**
+ * The JSON text of a value (`JSON.stringify()`). What it throws (e.g. the
+ * `TypeError` of a nested `bigint` or of a cycle, which V8 creates while the
+ * frames of the response are on the stack) is formatted (see
+ * `formatStack()`), so that an application that keeps it keeps none of them.
+ */
+function jsonText(data: unknown): string | undefined {
+  try {
+    return JSON.stringify(data);
+  } catch (error: unknown) {
+    throw formatStack(error as Error);
+  }
+}
+
 /** The report of a late error of a source of a response that is not owned */
 function unreported(): void {
   // Nobody to tell
@@ -2918,7 +2932,7 @@ export class BindenResponse<
       throw formatStack(new TypeError(`A ${type} is not a JSON value`));
     }
     const body: unknown =
-      typeof stringify === "undefined" ? JSON.stringify(data) : stringify(data);
+      typeof stringify === "undefined" ? jsonText(data) : stringify(data);
     if (typeof body !== "string") {
       throw formatStack(new TypeError("The JSON text is not a string"));
     }

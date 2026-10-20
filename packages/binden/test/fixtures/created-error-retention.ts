@@ -5,7 +5,10 @@
 // by the middleware), `dotfile` (the `403` that `sendFile()` rejects with for
 // a dotfile it denies), `hidden` (its `404` for a dotfile it ignores),
 // `outside` (its `404` for a path that leaves its root), `url` (the `400` that
-// `context.url` throws for an invalid `Host`) and `throw` (the `BindenError`
+// `context.url` throws for an invalid `Host`), `redirect` (the `TypeError`
+// of `response.redirect()` for a location that is not a URL) and `json` (the
+// `TypeError` that `JSON.stringify()` throws in `response.json()` for a
+// nested `bigint`), caught by the middleware, and `throw` (the `BindenError`
 // of `context.throw()`): the error handler keeps the error. Prints whether the
 // responses and the requests are collected, and the kinds of the errors that
 // the application keeps.
@@ -58,6 +61,19 @@ const app = new Binden({
       return context.response.sendFile("../../package.json", { root });
     case "url":
       return context.response.send(context.url.pathname);
+    case "redirect":
+    case "json":
+      return (
+        mode === "redirect"
+          ? context.response.redirect("http://[bad")
+          : context.response.json({ big: 1n })
+      ).then(
+        () => context.response.status(500).send(),
+        (error: unknown) => {
+          errors.push(error);
+          return context.response.status(400).send();
+        },
+      );
     default:
       return context.throw(418);
   }
