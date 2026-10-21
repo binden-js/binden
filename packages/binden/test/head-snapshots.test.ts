@@ -320,6 +320,11 @@ suite(
           { "pairs.0": 1, "pairs.1": 1, "pair.0": 1, "pair.1": 1 },
         ],
       );
+      // A pair that is not an object, which Node.js reads as it is (a
+      // string: by its characters)
+      const string = responseOf(true);
+      string.addTrailers(["xv"] as never);
+      deepStrictEqual(Reflect.get(string, "_trailer"), "x: v\r\n");
       let values = 0;
       const object = responseOf(true);
       object.addTrailers({
