@@ -10,6 +10,7 @@ import {
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
+import { kSeal } from "../src/seal.js";
 import { once } from "node:events";
 
 const hints = { link: "</style.css>; rel=preload; as=style" };
@@ -810,5 +811,183 @@ suite("writeInformation() on every version of Node.js", () => {
     } finally {
       Reflect.set(Error, "prepareStackTrace", previous);
     }
+  });
+});
+
+suite("Informational responses once the head is committed (H27-2)", () => {
+  /** A response to a request of an HTTP version, without a connection */
+  function response(major = 1, minor = 1): BindenResponse {
+    const request = new IncomingMessage(new Socket());
+    request.httpVersionMajor = major;
+    request.httpVersionMinor = minor;
+    return new BindenResponse(request);
+  }
+
+  /** The informational calls, by name (`writeEarlyHints()` with hints that Node.js 26 ignores) */
+  const calls: Record<
+    string,
+    (response: BindenResponse, done: () => void) => void
+  > = {
+    writeContinue: (informing, done): void => {
+      informing.writeContinue(done);
+    },
+    writeProcessing: (informing, done): void => {
+      informing.writeProcessing(done);
+    },
+    writeEarlyHints: (informing, done): void => {
+      informing.writeEarlyHints({}, done);
+    },
+    "writeEarlyHints() of a link": (informing, done): void => {
+      informing.writeEarlyHints(hints, done);
+    },
+    writeInformation: (informing, done): void => {
+      informing.writeInformation(102, done);
+    },
+  };
+
+  /**
+   * Runs `run` with `writeInformation()` of Node.js (absent before 24.18.0)
+   * replaced by one that records its calls
+   */
+  function recording(run: () => void): number {
+    const prototype = ServerResponse.prototype as object;
+    const descriptor = Reflect.getOwnPropertyDescriptor(
+      prototype,
+      "writeInformation",
+    );
+    let called = 0;
+    Reflect.defineProperty(prototype, "writeInformation", {
+      configurable: true,
+      writable: true,
+      value: (): void => {
+        called += 1;
+      },
+    });
+    try {
+      run();
+    } finally {
+      if (typeof descriptor === "undefined") {
+        Reflect.deleteProperty(prototype, "writeInformation");
+      } else {
+        Reflect.defineProperty(prototype, "writeInformation", descriptor);
+      }
+    }
+    return called;
+  }
+
+  test("throw ERR_HTTP_HEADERS_SENT, formatted, on every version of Node.js, and queue nothing; ignored calls (HTTP/1.0, a sealed response) stay ignored", async () => {
+    const formatted = new WeakSet<object>();
+    const previous: unknown = Reflect.get(Error, "prepareStackTrace");
+    Reflect.set(Error, "prepareStackTrace", (error: Error): string => {
+      formatted.add(error);
+      return `${error.name}: ${error.message}`;
+    });
+    const outcomes: unknown[] = [];
+    const ignored: Promise<unknown>[] = [];
+    try {
+      for (const [name, call] of Object.entries(calls)) {
+        const committed = response();
+        committed.writeHead(200);
+        const queued = Reflect.get(committed, "outputData") as unknown[];
+        const before = queued.length;
+        let thrown: unknown = null;
+        const called = recording(() => {
+          try {
+            call(committed, () => {
+              // Never
+            });
+          } catch (error: unknown) {
+            thrown = error;
+          }
+        });
+        const { code, message } = thrown as {
+          code?: unknown;
+          message?: unknown;
+        };
+        outcomes.push([
+          name,
+          thrown instanceof Error,
+          code,
+          message,
+          formatted.has(thrown as object),
+          queued.length - before,
+          called,
+        ]);
+        // Ignored, the head committed as well: the callback is called
+        for (const informing of [response(1, 0), response()]) {
+          informing.writeHead(200);
+          if (informing.req.httpVersionMinor === 1) {
+            informing[kSeal]();
+          }
+          const { promise, resolve } = Promise.withResolvers<unknown>();
+          call(informing, () => {
+            resolve(name);
+          });
+          ignored.push(within(promise));
+        }
+      }
+    } finally {
+      Reflect.set(Error, "prepareStackTrace", previous);
+    }
+    deepStrictEqual(
+      outcomes,
+      Object.keys(calls).map((name) => [
+        name,
+        true,
+        "ERR_HTTP_HEADERS_SENT",
+        "Cannot write headers after they are sent to the client",
+        true,
+        0,
+        0,
+      ]),
+    );
+    deepStrictEqual(
+      (await Promise.all(ignored)).length,
+      Object.keys(calls).length * 2,
+    );
+  });
+
+  test("a flushed head whose Content-Length frames the body: the call throws, and the body and the pipelined response are read as sent", async () => {
+    const outcomes: string[] = [];
+    const app = new Binden().use((context: Context) => {
+      const name = decodeURIComponent(context.url.pathname.slice(1));
+      if (name === "next") {
+        context.response.end("next");
+        return;
+      }
+      context.response.setHeader("Content-Length", 5);
+      context.response.flushHeaders();
+      try {
+        calls[name](context.response, () => {
+          // Never
+        });
+        outcomes.push(`${name}: sent`);
+      } catch (error: unknown) {
+        outcomes.push(`${name}: ${String((error as { code?: unknown }).code)}`);
+      }
+      context.response.end("hello");
+    });
+    const listening = await listen(app);
+    try {
+      for (const name of Object.keys(calls)) {
+        const data = await converse(
+          listening.port,
+          `GET /${encodeURIComponent(name)} HTTP/1.1\r\nHost: a\r\n\r\n` +
+            "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        );
+        deepStrictEqual(
+          data.replaceAll(/\r\nDate: [^\r]*/gu, ""),
+          "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\nhello" +
+            "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnext",
+          name,
+        );
+      }
+    } finally {
+      await listening.close();
+    }
+    deepStrictEqual(
+      outcomes,
+      Object.keys(calls).map((name) => `${name}: ERR_HTTP_HEADERS_SENT`),
+    );
   });
 });

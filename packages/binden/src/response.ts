@@ -2586,10 +2586,12 @@ export class BindenResponse<
 
   /**
    * Sends `100 Continue`, unless the response is sealed or the request is
-   * HTTP/1.0 (its callback is then called asynchronously)
+   * HTTP/1.0 (its callback is then called asynchronously). Once the head is
+   * committed, it throws `ERR_HTTP_HEADERS_SENT` (see `#informs()`).
    */
   public override writeContinue(callback?: () => void): void {
-    // Node.js takes anything as its callback: nothing to format
+    // Node.js takes anything as its callback: only the refusal of a
+    // committed head is formatted (see `#informs()`)
     if (!this.#informs()) {
       BindenResponse.#ignore([callback]);
       return;
@@ -2599,10 +2601,12 @@ export class BindenResponse<
 
   /**
    * Sends `102 Processing`, unless the response is sealed or the request is
-   * HTTP/1.0 (its callback is then called asynchronously)
+   * HTTP/1.0 (its callback is then called asynchronously). Once the head is
+   * committed, it throws `ERR_HTTP_HEADERS_SENT` (see `#informs()`).
    */
   public override writeProcessing(callback?: () => void): void {
-    // Node.js takes anything as its callback: nothing to format
+    // Node.js takes anything as its callback: only the refusal of a
+    // committed head is formatted (see `#informs()`)
     if (!this.#informs()) {
       BindenResponse.#ignore([callback]);
       return;
@@ -2612,7 +2616,9 @@ export class BindenResponse<
 
   /**
    * Sends `103 Early Hints`, unless the response is sealed or the request is
-   * HTTP/1.0 (its callback is then called asynchronously)
+   * HTTP/1.0 (its callback is then called asynchronously). Once the head is
+   * committed, it throws `ERR_HTTP_HEADERS_SENT` before it reads the hints
+   * (see `#informs()`).
    */
   public override writeEarlyHints(
     hints: Record<string, string[] | string>,
@@ -2632,8 +2638,9 @@ export class BindenResponse<
   /**
    * Sends an informational response (see `writeInformation()` of Node.js,
    * from 24.18.0), unless the response is sealed or the request is HTTP/1.0
-   * (its callback is then called asynchronously). Without it (before Node.js
-   * 24.18.0), it throws a `TypeError` of binden.
+   * (its callback is then called asynchronously). Once the head is committed,
+   * it throws `ERR_HTTP_HEADERS_SENT` (see `#informs()`). Without the method
+   * of Node.js (before 24.18.0), it throws a `TypeError` of binden.
    */
   public override writeInformation(
     statusCode: number,
@@ -2652,6 +2659,7 @@ export class BindenResponse<
     try {
       // Of Node.js from 24.18.0, read as it is called
       const informational: unknown = Reflect.get(parent, "writeInformation");
+      // Also once the head is committed, on every version (see `#informs()`)
       if (!this.#informs()) {
         BindenResponse.#ignore(args);
         return;
@@ -2675,11 +2683,15 @@ export class BindenResponse<
     }
   }
 
-  /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
   /**
    * Whether an informational response may be sent: not once the response is
    * sealed, and never to an HTTP/1.0 client, which does not know them
-   * (RFC 9110, section 15.2)
+   * (RFC 9110, section 15.2). Otherwise, once the head of the response is
+   * committed, it throws `ERR_HTTP_HEADERS_SENT`, formatted (see
+   * `formatStack()`), as Node.js 26 does: before 24.18.0, Node.js would write
+   * the informational head into the body, which the client would read as part
+   * of it (or, past its `Content-Length`, as the next response of the
+   * connection).
    */
   #informs(): boolean {
     const { httpVersionMajor = 1, httpVersionMinor = 1 } = this.req as {
@@ -2688,9 +2700,20 @@ export class BindenResponse<
     };
     const old =
       httpVersionMajor < 1 || (httpVersionMajor === 1 && httpVersionMinor < 1);
-    return !old && this.#allows();
+    if (old || !this.#allows()) {
+      return false;
+    } else if (this.headersSent) {
+      throw Object.assign(
+        formatStack(
+          new Error("Cannot write headers after they are sent to the client"),
+        ),
+        { code: "ERR_HTTP_HEADERS_SENT" },
+      );
+    }
+    return true;
   }
 
+  /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
   static #ignore(args: readonly unknown[]): void {
     const callback = args.find((arg) => typeof arg === "function") as
       (() => void) | undefined;
