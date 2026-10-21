@@ -5,6 +5,7 @@ import {
   Middleware,
   formatStack,
   formatting,
+  serializers,
 } from "binden";
 import {
   DiskStore,
@@ -39,6 +40,26 @@ import { tmpdir } from "node:os";
 
 /** The logger of a context */
 type ILog = Context["log"];
+
+/** What a parse uses of its context, each read once (see `Multipart#start()`) */
+interface IExchange {
+  /** Given to the callbacks of the options, and asked for the cleanup (disk) */
+  readonly context: Context;
+  readonly request: Context["request"];
+  readonly response: Context["response"];
+  readonly signal: AbortSignal;
+  readonly headers: Context["request"]["headers"];
+  /** A child of `context.log` */
+  readonly log: ILog;
+}
+
+/**
+ * The first failure of a late call of the context, formatted: the rejection
+ * of the parse (what is thrown may be anything, an error or not)
+ */
+interface IFailure {
+  readonly error: Error;
+}
 
 /** A part, in the order of the request (a file once it has been read) */
 interface ISlot {
@@ -122,6 +143,10 @@ async function collect(stream: Readable): Promise<Buffer<ArrayBuffer>[]> {
  */
 class Parser {
   readonly #context: Context;
+  readonly #request: Context["request"];
+  readonly #response: Context["response"];
+  readonly #signal: AbortSignal;
+  readonly #headers: Context["request"]["headers"];
   readonly #log: ILog;
   readonly #info: IParseInfo;
   readonly #config: IMultipartConfig;
@@ -140,10 +165,10 @@ class Parser {
   #busboy: Busboy | null = null;
   #store: DiskStore | null = null;
   #over = false;
+  #failure: IFailure | null = null;
 
   public constructor(
-    context: Context,
-    log: ILog,
+    { context, request, response, signal, headers, log }: IExchange,
     info: IParseInfo,
     {
       config,
@@ -155,6 +180,10 @@ class Parser {
     }: IParserOptions,
   ) {
     this.#context = context;
+    this.#request = request;
+    this.#response = response;
+    this.#signal = signal;
+    this.#headers = headers;
     this.#log = log;
     this.#info = info;
     this.#config = config;
@@ -165,26 +194,44 @@ class Parser {
     this.#mode = mode;
   }
 
-  /** Settles once the body is parsed (`request.body`), or refused */
+  /**
+   * Settles once the body is parsed (`request.body`), or refused: what the
+   * context throws (as the parse starts, or later) refuses it with that
+   * error, formatted (see `#failed()`)
+   */
   public run(): Promise<null> {
-    const { request, signal } = this.#context;
+    try {
+      this.#begin();
+    } catch (error: unknown) {
+      this.#failed(error);
+    }
+    return this.#deferred.promise;
+  }
+
+  /** Starts to read the body, unless it can be refused at once */
+  #begin(): void {
+    const request = this.#request;
+    const signal = this.#signal;
+    const headers = this.#headers;
     if (signal.aborted) {
       this.#abort();
-      return this.#deferred.promise;
+      return;
     }
     const onAbort = (): void => {
-      this.#abort();
+      this.#late(() => {
+        this.#abort();
+      });
     };
     signal.addEventListener("abort", onAbort, { once: true });
     this.#detach.push(() => {
       signal.removeEventListener("abort", onAbort);
     });
 
-    if (!identity(request.headers["content-encoding"])) {
+    if (!identity(headers["content-encoding"])) {
       // Busboy would parse the coded bytes
       const message = "The body has a content coding, which is not decoded";
       this.#refuse(new BindenError(415, { message }));
-      return this.#deferred.promise;
+      return;
     }
 
     const boundary = request.content_type?.boundary ?? "";
@@ -192,19 +239,19 @@ class Parser {
       // Busboy would not find the parts
       const message = "The `boundary` is missing or invalid";
       this.#refuse(new BindenError(400, { message }));
-      return this.#deferred.promise;
+      return;
     }
 
-    const length = Number(request.headers["content-length"] ?? 0);
+    const length = Number(headers["content-length"] ?? 0);
     if (length > this.#limit) {
       this.#tooLarge();
-      return this.#deferred.promise;
+      return;
     }
 
-    const parser = create({ ...this.#config, headers: request.headers });
+    const parser = create({ ...this.#config, headers });
     if (parser instanceof Error) {
       this.#malformed(parser);
-      return this.#deferred.promise;
+      return;
     }
     this.#busboy = parser;
     parser
@@ -252,7 +299,6 @@ class Parser {
     // A closed connection aborts the signal (`pipe` does not tell busboy)
     request.pipe(parser);
     this.#watch();
-    return this.#deferred.promise;
   }
 
   /**
@@ -262,12 +308,14 @@ class Parser {
    * aborted first). A body that has been received whole is still read.
    */
   #watch(): void {
-    const { request } = this.#context;
+    const request = this.#request;
     const { socket } = request;
     const closed = (): void => {
-      if (!request.complete) {
-        this.#refuse(abortError(null));
-      }
+      this.#late(() => {
+        if (!request.complete) {
+          this.#refuse(abortError(null));
+        }
+      });
     };
     socket.once("close", closed);
     this.#detach.push(() => {
@@ -317,7 +365,9 @@ class Parser {
       if (!stream.readableEnded && !parser.destroyed) {
         // E.g. `on_file` has destroyed it: busboy does not go on without it
         const message = "The stream of a file has been closed before its end";
-        this.#refuse(failure(stream.errored, message));
+        this.#late(() => {
+          this.#refuse(failure(stream.errored, message));
+        });
       }
     });
     stream.once("limit", () => {
@@ -334,8 +384,11 @@ class Parser {
     this.#tasks.push(
       this.#file(info, stream, slot).catch((error: unknown) => {
         // E.g. `file_filter` has failed (the parser has already refused the
-        // request when its stream has failed)
-        this.#refuse(failure(error, "A file has not been handled"));
+        // request when its stream has failed), also with a value whose check
+        // throws (e.g. a revoked proxy)
+        this.#late(() => {
+          this.#refuse(failure(error, "A file has not been handled"));
+        });
       }),
     );
   }
@@ -399,13 +452,22 @@ class Parser {
     stream: IFileStream,
   ): Promise<IStoredFile> {
     if (this.#store === null) {
+      const context = this.#context;
+      let onCleanup: unknown = null;
+      try {
+        onCleanup = Reflect.get(context, "onCleanup");
+      } catch (error: unknown) {
+        // A read of the context, which refuses the parse with what it throws
+        this.#failed(error);
+        throw error;
+      }
       try {
         this.#store = new DiskStore(dir ?? tmpdir(), (cleanup) => {
-          this.#context.onCleanup(cleanup);
+          Reflect.apply(onCleanup as Context["onCleanup"], context, [cleanup]);
         });
       } catch (error: unknown) {
         // `onCleanup()` throws once the cleanup has started
-        throw cleanedUp(error);
+        throw cleanedUp(formatStack(error as Error));
       }
     }
     const file = this.#store.add(info, stream);
@@ -461,7 +523,51 @@ class Parser {
    * reason of the signal)
    */
   #abort(): void {
-    this.#refuse(abortError(this.#context.signal.reason));
+    this.#refuse(abortError(this.#signal.reason));
+  }
+
+  /** Refuses the request with an error of the parser (see `#halt()`) */
+  #refuse(error: BindenAbortError | BindenError): void {
+    this.#halt(
+      error,
+      error instanceof BindenError
+        ? { status: error.status }
+        : { reason: error.reason },
+    );
+  }
+
+  /**
+   * A call of the context (of its request, its response, its signal or its
+   * logger), or a check of what it gives, has thrown: the parse is refused
+   * with what it has thrown (the first failure, see `#record()`)
+   */
+  #failed(error: unknown): void {
+    const failed = this.#record(error).error;
+    this.#halt(failed, { failure: serializers.error(failed) });
+  }
+
+  /** Keeps the first failure of the context, formatted: the rejection */
+  #record(error: unknown): IFailure {
+    this.#failure ??= { error: formatStack(error as Error) };
+    return this.#failure;
+  }
+
+  /** A call of the context while the parse stops (or ends): its failure is kept */
+  #guard(call: () => void): void {
+    try {
+      call();
+    } catch (error: unknown) {
+      this.#record(error);
+    }
+  }
+
+  /** A callback (e.g. of the signal or of the request): its failure refuses the parse */
+  #late(call: () => void): void {
+    try {
+      call();
+    } catch (error: unknown) {
+      this.#failed(error);
+    }
   }
 
   /**
@@ -470,25 +576,32 @@ class Parser {
    * of the response have already been sent. A send whose headers are not
    * sent yet (e.g. of a stream that has not given its first chunk) is left
    * to the framework: its reply (or the `503` that cancels it at the
-   * deadline) closes the connection.
+   * deadline) closes the connection. What the context throws meanwhile does
+   * not stop the cleanup: the first failure is the rejection.
    */
-  #refuse(error: BindenAbortError | BindenError): void {
+  #halt(error: Error, logged: Record<string, unknown>): void {
     if (this.#over) {
       return;
     }
     this.#end();
     this.#stop.abort(error);
-    const { request, response } = this.#context;
-    if (this.#busboy) {
-      request.unpipe(this.#busboy);
+    const request = this.#request;
+    const response = this.#response;
+    const reader = this.#busboy;
+    if (reader) {
+      this.#guard(() => {
+        request.unpipe(reader);
+      });
     }
-    if (response.headersSent) {
-      // The reply cannot tell the error
-      request.destroy();
-    } else {
-      request.pause();
-      response.setHeader("Connection", "close");
-    }
+    this.#guard(() => {
+      if (response.headersSent) {
+        // The reply cannot tell the error
+        request.destroy();
+      } else {
+        request.pause();
+        response.setHeader("Connection", "close");
+      }
+    });
     // Not while busboy emits the event that has refused the request: it would
     // go on with a stream that it no longer has
     process.nextTick(() => {
@@ -497,13 +610,10 @@ class Parser {
         stream.destroy();
       }
     });
-    this.#log.debug(
-      "The multipart body has been refused",
-      error instanceof BindenError
-        ? { status: error.status }
-        : { reason: error.reason },
-    );
-    this.#deferred.reject(error);
+    this.#guard(() => {
+      this.#log.debug("The multipart body has been refused", logged);
+    });
+    this.#deferred.reject(this.#failure === null ? error : this.#failure.error);
   }
 
   /** The body has been parsed: every file has been read */
@@ -512,9 +622,18 @@ class Parser {
       return;
     }
     this.#end();
-    this.#context.request.body =
+    const request = this.#request;
+    const body =
       this.#mode.kind === "disk" ? storedForm(this.#slots) : this.#form();
-    this.#deferred.resolve(null);
+    this.#guard(() => {
+      request.body = body;
+    });
+    const kept = this.#failure;
+    if (kept === null) {
+      this.#deferred.resolve(null);
+    } else {
+      this.#deferred.reject(kept.error);
+    }
   }
 
   /** The fields and the files in memory (skipped ones excluded) */
@@ -531,7 +650,7 @@ class Parser {
   #end(): void {
     this.#over = true;
     for (const detach of this.#detach) {
-      detach();
+      this.#guard(detach);
     }
   }
 }
@@ -574,6 +693,7 @@ export class Multipart extends Middleware {
    * `null` when it is not parsed
    */
   #start(context: Context): Promise<null> | null {
+    // Each property of the context is read once
     const { request } = context;
     const log = context.log.child({ middleware: Multipart.name });
     const { method = "GET", headers } = request;
@@ -590,13 +710,16 @@ export class Multipart extends Middleware {
     if (info === null) {
       log.debug("The body has already been parsed");
       return null;
-    } else if (context.response.writableFinished) {
+    }
+    const { response, signal } = context;
+    if (response.writableFinished) {
       // Node.js reads and discards what has not been read once the response
       // has finished: what is left of the body would be missing
       const message = "The body has been discarded once the response finished";
       log.error(message);
       throw new BindenError(500, { message });
     }
-    return new Parser(context, log, info, this.#options).run();
+    const exchange = { context, request, response, signal, headers, log };
+    return new Parser(exchange, info, this.#options).run();
   }
 }

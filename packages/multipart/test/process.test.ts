@@ -35,6 +35,15 @@ suite("Multipart (process safety)", () => {
     });
   });
 
+  test("what a context that only looks like one throws later, and a value whose check throws, are the rejection, never a pending parse", () => {
+    deepStrictEqual(run("late-context.ts"), {
+      status: 0,
+      stdout:
+        "200 200 | setHeader of the context | Cannot perform 'getPrototypeOf' on a proxy that has been revoked\n",
+      stderr: "",
+    });
+  });
+
   test("the stream storage keeps a bounded memory, whatever the size of the files", () => {
     const flags = ["--expose-gc"];
     deepStrictEqual(run("stream-memory.ts", { flags }), {
