@@ -109,6 +109,66 @@ suite("BindenResponse helpers", () => {
     deepStrictEqual(page.body.toString(), "<p>");
   });
 
+  test(".text(), .html(), .json() and .form() refused by send() (data that it cannot send, a view of a detached ArrayBuffer, a 1xx status) change nothing of the response: the Content-Type is set once send() accepts them (R26-R3-5)", async () => {
+    const transferred = new Uint8Array(2);
+    transferred.buffer.transfer();
+    const params = new URLSearchParams({ a: "b" });
+    const refused: [string, (response: BindenResponse) => Promise<void>][] = [
+      [
+        "text({})",
+        async (response): Promise<void> => response.text({} as string),
+      ],
+      [
+        "html(null)",
+        async (response): Promise<void> =>
+          response.html(null as unknown as string),
+      ],
+      [
+        "text(detached view)",
+        async (response): Promise<void> =>
+          response.text(transferred as unknown as string),
+      ],
+      [
+        "status(101).text()",
+        async (response): Promise<void> => response.status(101).text("x"),
+      ],
+      [
+        "status(101).html()",
+        async (response): Promise<void> => response.status(101).html("x"),
+      ],
+      [
+        "status(101).json()",
+        async (response): Promise<void> => response.status(101).json({}),
+      ],
+      [
+        "status(101).form()",
+        async (response): Promise<void> => response.status(101).form(params),
+      ],
+    ];
+    for (const [label, run] of refused) {
+      const response = detached();
+      const reason = await run(response).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      ok(reason instanceof TypeError, label);
+      deepStrictEqual(
+        [response.getHeaderNames(), response.headersSent],
+        [[], false],
+        label,
+      );
+    }
+    // Ignored once the response has ended, as `send()` (without a header
+    // set on the ended response)
+    const ended = detached();
+    ended.end();
+    await ended.text("x");
+    await ended.html("x");
+    await ended.json({});
+    await ended.form(params);
+    deepStrictEqual(ended.getHeader("Content-Type"), none);
+  });
+
   test(".type()", () => {
     const response = detached();
     ok(response.type(" Text/HTML ; Charset=UTF-8; q=x") === response);

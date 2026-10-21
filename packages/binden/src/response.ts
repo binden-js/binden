@@ -2888,7 +2888,7 @@ export class BindenResponse<
   public send(data: string, encoding: BufferEncoding): Promise<void>;
   public send(data?: unknown, encoding?: BufferEncoding): Promise<void> {
     try {
-      return this.#send(data, encoding);
+      return this.#send(data, null, encoding);
     } catch (error: unknown) {
       // E.g. a reason phrase or a `Trailer` that Node.js refuses once it sends
       // the headers: the response is unchanged, and the error can be replied
@@ -2897,8 +2897,17 @@ export class BindenResponse<
     }
   }
 
-  /** `send()`, which may throw before it has changed the response */
-  #send(data: unknown, encoding?: BufferEncoding): Promise<void> {
+  /**
+   * `send()`, which may throw before it has changed the response. The
+   * `Content-Type` of `text()`, `html()`, `json()` and `form()` (`type`) is set
+   * once the data and the status are accepted: a refused call changes nothing
+   * of the response.
+   */
+  #send(
+    data: unknown,
+    type: string | null,
+    encoding?: BufferEncoding,
+  ): Promise<void> {
     if (this.writableEnded || !this.#allows()) {
       // Ignored: nothing of the data is read (e.g. a getter of an object of
       // a work that may no longer mutate the response), but a Node.js
@@ -2943,6 +2952,9 @@ export class BindenResponse<
           ),
         ),
       );
+    } else if (type !== null) {
+      // Accepted: the media type of `text()`, `html()`, `json()` or `form()`
+      this.setHeader("Content-Type", type);
     }
 
     if (kind !== "value") {
@@ -3150,27 +3162,43 @@ export class BindenResponse<
     if (typeof body !== "string") {
       throw formatStack(new TypeError("The JSON text is not a string"));
     }
-    await this.setHeader("Content-Type", ct_json).send(body);
+    await this.#sendAs(body, ct_json);
   }
 
-  /** Send text as `text/plain; charset=utf-8` */
+  /**
+   * Send text as `text/plain; charset=utf-8`: data that `send()` refuses (or
+   * a 1xx status) rejects before the `Content-Type` is set
+   */
   public async text(data: string): Promise<void> {
     if (!this.#allows()) {
       return;
     }
-    await this.setHeader("Content-Type", `${ct_text}; charset=utf-8`).send(
-      data,
-    );
+    await this.#sendAs(data, `${ct_text}; charset=utf-8`);
   }
 
-  /** Send text as `text/html; charset=utf-8` */
+  /**
+   * Send text as `text/html; charset=utf-8`: data that `send()` refuses (or
+   * a 1xx status) rejects before the `Content-Type` is set
+   */
   public async html(data: string): Promise<void> {
     if (!this.#allows()) {
       return;
     }
-    await this.setHeader("Content-Type", `${ct_html}; charset=utf-8`).send(
-      data,
-    );
+    await this.#sendAs(data, `${ct_html}; charset=utf-8`);
+  }
+
+  /**
+   * `send()` of data as a media type, which is set once `send()` has accepted
+   * the data and the status (see `#send()`)
+   */
+  #sendAs(data: unknown, type: string): Promise<void> {
+    try {
+      return this.#send(data, type);
+    } catch (error: unknown) {
+      // As `send()`: the response is unchanged, and the error can be replied
+      const failure = error as Error;
+      return Promise.reject(failure);
+    }
   }
 
   /**
@@ -3183,7 +3211,7 @@ export class BindenResponse<
       return;
     }
     const text = formText(params);
-    await this.setHeader("Content-Type", ct_form).send(text);
+    await this.#sendAs(text, ct_form);
   }
 
   /**
