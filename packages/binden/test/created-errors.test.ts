@@ -8,32 +8,112 @@ import { spawnSync } from "node:child_process";
 /** The directory of the packages of the monorepo */
 const packages = join(import.meta.dirname, "..", "..");
 
+/** Whitespace and comments, which may come between a name and its `(` */
+const gap = String.raw`(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*)*`;
+
+/** A name that ends with `Error` or `Exception` (e.g. `DOMException`) */
+const errorName = String.raw`(?:[A-Z][\w$]*)?(?:Error|Exception)`;
+
+/** The qualifiers of a name, maybe none (e.g. `globalThis.`) */
+const qualifiers = String.raw`(?:[\w$]+\s*\.\s*)*`;
+
 /**
  * The creations of an error that the scan finds, each with what it creates
- * (`null`: the name that it has matched). A static scan cannot follow every
- * value (e.g. a constructor passed as an argument): the errors that V8 or
- * Node.js create in a refusal of binden are also checked when it runs (see
- * `fixtures/created-error-retention.ts`).
+ * (`null`: the name that it has matched): the constructions and calls of a
+ * name that ends with `Error` or `Exception`, every class that extends one
+ * and whose name does not end so (whose constructions it would not see), and
+ * the calls that create an error or capture the frames of the caller.
+ *
+ * A static scan cannot see every creation: a constructor that it does not
+ * find by such a name (e.g. passed as an argument, returned by a call, or a
+ * computed member), a class that extends an expression (e.g. a mixin), and
+ * the errors that V8 or Node.js create in the methods that binden calls (e.g.
+ * the `TypeError` of a wrong argument). The check of those is at run time:
+ * `fixtures/created-error-retention.ts`, for the refusals of binden. A
+ * creation quoted in a comment or a string may be found too: the scan errs
+ * towards a finding.
  */
 const creations: readonly (readonly [RegExp, string | null])[] = [
   // A construction, with or without `new` (a built-in constructor may be
-  // called), of a name that ends with `Error` or `Exception`, maybe qualified
-  // (e.g. `globalThis.TypeError`)
+  // called, also by `call()` or `apply()`), maybe qualified (e.g.
+  // `globalThis.TypeError`)
   [
-    /(?:\bnew\s+)?(?<![\w$.])(?:[\w$]+\s*\.\s*)*(?<name>(?:[A-Z][\w$]*)?(?:Error|Exception))\s*\(/gu,
+    new RegExp(
+      String.raw`(?:\bnew\s+)?(?<![\w$.])${qualifiers}(?<name>${errorName})(?:\s*\.\s*(?:call|apply))?${gap}\(`,
+      "gu",
+    ),
     null,
   ],
-  // Of a class expression (e.g. `new (class extends Error {})()`)
+  // A construction without arguments (e.g. `new TypeError;`)
+  [
+    new RegExp(
+      String.raw`\bnew\s+${qualifiers}(?<name>${errorName})(?![\w$])(?!${gap}\()`,
+      "gu",
+    ),
+    null,
+  ],
+  // Of a class expression (e.g. `new (class extends Error {})()` or
+  // `new class extends Error {}()`)
   [/\bnew\s*\(/gu, "class expression"],
-  [/\bReflect\s*\.\s*construct\s*\(/gu, "Reflect.construct"],
-  // An abort without a reason, whose `AbortError` Node.js creates (but one
-  // quoted in a comment, e.g. `Exchange.abort()`)
-  [/\.abort\s*\(\s*\)(?!`)/gu, "abort()"],
-  // A constructor kept in a variable, whose constructions are not seen
+  [/\bnew\s+class\b/gu, "class expression"],
+  // A class of an error whose name does not end with `Error` or `Exception`
+  // (but a class expression constructed at once, found above)
   [
-    /\b(?:const|let|var)\s+[\w$]+\s*=\s*(?:[\w$]+\s*\.\s*)*(?<name>(?:[A-Z][\w$]*)?(?:Error|Exception))\s*[,;]/gu,
+    new RegExp(
+      String.raw`(?<!\bnew\s*\(?\s*)\bclass(?:\s+[\w$]+(?<!Error|Exception))?\s+extends\s+${qualifiers}${errorName}(?![\w$])`,
+      "gu",
+    ),
+    "subclass",
+  ],
+  [
+    new RegExp(String.raw`\bReflect\s*\.\s*construct${gap}\(`, "gu"),
+    "Reflect.construct",
+  ],
+  // An abort without a reason, whose `AbortError` Node.js creates (but one
+  // quoted in a comment, e.g. `Exchange.abort()`), and a signal of a timeout,
+  // whose `TimeoutError` it creates
+  [
+    new RegExp(
+      String.raw`\.\s*abort${gap}\(${gap}(?:undefined${gap})?\)(?!\x60)`,
+      "gu",
+    ),
+    "abort()",
+  ],
+  [
+    new RegExp(String.raw`\bAbortSignal\s*\.\s*timeout${gap}\(`, "gu"),
+    "AbortSignal.timeout()",
+  ],
+  // The frames of the caller, captured (but one quoted in a comment, e.g.
+  // `Error.captureStackTrace()`)
+  [
+    new RegExp(String.raw`(?<![\w$])captureStackTrace${gap}\((?!\)\x60)`, "gu"),
+    "captureStackTrace()",
+  ],
+  // A constructor kept in a variable, or destructured, whose constructions
+  // are not seen
+  [
+    new RegExp(
+      String.raw`\b(?:const|let|var)\s+[\w$]+\s*=\s*${qualifiers}(?<name>${errorName})\s*[,;]`,
+      "gu",
+    ),
     null,
   ],
+  [
+    new RegExp(
+      String.raw`\b(?:const|let|var)\s*\{[^}]*?(?<![\w$.])(?<name>${errorName})(?![\w$])[^}]*\}\s*=`,
+      "gu",
+    ),
+    null,
+  ],
+];
+
+/**
+ * The creations that the scan finds in the sources and that are allowed, as
+ * `file name`: the probe of the engine in `exchange.ts`, whose frames
+ * (captured once, when the module is loaded) are of no request
+ */
+const allowed: readonly string[] = [
+  "binden/src/exchange.ts captureStackTrace()",
 ];
 
 /**
@@ -55,6 +135,11 @@ function unformatted(file: string, source: string): string[] {
     }
   }
   return found.toSorted(([a], [b]) => a - b).map(([, entry]) => entry);
+}
+
+/** An entry of `unformatted()` without its line: `file name` */
+function withoutLine(entry: string): string {
+  return entry.replace(/:\d+ /u, " ");
 }
 
 /**
@@ -110,8 +195,8 @@ function recording(run: () => unknown): [unknown, WeakSet<object>] {
   }
 }
 
-suite("Every error that a package of binden creates", () => {
-  test("is formatted when it is created: a `BindenError`, or by `formatStack()` (a scan of the sources of every package)", () => {
+suite("The errors that the packages of binden create", () => {
+  test("are formatted when they are created (a `BindenError`, or by `formatStack()`), as far as a scan of the sources of every package sees: neither a constructor that it does not find by its name nor an error that V8 or Node.js create (checked at run time for the refusals of `fixtures/created-error-retention.ts`)", () => {
     const all = sources();
     const found = [...all].flatMap(([file, source]) =>
       unformatted(file, source),
@@ -138,10 +223,18 @@ suite("Every error that a package of binden creates", () => {
     ]) {
       ok(created(name) > 0, name);
     }
-    deepStrictEqual(found, []);
+    deepStrictEqual(
+      found.filter((entry) => !allowed.includes(withoutLine(entry))),
+      [],
+    );
+    // Each one allowed is still there, once
+    deepStrictEqual(
+      found.map(withoutLine).filter((entry) => allowed.includes(entry)),
+      allowed,
+    );
   });
 
-  test("the scan finds every creation of an error that is not formatted at once", () => {
+  test("the scan finds every form of a creation of an error that it knows, unless the error is formatted at once", () => {
     const source = [
       'throw new TypeError("not formatted");',
       'throw formatStack(new RangeError("formatted"));',
@@ -168,9 +261,32 @@ suite("Every error that a package of binden creates", () => {
       'throw new (class Own extends Error {})("not formatted");',
       "const Constructor = TypeError;",
       'throw new Constructor("not seen");',
-      // Neither creates an error
+      // A class whose constructions the scan would not see
+      "class Failure extends Error {}",
+      "export class Refusal extends globalThis.TypeError {}",
+      "const Anonymous = class extends Error {};",
+      "class TeapotError extends BindenError {}",
+      'throw new class extends Error {}("not formatted");',
+      // Without arguments, or with a comment before them
+      "throw new TypeError;",
+      "throw formatStack(new RangeError);",
+      'throw new Error /* why */ ("not formatted");',
+      'throw formatStack(new Error /* why */ ("formatted"));',
+      "throw TypeError // why",
+      '  ("not formatted");',
+      'throw Error.call(undefined, "not formatted");',
+      'throw formatStack(RangeError.apply(undefined, ["formatted"]));',
+      "Error.captureStackTrace(target);",
+      "// See `Error.captureStackTrace()`",
+      "controller.abort(undefined);",
+      "controller.abort(reason);",
+      "const signal = AbortSignal.timeout(1000);",
+      "const { TypeError: Destructured } = globalThis;",
+      // None creates an error
       "reportError(error);",
       "const failed = error instanceof TypeError;",
+      "class Cookies extends Set<Cookie> {}",
+      "const { status, headers } = response;",
     ].join("\n");
     deepStrictEqual(unformatted("source.ts", source), [
       "source.ts:1 TypeError",
@@ -184,6 +300,18 @@ suite("Every error that a package of binden creates", () => {
       "source.ts:19 Error",
       "source.ts:20 class expression",
       "source.ts:21 TypeError",
+      "source.ts:23 subclass",
+      "source.ts:24 subclass",
+      "source.ts:25 subclass",
+      "source.ts:27 class expression",
+      "source.ts:28 TypeError",
+      "source.ts:30 Error",
+      "source.ts:32 TypeError",
+      "source.ts:34 Error",
+      "source.ts:36 captureStackTrace()",
+      "source.ts:38 abort()",
+      "source.ts:40 AbortSignal.timeout()",
+      "source.ts:41 TypeError",
     ]);
   });
 });
