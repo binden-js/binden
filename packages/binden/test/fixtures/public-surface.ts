@@ -14,7 +14,7 @@
 // documented ones, which the fixtures name (and each of which must happen).
 // Prints a JSON report: `{ entries, probes, findings }`, each finding as
 // `<entry> | <probe>: <what>` with `--lines` (one per line), and
-// `--only=<regex>` probes only the entries whose id matches.
+// `--only=<text>` probes only the entries whose id contains it.
 import { type AddressInfo, Socket } from "node:net";
 import { EventEmitter, once } from "node:events";
 import {
@@ -53,10 +53,9 @@ Reflect.set(
 );
 
 const args = process.argv.slice(2);
-const only = new RegExp(
-  args.find((arg) => arg.startsWith("--only="))?.slice("--only=".length) ?? "",
-  "u",
-);
+// A plain substring, not a regular expression built from an argument
+const only =
+  args.find((arg) => arg.startsWith("--only="))?.slice("--only=".length) ?? "";
 
 /** A function of the public surface */
 type IFunction = (...values: unknown[]) => unknown;
@@ -1897,7 +1896,7 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
   }
 }
 
-for (const entry of all.filter(({ id }) => only.test(id))) {
+for (const entry of all.filter(({ id }) => id.includes(only))) {
   if (Object.hasOwn(fixtures, entry.id)) {
     await run(entry, fixtures[entry.id]);
   } else if (entry.kind === "get") {
