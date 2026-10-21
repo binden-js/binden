@@ -361,45 +361,101 @@ function getterOf(target: object, key: string): () => unknown {
   ) as () => unknown;
 }
 
-/** The getter of `buffer` of the typed arrays (e.g. of a `Uint8Array`) */
-const typedArrayBuffer = getterOf(
+/**
+ * The getters of the engine that tell where the bytes of a view are: of its
+ * `buffer`, its `byteOffset` and its `byteLength`
+ */
+type IViewGetters = readonly [
+  buffer: () => unknown,
+  byteOffset: () => unknown,
+  byteLength: () => unknown,
+];
+
+/** The getters of a view of the engine (of a prototype, see `IViewGetters`) */
+function viewGetters(prototype: object): IViewGetters {
+  return [
+    getterOf(prototype, "buffer"),
+    getterOf(prototype, "byteOffset"),
+    getterOf(prototype, "byteLength"),
+  ];
+}
+
+/** The getters of the typed arrays (of `%TypedArray%.prototype`, e.g. of a `Uint8Array`) */
+const typedArrayGetters = viewGetters(
   Reflect.getPrototypeOf(Uint8Array.prototype) as object,
-  "buffer",
 );
 
-/** The getter of `buffer` of a `DataView` */
-const dataViewBuffer = getterOf(DataView.prototype, "buffer");
+/** The getters of a `DataView` */
+const dataViewGetters = viewGetters(DataView.prototype);
 
 /** The getter of `detached` of an `ArrayBuffer` */
 const arrayBufferDetached = getterOf(ArrayBuffer.prototype, "detached");
 
-/**
- * Whether a value is a view of an `ArrayBuffer` that has been detached (e.g.
- * by its `transfer()`): it has no bytes left, and Node.js throws once it
- * writes it (e.g. as it uncorks the connection on the next tick, out of any
- * call: the process crashes). Read by the getters of the engine, never by a
- * getter of the view's own; a `SharedArrayBuffer` is never detached.
- */
-function isDetached(value: unknown): boolean {
-  if (!ArrayBuffer.isView(value)) {
-    return false;
-  }
-  const buffer = Reflect.apply(
-    isDataView(value) ? dataViewBuffer : typedArrayBuffer,
-    value,
-    [],
-  );
-  return (
-    isArrayBuffer(buffer) &&
-    Reflect.apply(arrayBufferDetached, buffer, []) === true
-  );
-}
+/** `Buffer.prototype`, read once (see `bytesOf()`) */
+const bufferPrototype = Reflect.get(Buffer, "prototype") as object;
 
-/** The refusal of a view of an `ArrayBuffer` that has been detached (see `isDetached()`) */
+/** The refusal of a view of an `ArrayBuffer` that has been detached (see `bytesOf()`) */
 function detachedView(): TypeError {
   return formatStack(
     new TypeError("The data is a view of a detached ArrayBuffer"),
   );
+}
+
+/**
+ * Where the bytes of a view are in its `ArrayBuffer` (see `bytesOf()`): its
+ * `byteOffset` and its `byteLength`, by the getters of the engine. A
+ * `DataView` out of the bounds of a resizable `ArrayBuffer` that has shrunk,
+ * whose bounds the engine does not tell, throws a `TypeError` of binden,
+ * formatted (see `formatStack()`)
+ */
+function boundsOf(
+  view: ArrayBufferView,
+  [, byteOffset, byteLength]: IViewGetters,
+): [number, number] {
+  try {
+    return [
+      Reflect.apply(byteOffset, view, []) as number,
+      Reflect.apply(byteLength, view, []) as number,
+    ];
+  } catch {
+    throw formatStack(
+      new TypeError("The data is a view out of the bounds of its ArrayBuffer"),
+    );
+  }
+}
+
+/**
+ * The bytes of a view of an `ArrayBuffer` (a typed array or a `DataView`),
+ * as a `Buffer` of binden over them, which is what is sized and written:
+ * Node.js reads nothing of the view then. Its `buffer`, `byteOffset` and
+ * `byteLength` are read once, by the getters of the engine, never by a getter
+ * of the view's own (which may lie, or detach its buffer as it is read), and
+ * the `Buffer` is made by `Uint8Array` of the engine (as `Buffer.from()`
+ * makes one, but without reading a `byteLength` of the `ArrayBuffer`, which
+ * may be a getter of its own). The bytes of an `ArrayBuffer` that has been
+ * detached (e.g. by its `transfer()`) are gone, and Node.js would throw once
+ * it writes them (e.g. as it uncorks the connection on the next tick, out of
+ * any call: the process crashes): such a view throws a `TypeError` of binden,
+ * formatted (see `formatStack()`), and so does a `DataView` out of the bounds
+ * of a resizable `ArrayBuffer` that has shrunk (see `boundsOf()`; a typed
+ * array out of its bounds has no bytes, as the engine tells). A
+ * `SharedArrayBuffer` is never detached.
+ */
+function bytesOf(view: ArrayBufferView): Buffer {
+  const getters = isDataView(view) ? dataViewGetters : typedArrayGetters;
+  const [bufferOf] = getters;
+  const buffer = Reflect.apply(bufferOf, view, []);
+  if (
+    isArrayBuffer(buffer) &&
+    Reflect.apply(arrayBufferDetached, buffer, []) === true
+  ) {
+    throw detachedView();
+  }
+  // As `Buffer.from()` makes it (a `Uint8Array` of `Buffer.prototype`)
+  return Object.setPrototypeOf(
+    new Uint8Array(buffer as ArrayBufferLike, ...boundsOf(view, getters)),
+    bufferPrototype,
+  ) as Buffer;
 }
 
 /**
@@ -2846,6 +2902,12 @@ export class BindenResponse<
     // What is sent (see `#kind()`): the methods of a stream-like source are
     // read once
     const kind = BindenResponse.#kind(data);
+    // The bytes of a view, read once by the getters of the engine (see
+    // `bytesOf()`): what is sized and written for a `Uint8Array` (any other
+    // view is refused below). Any view whose bytes are gone (e.g. of a
+    // detached `ArrayBuffer`) throws a `TypeError` of binden, which `send()`
+    // rejects with before anything is changed
+    const bytes = ArrayBuffer.isView(data) ? bytesOf(data) : null;
     if (kind === null) {
       // Before anything is changed: never its `toString()` (e.g. `[object
       // Object]`), nor a source that cannot be read with backpressure or
@@ -2857,9 +2919,6 @@ export class BindenResponse<
           ),
         ),
       );
-    } else if (isDetached(data)) {
-      // Its bytes are gone: Node.js would throw once it writes it
-      return Promise.reject(detachedView());
     } else if (
       typeof encoding !== "undefined" &&
       !Buffer.isEncoding(encoding)
@@ -2922,9 +2981,7 @@ export class BindenResponse<
     const body =
       typeof data === "string"
         ? Buffer.from(data, encoding)
-        : isUint8Array(data)
-          ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
-          : Buffer.from(String(data as bigint | number));
+        : (bytes ?? Buffer.from(String(data as bigint | number)));
 
     // Only for a status with a body: also on a `304` that stands for the
     // `200` (see below)
@@ -3847,19 +3904,23 @@ export class BindenResponse<
                 return;
               }
               try {
-                if (isDetached(chunk)) {
-                  // Never written: Node.js would throw once it writes it
-                  // (e.g. as it uncorks the connection on the next tick, out
-                  // of any call), an error of binden decided as above
-                  fail(detachedView(), true);
-                  return;
-                }
-                const size = Buffer.byteLength(chunk);
+                // A view (a typed array or a `DataView`, e.g. a chunk of an
+                // object-mode `Readable`) is read once, as a `Buffer` of
+                // binden, which is what is sized and written (see
+                // `bytesOf()`): Node.js reads nothing of it. One whose bytes
+                // are gone (e.g. of a detached `ArrayBuffer`) is never
+                // written (Node.js would throw once it writes it, e.g. as it
+                // uncorks the connection on the next tick, out of any call):
+                // what it throws is an error of binden, decided as below
+                const written = ArrayBuffer.isView(chunk)
+                  ? bytesOf(chunk)
+                  : chunk;
+                const size = Buffer.byteLength(written);
                 if (declared !== null && sent + size > declared) {
                   fail(BindenResponse.#mismatch(sent + size, declared), true);
                   return;
                 }
-                const accepted = this.write(chunk, (error?: Error | null) => {
+                const accepted = this.write(written, (error?: Error | null) => {
                   if (error) {
                     // Not delivered: the client went away, and the error of
                     // the connection (e.g. `EPIPE`, `ECONNRESET` or
@@ -3878,8 +3939,9 @@ export class BindenResponse<
                   pause();
                 }
               } catch (error: unknown) {
-                // Not a chunk of bytes (e.g. an object), or a write that
-                // Node.js refuses: an error of its own
+                // Not a chunk of bytes (e.g. an object), a view whose bytes
+                // are gone (see above), or a write that Node.js refuses: an
+                // error of its own
                 fail(error, true);
               }
             });
