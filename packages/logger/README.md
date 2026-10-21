@@ -41,7 +41,9 @@ log.debug("Received a message", { size: 42 });
 | `error_details` | `false`                                  | Whether the default `error` serializer adds the message, the stack and any `code` of an error                                                  |
 | `serializers`   | the default ones                         | Serializers by key: they replace the default ones of the same keys only                                                                        |
 
-`Logger.getLevel(name)` reads a level from another environment variable:
+Options that are not an object (or `undefined`) throw a `TypeError` ("`options` is not an object: …"), and what reading them throws (e.g. a revoked proxy) is formatted, as by every entry point of binden. A level that is not a string (of the options, of `.level` and of `.child()`) is refused without being converted ("Unknown level: …").
+
+`Logger.getLevel(name)` reads a level from another environment variable (a name that is not a string throws a `TypeError` without being converted):
 
 ```typescript
 import { Logger } from "@binden/logger";
@@ -95,7 +97,7 @@ const child = log.child({ module: "cache" }, { level: "debug" });
 child.debug("Cache miss", { key: "user:1" });
 ```
 
-- `.level` - the level of the logger (it can be changed: an unknown level throws a `TypeError`), and `.isLevelEnabled(level)` - whether the records of a level are written
+- `.level` - the level of the logger (it can be changed: an unknown level throws a `TypeError`), and `.isLevelEnabled(level)` - whether the records of a level are written (`false` for a level that is not a string)
 
 ```typescript
 import log from "@binden/logger";

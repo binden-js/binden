@@ -49,12 +49,14 @@ one throws before anything is decided or changed:
   (`406`) or ended through its compressor: it throws as for a response that has not ended, rather
   than the `error` event that Node.js emits for an ended one (a response that the application has
   ended as it is answers as without a compression);
-- an unknown encoding (or `buffer` for a string) throws `ERR_UNKNOWN_ENCODING`, but for a response
-  without a body (to `HEAD`, or with a 1xx, 204 or 304 status), whose chunks Node.js ignores;
+- an unknown encoding (or `buffer` for a string) throws `ERR_UNKNOWN_ENCODING`, described without
+  being converted (e.g. "Unknown encoding: (an object)"), but for a response without a body (to
+  `HEAD`, or with a 1xx, 204 or 304 status), whose chunks Node.js ignores;
 - a string in `hex`, `base64` or `base64url` (the name in any case) is written as the bytes that
   `Buffer.from()` decodes from it: Node.js only estimates its length, which may be more than it
   writes (e.g. for invalid digits). The decision (the `threshold`) and the framing of the body
-  are those of its bytes. An explicit `Content-Length` is never replaced.
+  are those of its bytes. An explicit `Content-Length` is never replaced, and one that is neither
+  a number nor a string (nor an array of them, e.g. `true`) is no length that the decision reads.
 
 ## Options
 
@@ -71,7 +73,9 @@ one throws before anything is decided or changed:
 
 Invalid options throw a `TypeError` (or a `RangeError`) in the constructor: also invalid options of a
 compressor (one is created to check them), and `zstd` (by `format` or `encodings`) on a version of
-Node.js whose `node:zlib` does not have it.
+Node.js whose `node:zlib` does not have it. Options that are not an object (or `undefined`) throw
+"`options` is not an object: …", and what reading them throws (e.g. a revoked proxy) is formatted,
+as by every entry point of binden.
 
 The quality of `br` is 4 by default, rather than the 11 of `node:zlib`: 11 is meant for compressing
 ahead of time, and is far too slow for responses compressed as they are sent. Set it with

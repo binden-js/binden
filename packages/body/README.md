@@ -56,8 +56,10 @@ The default export is a `BodyParser` with the default options (no limits).
 | `disabled`        | `false`           | Whether the middleware is skipped                                                                                           |
 | `ignore_errors`   | `false`           | Whether its errors are ignored                                                                                              |
 
-An invalid option throws a `TypeError` (or a `RangeError`) in the constructor. The limits are
-non-negative integers, or `Infinity` (no limit).
+An invalid option throws a `TypeError` (or a `RangeError`) in the constructor, and so do options
+that are not an object (or `undefined`: "`options` is not an object: …"); what reading them throws
+(e.g. a revoked proxy) is formatted, as by every entry point of binden. The limits are non-negative
+integers, or `Infinity` (no limit).
 
 ## Limits
 

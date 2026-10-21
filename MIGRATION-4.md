@@ -381,6 +381,10 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   Node.js `Readable` (e.g. of `readable-stream` or `through2`: an object with `on()`, `pause()`,
   `resume()`, and `removeListener()` or `off()`) is sent as a stream (it sent `[object Object]`),
   and a `Uint8Array` is sent as its bytes (it sent its numbers, separated by commas).
+- `text()`, `html()`, `form()` and `json()` of a response that has ended resolve without doing
+  anything, as `send()` did and does: binden 2.0.4 set their `Content-Type` first, so that
+  `text()`, `html()` and `form()` threw `ERR_HTTP_HEADERS_SENT` synchronously, and `json()`
+  rejected with it.
 - `form()` sends only `URLSearchParams`, serialized by `URLSearchParams.prototype.toString()`:
   binden 2.0.4 sent `params.toString()` of whatever it was given (e.g. a string as it is, or the
   override of a subclass). Anything else now rejects with a `TypeError` ("The parameters are not
@@ -582,6 +586,10 @@ const invalid = new ValidationError("Invalid email");
   of the requests and the messages of the errors.
 - The `serializers` option replaces the default serializers of its own keys only: it used to
   replace all of them.
+- `new Logger()` throws a `TypeError` for options that are neither an object nor `undefined`
+  ("`options` is not an object: …"): @binden/logger 2.0.3 read a string or a number as no
+  options. `Logger.getLevel()` throws a `TypeError` for a name that is not a string, which 2.0.3
+  converted (e.g. `5` read the variable `5`).
 - `logger` (an existing `pino` logger) and any other option (`destination`, `level`,
   `serializers`, `error_details`, …) throw a `TypeError` together: the other options do not apply
   to it (`logger` used to be ignored with `destination`, and the other options with `logger`). A
@@ -640,6 +648,8 @@ application a `500`.
   rejects a body with `undefined` (`400`) or a `BindenError` (its status): an error that it lets
   through (e.g. the `SyntaxError` of `JSON.parse()`) is now a `500`.
 - Nothing limits the size of a body by default (as before): set `limit` and `encoded_limit`.
+- `new BodyParser()` throws a `TypeError` for options that are neither an object nor `undefined`
+  ("`options` is not an object: …"): @binden/body 2.0.1 read a string or a number as no options.
 - A body that the parser refuses before it has read it in full (e.g. over a limit, or with a coding
   or a charset that it does not support) closes the connection after the reply, whoever replies
   (the default error reply, or an `error_handler` of the application, also one that echoes the
@@ -770,6 +780,9 @@ headers are known:
   matched.
 - A reason phrase, a header or a status that Node.js refuses throws before the decision (or leaves
   nothing of it), and the error is replied as without a compression, without compressed bytes.
+- `new Compression()` throws a `TypeError` for options that are neither an object nor `undefined`
+  ("`options` is not an object: …"): @binden/compression 3.0.0 read a string or a number as no
+  options.
 
 ```diff
 -import type { IComressFormats } from "@binden/compression";
