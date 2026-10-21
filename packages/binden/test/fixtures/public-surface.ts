@@ -430,6 +430,19 @@ function bindenOptions(): Record<string, unknown> {
   };
 }
 
+/**
+ * The values of the init of a header that are converted once by `String()`,
+ * as README lists them (Headers), but the values of the parameters
+ */
+const stringInits: Readonly<Partial<Record<string, readonly string[]>>> = {
+  Accept: ["type"],
+  AcceptCharset: ["charset"],
+  AcceptLanguage: ["language"],
+  Authorization: ["credentials"],
+  ContentType: ["type"],
+  Cookie: ["key", "value", "domain", "path"],
+};
+
 // The headers
 const headerDate = "Thu, 01 Jan 1970 00:00:00 GMT";
 for (const [name, init, input, inputs] of [
@@ -505,18 +518,12 @@ for (const [name, init, input, inputs] of [
           ...keysAt(0, init),
           ...parameters.map((key) => [0, ...key.split(".")]),
         ],
-        // The values that the types declare as strings (but the enumeration
-        // `same_site` of a `Cookie`), and the values of the parameters
+        // The values that README lists (Headers), and those of the parameters
         converts: Object.fromEntries(
-          [
-            ...Object.entries(init)
-              .filter(
-                ([key, value]) =>
-                  typeof value === "string" && key !== "same_site",
-              )
-              .map(([key]) => key),
-            ...parameters,
-          ].map((key) => [`0.${key}`, headerInit]),
+          [...(stringInits[name] ?? []), ...parameters].map((key) => [
+            `0.${key}`,
+            headerInit,
+          ]),
         ),
       },
       () => [structuredClone(init)],
