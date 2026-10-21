@@ -339,7 +339,7 @@ suite("The methods that binden defines over those of Node.js", () => {
     deepStrictEqual(validateResponseOptions({ etag: true }), { etag: true });
   });
 
-  test("a Content-Length of another type, which Node.js converts as it sends the head, is no length that binden knows: never converted, nor a failure", async () => {
+  test("a Content-Length of another type, which Node.js converts as it sends the head, is no length that binden knows: never converted, nor a failure", () => {
     let conversions = 0;
     const counting = {
       toString(): string {
@@ -362,7 +362,10 @@ suite("The methods that binden defines over those of Node.js", () => {
       deepStrictEqual(response.getHeader("Content-Length"), value);
       deepStrictEqual(conversions, 0);
       response.destroy();
-      await sent.catch(() => null);
+      // Not awaited: a response without a socket is closed by its connection
+      // (see the exchange), which this one has not, and an older Node.js
+      // (e.g. 24.14.1) does not close it on destroy()
+      sent.catch(() => null);
     }
   });
 
