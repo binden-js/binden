@@ -1,18 +1,20 @@
 // Run by `public-surface.test.ts` in a process of its own: enumerates at run
 // time the public surface of the built entries of the five packages (every
 // export, every constructor, and every static and prototype member of an
-// exported class, by `Reflect.ownKeys()` and the descriptors: symbol keys
-// too), runs a validated baseline call of each entry point (getters read,
-// setters set, methods called, classes constructed), then the same call with
-// each hostile value in each argument position (and the nested positions that
-// its fixture names), each on fresh instances. Every `Error` that a call
-// throws, or rejects with, must have its stack formatted before the caller
-// gets it (recorded by `Error.prepareStackTrace`), an error that the test
-// throws itself (from the traps of a proxy) must be passed on as itself, and a
-// refusal must run no conversion of the value (but the documented ones, which
-// the fixtures name). Prints a JSON report: `{ entries, probes, findings }`,
-// each finding as `<entry> <probe>: <what>` (`--lines` prints one per line,
-// `--only=<regex>` probes only the entries whose id matches).
+// exported class, by `Reflect.ownKeys()` and the descriptors, symbol keys too,
+// and the functions that an entry point returns or installs on an object, see
+// `returned` and `installed`), runs a validated baseline call of each entry
+// point (getters read, setters set, methods called, classes constructed), then
+// the same call with each hostile value in each argument position (and the
+// nested positions that its fixture names), each on fresh instances. Every
+// `Error` that a call throws, or rejects with, must have its stack formatted
+// before the caller gets it (recorded by `Error.prepareStackTrace`), an error
+// that the test throws itself (from the traps of a proxy) must be passed on as
+// itself, and a refusal must run no conversion of the value but the
+// documented ones, which the fixtures name (and each of which must happen).
+// Prints a JSON report: `{ entries, probes, findings }`, each finding as
+// `<entry> | <probe>: <what>` with `--lines` (one per line), and
+// `--only=<regex>` probes only the entries whose id matches.
 import { type AddressInfo, Socket } from "node:net";
 import { EventEmitter, once } from "node:events";
 import {
@@ -329,6 +331,13 @@ interface IFixtureOptions {
    */
   readonly converts?: Readonly<Record<string, string>> | undefined;
   /**
+   * The fixtures of the functions and accessors that its first valid call
+   * installs as own properties of its receiver, of an argument, or of the
+   * request or the response of a `Context` given (e.g. `0.response.write` of
+   * `Compression#run()`): probed as entry points of their own
+   */
+  readonly installed?: Readonly<Record<string, IFixture>> | undefined;
+  /**
    * The fixture of the function that its first valid call returns (e.g. the
    * listener of `callback()`): probed as an entry point of its own
    */
@@ -453,6 +462,16 @@ const stringInits: Readonly<Partial<Record<string, readonly string[]>>> = {
   ContentType: ["type"],
   Cookie: ["key", "value", "domain", "path"],
 };
+
+/**
+ * The `listen()` that the registration of a server for `shutdown()` installs
+ * on it (on a free port of the host), whose host and backlog Node.js converts
+ */
+const listen = probed(
+  { converts: { 1: nodeCoercion, 2: nodeCoercion } },
+  () => [0, HOST],
+  () => [0, HOST, noop],
+);
 
 // The headers
 const headerDate = "Thu, 01 Jan 1970 00:00:00 GMT";
@@ -652,9 +671,11 @@ define("binden:", {
   "Binden#createServer()": call(() => [{}]),
   "Binden#createSecureServer()": call(() => [{}]),
   "Binden#serverOptions()": call(() => []),
-  // Its listener of the requests of the server
+  // Its listener of the requests of the server, and the `listen()` of the
+  // server that it registers for `shutdown()`
   "Binden#callback()": probed(
     {
+      installed: { "0.listen": listen },
       returned: call(() => {
         const request = new BindenRequest(new Socket());
         request.method = "GET";
@@ -690,6 +711,7 @@ define("binden:", {
   "isClosing()": call((env) => [env.server()]),
   "shutdown()": probed(
     {
+      installed: { "0.listen": listen },
       deep: [
         [1, "timeout"],
         [1, "cleanup_timeout"],
@@ -965,10 +987,10 @@ define("binden:BindenResponse#", {
   ),
   "writeContinue()": call(() => [noop]),
   "writeProcessing()": call(() => [noop]),
-  "writeEarlyHints()": probed(
-    { deep: [[0, "link"]], converts: { "0.link": nodeCoercion } },
-    () => [{ link: "</a>; rel=preload" }, noop],
-  ),
+  "writeEarlyHints()": probed({ deep: [[0, "link"]] }, () => [
+    { link: "</a>; rel=preload" },
+    noop,
+  ]),
   // Of Node.js from 24.18.0: binden refuses it before (both overloads), and
   // sends the one without headers as `(102, null, callback)`
   "writeInformation()": probed(
@@ -1189,10 +1211,38 @@ define("@binden/compression:", {
         "zstd.params",
       ]),
     },
+    // The instance of the prototype members: one that codes any body
+    () => [{ threshold: 0 }],
     () => [],
     () => [compressionOptions()],
   ),
-  "Compression#run()": context,
+  // Installs its own methods on the response
+  "Compression#run()": probed(
+    {
+      installed: {
+        "0.response.writeHead": probed(
+          { converts: { 0: nodeCoercion } },
+          () => [200],
+          () => [200, "OK", { "x-a": "b" }],
+          () => [200, { "x-a": "b" }],
+        ),
+        "0.response.write": call(
+          () => ["text"],
+          () => ["text", noop],
+          () => ["74657874", "hex", noop],
+        ),
+        "0.response.end": call(
+          () => [],
+          () => [noop],
+          () => ["text", noop],
+          () => ["74657874", "hex", noop],
+        ),
+        "0.response.flush": call(() => []),
+        "0.response.writableEnded": call(() => []),
+      },
+    },
+    async (env) => [(await env.exchange()).context],
+  ),
   "isCompressible()": call(
     () => [null],
     () => [new ContentType({ type: "text/plain" })],
@@ -1574,6 +1624,73 @@ function evaluate(
   }
 }
 
+/**
+ * The positions whose hostile value has been converted (as `<entry>
+ * <position>`): each documented conversion (see `converts`) must be one, so
+ * that the list names only conversions that happen
+ */
+const converting = new Set<string>();
+
+const Context = binden.Context as IFunction;
+
+/** The own keys of the functions and the accessors of an object */
+function functionKeys(object: object): ReadonlySet<PropertyKey> {
+  return new Set(
+    Reflect.ownKeys(object).filter((key) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(
+        object,
+        key,
+      ) as PropertyDescriptor;
+      return (
+        typeof descriptor.value === "function" ||
+        typeof descriptor.get === "function" ||
+        typeof descriptor.set === "function"
+      );
+    }),
+  );
+}
+
+/**
+ * The objects that a call may install functions on, by their names: its
+ * receiver (`this`), each argument (by its index), and the request and the
+ * response of a `Context` given (e.g. `0.response`), each with the own keys
+ * of its functions and accessors
+ */
+function owned(
+  receiver: unknown,
+  values: readonly unknown[],
+): Map<string, readonly [object, ReadonlySet<PropertyKey>]> {
+  const found = new Map<string, readonly [object, ReadonlySet<PropertyKey>]>();
+  const add = (name: string, value: unknown): void => {
+    if (typeof value === "object" && value !== null && !isProxy(value)) {
+      found.set(name, [value, functionKeys(value)]);
+    }
+  };
+  add("this", receiver);
+  for (const [index, value] of values.entries()) {
+    add(String(index), value);
+    if (!isProxy(value) && value instanceof Context) {
+      add(`${String(index)}.request`, Reflect.get(value, "request"));
+      add(`${String(index)}.response`, Reflect.get(value, "response"));
+    }
+  }
+  return found;
+}
+
+/**
+ * The functions and accessors installed since `owned()` (e.g.
+ * `0.response.write`)
+ */
+function installedSince(
+  before: ReadonlyMap<string, readonly [object, ReadonlySet<PropertyKey>]>,
+): string[] {
+  return [...before].flatMap(([name, [object, keys]]) =>
+    [...functionKeys(object)]
+      .filter((key) => !keys.has(key))
+      .map((key) => `${name}.${keyName(key)}`),
+  );
+}
+
 /** Runs a probe on a fresh environment, and cleans it up */
 async function probe(
   entry: IEntry,
@@ -1598,15 +1715,21 @@ async function probe(
     if (values === null) {
       found.push("the position does not exist");
     } else {
-      found.push(
-        ...evaluate(
-          fixture,
-          throwing,
-          path,
-          given,
-          await invoke(entry, receiver, values),
-        ),
-      );
+      const before = path === null ? owned(receiver, values) : null;
+      const outcome = await invoke(entry, receiver, values);
+      if (before !== null && index === 0) {
+        for (const name of installedSince(before)) {
+          if (!Object.hasOwn(fixture.installed ?? {}, name)) {
+            found.push(
+              `installs ${name}, which has no fixture (\`installed\`)`,
+            );
+          }
+        }
+      }
+      if (path !== null && given !== null && given.conversions() > 0) {
+        converting.add(`${entry.id} ${path.join(".")}`);
+      }
+      found.push(...evaluate(fixture, throwing, path, given, outcome));
     }
   } catch (error: unknown) {
     found.push(`the fixture fails: ${describe(error)}`);
@@ -1673,8 +1796,55 @@ function returnedBy(entry: IEntry, fixture: IFixture): IEntry {
 }
 
 /**
- * Probes an entry point with its fixture, and the function that it returns
- * (see `returned`)
+ * A function or an accessor that the first valid call of an entry point
+ * installs (see `installed`, e.g. `0.response.write`), as an entry point of
+ * its own: called (or read) by a function of the test on the object that a
+ * fresh call has installed it on, once that call has settled
+ */
+async function installedBy(
+  entry: IEntry,
+  fixture: IFixture,
+  name: string,
+): Promise<IEntry> {
+  const [made] = fixture.calls;
+  const parts = name.split(".");
+  const key = parts.at(-1) ?? "";
+  const holder = async (env: IEnv): Promise<object> => {
+    const receiver = entry.receiver === null ? null : await entry.receiver(env);
+    const values = await made(env, receiver);
+    const result: unknown =
+      entry.kind === "construct"
+        ? Reflect.construct(entry.fn, values)
+        : Reflect.apply(entry.fn, receiver, values);
+    if (isPromise(result)) {
+      await result;
+    }
+    const [first = "", ...rest] = parts.slice(0, -1);
+    let object: unknown = first === "this" ? receiver : values[Number(first)];
+    for (const part of rest) {
+      object = Reflect.get(object as object, part);
+    }
+    return object as object;
+  };
+  const env = environment();
+  const descriptor = Reflect.getOwnPropertyDescriptor(await holder(env), key);
+  await clean(env);
+  const method = typeof descriptor?.value === "function";
+  return {
+    id: `${entry.id}=>${name}${method ? "()" : ""}`,
+    kind: method ? "method" : "get",
+    fn(this: object, ...values: unknown[]): unknown {
+      return method
+        ? Reflect.apply(Reflect.get(this, key) as IFunction, this, values)
+        : Reflect.get(this, key);
+    },
+    receiver: holder,
+  };
+}
+
+/**
+ * Probes an entry point with its fixture, and the functions that it returns
+ * or installs (see `returned` and `installed`)
  */
 async function run(entry: IEntry, fixture: IFixture): Promise<void> {
   /** The positions probed, as the keys of `converts` name them */
@@ -1707,12 +1877,23 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
         probe: position,
         what: "a documented conversion of a position not probed",
       });
+    } else if (!converting.has(`${entry.id} ${position}`)) {
+      findings.push({
+        entry: entry.id,
+        probe: position,
+        what: "a documented conversion that no probe runs",
+      });
     }
   }
   if (typeof fixture.returned !== "undefined") {
     const returned = returnedBy(entry, fixture);
     ids.add(returned.id);
     await run(returned, fixture.returned);
+  }
+  for (const [name, own] of Object.entries(fixture.installed ?? {})) {
+    const installed = await installedBy(entry, fixture, name);
+    ids.add(installed.id);
+    await run(installed, own);
   }
 }
 
