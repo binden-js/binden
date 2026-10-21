@@ -1,5 +1,5 @@
+import { described, stringOf } from "./list.js";
 import { formatStack } from "../exchange.js";
-import { stringOf } from "./list.js";
 /** A cookie: its name, value and attributes (RFC 6265) */
 export interface ICookie {
   /** The name of the cookie: a token */
@@ -94,7 +94,7 @@ export class Cookie implements ICookie {
     const init = {
       key: stringOf(key),
       value: stringOf(value),
-      expires: expires instanceof Date ? new Date(expires) : null,
+      expires: Cookie.#copy(expires),
       max_age,
       domain: domain === null ? null : stringOf(domain),
       path: path === null ? null : stringOf(path),
@@ -118,7 +118,23 @@ export class Cookie implements ICookie {
   }
 
   /**
-   * Why a cookie is invalid (see the constructor), `null` when it is valid
+   * The copy of the `Expires` of a cookie: a `Date` (also of a subclass) by
+   * its time, anything else `null`. What copying it throws (e.g. the
+   * `TypeError` that V8 creates for a proxy of a `Date`, which has no time of
+   * its own, while the frames of the call are on the stack) is formatted
+   * (see `formatStack()`).
+   */
+  static #copy(expires: unknown): Date | null {
+    try {
+      return expires instanceof Date ? new Date(expires) : null;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
+  }
+
+  /**
+   * Why a cookie is invalid (see the constructor), `null` when it is valid:
+   * a refused value is described without converting it (see `described()`)
    */
   static #refusal({
     key,
@@ -135,7 +151,7 @@ export class Cookie implements ICookie {
     } else if (!cookieValue.test(value)) {
       return "Invalid cookie value";
     } else if (max_age !== null && !Number.isSafeInteger(max_age)) {
-      return `Invalid cookie Max-Age: ${max_age}`;
+      return `Invalid cookie Max-Age: ${described(max_age)}`;
     } else if (expires instanceof Date && Number.isNaN(expires.getTime())) {
       return "Invalid cookie Expires";
     } else if (domain !== null && !domainValue.test(domain)) {
@@ -143,7 +159,7 @@ export class Cookie implements ICookie {
     } else if (path !== null && !attributeValue.test(path)) {
       return `Invalid cookie Path: ${path}`;
     } else if (!sameSite.has(same_site)) {
-      return `Invalid cookie SameSite: ${same_site}`;
+      return `Invalid cookie SameSite: ${described(same_site)}`;
     }
     return null;
   }

@@ -112,6 +112,37 @@ export function qvalueRefusal(q_value: unknown): string {
 }
 
 /**
+ * A value that an argument error of binden refuses, as its message shows it,
+ * without converting it (as `qvalueRefusal()` does): a string, a number, a
+ * boolean, `undefined` or `null` as it is, a `bigint` with its `n`, and
+ * anything else by its type (`(a symbol)`, `(a function)` or `(an object)`),
+ * so that neither a conversion throws (e.g. of a `Symbol`, or of an object
+ * without a primitive value: an error that V8 would create while the frames
+ * of the call are on the stack) nor code of the application runs (e.g. a
+ * `toString()`)
+ */
+export function described(value: unknown): string {
+  switch (typeof value) {
+    case "string":
+      return value;
+    case "number":
+    case "boolean":
+      return `${value}`;
+    case "bigint":
+      return `${value}n`;
+    case "undefined":
+      return "undefined";
+    case "symbol":
+      return "(a symbol)";
+    case "function":
+      return "(a function)";
+    case "object":
+    default:
+      return value === null ? "null" : "(an object)";
+  }
+}
+
+/**
  * A value of the init of a header as a string, converted once (`String()`):
  * the types declare a string, but JavaScript may give anything (e.g. an
  * object whose `toString()` tells another string on a later call), so that

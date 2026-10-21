@@ -11,9 +11,15 @@
 // `response.json()` for a nested `bigint`), `detached` (the `TypeError` of
 // `response.send()` for a view of a detached `ArrayBuffer`), `form` (the
 // `TypeError` of `response.form(null)`), `options` (of `response.redirect()`
-// with `null` options) and `stringify` (of `response.json()` with a `stringify`
-// that is not a function), caught by the middleware, and `throw` (the
-// `BindenError` of `context.throw()`): the error handler keeps the error.
+// with `null` options), `stringify` (of `response.json()` with a `stringify`
+// that is not a function), and the refusals of values that binden describes
+// without converting them, or whose reading throws (`statusSymbol`,
+// `statusNullProto`, `redirectStatusNullProto`, `typeSymbol`, `varySymbol`,
+// `varyNull`, `setNull`, `sendEncodingNullProto`, `writeEncodingNullProto`,
+// `clearSameSiteSymbol`, `clearSameSiteNull`, `clearExpiresProxy`,
+// `jsonClass` and `jsonRevoked`: see `refusals`), caught by the middleware,
+// and `throw` (the `BindenError` of `context.throw()`): the error handler
+// keeps the error.
 // Prints whether the responses and the requests are collected, and the kinds
 // of the errors that the application keeps.
 import { type AddressInfo, connect } from "node:net";
@@ -40,23 +46,61 @@ function detached(): Uint8Array {
   bytes.buffer.transfer();
   return bytes;
 }
+/** A value of any type, given in place of the one that a method declares */
+function given<T>(value: unknown): T {
+  return value as T;
+}
+
+/** A class, whose constructor cannot be called as a function */
+class Stringify {
+  public readonly created = Date.now();
+}
+
+/** A function whose proxy has been revoked: calling it throws */
+function revoked(): () => string {
+  const { proxy, revoke } = Proxy.revocable(() => "{}", {});
+  revoke();
+  return proxy;
+}
+
 /**
- * The calls of the modes whose refusal the middleware catches: of a location
- * that is not a URL, a nested `bigint`, a view of a detached `ArrayBuffer`,
- * and the arguments that JavaScript may give in place of the declared ones
+ * The calls of the modes whose refusal the middleware catches (thrown or
+ * rejected with): of a location that is not a URL, a nested `bigint`, a view
+ * of a detached `ArrayBuffer`, and the arguments that JavaScript may give in
+ * place of the declared ones (e.g. a `Symbol`, or an object without a
+ * primitive value, which a conversion would refuse with an error of V8)
  */
-const refusals: Partial<
-  Record<string, (response: BindenResponse) => Promise<void>>
-> = {
-  redirect: (response) => response.redirect("http://[bad"),
-  json: (response) => response.json({ big: 1n }),
-  detached: (response) => response.send(detached()),
-  form: (response) => response.form(null as unknown as URLSearchParams),
-  options: (response) =>
-    response.redirect("/", 302, null as unknown as { allow_external: false }),
-  stringify: (response) =>
-    response.json({}, 5 as unknown as (data: object) => string),
-};
+const refusals: Partial<Record<string, (response: BindenResponse) => unknown>> =
+  {
+    redirect: (response) => response.redirect("http://[bad"),
+    json: (response) => response.json({ big: 1n }),
+    detached: (response) => response.send(detached()),
+    form: (response) => response.form(null as unknown as URLSearchParams),
+    options: (response) =>
+      response.redirect("/", 302, null as unknown as { allow_external: false }),
+    stringify: (response) =>
+      response.json({}, 5 as unknown as (data: object) => string),
+    statusSymbol: (response) => response.status(given(Symbol("status"))),
+    statusNullProto: (response) => response.status(given(Object.create(null))),
+    redirectStatusNullProto: (response) =>
+      response.redirect("/", given(Object.create(null))),
+    typeSymbol: (response) => response.type(given(Symbol("type"))),
+    varySymbol: (response) => response.vary(given(Symbol("field"))),
+    varyNull: (response) => response.vary(given(null)),
+    setNull: (response) => response.set(given(null)),
+    sendEncodingNullProto: (response) =>
+      response.send("data", given(Object.create(null))),
+    writeEncodingNullProto: (response) =>
+      response.write("data", given(Object.create(null))),
+    clearSameSiteSymbol: (response) =>
+      response.clearCookie("a", { same_site: given(Symbol("same_site")) }),
+    clearSameSiteNull: (response) =>
+      response.clearCookie("a", { same_site: given(Object.create(null)) }),
+    clearExpiresProxy: (response) =>
+      response.clearCookie("a", given({ expires: new Proxy(new Date(0), {}) })),
+    jsonClass: (response) => response.json({}, given(Stringify)),
+    jsonRevoked: (response) => response.json({}, revoked()),
+  };
 
 const requests = 60;
 const errors: unknown[] = [];
@@ -93,9 +137,14 @@ const app = new Binden({
     case "throw":
       return context.throw(418);
     default:
-      return (refusals[mode] as (response: BindenResponse) => Promise<void>)(
-        context.response,
-      ).then(
+      return new Promise((resolve) => {
+        // What the call throws rejects, as what it rejects with
+        resolve(
+          (refusals[mode] as (response: BindenResponse) => unknown)(
+            context.response,
+          ),
+        );
+      }).then(
         () => context.response.status(500).send(),
         (error: unknown) => {
           errors.push(error);

@@ -85,13 +85,13 @@ import {
   validateHeaderValue,
 } from "node:http";
 import { contentDigests, representationDigests } from "./digests.js";
+import { described, split, trimOws } from "./headers/list.js";
 import {
   isArrayBuffer,
   isDataView,
   isProxy,
   isUint8Array,
 } from "node:util/types";
-import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
 import { createHash } from "node:crypto";
@@ -411,6 +411,22 @@ function detachedView(): TypeError {
 function jsonText(data: unknown): string | undefined {
   try {
     return JSON.stringify(data);
+  } catch (error: unknown) {
+    throw formatStack(error as Error);
+  }
+}
+
+/**
+ * Runs what reads or calls an argument of a method of the response (e.g. the
+ * properties of an object, or a function): what it throws is formatted (see
+ * `formatStack()`), such as the `TypeError` that V8 creates while the frames
+ * of the response are on the stack for a revoked proxy, or for a class
+ * constructor called as a function. An error of the application's own is
+ * thrown as it is (formatted too).
+ */
+function formatting<T>(run: () => T): T {
+  try {
+    return run();
   } catch (error: unknown) {
     throw formatStack(error as Error);
   }
@@ -1372,23 +1388,38 @@ export class BindenResponse<
     return defaults;
   }
 
-  /** Set the status code: an integer from 100 to 599 */
+  /**
+   * Set the status code: an integer from 100 to 599 (anything else throws a
+   * `TypeError`, see `described()`)
+   */
   public status(code: number): this {
     if (!this.#allows()) {
       return this;
     } else if (!isStatus(code)) {
-      throw formatStack(new TypeError(`Status code ${code} is invalid`));
+      throw formatStack(
+        new TypeError(`Status code ${described(code)} is invalid`),
+      );
     }
     this.statusCode = code;
     return this;
   }
 
-  /** Set headers: the own properties of the object (not inherited ones) */
+  /**
+   * Set headers: the own properties of the object (not inherited ones).
+   * Anything but an object (e.g. `null` or a string, whose characters would
+   * be headers) throws a `TypeError`, and so does what reading the object
+   * throws (e.g. of a revoked proxy), formatted (see `formatStack()`).
+   */
   public set(headers: IHeaders): this {
     if (!this.#allows()) {
       return this;
     }
-    for (const [name, value] of Object.entries(headers)) {
+    // Checked as given (e.g. `null` by JavaScript)
+    const given: unknown = headers;
+    if (typeof given !== "object" || given === null) {
+      throw formatStack(new TypeError("`headers` is not an object"));
+    }
+    for (const [name, value] of formatting(() => Object.entries(headers))) {
       this.setHeader(name, value);
     }
     return this;
@@ -1407,7 +1438,9 @@ export class BindenResponse<
         ? ContentType.fromString(media_type)
         : null;
     if (parsed === null) {
-      throw formatStack(new TypeError(`Invalid media type: ${media_type}`));
+      throw formatStack(
+        new TypeError(`Invalid media type: ${described(media_type)}`),
+      );
     }
     return this.setHeader("Content-Type", parsed.toString());
   }
@@ -1425,15 +1458,21 @@ export class BindenResponse<
 
   /**
    * Add the names of request headers that select the response to `Vary`
-   * (once each, case-insensitively); `*` replaces them all
+   * (once each, case-insensitively); `*` replaces them all. A name that is
+   * not a token (also anything but a string) throws a `TypeError` before
+   * anything is changed.
    */
   public vary(...fields: string[]): this {
     if (!this.#allows()) {
       return this;
     }
     for (const field of fields) {
-      if (!fieldName.test(field)) {
-        throw formatStack(new TypeError(`Invalid field name: ${field}`));
+      // A string before the regular expression, which would convert it
+      const given: unknown = field;
+      if (typeof given !== "string" || !fieldName.test(given)) {
+        throw formatStack(
+          new TypeError(`Invalid field name: ${described(given)}`),
+        );
       }
     }
     const raw = this.getHeader("Vary");
@@ -1462,13 +1501,17 @@ export class BindenResponse<
    * Remove a cookie from the client: an empty value that expires at once,
    * with the attributes (`domain`, `path`, …) of the cookie to remove. It
    * replaces a cookie of the same name, domain and path set on the response.
+   * An invalid name or attribute throws a `TypeError` (see `Cookie`), and so
+   * does what reading the attributes throws (e.g. of a revoked proxy),
+   * formatted (see `formatting()`).
    */
   public clearCookie(name: string, attributes: IClearCookie = {}): this {
     if (!this.#allows()) {
       return this;
     }
+    const given = formatting(() => ({ ...attributes }));
     const cookie = new Cookie({
-      ...attributes,
+      ...given,
       key: name,
       value: "",
       max_age: 0,
@@ -1924,7 +1967,7 @@ export class BindenResponse<
       )
     ) {
       throw Object.assign(
-        formatStack(new TypeError(`Unknown encoding: ${encoding as string}`)),
+        formatStack(new TypeError(`Unknown encoding: ${described(encoding)}`)),
         { code: "ERR_UNKNOWN_ENCODING" },
       );
     } else if (
@@ -2822,7 +2865,7 @@ export class BindenResponse<
       !Buffer.isEncoding(encoding)
     ) {
       return Promise.reject(
-        formatStack(new TypeError(`Unknown encoding: ${String(encoding)}`)),
+        formatStack(new TypeError(`Unknown encoding: ${described(encoding)}`)),
       );
     } else if (BindenResponse.#informational(this.statusCode)) {
       // Not a final response: the client would wait for the final one
@@ -3001,7 +3044,9 @@ export class BindenResponse<
    * Send a JSON value as `application/json`. A value that has no JSON text
    * (`undefined`, a function or a symbol), a `bigint` or a cyclic value
    * rejects with a `TypeError` before the response is started, as does a
-   * `stringify` that is not a function, or that does not return a string.
+   * `stringify` that is not a function, or that does not return a string;
+   * what a `stringify` throws (e.g. one that cannot be called) is formatted
+   * (see `formatting()`).
    */
   public async json<T = unknown>(
     data: T,
@@ -3025,7 +3070,9 @@ export class BindenResponse<
       throw formatStack(new TypeError("`stringify` is not a function"));
     }
     const body: unknown =
-      typeof stringify === "undefined" ? jsonText(data) : stringify(data);
+      typeof stringify === "undefined"
+        ? jsonText(data)
+        : formatting(() => stringify(data));
     if (typeof body !== "string") {
       throw formatStack(new TypeError("The JSON text is not a string"));
     }
@@ -3072,7 +3119,9 @@ export class BindenResponse<
    * relative one stays relative). A location with userinfo, a control
    * character, whitespace, a backslash or a scheme other than `http` and
    * `https` rejects with a `TypeError`, as does an external one without
-   * `allow_external`, and options that are not an object.
+   * `allow_external`, a status that is not a redirect, and options that are
+   * not an object. What reading the location or the options throws (e.g. of
+   * a revoked proxy) is formatted (see `formatting()`).
    */
   public async redirect(
     location: URL | string,
@@ -3083,7 +3132,7 @@ export class BindenResponse<
       return;
     } else if (!isRedirectStatus(status)) {
       throw formatStack(
-        new TypeError(`Status code ${String(status)} is not a redirect`),
+        new TypeError(`Status code ${described(status)} is not a redirect`),
       );
     }
     // Checked as given (e.g. `null` by JavaScript)
@@ -3091,12 +3140,16 @@ export class BindenResponse<
     if (typeof given !== "object" || given === null) {
       throw formatStack(new TypeError("`options` is not an object"));
     }
-    const { allow_external = false } = options;
+    // Read as destructuring reads it (also an inherited one)
+    const allowed: unknown = formatting(() => options.allow_external);
+    const allow_external = typeof allowed === "undefined" ? false : allowed;
     if (typeof allow_external !== "boolean") {
       throw formatStack(new TypeError("`allow_external` is not a boolean"));
     }
     const { base, origin } = this.#base();
-    const value = redirectLocation(location, base, origin, allow_external);
+    const value = formatting(() =>
+      redirectLocation(location, base, origin, allow_external),
+    );
     await this.status(status)
       .set({ Location: value, "Content-Length": 0 })
       .send();
@@ -4047,20 +4100,23 @@ export class BindenResponse<
   /**
    * What `send()` sends: a `Readable`, a stream-like source (its methods, see
    * `IStreamLike`), a value (bytes, a string, a number or nothing), or
-   * `null` for another object, which it refuses
+   * `null` for another object, which it refuses. What reading the data throws
+   * (e.g. of a revoked proxy) is formatted (see `formatting()`).
    */
   static #kind(
     data: unknown,
   ): IStreamLikeMethods | "readable" | "value" | null {
-    if (data instanceof Readable) {
-      return "readable";
-    } else if (
-      isUint8Array(data) ||
-      (typeof data !== "object" && typeof data !== "function")
-    ) {
-      return "value";
-    }
-    return data === null ? null : streamLikeOf(data);
+    return formatting(() => {
+      if (data instanceof Readable) {
+        return "readable";
+      } else if (
+        isUint8Array(data) ||
+        (typeof data !== "object" && typeof data !== "function")
+      ) {
+        return "value";
+      }
+      return data === null ? null : streamLikeOf(data);
+    });
   }
 
   /**
