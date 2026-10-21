@@ -107,5 +107,36 @@ suite(
         [false, true, "text/plain"],
       );
     });
+
+    test("new MultipartFile() refuses a `truncated` that is not a boolean, described without converting it, before File reads the content (R28)", async () => {
+      let conversions = 0;
+      const counting = {
+        [Symbol.toPrimitive]: (): boolean => {
+          conversions += 1;
+          return true;
+        },
+      };
+      for (const [truncated, message] of [
+        [Symbol("s"), "`truncated` is not a boolean: (a symbol)"],
+        [1, "`truncated` is not a boolean: 1"],
+        ["true", "`truncated` is not a boolean: true"],
+        [null, "`truncated` is not a boolean: null"],
+        [counting, "`truncated` is not a boolean: (an object)"],
+      ] as const) {
+        // Content that File refuses: the option is refused first
+        const failed = await outcome(
+          () =>
+            new MultipartFile(null as unknown as BlobPart[], "a.txt", {
+              truncated: truncated as unknown as boolean,
+            }),
+        );
+        ok(failed?.thrown instanceof TypeError);
+        deepStrictEqual(
+          [failed.thrown.message, failed.formatted],
+          [message, true],
+        );
+      }
+      deepStrictEqual(conversions, 0);
+    });
   },
 );

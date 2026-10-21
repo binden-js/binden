@@ -1,4 +1,4 @@
-import { formatStack } from "binden";
+import { described, formatStack } from "binden";
 
 /** The options of a `MultipartFile`: those of a `File`, and whether it is truncated */
 export interface IMultipartFileOptions extends NonNullable<
@@ -13,7 +13,7 @@ export interface IMultipartFileOptions extends NonNullable<
  * with private fields cannot call the constructor of `File` inside a `try`
  * (see `MultipartFile`)
  */
-const truncations = new WeakMap<object, unknown>();
+const truncations = new WeakMap<object, boolean>();
 
 /**
  * A file of the memory storage: a `File` that tells whether its content has
@@ -22,9 +22,10 @@ const truncations = new WeakMap<object, unknown>();
 export class MultipartFile extends File {
   /**
    * A file of the content, the name and the options of a `File`, and
-   * `truncated`: what reading them throws, and the errors of the constructor
-   * of `File` (e.g. for content that is not a sequence), are formatted (see
-   * `formatStack()`)
+   * `truncated`, a boolean (anything else throws a `TypeError` that describes
+   * it, before the constructor of `File` runs): what reading them throws, and
+   * the errors of the constructor of `File` (e.g. for content that is not a
+   * sequence), are formatted (see `formatStack()`)
    */
   public constructor(
     bits: ConstructorParameters<typeof File>[0],
@@ -32,9 +33,17 @@ export class MultipartFile extends File {
     init: IMultipartFileOptions = {},
   ) {
     // Read before the constructor of `File`, which may throw
-    const read: { truncated?: unknown } = {};
+    const read = { truncated: false };
     try {
       const { truncated = false, ...options } = init;
+      if (typeof truncated !== "boolean") {
+        // Never converted
+        throw formatStack(
+          new TypeError(
+            `\`truncated\` is not a boolean: ${described(truncated)}`,
+          ),
+        );
+      }
       read.truncated = truncated;
       super(bits, name, options);
     } catch (error: unknown) {
@@ -45,6 +54,6 @@ export class MultipartFile extends File {
 
   /** Whether the content has been truncated to `fileSize` */
   public get truncated(): boolean {
-    return truncations.get(this) as boolean;
+    return truncations.get(this) === true;
   }
 }

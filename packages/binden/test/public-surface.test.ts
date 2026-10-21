@@ -38,7 +38,6 @@ const integrating: readonly string[] = [
   "@binden/compression:new Compression()",
   // @binden/body, @binden/multipart, binden/src/binden.ts, error.ts and
   // headers/content-type.ts
-  "@binden/multipart:new MultipartFile()",
   "binden:Binden#callback()=>()",
   // binden/src/request.ts, context.ts and logger.ts
   "binden:createSerializers()=>.context()",
