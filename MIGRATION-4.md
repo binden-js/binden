@@ -102,6 +102,17 @@ So does `new BindenError()` (and `context.throw()`): an `expose` that is not a b
 that is not a plain object (e.g. an array, which was sent as an object with numeric keys) or a
 `message` that is not a string throws a `TypeError`.
 
+Options that are neither an object nor `undefined` throw a `TypeError` ("`options` is not an
+object: …") in `new Binden()`, `createServer()`, `createSecureServer()`, `new Router()`, the
+constructor of every `Middleware` and `new BindenError()` (also through `context.throw()`): binden
+2.0.4 read a string or a number as an object without options, e.g.
+`new BindenError(404, "Not found")` replied with the default message, `Not Found`.
+
+```diff
+-throw new BindenError(404, "Not found");
++throw new BindenError(404, { message: "Not found" });
+```
+
 `IBindenOptions` is a type (with a `State` parameter), no longer an interface: an interface cannot
 extend it. Extend `IBindenBaseOptions` (every option but `state`) instead, or intersect the type
 (`IBindenOptions & { port: number }`):
@@ -455,6 +466,23 @@ const decodable = (context: Context): void => {
   needs the complete length (`bytes */<size>`).
 - `new Cookie()` throws a `TypeError` for a name, a value or an attribute that would change the
   `Set-Cookie` header (e.g. a value with `;`), and `request.cookies` skips such cookies.
+- The constructor of every header throws a `TypeError` for an init that is not an object
+  ("`init` is not an object: …"): binden 2.0.4 read a string as an object without its properties
+  (e.g. `new Range("bytes=0-1")` was `bytes=-`), or threw an unrelated error.
+- `Cookie.fromString()`, `Range.fromString()` and `IfModifiedSince.fromString()` throw a
+  `TypeError` for anything but a string or `undefined` ("The header is not a string: …"), where
+  binden 2.0.4 returned no cookies, no ranges or `null` for e.g. `null`, a number or an array. So
+  do `request.cookies`, `request.range` and `request.if_modified_since` for such a value that the
+  application has put into `request.headers`.
+- `AcceptEncoding.fromString()` throws a `TypeError` for an element of an array that is not a
+  string ("A field line is not a string: …"), which binden 2.0.4 converted with `join()` (e.g. by
+  its `toString()`).
+- `new IfModifiedSince({ date })` takes a `Date`, a number or a string: `null` (1970 for binden
+  2.0.4) and other objects (converted, e.g. by their `valueOf()`) throw a `TypeError` ("The date
+  is not a Date: …").
+- `request.header()` and `router.middlewares()` throw a `TypeError` for a name or a method that is
+  not a string, where binden 2.0.4 accepted a `String` object, or anything with a `toLowerCase()`
+  (a `toUpperCase()` for `middlewares()`).
 
 #### Servers and subclasses
 
