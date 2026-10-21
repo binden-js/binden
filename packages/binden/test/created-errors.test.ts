@@ -125,6 +125,25 @@ const creations: readonly (readonly [RegExp, string | null])[] = [
     ),
     null,
   ],
+  // Or exported without its name, whose constructions (e.g. by a default
+  // import, of any name) are not seen: as the default export (but a
+  // construction or a member of it, found above), or renamed to a name that
+  // does not end with `Error` or `Exception` by a list of exports or imports
+  // (e.g. `export { TypeError as Refusal }`)
+  [
+    new RegExp(
+      String.raw`\bexport\s+default\s+${qualifiers}(?<name>${errorName})(?![\w$])(?!${gap}(?:\??\.|\[|\())`,
+      "gu",
+    ),
+    null,
+  ],
+  [
+    new RegExp(
+      String.raw`\{[^}]*?(?<![\w$.])(?<name>${errorName})\s+as\s+(?![\w$]*(?:Error|Exception)(?![\w$]))[\w$]+[^}]*\}`,
+      "gu",
+    ),
+    null,
+  ],
 ];
 
 /**
@@ -321,6 +340,11 @@ suite("The errors that the packages of binden create", () => {
       "this.#constructor ??= globalThis.RangeError;",
       "function construct(Constructor = TypeError) {}",
       "({ TypeError: Assigned } = globalThis);",
+      // Exported without its name: as the default export, or renamed
+      "export default TypeError;",
+      "export default globalThis.RangeError;",
+      "export { TypeError as Refusal };",
+      'import { BindenAbortError as Abort } from "binden";',
       // None creates an error
       "reportError(error);",
       "const failed = error instanceof TypeError;",
@@ -335,6 +359,11 @@ suite("The errors that the packages of binden create", () => {
       "const kind = TypeError.name;",
       "const codes = ErrorCodes;",
       "controller.abort(voided);",
+      "export default class Refusal {}",
+      "export { TypeError as OwnError };",
+      'export { Refused, type IRefusal } from "./refusal.js";',
+      'export default formatStack(new TypeError("formatted"));',
+      "export default TypeError.name;",
     ].join("\n");
     deepStrictEqual(unformatted("source.ts", source), [
       "source.ts:1 TypeError",
@@ -374,6 +403,10 @@ suite("The errors that the packages of binden create", () => {
       "source.ts:54 RangeError",
       "source.ts:55 TypeError",
       "source.ts:56 TypeError",
+      "source.ts:57 TypeError",
+      "source.ts:58 RangeError",
+      "source.ts:59 TypeError",
+      "source.ts:60 BindenAbortError",
     ]);
   });
 });
