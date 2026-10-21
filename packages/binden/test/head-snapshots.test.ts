@@ -3,6 +3,7 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
 import { Socket } from "node:net";
+import { kSeal } from "../src/seal.js";
 
 /** A value that counts its conversions, which converts to `converted` */
 interface ICounting {
@@ -252,6 +253,134 @@ suite(
         "x-a": ["b"],
       });
       deepStrictEqual([code, reason, given], [200, null, { "x-a": ["b"] }]);
+    });
+  },
+);
+
+suite(
+  "writeEarlyHints(), addTrailers() and cookies.add() read their argument once (R27-R3)",
+  () => {
+    test("writeEarlyHints() reads the link and each other hint once, and Node.js gets the copy; without a link, nothing else is read", () => {
+      let links = 0;
+      const hints = {
+        get link(): string {
+          links += 1;
+          return links === 1 ? "</a.css>; rel=preload" : "bad\n";
+        },
+        "x-a": "b",
+      };
+      const informing = responseOf(true);
+      informing.writeEarlyHints(hints);
+      const queued = (
+        Reflect.get(informing, "outputData") as { data: unknown }[]
+      )
+        .map(({ data }) => String(data))
+        .join("");
+      ok(queued.includes("Link: </a.css>; rel=preload\r\n"), queued);
+      ok(queued.includes("x-a: b\r\n"), queued);
+      deepStrictEqual(links, 1);
+      let read = false;
+      const none = responseOf(true);
+      none.writeEarlyHints({
+        link: null,
+        get "x-a"(): string {
+          read = true;
+          return "b";
+        },
+      } as never);
+      deepStrictEqual(
+        [read, (Reflect.get(none, "outputData") as unknown[]).length],
+        [false, 0],
+      );
+    });
+
+    test("addTrailers() reads each pair (by its name and its value) and each trailer once, and Node.js gets the copy", () => {
+      const reads = new Map<string, number>();
+      const counted = <T extends object>(target: T, path: string): T =>
+        new Proxy(target, {
+          get(object: T, key: PropertyKey): unknown {
+            if (typeof key === "string" && /^\d+$/u.test(key)) {
+              const at = `${path}.${key}`;
+              reads.set(at, (reads.get(at) ?? 0) + 1);
+            }
+            return Reflect.get(object, key);
+          },
+        });
+      const pairs = responseOf(true);
+      pairs.addTrailers(
+        counted(
+          [counted(["x-t", "v"], "pair"), ["x-u", ["1", "2"]]],
+          "pairs",
+        ) as never,
+      );
+      deepStrictEqual(
+        [Reflect.get(pairs, "_trailer"), Object.fromEntries(reads)],
+        [
+          "x-t: v\r\nx-u: 1\r\nx-u: 2\r\n",
+          { "pairs.0": 1, "pairs.1": 1, "pair.0": 1, "pair.1": 1 },
+        ],
+      );
+      let values = 0;
+      const object = responseOf(true);
+      object.addTrailers({
+        get "x-t"(): string {
+          values += 1;
+          return values === 1 ? "v" : "bad\n";
+        },
+      });
+      deepStrictEqual(
+        [Reflect.get(object, "_trailer"), values],
+        ["x-t: v\r\n", 1],
+      );
+    });
+
+    test("cookies.add() refuses anything but an object (a Cookie, or one whose toString() gives its Set-Cookie), described and formatted, before it adds it; a sealed response ignores it", () => {
+      const formatted = new WeakSet<object>();
+      const previous: unknown = Reflect.get(Error, "prepareStackTrace");
+      Reflect.set(Error, "prepareStackTrace", (error: Error): string => {
+        formatted.add(error);
+        return `${error.name}: ${error.message}`;
+      });
+      const response = responseOf(true) as BindenResponse;
+      try {
+        for (const [given, described] of [
+          [null, "null"],
+          [Reflect.get({}, "absent"), "undefined"],
+          ["a=b", "a=b"],
+          [Symbol("s"), "(a symbol)"],
+          [5, "5"],
+          [(): string => "a=b", "(a function)"],
+        ] as const) {
+          let thrown: unknown = null;
+          try {
+            response.cookies.add(given as never);
+          } catch (error: unknown) {
+            thrown = error;
+          }
+          ok(thrown instanceof TypeError, described);
+          deepStrictEqual(
+            [thrown.message, formatted.has(thrown)],
+            [`\`cookie\` is not an object: ${described}`, true],
+          );
+        }
+      } finally {
+        Reflect.set(Error, "prepareStackTrace", previous);
+      }
+      deepStrictEqual(response.cookies.size, 0);
+      const own = { toString: (): string => "a=b" };
+      response.cookies.add(own as never);
+      deepStrictEqual([...response.cookies], [own]);
+      response.writeHead(200);
+      ok(
+        String(Reflect.get(response, "_header")).includes(
+          "Set-Cookie: a=b\r\n",
+        ),
+      );
+      // Ignored once sealed: nothing is read nor refused
+      const sealed = responseOf(true) as BindenResponse;
+      sealed[kSeal]();
+      sealed.cookies.add(null as never);
+      deepStrictEqual(sealed.cookies.size, 0);
     });
   },
 );

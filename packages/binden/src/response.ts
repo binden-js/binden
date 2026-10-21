@@ -565,6 +565,61 @@ function headersOf(given: unknown): unknown {
 }
 
 /**
+ * The hints of `writeEarlyHints()`, read once, as Node.js reads them: an
+ * object (but an array, or a function, which Node.js refuses as it is) by its
+ * `link`, then, unless it has none (Node.js then sends nothing), by its own
+ * enumerable properties, each array of values copied (see `copied()`).
+ * Node.js then gets the copy.
+ */
+function hintsOf(hints: unknown): unknown {
+  if (typeof hints !== "object" || hints === null || Array.isArray(hints)) {
+    return hints;
+  }
+  const link: unknown = Reflect.get(hints, "link");
+  if (link === null || typeof link === "undefined") {
+    return { link };
+  }
+  return Object.fromEntries([
+    ["link", copied(link, 1)],
+    ...Object.keys(hints)
+      .filter((name) => name !== "link")
+      .map((name) => [name, copied(Reflect.get(hints, name), 1)]),
+  ]);
+}
+
+/**
+ * The trailers of `addTrailers()`, read once, as Node.js reads them: by their
+ * own enumerable keys, an array of pairs (each pair by its name and its
+ * value, at the same keys) or an object, each array of values copied (see
+ * `copied()`). Node.js then gets the copy. Anything else (e.g. `null`, which
+ * Node.js refuses) is kept as it is.
+ */
+function trailersOf(trailers: unknown): unknown {
+  if (typeof trailers !== "object" || trailers === null) {
+    return trailers;
+  } else if (!Array.isArray(trailers)) {
+    return Object.fromEntries(
+      Object.keys(trailers).map((name) => [
+        name,
+        copied(Reflect.get(trailers, name), 1),
+      ]),
+    );
+  }
+  const copy: unknown[] = [];
+  for (const key of Object.keys(trailers)) {
+    const pair: unknown = Reflect.get(trailers, key);
+    Reflect.set(
+      copy,
+      key,
+      typeof pair === "object" && pair !== null
+        ? [Reflect.get(pair, 0), copied(Reflect.get(pair, 1), 1)]
+        : pair,
+    );
+  }
+  return copy;
+}
+
+/**
  * Whether a value of a header (see `headersOf()`) is checked without running
  * code of the application: anything but an object or a function, or an
  * array of such values. A value of another type is checked by Node.js
@@ -859,8 +914,18 @@ class Cookies extends Set<Cookie> {
     this.#allows = allows;
   }
 
+  /**
+   * Adds a cookie (a `Cookie`, or an object whose `toString()` gives the value
+   * of its `Set-Cookie`, read as the head is committed), unless the response
+   * is sealed: anything but an object (e.g. `null`, or a string) is refused
+   * with a `TypeError` that describes it (see `objectOf()`)
+   */
   public override add(cookie: Cookie): this {
-    return this.#allows() ? super.add(cookie) : this;
+    if (!this.#allows()) {
+      return this;
+    }
+    objectOf(cookie, "cookie");
+    return super.add(cookie);
   }
 
   public override delete(cookie: Cookie): boolean {
@@ -2587,7 +2652,9 @@ export class BindenResponse<
   ): void {
     try {
       if (this.#allows()) {
-        super.addTrailers(headers);
+        super.addTrailers(
+          trailersOf(headers) as OutgoingHttpHeaders | [string, string][],
+        );
       }
     } catch (error: unknown) {
       throw formatStack(error as Error);
@@ -2749,7 +2816,10 @@ export class BindenResponse<
         BindenResponse.#ignore([callback]);
         return;
       }
-      super.writeEarlyHints(hints, ...(callbacksOf([callback]) as []));
+      super.writeEarlyHints(
+        hintsOf(hints) as Record<string, string[] | string>,
+        ...(callbacksOf([callback]) as []),
+      );
     } catch (error: unknown) {
       throw formatStack(error as Error);
     }
