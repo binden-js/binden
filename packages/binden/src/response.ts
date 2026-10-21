@@ -3202,7 +3202,7 @@ export class BindenResponse<
         return this.#unreadable(
           data,
           destroyed,
-          uncarried(errored) as Error | null,
+          uncarried(errored, data) as Error | null,
         );
       }
     }
@@ -3268,7 +3268,7 @@ export class BindenResponse<
         listened = true;
         operation.run(() => {
           // eslint-disable-next-line @typescript-eslint/no-use-before-define -- only once it is added, below
-          fail(uncarried(error), false, true);
+          fail(uncarried(error, data), false, true);
         });
       });
       /**

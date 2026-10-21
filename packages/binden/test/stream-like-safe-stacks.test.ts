@@ -130,7 +130,7 @@ suite(
             carrier.message,
             carrier.stack?.startsWith("Error: A stream has failed"),
             carrier.cause === value.error,
-            uncarried(carrier) === value.error,
+            uncarried(carrier, readable) === value.error,
             readable.errored === carrier,
             readable.closed,
             // Once it has emitted it, it is destroyed without it
@@ -186,7 +186,7 @@ suite(
       const carrier = (await failure) as Error;
       await ioTurn();
       deepStrictEqual(
-        [uncarried(carrier) === value.error, released, value.reads()],
+        [uncarried(carrier, readable) === value.error, released, value.reads()],
         [true, [], 0],
       );
     });
@@ -210,7 +210,9 @@ suite(
         Reflect.set(Error, "prepareStackTrace", previous);
       }
       const carrier = (await failure) as Error;
-      const carried = uncarried(carrier) as Error & { code?: unknown };
+      const carried = uncarried(carrier, readable) as Error & {
+        code?: unknown;
+      };
       deepStrictEqual(
         [
           carrier.stack,
@@ -355,7 +357,7 @@ suite(
             rejected === value.error,
             source.destroyed,
             destroys.length,
-            uncarried(destroys[0]) === value.error,
+            (destroys[0] as Error).cause === value.error,
             value.reads(),
           ],
           [true, true, 1, true, 0],

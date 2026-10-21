@@ -269,43 +269,57 @@ function premature(): Error {
 }
 
 /**
- * The values of stream-like sources that the readables of `readStreamLike()`
- * have been destroyed for, by the carriers that they have been destroyed
- * with in their place (see `safely()`)
+ * The values of stream-like sources that each readable of `readStreamLike()`
+ * has been destroyed for, by the carriers that it has been destroyed with in
+ * their place (see `carry()`): only the errors of that readable are taken for
+ * them (see `uncarried()`), never a carrier that another stream emits (e.g.
+ * one that the application has kept from the `destroy()` of a source)
  */
-const carriers = new WeakMap<object, unknown>();
+const carriers = new WeakMap<object, WeakMap<object, unknown>>();
+
+/** The carriers of a readable that has none (see `carriers`) */
+const uncarrying = new WeakMap<object, unknown>();
+
+/**
+ * The carrier of a value of a stream-like source (see `carrierOf()`: an
+ * error of binden, decided as by `own()`, with a stack that Node.js reads as
+ * it is, also when a `prepareStackTrace` of the application fails), which a
+ * readable of `readStreamLike()` is destroyed with in its place: recorded for
+ * that readable only, whose send takes it for that value (see `uncarried()`)
+ */
+function carry(readable: object, value: unknown): Error {
+  const carrier = carrierOf(value);
+  const values = carriers.get(readable) ?? new WeakMap<object, unknown>();
+  carriers.set(readable, values.set(carrier, value));
+  return carrier;
+}
 
 /**
  * What a readable of `readStreamLike()` is destroyed with for a value of its
  * source (an error that it emits, or what its code throws), as the send of a
  * Node.js `Readable` destroys its source (see `readsSafely()`): the value
  * itself only when Node.js reads its `stack` without running code of the
- * application, otherwise its carrier (see `carrierOf()`: an error of binden,
- * decided as by `own()`, with a stack that Node.js reads as it is, also when
- * a `prepareStackTrace` of the application fails), which the send takes for
- * that value (see `uncarried()`)
+ * application, otherwise its carrier, for that readable (see `carry()`)
  */
-function safely(value: unknown): unknown {
-  if (readsSafely(value)) {
-    return value;
-  }
-  const carrier = carrierOf(value);
-  carriers.set(carrier, value);
-  return carrier;
+function safely(readable: object, value: unknown): unknown {
+  return readsSafely(value) ? value : carry(readable, value);
 }
 
 /**
- * The value that an error of a readable of `readStreamLike()` stands for:
- * the value of its source that a carrier carries (see `safely()`), which
- * the send rejects with (and decides, see `decidedFor()`), as the send of a
- * Node.js `Readable` does, or else the error itself. For the packages of
- * binden only.
+ * The value that an error of a readable of `readStreamLike()` stands for: the
+ * value of its source that a carrier of that readable carries (see
+ * `carry()`), which the send rejects with (and decides, see `decidedFor()`),
+ * as the send of a Node.js `Readable` does, or else the error itself (also a
+ * carrier of another readable, which another stream emits: e.g. one that the
+ * application has kept from the `destroy()` of a source, which is the value
+ * of that stream). For the packages of binden only.
  *
  * @internal
  */
-export function uncarried(error: unknown): unknown {
+export function uncarried(error: unknown, readable: object): unknown {
+  const values = carriers.get(readable) ?? uncarrying;
   const carrier = error as object;
-  return carriers.has(carrier) ? carriers.get(carrier) : error;
+  return values.has(carrier) ? values.get(carrier) : error;
 }
 
 /**
@@ -1132,7 +1146,7 @@ export function readStreamLike(
           // before its guard is installed, and while it is released, so that
           // its code that emits it or throws it meanwhile (e.g. a listener of
           // its `newListener`, or its destroy) is not reported (see `decide()`)
-          decide(source, uncarried(error), () => {
+          decide(source, uncarried(error, readable), () => {
             // Its guard listens before its listeners are removed, and before
             // it is paused or destroyed, once the listener of `error` of the
             // send no longer fails it (see `detach()`)
@@ -1201,7 +1215,7 @@ export function readStreamLike(
    * `destroy`) with that same value
    */
   const destroyWith = (error: unknown): void => {
-    readable.destroy(safely(error) as Error);
+    readable.destroy(safely(readable, error) as Error);
   };
   /**
    * Fails the readable with an error of the source (`closed`: by its
