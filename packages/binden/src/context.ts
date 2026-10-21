@@ -1,14 +1,14 @@
 import { BindenError, type IBindenErrorOptions } from "./error.js";
-import type {
+import {
   BindenResponse,
-  IClearCookie,
-  IHeadersValue,
+  type IClearCookie,
+  type IHeadersValue,
 } from "./response.js";
-import { Exchange, type IExchangeReport } from "./exchange.js";
+import { Exchange, type IExchangeReport, formatStack } from "./exchange.js";
 import type { IRedirectOptions, IRedirectStatus } from "./redirect.js";
-import { defaultLogger, safe, snapshot } from "./logger.js";
-import { formatting, objectOf } from "./formatting.js";
-import type { BindenRequest } from "./request.js";
+import { defaultLogger, isInstance, safe, snapshot } from "./logger.js";
+import { described, formatting, objectOf } from "./formatting.js";
+import { BindenRequest } from "./request.js";
 import type { ILogger } from "@binden/logger";
 import type { ISendFileOptions } from "./send-file.js";
 import type { IStreamLike } from "./stream-like.js";
@@ -63,9 +63,12 @@ export class Context<
   /**
    * A context of a request and its response: the first one of the request
    * creates what the contexts share (a `TypeError` for a response that is not
-   * the one of the request, and for options that are not an object). What
-   * reading the options throws (e.g. a revoked proxy) is formatted (see
-   * `formatting()`).
+   * the one of the request, and for options that are not an object). Its
+   * request is a `BindenRequest` and its response a `BindenResponse`, never a
+   * proxy of one (whose traps would run later, e.g. once the response is
+   * closed), and its `report` is a function: anything else throws a
+   * `TypeError` that describes it. What reading the options throws (e.g. a
+   * revoked proxy) is formatted (see `formatting()`).
    */
   public constructor(options: IContextOptions) {
     // Each option is read once (e.g. by a getter)
@@ -84,6 +87,7 @@ export class Context<
     // A logger of the application that a revoked proxy is (or whose traps
     // throw) throws once `safe()` checks it, formatted
     this.#parent = formatting(() => safe(given.logger ?? defaultLogger()));
+    Context.#check(given);
     this.#exchange = formatting(() =>
       Exchange.for(given.request, given.response, {
         state: given.state,
@@ -95,6 +99,24 @@ export class Context<
           }),
       }),
     );
+  }
+
+  /**
+   * Checks the request, the response and `report` of the options, by their
+   * types, without running code of the application (see `isInstance()`)
+   */
+  static #check({ request, response, report }: IContextOptions): void {
+    let refusal: string | null = null;
+    if (!isInstance(request, BindenRequest)) {
+      refusal = `\`request\` is not a BindenRequest: ${described(request)}`;
+    } else if (!isInstance(response, BindenResponse)) {
+      refusal = `\`response\` is not a BindenResponse: ${described(response)}`;
+    } else if (typeof report !== "undefined" && typeof report !== "function") {
+      refusal = `\`report\` is not a function: ${described(report)}`;
+    }
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
+    }
   }
 
   /**

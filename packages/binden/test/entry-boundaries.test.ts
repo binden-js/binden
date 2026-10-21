@@ -3,6 +3,7 @@ import {
   BindenAbortError,
   BindenError,
   BindenRequest,
+  BindenResponse,
   Context,
   type IBindenOptions,
   type IServer,
@@ -277,13 +278,61 @@ suite(
           refused("`options` is not an object: null"),
           refused("`options` is not an object: x"),
           refused("`options` is not an object: x"),
-          revokedError("get"),
+          refused("`request` is not a BindenRequest: (an object)"),
         ],
       );
       // Its own options are optional
       const server = createServer();
       await within(shutdown(server, none));
       ok(isClosing(server));
+    });
+
+    test("new Context() refuses a request and a response that are not of binden (a proxy of one too, which no trap of tells), and a report that is not a function, described", () => {
+      const request = new BindenRequest(new Socket());
+      const response = new BindenResponse(request);
+      let traps = 0;
+      const trap = (): never => {
+        traps += 1;
+        throw new RangeError("A trap of the test");
+      };
+      const create =
+        (options: object): (() => unknown) =>
+        (): unknown =>
+          new Context(given({ request, response, ...options }));
+      deepStrictEqual(
+        [
+          outcome(create({ request: new Proxy(request, { has: trap }) })),
+          outcome(
+            create({
+              request: Object.create(
+                new Proxy(BindenRequest.prototype, { getPrototypeOf: trap }),
+              ) as object,
+            }),
+          ),
+          outcome(create({ request: { id: "a", socket: null } })),
+          outcome(create({ request: "a" })),
+          outcome(create({ response: new Proxy(response, { ownKeys: trap }) })),
+          outcome(create({ response: Object.create(null) as object })),
+          outcome(create({ report: "a" })),
+          outcome(create({ report: Symbol("s") })),
+          traps,
+        ],
+        [
+          refused("`request` is not a BindenRequest: (an object)"),
+          refused("`request` is not a BindenRequest: (an object)"),
+          refused("`request` is not a BindenRequest: (an object)"),
+          refused("`request` is not a BindenRequest: a"),
+          refused("`response` is not a BindenResponse: (an object)"),
+          refused("`response` is not a BindenResponse: (an object)"),
+          refused("`report` is not a function: a"),
+          refused("`report` is not a function: (a symbol)"),
+          0,
+        ],
+      );
+      ok(
+        new Context({ request, response, report: (): null => null }).request ===
+          request,
+      );
     });
 
     test("a nested option that a revoked proxy is, or whose traps throw, throws the error of V8 (or of the trap itself), formatted", () => {
@@ -728,7 +777,57 @@ suite("The servers of binden format what their arguments throw (R27-1)", () => {
           listener(given(revoked()), given(revoked()));
         }),
       ],
-      [revokedError("get"), revokedError("getPrototypeOf")],
+      [revokedError("get"), revokedError("get")],
+    );
+  });
+
+  test("the listener of callback() refuses a proxy of a request or a response of the application (whose traps would run later), logged and its connection closed", async () => {
+    const errors: string[] = [];
+    const logger = {
+      fatal: (): null => null,
+      error: (message: string): void => {
+        errors.push(message);
+      },
+      warn: (): null => null,
+      info: (): null => null,
+      debug: (): null => null,
+      trace: (): null => null,
+      child: (): unknown => logger,
+    };
+    const app = new Binden({ logger: given(logger) });
+    const listener = app.callback(createServer());
+    const { IncomingMessage: Request, ServerResponse: Response } =
+      app.serverOptions();
+    const trap = (): never => {
+      throw new RangeError("A trap of the test");
+    };
+    const destroyed: boolean[] = [];
+    for (const proxied of ["request", "response"]) {
+      const socket = new Socket();
+      const request = new Request(socket);
+      const response = new Response(request);
+      listener(
+        proxied === "request"
+          ? new Proxy(request, { ownKeys: trap, has: trap })
+          : request,
+        proxied === "response"
+          ? new Proxy(response, { ownKeys: trap, has: trap })
+          : response,
+      );
+      destroyed.push(socket.destroyed);
+    }
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    deepStrictEqual(
+      [destroyed, errors],
+      [
+        [true, true],
+        [
+          "The request and the response are not those of the application (`serverOptions()`)",
+          "The request and the response are not those of the application (`serverOptions()`)",
+        ],
+      ],
     );
   });
 
@@ -790,6 +889,38 @@ suite("The servers of binden format what their arguments throw (R27-1)", () => {
     deepStrictEqual(
       [serializers.context(revoked()), createSerializers().context(throwing())],
       [{ type: "object" }, { type: "object" }],
+    );
+  });
+
+  test("the serializer of a context tells the type of a proxy of a context (whose private fields it lacks), and formats what reading an object of the prototype of Context throws", () => {
+    const request = new BindenRequest(new Socket());
+    const context = new Context({
+      request,
+      response: new BindenResponse(request),
+    });
+    const trap = (): never => {
+      throw new RangeError("A trap of the test");
+    };
+    const [type, message, formatted] = outcome(() =>
+      serializers.context(Object.create(Context.prototype)),
+    ) as unknown[];
+    deepStrictEqual(
+      [
+        serializers.context(new Proxy(context, { ownKeys: trap })),
+        createSerializers().context(new Proxy(context, { has: trap })),
+        serializers.context(context).id,
+        [
+          type,
+          String(message).startsWith("Cannot read private member"),
+          formatted,
+        ],
+      ],
+      [
+        { type: "object" },
+        { type: "object" },
+        request.id,
+        ["TypeError", true, true],
+      ],
     );
   });
 

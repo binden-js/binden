@@ -36,14 +36,12 @@ const integrating: readonly string[] = [
   "@binden/compression:Compression#run()",
   "@binden/compression:Compression#run()=>0.response.writeHead()",
   "@binden/compression:new Compression()",
-  // @binden/body, @binden/multipart, binden/src/binden.ts, error.ts and
-  // headers/content-type.ts
+  // binden/src/binden.ts: the listener refuses a response of another kind
+  // by logging it and closing the connection, which no probe observes
   "binden:Binden#callback()=>()",
-  // binden/src/request.ts, context.ts and logger.ts
-  "binden:createSerializers()=>.context()",
+  // binden/src/request.ts: `URL` and `query` of a request without a target
+  // throw its 400 whatever its socket, once another reader has run a trap
   "binden:new BindenRequest()",
-  "binden:new Context()",
-  "binden:serializers.context()",
 ];
 
 /**

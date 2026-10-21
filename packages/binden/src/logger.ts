@@ -8,6 +8,7 @@ import { formatting, objectOf } from "./formatting.js";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
 import { constants } from "node:os";
+import { isProxy } from "node:util/types";
 import { isStatus } from "./status.js";
 import { property } from "./property.js";
 
@@ -74,15 +75,27 @@ function typeOf(value: unknown): string {
 }
 
 /**
- * Whether a value is a context, without trusting it: a proxy that refuses to
- * tell its prototype (e.g. a revoked one) is not
+ * Whether a value is an instance of a class (e.g. a request of binden), read
+ * without running code of the application: neither the value nor an object
+ * of its prototype chain may be a proxy, whose traps are code of the
+ * application (e.g. a `getPrototypeOf` that throws, or one that lies), and
+ * which has none of the private fields of what it proxies. For binden only.
+ *
+ * @internal
  */
-function isContext(value: unknown): value is Context {
-  try {
-    return value instanceof Context;
-  } catch {
-    return false;
+export function isInstance<T>(
+  value: unknown,
+  type: { readonly prototype: T },
+): value is T {
+  const { prototype } = type;
+  let current = value;
+  while (typeof current === "object" && current !== null && !isProxy(current)) {
+    current = Object.getPrototypeOf(current);
+    if (current === prototype) {
+      return true;
+    }
   }
+  return false;
 }
 
 /** The options of a snapshot */
@@ -294,14 +307,15 @@ export function createSerializers(options?: {
     err: error,
     body: (): string => "[Redacted]",
     context: (input: unknown): Record<string, unknown> => {
-      if (!isContext(input)) {
+      if (!isInstance(input, Context)) {
         return { type: typeOf(input) };
       }
-      return {
+      // What its getters throw (e.g. of a subclass) is formatted
+      return formatting(() => ({
         id: input.id,
         request: defaultSerializers.request(input.request),
         response: defaultSerializers.response(input.response),
-      };
+      }));
     },
   };
 }

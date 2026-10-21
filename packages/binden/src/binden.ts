@@ -16,6 +16,7 @@ import { type ILayer, Stack, layersOf, markRoot } from "./stack.js";
 import {
   type ILocation,
   defaultLogger,
+  isInstance,
   isLogger,
   safe,
   snapshot,
@@ -379,9 +380,11 @@ export class Binden<
     });
     return (request, response): void => {
       try {
+        // Not a proxy of one (whose traps would run later, outside of any
+        // boundary): instances of the classes of the application
         if (
-          !(request instanceof this.#Request) ||
-          !(response instanceof this.#Response)
+          !isInstance(request, this.#Request) ||
+          !isInstance(response, this.#Response)
         ) {
           const message =
             "The request and the response are not those of the application (`serverOptions()`)";
