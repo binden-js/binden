@@ -381,9 +381,19 @@ export function skip(response: BindenResponse): void {
  * `#choose()`): the commit then applies that decision.
  */
 export class CompressedResponse {
+  /** The context, which the `filter` gets (see `#filter()`) */
   readonly #context: Context;
   readonly #settings: ISettings;
   readonly #response: IResponse;
+  /**
+   * What the decision reads of the request, read once as the compression is
+   * installed: its `Accept-Encoding`, whether it is to `HEAD`, and whether it
+   * is HTTP/1.0. Never read later from the context (whose getters may fail
+   * by then)
+   */
+  readonly #accepted: string | undefined;
+  readonly #head: boolean;
+  readonly #old: boolean;
   // The methods that the compression replaces, as they were
   readonly #writeHead: IResponse["writeHead"];
   readonly #write: IResponse["write"];
@@ -441,11 +451,19 @@ export class CompressedResponse {
    */
   #operation: IResponseOperation | null = null;
 
-  private constructor(context: Context, settings: ISettings) {
-    const { response } = context;
+  private constructor(
+    context: Context,
+    response: IResponse,
+    settings: ISettings,
+  ) {
+    const { request } = context;
+    const { headers, method, httpVersion } = request;
     this.#context = context;
     this.#settings = settings;
     this.#response = response;
+    this.#accepted = headers["accept-encoding"];
+    this.#head = method === "HEAD";
+    this.#old = httpVersion === "1.0";
     this.#writeHead = response.writeHead.bind(response);
     this.#write = response.write.bind(response);
     this.#end = response.end.bind(response);
@@ -468,7 +486,7 @@ export class CompressedResponse {
       return;
     }
     installed.add(response);
-    new CompressedResponse(context, settings).#hook();
+    new CompressedResponse(context, response, settings).#hook();
   }
 
   /**
@@ -519,16 +537,22 @@ export class CompressedResponse {
       }
     };
     // As for an uncompressed response, `writableEnded` is set by `end()`
-    // (a compressed response is ended once the compressor is)
+    // (a compressed response is ended once the compressor is), read on the
+    // response that it is read of (e.g. by binden as it destroys it), never
+    // through what the context has given (whose traps may fail by then)
+    const compressed = (): boolean => this.#ended;
     Object.defineProperty(response, "writableEnded", {
       configurable: true,
-      get: (): boolean =>
-        this.#ended ||
-        (Reflect.get(
-          Object.getPrototypeOf(response) as object,
-          "writableEnded",
-          response,
-        ) as boolean),
+      get(this: object): boolean {
+        return (
+          compressed() ||
+          (Reflect.get(
+            Object.getPrototypeOf(this) as object,
+            "writableEnded",
+            this,
+          ) as boolean)
+        );
+      },
     });
   }
 
@@ -930,7 +954,7 @@ export class CompressedResponse {
    * decision depends on `Accept-Encoding` (`Vary`).
    */
   #decide(length: number | null): IOutcome {
-    const header = this.#context.request.headers["accept-encoding"];
+    const header = this.#accepted;
     const response = this.#response;
     const status = response.statusCode;
     if (status < 200 || status === 204 || status === 205 || length === 0) {
@@ -1070,7 +1094,7 @@ export class CompressedResponse {
     }
     response.setHeader("Content-Encoding", coding);
     this.#frame();
-    return this.#context.request.method !== "HEAD";
+    return !this.#head;
   }
 
   /**
@@ -1084,7 +1108,7 @@ export class CompressedResponse {
    */
   #frame(): void {
     const response = this.#response;
-    if (this.#context.request.httpVersion === "1.0") {
+    if (this.#old) {
       this.#remove("Transfer-Encoding");
       response.setHeader("Connection", "close");
     } else {

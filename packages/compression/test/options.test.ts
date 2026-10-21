@@ -107,6 +107,31 @@ suite("Options", () => {
     throws(() => new Compression(invalid({ disabled: 1 })), TypeError);
   });
 
+  test("encodings (by their indexes) and the params of `br` are read once, and copied", () => {
+    const reads = new Map<string, number>();
+    const encodings = new Proxy(["gzip", "br"], {
+      get(target: string[], key: PropertyKey): unknown {
+        if (typeof key === "string" && /^\d+$/u.test(key)) {
+          reads.set(key, (reads.get(key) ?? 0) + 1);
+        }
+        return Reflect.get(target, key) as unknown;
+      },
+    });
+    let params = 0;
+    const brotli = {
+      get params(): Record<number, number> {
+        params += 1;
+        return { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 };
+      },
+    };
+    const compression = new Compression({
+      encodings: encodings as ICompressionOptions["encodings"],
+      brotli,
+    });
+    deepStrictEqual([Object.fromEntries(reads), params], [{ 0: 1, 1: 1 }, 1]);
+    deepStrictEqual(compression.format, "auto");
+  });
+
   test("the options of the compressors are checked by creating one", () => {
     throws(() => new Compression({ format: "gzip", gzip: { level: 99 } }), {
       name: "RangeError",

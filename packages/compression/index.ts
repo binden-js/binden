@@ -83,15 +83,22 @@ function checkObject(name: string, value: unknown): void {
   }
 }
 
-/** The codings of `encodings`: a non-empty list of distinct codings */
+/**
+ * The codings of `encodings`: a non-empty list of distinct codings, read once
+ * (by its indexes), whose copy is checked and kept
+ */
 function checkEncodings(encodings: unknown): readonly ICompressEncodings[] {
+  const copy: unknown[] = [];
+  if (Array.isArray(encodings)) {
+    const { length } = encodings;
+    for (let index = 0; index < length; index += 1) {
+      copy.push(encodings[index]);
+    }
+  }
   if (
-    !Array.isArray(encodings) ||
-    encodings.length === 0 ||
-    !encodings.every((coding) =>
-      codings.includes(coding as ICompressEncodings),
-    ) ||
-    new Set(encodings).size !== encodings.length
+    copy.length === 0 ||
+    !copy.every((coding) => codings.includes(coding as ICompressEncodings)) ||
+    new Set(copy).size !== copy.length
   ) {
     throw formatStack(
       new TypeError(
@@ -99,7 +106,7 @@ function checkEncodings(encodings: unknown): readonly ICompressEncodings[] {
       ),
     );
   }
-  return Object.freeze([...(encodings as ICompressEncodings[])]);
+  return Object.freeze(copy as ICompressEncodings[]);
 }
 
 /** The options of a `Compression`, each read once (see `readOptions()`) */
@@ -218,12 +225,14 @@ export class Compression extends Middleware {
       );
     }
 
+    // Each read once: `params` of `brotli` is copied with its own defaults
+    const { params, ...others } = brotli;
     const compressors: ICompressorOptions = Object.freeze({
       br: {
-        ...brotli,
+        ...others,
         params: {
           [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
-          ...brotli.params,
+          ...params,
         },
       },
       deflate: { ...deflate },

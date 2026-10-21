@@ -26,8 +26,6 @@ interface IReport {
 const integrating: readonly string[] = [
   // binden/src/response.ts and @binden/compression
   "binden:BindenResponse#[binden.validate_head]()",
-  "@binden/compression:Compression#run()",
-  "@binden/compression:new Compression()",
   // binden/src/binden.ts: the listener refuses a response of another kind
   // by logging it and closing the connection, which no probe observes
   "binden:Binden#callback()=>()",

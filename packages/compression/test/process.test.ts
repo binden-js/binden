@@ -88,6 +88,19 @@ suite("Process safety", () => {
     }
   });
 
+  test("a context whose every use throws once run() has returned: the compression reads the request once, its later uses of the response throw to their callers, and the process does not crash", () => {
+    deepStrictEqual(run("late-context.ts"), {
+      status: 0,
+      stdout: 'closed ""\n',
+      stderr: "",
+    });
+    deepStrictEqual(run("late-context.ts", "request"), {
+      status: 0,
+      stdout: "gzip\n",
+      stderr: "",
+    });
+  });
+
   test("a head that Node.js refuses under a decision does not crash the process", () => {
     deepStrictEqual(run("refused-head.ts"), {
       status: 0,
