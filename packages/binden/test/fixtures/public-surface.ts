@@ -23,6 +23,7 @@ import {
 } from "node:http";
 import { isNativeError, isPromise, isProxy } from "node:util/types";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const timer = setTimeout(() => {
   process.stderr.write("Timed out\n");
@@ -381,6 +382,54 @@ function probed(options: IFixtureOptions, ...calls: ICall[]): IFixture {
   return { ...options, calls };
 }
 
+/** The nested paths of the keys of an object given at a position */
+function keysAt(
+  position: number,
+  object: object,
+  nested: readonly string[] = [],
+): (readonly (number | string)[])[] {
+  return [
+    ...Object.keys(object).map((key) => [position, key]),
+    ...nested.map((path) => [position, ...path.split(".")]),
+  ];
+}
+
+/** Every option of `Binden` that its requests share with `validateRequestOptions()` */
+function requestOptions(): Record<string, unknown> {
+  return {
+    trust_proxy: false,
+    encoded_slashes: false,
+    allowed_hosts: ["example.com"],
+    request_id: { header: "x-request-id", trust_incoming: false, echo: true },
+    query: { max_keys: 10 },
+  };
+}
+/** Their nested options */
+const requestNested = [
+  "allowed_hosts.0",
+  "request_id.header",
+  "request_id.trust_incoming",
+  "request_id.echo",
+  "query.max_keys",
+];
+
+/** Every option of `Binden` */
+function bindenOptions(): Record<string, unknown> {
+  return {
+    auto_head: true,
+    error_handler: noop,
+    error_handler_timeout: 1000,
+    timeout: 1000,
+    logger: silent,
+    log_error_details: false,
+    routing: { case_sensitive: false, strict: false },
+    access_log: { level: "info", path: "path" },
+    etag: true,
+    state: (): object => ({}),
+    ...requestOptions(),
+  };
+}
+
 // The headers
 const headerDate = "Thu, 01 Jan 1970 00:00:00 GMT";
 for (const [name, init, input, inputs] of [
@@ -444,19 +493,30 @@ for (const [name, init, input, inputs] of [
   ["IfModifiedSince", { date: new Date(0) }, headerDate, false],
   ["Range", { start: 0, end: 1 }, "bytes=0-1", false],
 ] as const) {
+  /** The values of the parameters of the init (e.g. `parameters.level`) */
+  const parameters =
+    "parameters" in init
+      ? Object.keys(init.parameters).map((key) => `parameters.${key}`)
+      : [];
   define(`binden:`, {
     [`new ${name}()`]: probed(
       {
-        deep: Object.keys(init).map((key) => [0, key]),
+        deep: [
+          ...keysAt(0, init),
+          ...parameters.map((key) => [0, ...key.split(".")]),
+        ],
         // The values that the types declare as strings (but the enumeration
-        // `same_site` of a `Cookie`)
+        // `same_site` of a `Cookie`), and the values of the parameters
         converts: Object.fromEntries(
-          Object.entries(init)
-            .filter(
-              ([key, value]) =>
-                typeof value === "string" && key !== "same_site",
-            )
-            .map(([key]) => [`0.${key}`, headerInit]),
+          [
+            ...Object.entries(init)
+              .filter(
+                ([key, value]) =>
+                  typeof value === "string" && key !== "same_site",
+              )
+              .map(([key]) => key),
+            ...parameters,
+          ].map((key) => [`0.${key}`, headerInit]),
         ),
       },
       () => [structuredClone(init)],
@@ -501,9 +561,14 @@ define("binden:", {
 define("binden:", {
   "new BindenError()": probed(
     {
-      deep: ["message", "expose", "json", "cause", "code", "headers"].map(
-        (key) => [1, key],
-      ),
+      deep: [
+        ...["message", "expose", "json", "cause", "code", "headers"].map(
+          (key) => [1, key],
+        ),
+        [1, "headers", "x-a"],
+        [1, "headers", "x-b"],
+        [1, "headers", "x-b", 0],
+      ],
     },
     () => [404],
     () => [
@@ -514,7 +579,7 @@ define("binden:", {
         json: { a: 1 },
         cause: 1,
         code: "code",
-        headers: { "x-a": "b" },
+        headers: { "x-a": "b", "x-b": ["c"] },
       },
     ],
   ),
@@ -549,9 +614,18 @@ define("binden:", {
   "Router#guarded =": call(() => [true]),
   "Router#on()": call(() => ["GET", middleware, middleware]),
   "Router#off()": call(() => ["GET", middleware]),
-  "new Binden()": call(
+  "new Binden()": probed(
+    {
+      deep: keysAt(0, bindenOptions(), [
+        "routing.case_sensitive",
+        "routing.strict",
+        "access_log.level",
+        "access_log.path",
+        ...requestNested,
+      ]),
+    },
     () => [],
-    () => [{ logger: silent, timeout: 1000 }],
+    () => [bindenOptions()],
   ),
   "Binden#createServer()": call(() => [{}]),
   "Binden#createSecureServer()": call(() => [{}]),
@@ -573,26 +647,33 @@ for (const verb of [
 
 // The functions of binden
 define("binden:", {
-  "createSerializers()": call(() => [{ error_details: true }]),
+  "createSerializers()": probed({ deep: [[0, "error_details"]] }, () => [
+    { error_details: true },
+  ]),
   "described()": call(() => ["a"]),
   "formatStack()": call(() => [new Error("An error")]),
   "formatting()": call(() => [one]),
   "framingLength()": call(() => ["1"]),
   "isClosing()": call((env) => [env.server()]),
-  "shutdown()": call(async (env) => [
-    await env.listening(),
-    { timeout: 50, cleanup_timeout: 50 },
-  ]),
-  "validateRequestOptions()": call(() => [
+  "shutdown()": probed(
     {
-      trust_proxy: false,
-      encoded_slashes: false,
-      allowed_hosts: ["example.com"],
-      request_id: { header: "x-request-id", trust_incoming: false, echo: true },
-      query: { max_keys: 10 },
+      deep: [
+        [1, "timeout"],
+        [1, "cleanup_timeout"],
+      ],
     },
+    async (env) => [
+      await env.listening(),
+      { timeout: 50, cleanup_timeout: 50 },
+    ],
+  ),
+  "validateRequestOptions()": probed(
+    { deep: keysAt(0, requestOptions(), requestNested) },
+    () => [requestOptions()],
+  ),
+  "validateResponseOptions()": probed({ deep: [[0, "etag"]] }, () => [
+    { etag: true },
   ]),
-  "validateResponseOptions()": call(() => [{ etag: true }]),
   "serializers.body()": call(() => ["body"]),
   "serializers.context()": call(async (env) => [
     (await env.exchange()).context,
@@ -616,7 +697,7 @@ define("binden:", {
   "BindenRequest#acceptsLanguages()": call(() => ["en", "fr"]),
   "BindenRequest#body =": call(() => [{ a: 1 }]),
   "BindenRequest#header()": call(() => ["accept"]),
-  "new BindenResponse()": call(() => [
+  "new BindenResponse()": probed({ deep: [[1, "etag"]] }, () => [
     new IncomingMessage(new Socket()),
     { etag: true },
   ]),
@@ -657,14 +738,21 @@ const replies: Record<string, IFixture> = {
     () => [],
     () => ["text"],
   ),
-  "json()": call(
-    () => [{ a: 1 }],
-    () => [{ a: 1 }, (data: unknown): string => JSON.stringify(data)],
+  "json()": probed(
+    {
+      deep: [
+        [0, "a"],
+        [0, "b", 0],
+      ],
+    },
+    () => [{ a: 1, b: [1] }],
+    () => [{ a: 1, b: [1] }, (data: unknown): string => JSON.stringify(data)],
   ),
   "text()": call(() => ["text"]),
   "html()": call(() => ["<p>"]),
   "form()": call(() => [new URLSearchParams("a=b")]),
-  "redirect()": call(
+  "redirect()": probed(
+    { deep: [[2, "allow_external"]] },
     () => ["/a"],
     () => ["/a", 302, { allow_external: false }],
   ),
@@ -674,8 +762,11 @@ const replies: Record<string, IFixture> = {
         "root",
         "dotfiles",
         "etag",
+        "validator",
         "last_modified",
         "cache_control",
+        "max_age",
+        "immutable",
         "content_type",
       ].map((key) => [1, key]),
     },
@@ -689,6 +780,16 @@ const replies: Record<string, IFixture> = {
         last_modified: true,
         cache_control: "no-cache",
         content_type: "text/plain",
+      },
+    ],
+    () => [
+      "public-surface.ts",
+      {
+        root: import.meta.dirname,
+        etag: false,
+        validator: '"tag"',
+        max_age: 60,
+        immutable: true,
       },
     ],
   ),
@@ -705,10 +806,18 @@ define("binden:Context#", {
   ),
 });
 define("binden:", {
-  "new Context()": call(async (env) => {
-    const { request, response } = await env.exchange();
-    return [{ request, response, logger: silent, state: {}, report: noop }];
-  }),
+  "new Context()": probed(
+    {
+      deep: ["request", "response", "logger", "state", "report"].map((key) => [
+        0,
+        key,
+      ]),
+    },
+    async (env) => {
+      const { request, response } = await env.exchange();
+      return [{ request, response, logger: silent, state: {}, report: noop }];
+    },
+  ),
 });
 
 /** A fixture of a listener method (whose event name Node.js converts) */
@@ -718,21 +827,60 @@ const listening = probed({ converts: { 0: nodeCoercion } }, () => [
 ]);
 define("binden:BindenResponse#", {
   ...replies,
-  "set()": call(() => [{ "x-a": "b", "x-b": ["c", "d"] }]),
+  "set()": probed(
+    {
+      deep: [
+        [0, "x-a"],
+        [0, "x-b"],
+        [0, "x-b", 0],
+      ],
+      // Set by `setHeader()` of Node.js
+      converts: {
+        "0.x-a": nodeCoercion,
+        "0.x-b": nodeCoercion,
+        "0.x-b.0": nodeCoercion,
+      },
+    },
+    () => [{ "x-a": "b", "x-b": ["c", "d"] }],
+  ),
   "send()": call(
     () => [],
     () => ["text"],
     () => ["74657874", "hex"],
   ),
   "writeHead()": probed(
-    { converts: { 0: nodeCoercion } },
+    {
+      deep: [
+        [1, "x-a"],
+        [2, "x-a"],
+        [1, 0],
+        [1, 1],
+      ],
+      converts: {
+        0: nodeCoercion,
+        "1.x-a": nodeCoercion,
+        "2.x-a": nodeCoercion,
+        "1.0": nodeCoercion,
+        1.1: nodeCoercion,
+      },
+    },
     () => [200],
     () => [200, "OK", { "x-a": "b" }],
     () => [200, { "x-a": "b" }],
     () => [200, ["x-a", "b"]],
   ),
   "writeHeader()": probed(
-    { converts: { 0: nodeCoercion } },
+    {
+      deep: [
+        [1, "x-a"],
+        [2, "x-a"],
+      ],
+      converts: {
+        0: nodeCoercion,
+        "1.x-a": nodeCoercion,
+        "2.x-a": nodeCoercion,
+      },
+    },
     () => [200],
     () => [200, "OK", { "x-a": "b" }],
     () => [200, { "x-a": "b" }],
@@ -762,7 +910,19 @@ define("binden:BindenResponse#", {
   ),
   "setTimeout()": call(() => [1000, noop]),
   "removeHeader()": call(() => ["x-a"]),
-  "addTrailers()": call(
+  "addTrailers()": probed(
+    {
+      deep: [
+        [0, "x-a"],
+        [0, 0, 0],
+        [0, 0, 1],
+      ],
+      converts: {
+        "0.x-a": nodeCoercion,
+        "0.0.0": nodeCoercion,
+        "0.0.1": nodeCoercion,
+      },
+    },
     () => [{ "x-a": "b" }],
     () => [[["x-a", "b"]]],
   ),
@@ -772,7 +932,10 @@ define("binden:BindenResponse#", {
   ),
   "writeContinue()": call(() => [noop]),
   "writeProcessing()": call(() => [noop]),
-  "writeEarlyHints()": call(() => [{ link: "</a>; rel=preload" }, noop]),
+  "writeEarlyHints()": probed(
+    { deep: [[0, "link"]], converts: { "0.link": nodeCoercion } },
+    () => [{ link: "</a>; rel=preload" }, noop],
+  ),
   // Of Node.js from 24.18.0: binden refuses it before (both overloads), and
   // sends the one without headers as `(102, null, callback)`
   "writeInformation()": probed(
@@ -812,11 +975,13 @@ define("binden:BindenResponse#", {
     ),
   ]),
   // Checks the arguments of `writeHead()` as Node.js does
-  "[binden.validate_head]()": probed({ converts: { 0: nodeCoercion } }, () => [
-    200,
-    "OK",
-    { "x-a": "b" },
-  ]),
+  "[binden.validate_head]()": probed(
+    {
+      deep: [[2, "x-a"]],
+      converts: { 0: nodeCoercion, "2.x-a": nodeCoercion },
+    },
+    () => [200, "OK", { "x-a": "b" }],
+  ),
   "[binden.seal]()": call(() => [(): boolean => true]),
   "[binden.ownership]()": call(() => [
     {
@@ -835,7 +1000,11 @@ define("binden:BindenResponse#", {
     new Error("An error"),
     new EventEmitter(),
   ]),
-  "[binden.listen]()": call(() => ["close", noop, { once: true }]),
+  "[binden.listen]()": probed({ deep: [[2, "once"]] }, () => [
+    "close",
+    noop,
+    { once: true },
+  ]),
   "[binden.unlisten]()": call(() => ["close", noop]),
   "[binden.cancel]()": call(() => [new Error("A reason")]),
   "[binden.cancelling]()": call(() => [new Error("A reason")]),
@@ -858,9 +1027,13 @@ define("@binden/logger:", {
         [0, "destination"],
         [0, "level"],
         [0, "error_details"],
+        // An option of `pino`
+        [0, "name"],
       ],
     },
-    () => [{ destination: sink, level: "info", error_details: true }],
+    () => [
+      { destination: sink, level: "info", error_details: true, name: "name" },
+    ],
   ),
   "Logger.fromPino()": call(() => [pino({ level: "info" }, sink)]),
   "Logger.getLevel()": call(
@@ -870,11 +1043,14 @@ define("@binden/logger:", {
   "Logger#level =": call(() => ["debug"]),
   "Logger#isLevelEnabled()": call(() => ["info"]),
   "Logger#flush()": call(() => []),
-  "Logger#child()": call(
+  "Logger#child()": probed(
+    { deep: [[1, "level"]] },
     () => [{ a: 1 }],
     () => [{ a: 1 }, { level: "debug" }],
   ),
-  "createSerializers()": call(() => [{ error_details: true }]),
+  "createSerializers()": probed({ deep: [[0, "error_details"]] }, () => [
+    { error_details: true },
+  ]),
   "serializers.err()": call(() => [new Error("An error")]),
   "serializers.error()": call(() => [new Error("An error")]),
   "serializers.request()": call(async (env) => [
@@ -895,30 +1071,93 @@ for (const level of ["fatal", "error", "warn", "info", "debug", "trace"]) {
 const context = call(async (env) => [(await env.exchange()).context]);
 const ContentType = binden.ContentType as new (init: object) => object;
 
+/** Every option of `BodyParser` */
+function bodyOptions(): Record<string, unknown> {
+  return {
+    parse: (input: string): unknown => input,
+    limit: 1000,
+    encoded_limit: 2000,
+    type: ["text/plain"],
+    raw: false,
+    strict: true,
+    parameter_limit: 10,
+    verify: noop,
+    verify_encoded: false,
+    zstd: false,
+    disabled: false,
+    ignore_errors: false,
+  };
+}
+
+/** Every option of `Compression` */
+function compressionOptions(): Record<string, unknown> {
+  return {
+    format: "auto",
+    encodings: ["gzip", "br"],
+    threshold: 0,
+    filter: (): boolean => true,
+    gzip: { level: 1 },
+    deflate: { level: 1 },
+    brotli: { params: {} },
+    zstd: { params: {} },
+    disabled: false,
+    ignore_errors: false,
+  };
+}
+
+/** Every option of `Multipart` (but its `storage`) */
+function multipartOptions(): Record<string, unknown> {
+  return {
+    config: { limits: { files: 1 } },
+    throw_limits: false,
+    limit: 1000,
+    file_filter: (): boolean => true,
+    filtered: "skip",
+    storage: "memory",
+    disabled: false,
+    ignore_errors: false,
+  };
+}
+
+/** The fixture of the options of `Multipart` (also of its default export) */
+const multipart = probed(
+  {
+    deep: keysAt(0, multipartOptions(), [
+      "config.limits",
+      "config.limits.files",
+      "storage.dir",
+      "storage.on_file",
+    ]),
+  },
+  () => [],
+  () => [multipartOptions()],
+  () => [{ ...multipartOptions(), storage: { dir: tmpdir() } }],
+  () => [{ ...multipartOptions(), storage: { on_file: noop } }],
+);
+
 // @binden/body, @binden/compression and @binden/multipart
 define("@binden/body:", {
   "new BodyParser()": probed(
-    {
-      deep: [
-        [0, "limit"],
-        [0, "strict"],
-      ],
-    },
+    { deep: keysAt(0, bodyOptions(), ["type.0"]) },
     () => [],
-    () => [{ limit: 1000, strict: true }],
+    () => [bodyOptions()],
+    () => [{ ...bodyOptions(), type: (): string => "text" }],
   ),
   "BodyParser#run()": context,
 });
 define("@binden/compression:", {
   "new Compression()": probed(
     {
-      deep: [
-        [0, "format"],
-        [0, "threshold"],
-      ],
+      deep: keysAt(0, compressionOptions(), [
+        "encodings.0",
+        "gzip.level",
+        "deflate.level",
+        "brotli.params",
+        "zstd.params",
+      ]),
     },
     () => [],
-    () => [{ format: "auto", threshold: 0 }],
+    () => [compressionOptions()],
   ),
   "Compression#run()": context,
   "isCompressible()": call(
@@ -928,21 +1167,30 @@ define("@binden/compression:", {
   "skipCompression()": call(async (env) => [(await env.exchange()).response]),
 });
 define("@binden/multipart:", {
-  "new Multipart()": call(
-    () => [],
-    () => [{}],
-  ),
+  "new Multipart()": multipart,
   "Multipart#run()": context,
   // The name is converted by the constructor of `File` of Node.js
   "new MultipartFile()": probed(
-    { converts: { 1: nodeCoercion } },
+    {
+      deep: [
+        [2, "type"],
+        [2, "truncated"],
+        [2, "lastModified"],
+      ],
+      converts: {
+        1: nodeCoercion,
+        "2.type": nodeCoercion,
+        "2.lastModified": nodeCoercion,
+      },
+    },
     () => [["a"], "a.txt"],
-    () => [["a"], "a.txt", { type: "text/plain", truncated: false }],
+    () => [
+      ["a"],
+      "a.txt",
+      { type: "text/plain", truncated: false, lastModified: 0 },
+    ],
   ),
-  "default()": call(
-    () => [],
-    () => [{}],
-  ),
+  "default()": multipart,
   "multipartInfo()": context,
 });
 
@@ -1140,7 +1388,8 @@ function describe(error: unknown): string {
     return `(${typeof error})`;
   }
   if (isNativeError(error)) {
-    return `${error.constructor.name}: ${error.message}`;
+    // On one line (e.g. a message of Node.js that quotes an object)
+    return `${error.constructor.name}: ${error.message.replaceAll(/\s*\n\s*/gu, " ")}`;
   }
   return "(an object)";
 }

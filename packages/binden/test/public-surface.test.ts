@@ -103,6 +103,7 @@ const integrating: readonly string[] = [
   "binden:BindenResponse#rawListeners()",
   "binden:BindenResponse#removeHeader()",
   "binden:BindenResponse#sendFile()",
+  "binden:BindenResponse#set()",
   "binden:BindenResponse#setHeader()",
   "binden:BindenResponse#setHeaders()",
   "binden:BindenResponse#setTimeout()",
