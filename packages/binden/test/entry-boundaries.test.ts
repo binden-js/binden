@@ -410,6 +410,58 @@ suite(
   },
 );
 
+/**
+ * A logger whose proxy throws the error of the test (a new one) from one of
+ * its traps only: its methods are read as usual
+ */
+function oneTrap(trap: "getPrototypeOf" | "has" | "ownKeys"): object {
+  const error = new RangeError("A trap of the test");
+  own = error;
+  const logger = {
+    fatal: (): null => null,
+    error: (): null => null,
+    warn: (): null => null,
+    info: (): null => null,
+    debug: (): null => null,
+    trace: (): null => null,
+    child: (): unknown => logger,
+  };
+  return new Proxy(logger, {
+    [trap]: (): never => {
+      throw error;
+    },
+  });
+}
+
+suite(
+  "What the checks and the copies of the options run once they are read is formatted (R28)",
+  () => {
+    test("new Binden() checks its logger inside the boundary, as a Context does: a proxy whose one trap throws", () => {
+      deepStrictEqual(
+        [
+          outcome(
+            (): unknown =>
+              new Binden({ logger: given(oneTrap("getPrototypeOf")) }),
+          ),
+          outcome((): unknown => new Binden({ logger: given(oneTrap("has")) })),
+          outcome(
+            (): unknown => new Binden({ logger: given(oneTrap("ownKeys")) }),
+          ),
+          outcome(
+            (): unknown =>
+              new Context({
+                request: new BindenRequest(new Socket()),
+                response: given(null),
+                logger: given(oneTrap("getPrototypeOf")),
+              }),
+          ),
+        ],
+        [ownError, "returned", "returned", ownError],
+      );
+    });
+  },
+);
+
 suite("The routing formats what checking its arguments throws (R27-1)", () => {
   test("Router: a method described without converting it, a middleware that a revoked proxy is, and middlewares() of a method that is not a string", () => {
     conversions = 0;

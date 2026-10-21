@@ -277,7 +277,9 @@ export class Binden<
     this.#error_handler_timeout = settings.error_handler_timeout;
     this.#timeout = settings.timeout;
     this.#auto_head = settings.auto_head;
-    this.#logger = safe(settings.logger ?? defaultLogger());
+    // A logger of the application that a revoked proxy is (or whose traps
+    // throw) throws once `safe()` checks it, formatted (as for a `Context`)
+    this.#logger = formatting(() => safe(settings.logger ?? defaultLogger()));
     this.#details = settings.log_error_details;
     this.#routing = {
       case_sensitive: settings.case_sensitive,
