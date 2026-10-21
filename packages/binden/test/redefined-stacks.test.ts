@@ -218,45 +218,53 @@ suite(
 suite(
   "The destroy of a Node.js Readable that fails while it is not destroyed (H24-1, R2-1)",
   () => {
-    test("by the destroy() of Node.js (e.g. before it sets `destroyed`): it is destroyed by it once more, with the carrier of the value of the send", async () => {
-      const value = new Error("Failed");
-      const stream = new Readable({
-        read(): void {
-          // Never reads anything
-        },
-      });
-      // Read by the destroy() of Node.js only: it throws once armed, as it
-      // would read a stack that cannot be read
-      let armed = false;
-      Object.defineProperty(stream, "_writableState", {
-        configurable: true,
-        get(): null {
-          if (armed) {
-            armed = false;
-            throw new Error(unreadable);
-          }
-          // As without a writable side
-          return null;
-        },
-      });
-      resuming(stream, value);
-      const resume = stream.resume.bind(stream);
-      stream.resume = (): Readable => {
-        armed = true;
-        return resume();
-      };
-      const { rejected, messages } = await sent(stream);
-      deepStrictEqual(
-        [
-          rejected === value,
-          armed,
-          stream.destroyed,
-          stream.errored?.message,
-          stream.errored?.cause === value,
-          messages.includes("The release of a stream has failed"),
-        ],
-        [true, false, true, "A stream has failed", true, false],
-      );
+    test("by the destroy() of Node.js, before it sets `destroyed` (the stack of the value redefined once checked, or code of the stream that throws): it is destroyed by it once more, with the carrier of the value", async () => {
+      for (const how of ["stale", "throws"] as const) {
+        const value = new Error("Failed");
+        const stream = new Readable({
+          read(): void {
+            // Never reads anything
+          },
+        });
+        // Read by the destroy() of Node.js only (before it reads the stack
+        // of the value, and sets `destroyed`), once armed: once binden has
+        // checked the value, its stack becomes a getter that throws, or the
+        // read throws itself
+        let armed = false;
+        Object.defineProperty(stream, "_writableState", {
+          configurable: true,
+          get(): null {
+            if (armed) {
+              armed = false;
+              if (how === "throws") {
+                throw new Error(unreadable);
+              }
+              throwing(value);
+            }
+            // As without a writable side
+            return null;
+          },
+        });
+        resuming(stream, value);
+        const resume = stream.resume.bind(stream);
+        stream.resume = (): Readable => {
+          armed = true;
+          return resume();
+        };
+        const { rejected, messages } = await sent(stream);
+        deepStrictEqual(
+          [
+            rejected === value,
+            armed,
+            stream.destroyed,
+            stream.errored?.message,
+            stream.errored?.cause === value,
+            messages.includes("The release of a stream has failed"),
+          ],
+          [true, false, true, "A stream has failed", true, false],
+          how,
+        );
+      }
     });
 
     test("by a destroy() of its own, which throws before it destroys it: it is called once, the failure logged, and the send rejects with the value", async () => {
