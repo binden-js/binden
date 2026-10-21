@@ -1320,13 +1320,18 @@ export function readStreamLike(
    * its own `destroyed`), which destroys the readable (see `destroyWith()`),
    * and releases the source, as for a cancellation, with what it has thrown,
    * under its guard (`closed`: by its `close`), never thrown into its events.
-   * That value decides the send meanwhile (see `decide()`).
+   * That value decides the send meanwhile (see `decide()`): the listener of
+   * `error` of the send no longer fails it before the guard is installed
+   * (see `forwarder()`), so that another error that code of the source emits
+   * then (e.g. a listener of its `newListener`) is a late one, reported
+   * once, never the one that the send rejects with.
    */
   const destroyedOnce = (closed: boolean): boolean | null => {
     try {
       return isDestroyed(source);
     } catch (error: unknown) {
       decide(source, error, () => {
+        errors.detach(source, report);
         protect(closed);
         destroyWith(error);
       });
