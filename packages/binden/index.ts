@@ -18,6 +18,7 @@ export {
   type IExchangeReport,
   formatStack,
 } from "./src/exchange.js";
+export { described, formatting } from "./src/formatting.js";
 export * from "./src/binden.js";
 export * from "./src/middleware.js";
 export * from "./src/request.js";

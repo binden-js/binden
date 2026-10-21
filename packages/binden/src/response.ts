@@ -85,13 +85,14 @@ import {
   validateHeaderValue,
 } from "node:http";
 import { contentDigests, representationDigests } from "./digests.js";
-import { described, split, trimOws } from "./headers/list.js";
+import { described, formatting } from "./formatting.js";
 import {
   isArrayBuffer,
   isDataView,
   isProxy,
   isUint8Array,
 } from "node:util/types";
+import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
 import { createHash } from "node:crypto";
@@ -467,22 +468,6 @@ function bytesOf(view: ArrayBufferView): Buffer {
 function jsonText(data: unknown): string | undefined {
   try {
     return JSON.stringify(data);
-  } catch (error: unknown) {
-    throw formatStack(error as Error);
-  }
-}
-
-/**
- * Runs what reads or calls an argument of a method of the response (e.g. the
- * properties of an object, or a function): what it throws is formatted (see
- * `formatStack()`), such as the `TypeError` that V8 creates while the frames
- * of the response are on the stack for a revoked proxy, or for a class
- * constructor called as a function. An error of the application's own is
- * thrown as it is (formatted too).
- */
-function formatting<T>(run: () => T): T {
-  try {
-    return run();
   } catch (error: unknown) {
     throw formatStack(error as Error);
   }

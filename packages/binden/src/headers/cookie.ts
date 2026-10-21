@@ -1,5 +1,6 @@
-import { described, stringOf } from "./list.js";
+import { described } from "../formatting.js";
 import { formatStack } from "../exchange.js";
+import { stringOf } from "./list.js";
 /** A cookie: its name, value and attributes (RFC 6265) */
 export interface ICookie {
   /** The name of the cookie: a token */
