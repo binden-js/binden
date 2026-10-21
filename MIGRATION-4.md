@@ -370,6 +370,13 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   Node.js `Readable` (e.g. of `readable-stream` or `through2`: an object with `on()`, `pause()`,
   `resume()`, and `removeListener()` or `off()`) is sent as a stream (it sent `[object Object]`),
   and a `Uint8Array` is sent as its bytes (it sent its numbers, separated by commas).
+- `form()` sends only `URLSearchParams`, serialized by `URLSearchParams.prototype.toString()`:
+  binden 2.0.4 sent `params.toString()` of whatever it was given (e.g. a string as it is, or the
+  override of a subclass). Anything else now rejects with a `TypeError` ("The parameters are not
+  URLSearchParams"); send a string with `text()` or `send()` and the `Content-Type` that it needs.
+- The `q_value` of an `AcceptEncoding` must be a number or `null`: binden 2.0.4 kept any value (e.g.
+  `"0.5"`) and serialized it as it was. Anything else now throws a `TypeError` ("`q_value` is not a
+  number").
 - `response.type()` throws a `TypeError` for a parameter that is not a token with a token or a
   quoted string as value (e.g. `text/plain; charset`), which it used to drop.
 - With `root`, `sendFile()` replies `404` for a socket, a device or a FIFO, without opening it.
