@@ -336,7 +336,17 @@ const keeping: ReadonlySet<unknown> = new Set([
  */
 const destroyReadable = Reflect.get(Readable.prototype, "destroy") as (
   this: Readable,
+  error?: unknown,
 ) => unknown;
+
+/**
+ * The getter of `destroyed` of `Readable.prototype`: whether a `Readable` is
+ * destroyed, as Node.js tells it (never by a getter of its own)
+ */
+const readableDestroyed = Reflect.get(
+  Object(Reflect.getOwnPropertyDescriptor(Readable.prototype, "destroyed")),
+  "get",
+) as (this: Readable) => boolean;
 
 /**
  * The JSON text of a value (`JSON.stringify()`). What it throws (e.g. the
@@ -3330,17 +3340,37 @@ export class BindenResponse<
        * without running code of the application (see `readsSafely()`), and
        * otherwise an `Error` that carries it as its `cause` (see
        * `carrierOf()`), so that the source is destroyed in any case (e.g. its
-       * file closed). What its `destroy()` throws is thrown (see `drop`).
+       * file closed). The `destroy()` of Node.js (`Readable.prototype`, read
+       * once), which throws before it destroys the stream (e.g. as it reads
+       * that `stack`), is called once more, with the carrier of the error.
+       * What else throws is thrown (see `drop`), and a `destroy()` of the
+       * source's own is never called again: it may have done anything before.
        */
       const destroyWith = (
         failure: { readonly error: unknown } | null,
       ): void => {
         if (failure === null) {
           data.destroy();
-        } else if (readsSafely(failure.error)) {
-          data.destroy(failure.error as Error);
-        } else {
-          data.destroy(carrierOf(failure.error));
+          return;
+        }
+        // Read once (e.g. by a getter of the source), before the error is
+        // checked
+        const destroy = Reflect.get(data, "destroy") as (
+          error: unknown,
+        ) => unknown;
+        const { error } = failure;
+        const safe = readsSafely(error);
+        try {
+          Reflect.apply(destroy, data, [safe ? error : carrierOf(error)]);
+        } catch (thrown: unknown) {
+          if (
+            destroy !== destroyReadable ||
+            !safe ||
+            Reflect.apply(readableDestroyed, data, [])
+          ) {
+            throw thrown;
+          }
+          Reflect.apply(destroyReadable, data, [carrierOf(error)]);
         }
       };
       /**

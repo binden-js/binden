@@ -83,6 +83,31 @@ function formats(value: unknown): boolean {
 }
 
 /**
+ * Where the `stack` of a value is found (see `readsSafely()`): its own, or of
+ * the nearest prototype that has one, as its descriptor and the object that
+ * holds it, `null` without one, or `false` through a proxy, whose traps are
+ * code of the application (never run here)
+ */
+function stackOf(
+  value: object,
+): false | { holder: object; descriptor: PropertyDescriptor } | null {
+  for (
+    let link: object | null = value;
+    link !== null;
+    link = Reflect.getPrototypeOf(link)
+  ) {
+    if (isProxy(link)) {
+      return false;
+    }
+    const descriptor = Reflect.getOwnPropertyDescriptor(link, "stack");
+    if (typeof descriptor !== "undefined") {
+      return { holder: link, descriptor };
+    }
+  }
+  return null;
+}
+
+/**
  * Whether Node.js reads the `stack` of a value without running code of the
  * application, as it does to destroy a `Readable` with it (before the
  * stream is destroyed, and again once its `_destroy()` has called back): a
@@ -92,28 +117,38 @@ function formats(value: unknown): boolean {
  * stack is kept, and Node.js reads it as it is. Never through a proxy (its
  * traps are code of the application), nor by a getter of the application,
  * which is not called (it may return a string here, and throw once Node.js
- * reads it). For the packages of binden only.
+ * reads it). Formatting runs code of the application (e.g. a getter of its
+ * `name` that V8 reads, or a `prepareStackTrace`), which may change where
+ * the stack is found (e.g. define a getter of its own): the prototype chain
+ * and the descriptor are checked again afterwards, without formatting (the
+ * stack is kept by then), so that the verdict is the one of the value that
+ * Node.js reads. For the packages of binden only.
  *
  * @internal
  */
 export function readsSafely(value: unknown): boolean {
-  for (
-    let link: object | null = Object(value) as object;
-    link !== null;
-    link = Reflect.getPrototypeOf(link)
+  const object = Object(value) as object;
+  const found = stackOf(object);
+  if (found === null || found === false) {
+    return found === null;
+  } else if ("value" in found.descriptor) {
+    return true;
+  } else if (
+    Reflect.get(found.descriptor, "get") !== nativeStack ||
+    !formats(value)
   ) {
-    if (isProxy(link)) {
-      return false;
-    }
-    const descriptor = Reflect.getOwnPropertyDescriptor(link, "stack");
-    if (typeof descriptor !== "undefined") {
-      return (
-        "value" in descriptor ||
-        (Reflect.get(descriptor, "get") === nativeStack && formats(value))
-      );
-    }
+    return false;
   }
-  return true;
+  // Again, once formatted: its own value (e.g. of a getter that has replaced
+  // it), or the getter of the engine on the same object, which has kept it
+  const again = stackOf(object);
+  return (
+    again === null ||
+    (again !== false &&
+      ("value" in again.descriptor ||
+        (again.holder === found.holder &&
+          Reflect.get(again.descriptor, "get") === nativeStack)))
+  );
 }
 
 /**
