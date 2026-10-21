@@ -1,4 +1,5 @@
 import { type IMiddleware, Middleware } from "./middleware.js";
+import { described, formatting, objectOf } from "./formatting.js";
 import type { IParams } from "./context.js";
 import { formatStack } from "./exchange.js";
 
@@ -15,6 +16,11 @@ export interface IRouterOptions {
 /** A method: an HTTP token (RFC 9110, section 9.1) */
 const token = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 
+/** The `guarded` option, read once, with its default */
+function guardedOf({ guarded = false }: IRouterOptions): unknown {
+  return guarded;
+}
+
 /** Middlewares by method, for a path of the stack */
 export class Router<
   State extends object = Record<string, unknown>,
@@ -25,9 +31,13 @@ export class Router<
 
   /**
    * A router without middlewares: a `guarded` that is not a boolean throws a
-   * `TypeError`
+   * `TypeError`, and so do options that are not an object. What reading them
+   * throws (e.g. a revoked proxy) is formatted (see `formatting()`).
    */
-  public constructor({ guarded = false }: IRouterOptions = {}) {
+  public constructor(options?: IRouterOptions) {
+    const guarded = formatting(() =>
+      guardedOf(objectOf(options, "options", true) as IRouterOptions),
+    );
     if (typeof guarded !== "boolean") {
       throw formatStack(new TypeError("`guarded` is not a boolean"));
     }
@@ -61,14 +71,28 @@ export class Router<
     return methods;
   }
 
-  /** The middlewares of a method (in any case) */
+  /**
+   * The middlewares of a method (in any case): a method that is not a string
+   * throws a `TypeError`, which describes it without converting it (see
+   * `described()`)
+   */
   public get middlewares(): (method: string) => IMiddleware<State, Params>[] {
-    return (method: string): IMiddleware<State, Params>[] => [
-      ...(this.#middlewares.get(method.toUpperCase()) ?? []),
-    ];
+    return (method: string): IMiddleware<State, Params>[] => {
+      if (typeof method !== "string") {
+        throw formatStack(
+          new TypeError(`The method is not a string: ${described(method)}`),
+        );
+      }
+      return [...(this.#middlewares.get(method.toUpperCase()) ?? [])];
+    };
   }
 
-  /** Adds middlewares for a method (in any case: `get` is `GET`) */
+  /**
+   * Adds middlewares for a method (in any case: `get` is `GET`): a method that
+   * is not a token, or a value that is not a middleware throws a `TypeError`
+   * (what checking it throws, e.g. of a revoked proxy, is formatted, see
+   * `formatting()`)
+   */
   public on(
     _method: string,
     ..._middlewares: IMiddleware<State, Params>[]
@@ -78,13 +102,15 @@ export class Router<
       return this;
     }
 
-    for (const middleware of _middlewares) {
-      if (!(
-        middleware instanceof Middleware || typeof middleware === "function"
-      )) {
-        throw formatStack(new TypeError("Middleware is not supported"));
+    formatting(() => {
+      for (const middleware of _middlewares) {
+        if (!(
+          middleware instanceof Middleware || typeof middleware === "function"
+        )) {
+          throw formatStack(new TypeError("Middleware is not supported"));
+        }
       }
-    }
+    });
 
     const middlewares = this.#middlewares.get(method);
 
@@ -180,7 +206,7 @@ export class Router<
   static #method(method: unknown): string {
     if (typeof method !== "string" || !token.test(method)) {
       throw formatStack(
-        new TypeError(`Method ${String(method)} is not a valid token`),
+        new TypeError(`Method ${described(method)} is not a valid token`),
       );
     }
     const upper = method.toUpperCase();

@@ -1,3 +1,4 @@
+import { formatting, objectOf } from "./formatting.js";
 import { STATUS_CODES } from "node:http";
 import { formatStack } from "./exchange.js";
 
@@ -35,7 +36,23 @@ const token = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 /** A header value: no control characters but HTAB (RFC 9110, section 5.5) */
 const fieldValue = /^[\t\x20-\x7e\x80-\xff]*$/u;
 
-/** A frozen copy of valid headers (a `TypeError` otherwise) */
+/**
+ * The values of an array, each read once by its index (an iterator of its
+ * own, e.g. of a subclass, could give others than those checked)
+ */
+function valuesOf(value: readonly unknown[]): unknown[] {
+  const { length } = value;
+  const values: unknown[] = [];
+  for (let index = 0; index < length; index += 1) {
+    values.push(value[index]);
+  }
+  return values;
+}
+
+/**
+ * A frozen copy of valid headers (a `TypeError` otherwise), each value read
+ * once: the values checked are the ones kept
+ */
 function copyHeaders(
   headers: unknown,
 ): Readonly<Record<string, string | readonly string[]>> {
@@ -59,7 +76,8 @@ function copyHeaders(
     } else if (names.has(lower)) {
       throw formatStack(new TypeError(`Duplicate header: ${name}`));
     }
-    const values: unknown[] = Array.isArray(value) ? value : [value];
+    const list = Array.isArray(value);
+    const values = list ? valuesOf(value) : [value];
     if (
       !values.every(
         (item): item is string =>
@@ -71,12 +89,19 @@ function copyHeaders(
       );
     }
     names.add(lower);
-    copy.push([
-      name,
-      Array.isArray(value) ? Object.freeze([...values]) : (value as string),
-    ]);
+    copy.push([name, list ? Object.freeze(values) : (value as string)]);
   }
   return Object.freeze(Object.fromEntries(copy));
+}
+
+/** The options of a `BindenError`, read once and checked */
+interface IChecked {
+  readonly message: string | undefined;
+  readonly expose: boolean;
+  readonly json: Record<string, unknown> | undefined;
+  readonly cause: unknown;
+  readonly code: string | undefined;
+  readonly headers: Readonly<Record<string, string | readonly string[]>>;
 }
 
 /** Whether a value is a plain object (of `Object`, or without a prototype) */
@@ -104,48 +129,25 @@ export class BindenError extends Error {
    * An error of an HTTP status (400 to 599, a `RangeError` otherwise) whose
    * reply the options describe: invalid options (e.g. a forbidden header, an
    * `expose` that is not a boolean, a `json` that is not a plain object or a
-   * `message` that is not a string) throw a `TypeError`
+   * `message` that is not a string) throw a `TypeError`, and so do options
+   * that are not an object. The status is checked first (the default message
+   * is the one of the status), and each option is read once: what reading
+   * them throws (e.g. a revoked proxy) is formatted (see `formatting()`).
    */
-  public constructor(
-    status: number,
-    {
-      message = STATUS_CODES[status],
-      expose = false,
-      json,
-      cause,
-      code,
-      headers = {},
-    }: IBindenErrorOptions = {},
-  ) {
-    if (!Number.isInteger(status)) {
-      throw formatStack(new TypeError("Invalid status code"));
-    } else if (status > 599) {
-      throw formatStack(new RangeError("Status code is greater than 599"));
-    } else if (status < 400) {
-      throw formatStack(new RangeError("Status code is less than 400"));
-    } else if (typeof code !== "undefined" && typeof code !== "string") {
-      throw formatStack(new TypeError("`code` is not a string"));
-    } else if (typeof expose !== "boolean") {
-      throw formatStack(new TypeError("`expose` is not a boolean"));
-    } else if (typeof json !== "undefined" && !isPlainObject(json)) {
-      // E.g. an array or a string, which `json` is not sent as
-      throw formatStack(new TypeError("`json` is not a plain object"));
-    } else if (typeof message !== "undefined" && typeof message !== "string") {
-      throw formatStack(new TypeError("`message` is not a string"));
-    }
-    const copy = copyHeaders(headers);
+  public constructor(status: number, options?: IBindenErrorOptions) {
+    const checked = BindenError.#checked(status, options);
 
-    if (typeof cause === "undefined") {
-      super(message);
+    if (typeof checked.cause === "undefined") {
+      super(checked.message);
     } else {
-      super(message, { cause });
+      super(checked.message, { cause: checked.cause });
     }
 
     this.name = "BindenError";
-    this.#code = code ?? null;
-    this.#headers = copy;
-    this.#expose = expose;
-    this.#json = json ?? null;
+    this.#code = checked.code ?? null;
+    this.#headers = checked.headers;
+    this.#expose = checked.expose;
+    this.#json = checked.json ?? null;
     this.#status = status;
     if (new.target === BindenError) {
       // Formatted at once (see `formatStack()`), whoever creates it (binden,
@@ -155,6 +157,52 @@ export class BindenError extends Error {
       // (e.g. its `name`), once this one has returned
       formatStack(this);
     }
+  }
+
+  /**
+   * The checked options of an error of the status (see the constructor):
+   * the status first, never converted (e.g. by the lookup of its default
+   * message), then the options, each read once
+   */
+  static #checked(status: unknown, options: unknown): IChecked {
+    if (typeof status !== "number" || !Number.isInteger(status)) {
+      throw formatStack(new TypeError("Invalid status code"));
+    } else if (status > 599) {
+      throw formatStack(new RangeError("Status code is greater than 599"));
+    } else if (status < 400) {
+      throw formatStack(new RangeError("Status code is less than 400"));
+    }
+    return formatting(() => {
+      const {
+        message = STATUS_CODES[status],
+        expose = false,
+        json,
+        cause,
+        code,
+        headers = {},
+      } = objectOf(options, "options", true) as IBindenErrorOptions;
+      if (typeof code !== "undefined" && typeof code !== "string") {
+        throw formatStack(new TypeError("`code` is not a string"));
+      } else if (typeof expose !== "boolean") {
+        throw formatStack(new TypeError("`expose` is not a boolean"));
+      } else if (typeof json !== "undefined" && !isPlainObject(json)) {
+        // E.g. an array or a string, which `json` is not sent as
+        throw formatStack(new TypeError("`json` is not a plain object"));
+      } else if (
+        typeof message !== "undefined" &&
+        typeof message !== "string"
+      ) {
+        throw formatStack(new TypeError("`message` is not a string"));
+      }
+      return {
+        message,
+        expose,
+        json,
+        cause,
+        code,
+        headers: copyHeaders(headers),
+      };
+    });
   }
 
   /** The machine-readable reason of the error, if any */

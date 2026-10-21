@@ -56,15 +56,22 @@ export function described(value: unknown): string {
 }
 
 /**
- * The init of a header (`name` in the message), checked before any of its
- * properties is read: an object (an array too). Anything else (e.g. `null`,
- * a string, a number, or a function) is refused with a `TypeError` that
- * describes it (see `described()`), formatted (see `formatStack()`):
- * destructuring would read a primitive as an object without the values, and
- * fail (with an error of V8) on `null`.
+ * An options object or the init of a header (`name` in the message), checked
+ * before any of its properties is read: an object (an array too), or
+ * `undefined` where it is `optional` (an empty object then, for the
+ * defaults). Anything else (e.g. `null`, a string, a number, or a function)
+ * is refused with a `TypeError` that describes it (see `described()`),
+ * formatted (see `formatStack()`): destructuring would read a primitive as an
+ * object without the options, and fail (with an error of V8) on `null`.
  */
-export function objectOf(value: unknown, name: string): object {
-  if (typeof value !== "object" || value === null) {
+export function objectOf(
+  value: unknown,
+  name: string,
+  optional = false,
+): object {
+  if (optional && typeof value === "undefined") {
+    return {};
+  } else if (typeof value !== "object" || value === null) {
     throw formatStack(
       new TypeError(`\`${name}\` is not an object: ${described(value)}`),
     );

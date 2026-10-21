@@ -3,6 +3,7 @@ import { type IPattern, type IRouteParams, compile } from "./route.js";
 import type { IParams } from "./context.js";
 import { Router } from "./router.js";
 import { formatStack } from "./exchange.js";
+import { formatting } from "./formatting.js";
 import { isDeepStrictEqual } from "node:util";
 
 /** A middleware or a router of a stack, for its state and its parameters */
@@ -100,7 +101,9 @@ function usePath(path: unknown): RegExp | string | null {
  * (or a RegExp, or any path), `route()` for a pattern with parameters and
  * `mount()` for a prefix, whose items (other stacks among them) see the rest
  * of the path. It has no options: those of the application (`Binden`, which
- * is a stack too) apply.
+ * is a stack too) apply. What its methods throw while they check their
+ * arguments (e.g. for an item that a revoked proxy is) is formatted (see
+ * `formatting()`).
  */
 export class Stack<State extends object = Record<string, unknown>> {
   readonly #layers: ILayer[] = [];
@@ -138,27 +141,29 @@ export class Stack<State extends object = Record<string, unknown>> {
     ...items: (IStackItem<State> | IUntypedItem)[]
   ): this;
   public use(_path: unknown, ...rest: unknown[]): this {
-    const first = isItem(_path);
-    const items = first ? [_path, ...rest] : rest;
-    // A stack (for `mount()`) or `undefined` taken as a path would leave the
-    // call silently ignored, or add its items for every path
-    if (
-      !items.length ||
-      (!first && typeof _path !== "string" && !(_path instanceof RegExp))
-    ) {
-      throw formatStack(new TypeError("Unsupported Middleware/Router"));
-    }
-    for (const item of items) {
-      if (!isItem(item)) {
+    return formatting(() => {
+      const first = isItem(_path);
+      const items = first ? [_path, ...rest] : rest;
+      // A stack (for `mount()`) or `undefined` taken as a path would leave the
+      // call silently ignored, or add its items for every path
+      if (
+        !items.length ||
+        (!first && typeof _path !== "string" && !(_path instanceof RegExp))
+      ) {
         throw formatStack(new TypeError("Unsupported Middleware/Router"));
       }
-    }
-    this.#add({
-      kind: "use",
-      path: usePath(_path),
-      items: items as IStackItem[],
+      for (const item of items) {
+        if (!isItem(item)) {
+          throw formatStack(new TypeError("Unsupported Middleware/Router"));
+        }
+      }
+      this.#add({
+        kind: "use",
+        path: usePath(_path),
+        items: items as IStackItem[],
+      });
+      return this;
     });
-    return this;
   }
 
   /**
@@ -170,21 +175,23 @@ export class Stack<State extends object = Record<string, unknown>> {
     pattern: Pattern,
     ...items: (IStackItem<State, IRouteParams<Pattern>> | IUntypedItem)[]
   ): this {
-    const compiled = compile(pattern, "route");
-    if (!items.length) {
-      return this;
-    }
-    for (const item of items) {
-      if (!isItem(item)) {
-        throw formatStack(new TypeError("Unsupported Middleware/Router"));
+    return formatting(() => {
+      const compiled = compile(pattern, "route");
+      if (!items.length) {
+        return this;
       }
-    }
-    this.#add({
-      kind: "route",
-      pattern: compiled,
-      items: items as IStackItem[],
+      for (const item of items) {
+        if (!isItem(item)) {
+          throw formatStack(new TypeError("Unsupported Middleware/Router"));
+        }
+      }
+      this.#add({
+        kind: "route",
+        pattern: compiled,
+        items: items as IStackItem[],
+      });
+      return this;
     });
-    return this;
   }
 
   /**
@@ -196,31 +203,35 @@ export class Stack<State extends object = Record<string, unknown>> {
     prefix: string,
     ...items: (IStackItem<State> | IUntypedItem | Stack<State>)[]
   ): this {
-    const compiled = compile(prefix, "mount");
-    if (!items.length) {
-      return this;
-    }
-    for (const item of items) {
-      if (item instanceof Stack) {
-        if (roots.has(item)) {
+    return formatting(() => {
+      const compiled = compile(prefix, "mount");
+      if (!items.length) {
+        return this;
+      }
+      for (const item of items) {
+        if (item instanceof Stack) {
+          if (roots.has(item)) {
+            throw formatStack(
+              new TypeError("An application (`Binden`) cannot be mounted"),
+            );
+          } else if (item === this || Stack.#reaches(item, this)) {
+            throw formatStack(
+              new TypeError("A stack cannot be mounted in itself"),
+            );
+          }
+        } else if (!isItem(item)) {
           throw formatStack(
-            new TypeError("An application (`Binden`) cannot be mounted"),
-          );
-        } else if (item === this || Stack.#reaches(item, this)) {
-          throw formatStack(
-            new TypeError("A stack cannot be mounted in itself"),
+            new TypeError("Unsupported Middleware/Router/Stack"),
           );
         }
-      } else if (!isItem(item)) {
-        throw formatStack(new TypeError("Unsupported Middleware/Router/Stack"));
       }
-    }
-    this.#add({
-      kind: "mount",
-      pattern: compiled,
-      items: items as (IStackItem | Stack)[],
+      this.#add({
+        kind: "mount",
+        pattern: compiled,
+        items: items as (IStackItem | Stack)[],
+      });
+      return this;
     });
-    return this;
   }
 
   /**
@@ -237,46 +248,48 @@ export class Stack<State extends object = Record<string, unknown>> {
     ...items: (IStackItem<State> | IUntypedItem)[]
   ): IStackItem[];
   public off(_path: unknown, ...rest: unknown[]): IStackItem[] {
-    const items = isItem(_path) ? [_path, ...rest] : rest;
-    const path = usePath(_path);
-    const removed: IStackItem[] = [];
-    const layers = this.#layers;
+    return formatting(() => {
+      const items = isItem(_path) ? [_path, ...rest] : rest;
+      const path = usePath(_path);
+      const removed: IStackItem[] = [];
+      const layers = this.#layers;
 
-    for (const item of items) {
-      const { length } = layers;
+      for (const item of items) {
+        const { length } = layers;
 
-      for (let i = length - 1; i >= 0; i -= 1) {
-        const layer = layers[i];
+        for (let i = length - 1; i >= 0; i -= 1) {
+          const layer = layers[i];
 
-        if (layer.kind === "use" && isDeepStrictEqual(layer.path, path)) {
-          const index = layer.items.lastIndexOf(item as IStackItem);
+          if (layer.kind === "use" && isDeepStrictEqual(layer.path, path)) {
+            const index = layer.items.lastIndexOf(item as IStackItem);
 
-          if (index !== -1) {
-            removed.push(...layer.items.splice(index, 1));
+            if (index !== -1) {
+              removed.push(...layer.items.splice(index, 1));
 
-            if (!layer.items.length) {
-              const previous = layers[i - 1];
-              const next = layers[i + 1];
-              if (
-                typeof previous !== "undefined" &&
-                typeof next !== "undefined" &&
-                Stack.#same(previous, next)
-              ) {
-                // The neighbours are one layer again
-                (previous.items as unknown[]).push(...next.items);
-                layers.splice(i, 2);
-              } else {
-                layers.splice(i, 1);
+              if (!layer.items.length) {
+                const previous = layers[i - 1];
+                const next = layers[i + 1];
+                if (
+                  typeof previous !== "undefined" &&
+                  typeof next !== "undefined" &&
+                  Stack.#same(previous, next)
+                ) {
+                  // The neighbours are one layer again
+                  (previous.items as unknown[]).push(...next.items);
+                  layers.splice(i, 2);
+                } else {
+                  layers.splice(i, 1);
+                }
               }
-            }
 
-            break;
+              break;
+            }
           }
         }
       }
-    }
 
-    return removed;
+      return removed;
+    });
   }
 
   /** Adds a layer, or its items to the last layer when it has the same path */

@@ -40,6 +40,7 @@ import {
   owners,
   releasedFailure,
 } from "./seal.js";
+import { formatting, objectOf } from "./formatting.js";
 import { isClosing, register, track } from "./shutdown.js";
 import { pathOf, property } from "./property.js";
 import { BindenError } from "./error.js";
@@ -178,6 +179,22 @@ const EXPIRED = Symbol("expired");
  */
 const SUPERSEDED = Symbol("superseded");
 
+/** The options of an application, read once and checked (see `Binden`) */
+interface ISettings {
+  readonly error_handler: IErrorHandler | null;
+  readonly error_handler_timeout: number;
+  readonly auto_head: boolean;
+  readonly logger: ILogger | undefined;
+  readonly log_error_details: boolean;
+  readonly access: IAccessLog | null;
+  readonly case_sensitive: boolean;
+  readonly strict: boolean;
+  readonly state: (() => object) | null;
+  readonly timeout: number;
+  readonly requests: IRequestOptions;
+  readonly responses: IResponseOptions;
+}
+
 /** The context of a request, which a middleware may replace */
 interface IRun {
   context: Context;
@@ -239,7 +256,9 @@ export class Binden<
   /**
    * An application with its options (see `IBindenOptions`), checked: an
    * invalid one throws a `TypeError` (or a `RangeError` for a value out of
-   * its range, e.g. a negative `timeout`)
+   * its range, e.g. a negative `timeout`), and so do options that are not an
+   * object. Each option is read once: what reading them throws (e.g. a
+   * revoked proxy) is formatted (see `formatting()`).
    */
   public constructor(
     ...[options = {} as IBindenOptions<State>]: Record<
@@ -250,67 +269,22 @@ export class Binden<
       : [options: IBindenOptions<State>]
   ) {
     super();
-    const {
-      error_handler,
-      error_handler_timeout = 5000,
-      auto_head = true,
-      logger,
-      log_error_details = false,
-      access_log = false,
-      routing = {},
-      state,
-      timeout = 0,
-      trust_proxy,
-      encoded_slashes,
-      allowed_hosts,
-      request_id,
-      query,
-      etag,
-    } = options;
-    // Checked once: the requests and the responses of the application share them
-    const requests = validateRequestOptions({
-      trust_proxy,
-      encoded_slashes,
-      allowed_hosts,
-      request_id,
-      query,
-    });
-    const responses = validateResponseOptions({ etag });
-    validateDelay("timeout", timeout, 0);
-    validateDelay("error_handler_timeout", error_handler_timeout, 1);
-    Binden.#boolean("auto_head", auto_head);
-    Binden.#boolean("log_error_details", log_error_details);
-    if (typeof logger !== "undefined" && !isLogger(logger)) {
-      throw formatStack(new TypeError("`logger` is not a logger"));
-    }
-    if (
-      typeof error_handler !== "undefined" &&
-      typeof error_handler !== "function"
-    ) {
-      throw formatStack(new TypeError("`error_handler` is not a function"));
-    } else if (typeof state !== "undefined" && typeof state !== "function") {
-      throw formatStack(new TypeError("`state` is not a function"));
-    } else if (typeof routing !== "object" || (routing as unknown) === null) {
-      throw formatStack(new TypeError("`routing` is not an object"));
-    }
-    const { case_sensitive = true, strict = true } = routing;
-    this.#access = Binden.#accessOptions(access_log);
-    Binden.#boolean("routing.case_sensitive", case_sensitive);
-    Binden.#boolean("routing.strict", strict);
+    const settings = formatting(() => Binden.#settings(options));
+    const { requests, responses } = settings;
     markRoot(this);
-    this.#error_handler =
-      (error_handler as unknown as IErrorHandler | undefined) ?? null;
-    this.#error_handler_timeout = error_handler_timeout;
-    this.#timeout = timeout;
-    this.#auto_head = auto_head;
-    this.#logger = safe(logger ?? defaultLogger());
-    this.#details = log_error_details;
+    this.#access = settings.access;
+    this.#error_handler = settings.error_handler;
+    this.#error_handler_timeout = settings.error_handler_timeout;
+    this.#timeout = settings.timeout;
+    this.#auto_head = settings.auto_head;
+    this.#logger = safe(settings.logger ?? defaultLogger());
+    this.#details = settings.log_error_details;
     this.#routing = {
-      case_sensitive,
-      strict,
+      case_sensitive: settings.case_sensitive,
+      strict: settings.strict,
       encoded_slashes: requests.encoded_slashes,
     };
-    this.#state = state ?? null;
+    this.#state = settings.state;
     this.#request_id = requests.request_id;
     // The requests and the responses of this application, with its options
     this.#Request = class extends BindenRequest {
@@ -331,32 +305,40 @@ export class Binden<
 
   /**
    * Creates an HTTP server that handles its requests with the application
-   * (registered for `shutdown()`)
+   * (registered for `shutdown()`): options that are not an object throw a
+   * `TypeError`, and what reading them or creating the server throws (e.g.
+   * an argument error of Node.js) is formatted (see `formatting()`)
    */
   public createServer(
-    options: Omit<
-      http.ServerOptions,
-      "IncomingMessage" | "ServerResponse"
-    > = {},
+    options?: Omit<http.ServerOptions, "IncomingMessage" | "ServerResponse">,
   ): http.Server<typeof BindenRequest, typeof BindenResponse> {
-    const server = http.createServer({ ...options, ...this.serverOptions() });
-    server.on("request", this.callback(server));
-    return server;
+    return formatting(() => {
+      const server = http.createServer({
+        ...objectOf(options, "options", true),
+        ...this.serverOptions(),
+      });
+      server.on("request", this.callback(server));
+      return server;
+    });
   }
 
   /**
    * Creates an HTTPS server that handles its requests with the application
-   * (registered for `shutdown()`)
+   * (registered for `shutdown()`): options that are not an object throw a
+   * `TypeError`, and what reading them or creating the server throws (e.g.
+   * an argument error of Node.js) is formatted (see `formatting()`)
    */
   public createSecureServer(
-    options: Omit<
-      https.ServerOptions,
-      "IncomingMessage" | "ServerResponse"
-    > = {},
+    options?: Omit<https.ServerOptions, "IncomingMessage" | "ServerResponse">,
   ): https.Server<typeof BindenRequest, typeof BindenResponse> {
-    const server = https.createServer({ ...options, ...this.serverOptions() });
-    server.on("request", this.callback(server));
-    return server;
+    return formatting(() => {
+      const server = https.createServer({
+        ...objectOf(options, "options", true),
+        ...this.serverOptions(),
+      });
+      server.on("request", this.callback(server));
+      return server;
+    });
   }
 
   /**
@@ -376,34 +358,43 @@ export class Binden<
    * The request listener of a server created with `serverOptions()`, which
    * is registered for `shutdown()` at once. A request of another kind (e.g. of
    * a server created without them) is logged, and its connection closed.
+   * What registering the server throws (e.g. for a value that is not a
+   * server) is formatted (see `formatting()`), and so is what the listener
+   * throws.
    */
   public callback(
     server: http.Server | https.Server,
   ): (request: http.IncomingMessage, response: http.ServerResponse) => void {
-    register(server, (message, error) => {
-      this.#logger.error(message, {
-        failure: snapshot(error, {
-          location: "shutdown",
-          details: this.#details,
-        }),
+    formatting(() => {
+      register(server, (message, error) => {
+        this.#logger.error(message, {
+          failure: snapshot(error, {
+            location: "shutdown",
+            details: this.#details,
+          }),
+        });
       });
     });
     return (request, response): void => {
-      if (
-        !(request instanceof this.#Request) ||
-        !(response instanceof this.#Response)
-      ) {
-        const message =
-          "The request and the response are not those of the application (`serverOptions()`)";
-        this.#logger.error(message);
-        request.socket.destroy();
-        return;
+      try {
+        if (
+          !(request instanceof this.#Request) ||
+          !(response instanceof this.#Response)
+        ) {
+          const message =
+            "The request and the response are not those of the application (`serverOptions()`)";
+          this.#logger.error(message);
+          request.socket.destroy();
+          return;
+        }
+        this.#requestListener(
+          server,
+          request,
+          response as BindenResponse<BindenRequest>,
+        );
+      } catch (error: unknown) {
+        throw formatStack(error as Error);
       }
-      this.#requestListener(
-        server,
-        request,
-        response as BindenResponse<BindenRequest>,
-      );
     };
   }
 
@@ -1453,6 +1444,74 @@ export class Binden<
     } catch (error: unknown) {
       return { state: {}, failure: { error } };
     }
+  }
+
+  /**
+   * The options of an application (see the constructor), each read once and
+   * checked, the request and the response options among them
+   */
+  static #settings(options: unknown): ISettings {
+    const {
+      error_handler,
+      error_handler_timeout = 5000,
+      auto_head = true,
+      logger,
+      log_error_details = false,
+      access_log = false,
+      routing = {},
+      state,
+      timeout = 0,
+      trust_proxy,
+      encoded_slashes,
+      allowed_hosts,
+      request_id,
+      query,
+      etag,
+    } = objectOf(options, "options") as IBindenOptions;
+    // Checked once: the requests and the responses of the application share them
+    const requests = validateRequestOptions({
+      trust_proxy,
+      encoded_slashes,
+      allowed_hosts,
+      request_id,
+      query,
+    });
+    const responses = validateResponseOptions({ etag });
+    validateDelay("timeout", timeout, 0);
+    validateDelay("error_handler_timeout", error_handler_timeout, 1);
+    Binden.#boolean("auto_head", auto_head);
+    Binden.#boolean("log_error_details", log_error_details);
+    if (typeof logger !== "undefined" && !isLogger(logger, true)) {
+      throw formatStack(new TypeError("`logger` is not a logger"));
+    }
+    if (
+      typeof error_handler !== "undefined" &&
+      typeof error_handler !== "function"
+    ) {
+      throw formatStack(new TypeError("`error_handler` is not a function"));
+    } else if (typeof state !== "undefined" && typeof state !== "function") {
+      throw formatStack(new TypeError("`state` is not a function"));
+    } else if (typeof routing !== "object" || (routing as unknown) === null) {
+      throw formatStack(new TypeError("`routing` is not an object"));
+    }
+    const { case_sensitive = true, strict = true } = routing;
+    const access = Binden.#accessOptions(access_log);
+    Binden.#boolean("routing.case_sensitive", case_sensitive);
+    Binden.#boolean("routing.strict", strict);
+    return {
+      error_handler: error_handler ?? null,
+      error_handler_timeout,
+      auto_head,
+      logger,
+      log_error_details,
+      access,
+      case_sensitive,
+      strict,
+      state: state ?? null,
+      timeout,
+      requests,
+      responses,
+    };
   }
 
   /** The options of the access log, or `null` when it is off */

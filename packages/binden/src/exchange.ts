@@ -18,6 +18,7 @@ import { EventEmitter } from "node:events";
 import type { IncomingMessage } from "node:http";
 import type { Socket } from "node:net";
 import { decided } from "./stream-like.js";
+import { described } from "./formatting.js";
 import { isProxy } from "node:util/types";
 
 /** Why the work of a request has been abandoned */
@@ -181,12 +182,28 @@ export function carrierOf(cause: unknown): Error {
   return carrier;
 }
 
+/** The reasons of an abort (see `IAbortReason`) */
+const abortReasons: ReadonlySet<unknown> = new Set<IAbortReason>([
+  "client_closed",
+  "deadline",
+  "shutdown",
+]);
+
 /** The reason of `context.signal` once the request is aborted */
 export class BindenAbortError extends Error {
   readonly #reason: IAbortReason;
 
-  /** The abort of a request, for the reason */
+  /**
+   * The abort of a request, for the reason: anything but one of the reasons
+   * throws a `TypeError`, which describes it without converting it (see
+   * `described()`)
+   */
   public constructor(reason: IAbortReason) {
+    if (!abortReasons.has(reason)) {
+      throw formatStack(
+        new TypeError(`Unknown abort reason: ${described(reason)}`),
+      );
+    }
     super(`The request has been aborted (${reason})`);
     this.name = "BindenAbortError";
     this.#reason = reason;

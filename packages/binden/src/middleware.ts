@@ -1,4 +1,5 @@
 import type { Context, IParams } from "./context.js";
+import { formatting, objectOf } from "./formatting.js";
 import { formatStack } from "./exchange.js";
 
 /** What a middleware returns: nothing, or the context of the next middlewares */
@@ -26,6 +27,14 @@ export interface IMiddlewareParams {
   ignore_errors?: boolean | undefined;
 }
 
+/** The options of a middleware, each read once, with their defaults */
+function read({
+  disabled = false,
+  ignore_errors = false,
+}: IMiddlewareParams): IMiddlewareParams {
+  return { disabled, ignore_errors };
+}
+
 /** A middleware as a class: its `run()` handles the context */
 export abstract class Middleware<
   State extends object = Record<string, unknown>,
@@ -38,19 +47,21 @@ export abstract class Middleware<
 
   /**
    * A middleware with its options: an option that is not a boolean throws a
-   * `TypeError`
+   * `TypeError`, and so do options that are not an object. What reading them
+   * throws (e.g. a revoked proxy) is formatted (see `formatting()`).
    */
-  public constructor({
-    disabled = false,
-    ignore_errors = false,
-  }: IMiddlewareParams = {}) {
-    if (typeof disabled !== "boolean") {
+  public constructor(options?: IMiddlewareParams) {
+    // Each option is read once (e.g. by a getter)
+    const checked = formatting(() =>
+      read(objectOf(options, "options", true) as IMiddlewareParams),
+    );
+    if (typeof checked.disabled !== "boolean") {
       throw formatStack(new TypeError("`disabled` is not a boolean"));
-    } else if (typeof ignore_errors !== "boolean") {
+    } else if (typeof checked.ignore_errors !== "boolean") {
       throw formatStack(new TypeError("`ignore_errors` is not a boolean"));
     }
-    this.disabled = disabled;
-    this.ignore_errors = ignore_errors;
+    this.disabled = checked.disabled;
+    this.ignore_errors = checked.ignore_errors;
   }
 
   /**

@@ -4,6 +4,7 @@ import {
   Logger,
   serializers as defaultSerializers,
 } from "@binden/logger";
+import { formatting, objectOf } from "./formatting.js";
 import { BindenError } from "./error.js";
 import { Context } from "./context.js";
 import { constants } from "node:os";
@@ -72,6 +73,18 @@ function typeOf(value: unknown): string {
   return typeof value;
 }
 
+/**
+ * Whether a value is a context, without trusting it: a proxy that refuses to
+ * tell its prototype (e.g. a revoked one) is not
+ */
+function isContext(value: unknown): value is Context {
+  try {
+    return value instanceof Context;
+  } catch {
+    return false;
+  }
+}
+
 /** The options of a snapshot */
 export interface ISnapshotOptions {
   /** Where in the framework the error has occurred */
@@ -134,13 +147,21 @@ const levels: readonly ILevel[] = [
   "trace",
 ];
 
-/** Whether a value has the methods of a logger */
-export function isLogger(value: unknown): value is ILogger {
+/**
+ * Whether a value has the methods of a logger. What reading them throws (e.g.
+ * a getter of the application, or a revoked proxy) means `false`, unless
+ * `strict`: then it is thrown as it is (to the boundary of the caller, see
+ * `formatting()`), as when an option of the application is checked.
+ */
+export function isLogger(value: unknown, strict = false): value is ILogger {
   return (
     typeof value === "object" &&
     value !== null &&
     [...levels, "child" as const].every(
-      (method) => typeof property(value, method) === "function",
+      (method) =>
+        typeof (strict
+          ? (Reflect.get(value, method) as unknown)
+          : property(value, method)) === "function",
     )
   );
 }
@@ -240,11 +261,21 @@ export type IBindenSerializers = Record<
  * `body` and a `context` without the fields that the application sets on it.
  * With `error_details`, an `error` adds its message, its stack, its cause and
  * any `code`, which may quote the input of a request (as `log_error_details`
- * does for the framework logs).
+ * does for the framework logs). Options that are not an object throw a
+ * `TypeError`, and what reading them throws (e.g. a revoked proxy) is
+ * formatted (see `formatting()`).
  */
-export function createSerializers({
-  error_details = false,
-}: { readonly error_details?: boolean | undefined } = {}): IBindenSerializers {
+export function createSerializers(options?: {
+  readonly error_details?: boolean | undefined;
+}): IBindenSerializers {
+  const error_details = formatting(() => {
+    const { error_details: details = false } = objectOf(
+      options,
+      "options",
+      true,
+    ) as { readonly error_details?: unknown };
+    return details;
+  });
   if (typeof error_details !== "boolean") {
     throw formatStack(new TypeError("`error_details` is not a boolean"));
   }
@@ -263,7 +294,7 @@ export function createSerializers({
     err: error,
     body: (): string => "[Redacted]",
     context: (input: unknown): Record<string, unknown> => {
-      if (!(input instanceof Context)) {
+      if (!isContext(input)) {
         return { type: typeOf(input) };
       }
       return {

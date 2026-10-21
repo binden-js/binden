@@ -1,4 +1,6 @@
 import { type OutgoingHttpHeader, OutgoingMessage } from "node:http";
+import { described } from "./formatting.js";
+import { formatStack } from "./exchange.js";
 import { trimOws } from "./headers/list.js";
 
 /**
@@ -120,23 +122,55 @@ export function lengthRefusal(value: unknown): string | null {
 }
 
 /**
+ * The values of a `Content-Length` (see `framingLength()`), copied once (an
+ * array read by its indexes), each a number or a string: anything else is
+ * refused with a `TypeError` that describes it (see `described()`) before
+ * anything converts it. What reading them throws (e.g. a revoked proxy) is
+ * formatted (see `formatStack()`).
+ */
+function lengthValues(value: unknown): readonly (number | string)[] {
+  const values: unknown[] = [];
+  try {
+    if (Array.isArray(value)) {
+      const { length } = value;
+      for (let index = 0; index < length; index += 1) {
+        values.push(value[index]);
+      }
+    } else if (typeof value !== "undefined") {
+      values.push(value);
+    }
+  } catch (error: unknown) {
+    throw formatStack(error as Error);
+  }
+  for (const element of values) {
+    if (typeof element !== "number" && typeof element !== "string") {
+      throw formatStack(
+        new TypeError(`Invalid Content-Length: ${described(element)}`),
+      );
+    }
+  }
+  return values as (number | string)[];
+}
+
+/**
  * The length of the body that the `Content-Length` of a response (its value,
  * see `getHeader()`) declares, as Node.js reads it (the last element of an
  * array, which agrees with the others), `null` without a valid one: none for
  * an empty array, nor for values that `BindenResponse` refuses (see
  * `lengthRefusal()`). binden frames the body by it, and `@binden/compression`
- * decides by it. For the packages of binden only.
+ * decides by it. A value (or an element) that is neither a number nor a
+ * string is refused with a `TypeError`, before anything converts it (see
+ * `lengthValues()`). For the packages of binden only.
  *
  * @internal
  */
 export function framingLength(
   value: OutgoingHttpHeader | undefined,
 ): number | null {
-  if (lengthRefusal(value) !== null) {
+  const values = lengthValues(value);
+  if (lengthRefusal(Array.isArray(value) ? values : values.at(0)) !== null) {
     return null;
   }
-  const length = Number(
-    (Array.isArray(value) ? value.at(-1) : value) ?? Number.NaN,
-  );
+  const length = Number(values.at(-1) ?? Number.NaN);
   return Number.isSafeInteger(length) && length >= 0 ? length : null;
 }

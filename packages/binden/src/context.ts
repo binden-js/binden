@@ -7,6 +7,7 @@ import type {
 import { Exchange, type IExchangeReport } from "./exchange.js";
 import type { IRedirectOptions, IRedirectStatus } from "./redirect.js";
 import { defaultLogger, safe, snapshot } from "./logger.js";
+import { formatting, objectOf } from "./formatting.js";
 import type { BindenRequest } from "./request.js";
 import type { ILogger } from "@binden/logger";
 import type { ISendFileOptions } from "./send-file.js";
@@ -62,27 +63,38 @@ export class Context<
   /**
    * A context of a request and its response: the first one of the request
    * creates what the contexts share (a `TypeError` for a response that is not
-   * the one of the request)
+   * the one of the request, and for options that are not an object). What
+   * reading the options throws (e.g. a revoked proxy) is formatted (see
+   * `formatting()`).
    */
-  public constructor({
-    request,
-    response,
-    logger,
-    state,
-    report,
-  }: IContextOptions) {
-    this.#request = request;
-    this.#response = response;
-    this.#parent = safe(logger ?? defaultLogger());
-    this.#exchange = Exchange.for(request, response, {
-      state,
-      report:
-        report ??
-        ((message, error): void => {
-          const options = { location: "cleanup", details: false } as const;
-          this.log.error(message, { failure: snapshot(error, options) });
-        }),
+  public constructor(options: IContextOptions) {
+    // Each option is read once (e.g. by a getter)
+    const given = formatting(() => {
+      const read = objectOf(options, "options") as IContextOptions;
+      return {
+        request: read.request,
+        response: read.response,
+        logger: read.logger,
+        state: read.state,
+        report: read.report,
+      };
     });
+    this.#request = given.request;
+    this.#response = given.response;
+    // A logger of the application that a revoked proxy is (or whose traps
+    // throw) throws once `safe()` checks it, formatted
+    this.#parent = formatting(() => safe(given.logger ?? defaultLogger()));
+    this.#exchange = formatting(() =>
+      Exchange.for(given.request, given.response, {
+        state: given.state,
+        report:
+          given.report ??
+          ((message, error): void => {
+            const logged = { location: "cleanup", details: false } as const;
+            this.log.error(message, { failure: snapshot(error, logged) });
+          }),
+      }),
+    );
   }
 
   /**

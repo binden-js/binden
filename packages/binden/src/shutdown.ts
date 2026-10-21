@@ -1,5 +1,6 @@
 import { type EventEmitter, errorMonitor } from "node:events";
 import { type Exchange, formatStack } from "./exchange.js";
+import { formatting, objectOf } from "./formatting.js";
 import { kFramework, kListen } from "./seal.js";
 import type { BindenResponse } from "./response.js";
 import type { Server as HttpServer } from "node:http";
@@ -197,10 +198,14 @@ async function bound(
   const failed = (error: unknown): void => {
     resolve({ error });
   };
-  server
-    .once("listening", settled)
-    .once("close", settled)
-    .once("error", failed);
+  // What a value that is not a server throws, here and once awaited, is
+  // formatted (see `formatting()`): the shutdown rejects with it
+  formatting(() =>
+    server
+      .once("listening", settled)
+      .once("close", settled)
+      .once("error", failed),
+  );
   const timer = setTimeout(() => {
     const message = `The server has not started listening within ${timeout} ms`;
     resolve({ error: formatStack(new Error(message)) });
@@ -210,7 +215,12 @@ async function bound(
     return await promise;
   } finally {
     clearTimeout(timer);
-    server.off("listening", settled).off("close", settled).off("error", failed);
+    formatting(() =>
+      server
+        .off("listening", settled)
+        .off("close", settled)
+        .off("error", failed),
+    );
   }
 }
 
@@ -224,22 +234,26 @@ async function drain(
   timeout: number,
 ): Promise<void> {
   // Before `listen()` (or once closed), there is nothing to close but the
-  // connections that are left
-  const closed = server.listening
-    ? new Promise<void>((resolve) => {
-        server.once("close", resolve);
-      })
-    : new Promise<void>((resolve) => {
-        if (registration.sockets.size === 0) {
-          resolve();
-        } else {
-          registration.drained.push(resolve);
-        }
-      });
-  if (server.listening) {
-    server.close();
-  }
-  server.closeIdleConnections();
+  // connections that are left. What a value that is not a server throws is
+  // formatted (see `formatting()`): the shutdown rejects with it.
+  const closed = formatting(() => {
+    const listening = server.listening
+      ? new Promise<void>((resolve) => {
+          server.once("close", resolve);
+        })
+      : new Promise<void>((resolve) => {
+          if (registration.sockets.size === 0) {
+            resolve();
+          } else {
+            registration.drained.push(resolve);
+          }
+        });
+    if (server.listening) {
+      server.close();
+    }
+    server.closeIdleConnections();
+    return listening;
+  });
 
   const timer = setTimeout(() => {
     for (const exchange of registration.exchanges.keys()) {
@@ -317,20 +331,30 @@ async function close(
  * when they take longer than `cleanup_timeout`. Another call returns the same
  * promise. The server must be registered (see `Binden.callback()`) before its
  * `listen()`: a `listen()` in progress then is closed once it listens, or
- * cancelled (with an error) once `timeout` has passed.
+ * cancelled (with an error) once `timeout` has passed. Options that are not
+ * an object throw a `TypeError`, and what reading them or the server throws
+ * (e.g. a revoked proxy) is formatted (see `formatting()`), also once the
+ * shutdown rejects with it.
  */
 export function shutdown(
   server: IServer,
-  { timeout = 10_000, cleanup_timeout = 1000 }: IShutdownOptions = {},
+  options?: IShutdownOptions,
 ): Promise<void> {
-  validateDelay("timeout", timeout, 1);
-  validateDelay("cleanup_timeout", cleanup_timeout, 1);
-  const registration = register(server);
-  registration.promise ??= close(
-    server,
-    registration,
-    timeout,
-    cleanup_timeout,
-  );
-  return registration.promise;
+  return formatting(() => {
+    const { timeout = 10_000, cleanup_timeout = 1000 } = objectOf(
+      options,
+      "options",
+      true,
+    ) as IShutdownOptions;
+    validateDelay("timeout", timeout, 1);
+    validateDelay("cleanup_timeout", cleanup_timeout, 1);
+    const registration = register(server);
+    registration.promise ??= close(
+      server,
+      registration,
+      timeout,
+      cleanup_timeout,
+    );
+    return registration.promise;
+  });
 }

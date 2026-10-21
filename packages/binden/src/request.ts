@@ -7,6 +7,7 @@ import {
   strictBoolean,
 } from "./proxy.js";
 import { type ParsedUrlQuery, parse } from "node:querystring";
+import { described, formatting } from "./formatting.js";
 import Accept from "./headers/accept.js";
 import AcceptCharset from "./headers/accept-charset.js";
 import AcceptEncoding from "./headers/accept-encoding.js";
@@ -20,6 +21,7 @@ import Forwarded from "./headers/forwarded.js";
 import IfModifiedSince from "./headers/if-modified-since.js";
 import { IncomingMessage } from "node:http";
 import Range from "./headers/range.js";
+import type { Socket } from "node:net";
 import { TLSSocket } from "node:tls";
 import { formatStack } from "./exchange.js";
 import { randomUUID } from "node:crypto";
@@ -160,7 +162,9 @@ function checkAllowedHost(entry: unknown): string {
     (port !== "" && (value < 1 || value > 65535))
   ) {
     throw formatStack(
-      new TypeError(`\`allowed_hosts\` has an invalid host: ${String(entry)}`),
+      new TypeError(
+        `\`allowed_hosts\` has an invalid host: ${described(entry)}`,
+      ),
     );
   }
   return port === "" ? normal : `${normal}:${value}`;
@@ -221,15 +225,8 @@ function checkRequestId(value: unknown): IRequestIdSettings | null {
 /** An id that a request may carry */
 const incomingId = /^[\w.:-]{1,128}$/u;
 
-/**
- * The request options with their defaults, checked: a `TypeError` for a value
- * of another type, a `RangeError` for a value out of its range (e.g.
- * `trust_proxy: -1`, an empty `allowed_hosts`, or `query.max_keys` that is not
- * a positive integer or `Infinity`). Other properties of the input are ignored.
- */
-export function validateRequestOptions(
-  input?: IRequestOptionsInput,
-): IRequestOptions {
+/** The request options with their defaults, checked (see `validateRequestOptions()`) */
+function checkRequestOptions(input?: IRequestOptionsInput): IRequestOptions {
   const {
     trust_proxy = false,
     encoded_slashes = false,
@@ -259,6 +256,20 @@ export function validateRequestOptions(
   });
 }
 
+/**
+ * The request options with their defaults, checked: a `TypeError` for a value
+ * of another type, a `RangeError` for a value out of its range (e.g.
+ * `trust_proxy: -1`, an empty `allowed_hosts`, or `query.max_keys` that is not
+ * a positive integer or `Infinity`). Other properties of the input are ignored.
+ * What reading them throws (e.g. a revoked proxy) is formatted (see
+ * `formatting()`).
+ */
+export function validateRequestOptions(
+  input?: IRequestOptionsInput,
+): IRequestOptions {
+  return formatting(() => checkRequestOptions(input));
+}
+
 /** The default options of the requests */
 const defaults = validateRequestOptions();
 
@@ -281,11 +292,24 @@ export class BindenRequest extends IncomingMessage {
   #query?: ParsedUrlQuery;
 
   /**
+   * A request of a connection, as `IncomingMessage` creates it: what reading
+   * the socket throws (e.g. a revoked proxy) is formatted (see
+   * `formatStack()`)
+   */
+  public constructor(socket: Socket) {
+    super(BindenRequest.#socket(socket));
+  }
+
+  /**
    * The preferred one of the offered media types (e.g. `application/json`), by
    * the `Accept` header (see `Accept.negotiate()`), or `false`
    */
   public accepts(...types: string[]): string | false {
-    return Accept.negotiate(types, this.headers.accept);
+    try {
+      return Accept.negotiate(types, this.headers.accept);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -293,7 +317,11 @@ export class BindenRequest extends IncomingMessage {
    * (see `AcceptCharset.negotiate()`), or `false`
    */
   public acceptsCharsets(...charsets: string[]): string | false {
-    return AcceptCharset.negotiate(charsets, this.headers["accept-charset"]);
+    try {
+      return AcceptCharset.negotiate(charsets, this.headers["accept-charset"]);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -301,7 +329,14 @@ export class BindenRequest extends IncomingMessage {
    * `Accept-Encoding` header (see `AcceptEncoding.negotiate()`), or `false`
    */
   public acceptsEncodings(...encodings: string[]): string | false {
-    return AcceptEncoding.negotiate(encodings, this.headers["accept-encoding"]);
+    try {
+      return AcceptEncoding.negotiate(
+        encodings,
+        this.headers["accept-encoding"],
+      );
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -309,25 +344,40 @@ export class BindenRequest extends IncomingMessage {
    * header (see `AcceptLanguage.negotiate()`), or `false`
    */
   public acceptsLanguages(...languages: string[]): string | false {
-    return AcceptLanguage.negotiate(languages, this.headers["accept-language"]);
+    try {
+      return AcceptLanguage.negotiate(
+        languages,
+        this.headers["accept-language"],
+      );
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** The known codings of `Accept-Encoding`, from the greatest weight */
   public get accept_encoding(): AcceptEncoding[] {
-    if (!this.#accept_encoding) {
-      const ae = this.headers["accept-encoding"];
-      this.#accept_encoding = AcceptEncoding.fromString(ae);
+    try {
+      if (!this.#accept_encoding) {
+        const ae = this.headers["accept-encoding"];
+        this.#accept_encoding = AcceptEncoding.fromString(ae);
+      }
+      return [...this.#accept_encoding];
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return [...this.#accept_encoding];
   }
 
   /** The `Authorization` header, or `null` (unsupported or missing) */
   public get authorization(): Authorization | null {
-    if (typeof this.#authorization === "undefined") {
-      const { authorization } = this.headers;
-      this.#authorization = Authorization.fromString(authorization);
+    try {
+      if (typeof this.#authorization === "undefined") {
+        const { authorization } = this.headers;
+        this.#authorization = Authorization.fromString(authorization);
+      }
+      return this.#authorization;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return this.#authorization;
   }
 
   /** The parsed body (set once, e.g. by a body parser) */
@@ -344,28 +394,44 @@ export class BindenRequest extends IncomingMessage {
 
   /** The content codings of the body, or `null` when one of them is unknown */
   public get content_encoding(): ContentEncoding[] | null {
-    if (typeof this.#content_encoding === "undefined") {
-      this.#content_encoding = ContentEncoding.fromString(
-        this.headers["content-encoding"],
-      );
+    try {
+      if (typeof this.#content_encoding === "undefined") {
+        this.#content_encoding = ContentEncoding.fromString(
+          this.headers["content-encoding"],
+        );
+      }
+      return this.#content_encoding === null
+        ? null
+        : [...this.#content_encoding];
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return this.#content_encoding === null ? null : [...this.#content_encoding];
   }
 
   /** The `Content-Type` header, or `null` (invalid or missing) */
   public get content_type(): ContentType | null {
-    if (typeof this.#content_type === "undefined") {
-      this.#content_type = ContentType.fromString(this.headers["content-type"]);
+    try {
+      if (typeof this.#content_type === "undefined") {
+        this.#content_type = ContentType.fromString(
+          this.headers["content-type"],
+        );
+      }
+      return this.#content_type;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return this.#content_type;
   }
 
   /** The valid cookies of the `Cookie` header */
   public get cookies(): Cookie[] {
-    if (!this.#cookies) {
-      this.#cookies = Cookie.fromString(this.headers.cookie);
+    try {
+      if (!this.#cookies) {
+        this.#cookies = Cookie.fromString(this.headers.cookie);
+      }
+      return [...this.#cookies];
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return [...this.#cookies];
   }
 
   /**
@@ -373,15 +439,31 @@ export class BindenRequest extends IncomingMessage {
    * `protocol` for those of the trusted proxies)
    */
   public get forwarded(): Forwarded[] {
-    if (!this.#forwarded) {
-      this.#forwarded = Forwarded.fromString(this.headers.forwarded);
+    try {
+      if (!this.#forwarded) {
+        this.#forwarded = Forwarded.fromString(this.headers.forwarded);
+      }
+      return [...this.#forwarded];
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return [...this.#forwarded];
   }
 
-  /** A header by its name, in any case */
+  /**
+   * A header by its name, in any case: a name that is not a string throws a
+   * `TypeError`, which describes it without converting it (see `described()`)
+   */
   public header(name: string): string[] | string | undefined {
-    return this.headers[name.toLowerCase()];
+    try {
+      if (typeof name !== "string") {
+        throw formatStack(
+          new TypeError(`The name is not a string: ${described(name)}`),
+        );
+      }
+      return this.headers[name.toLowerCase()];
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -390,17 +472,25 @@ export class BindenRequest extends IncomingMessage {
    * `_`, `:` and `-`)
    */
   public get id(): string {
-    this.#id ??= this.#incomingId() ?? randomUUID();
-    return this.#id;
+    try {
+      this.#id ??= this.#incomingId() ?? randomUUID();
+      return this.#id;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** The `If-Modified-Since` header, or `null` (not an HTTP-date, or missing) */
   public get if_modified_since(): IfModifiedSince | null {
-    if (typeof this.#if_modified_since === "undefined") {
-      const input = this.headers["if-modified-since"];
-      this.#if_modified_since = IfModifiedSince.fromString(input);
+    try {
+      if (typeof this.#if_modified_since === "undefined") {
+        const input = this.headers["if-modified-since"];
+        this.#if_modified_since = IfModifiedSince.fromString(input);
+      }
+      return this.#if_modified_since;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return this.#if_modified_since;
   }
 
   /**
@@ -411,9 +501,13 @@ export class BindenRequest extends IncomingMessage {
    * invalid one.
    */
   public get host(): string | null {
-    const { authority } = BindenRequest.#split(this.url ?? "/");
-    const origin = this.#origin(authority);
-    return origin === null ? null : new URL(origin).host;
+    try {
+      const { authority } = BindenRequest.#split(this.url ?? "/");
+      const origin = this.#origin(authority);
+      return origin === null ? null : new URL(origin).host;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -424,12 +518,20 @@ export class BindenRequest extends IncomingMessage {
    * invalid element on the way).
    */
   public get ip(): string | null {
-    return this.#resolve().ip;
+    try {
+      return this.#resolve().ip;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** The address of the client (unless unknown) and of the trusted proxies, left to right */
   public get ips(): readonly string[] {
-    return [...this.#resolve().ips];
+    try {
+      return [...this.#resolve().ips];
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -439,11 +541,15 @@ export class BindenRequest extends IncomingMessage {
    * `X-Forwarded-Proto` that a trusted peer has set
    */
   public get protocol(): IProtocol {
-    const { protocol } = this.#resolve();
-    if (protocol === null) {
-      return this.socket instanceof TLSSocket ? "https:" : "http:";
+    try {
+      const { protocol } = this.#resolve();
+      if (protocol === null) {
+        return this.socket instanceof TLSSocket ? "https:" : "http:";
+      }
+      return `${protocol}:`;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return `${protocol}:`;
   }
 
   /**
@@ -462,34 +568,46 @@ export class BindenRequest extends IncomingMessage {
    * first `query.max_keys` keys of the options (the others are ignored)
    */
   public get query(): ParsedUrlQuery {
-    if (!this.#query) {
-      const { max_keys } = this.options.query;
-      this.#query = parse(this.URL.search.substring(1), "&", "=", {
-        // `0` is no limit
-        maxKeys: max_keys === Number.POSITIVE_INFINITY ? 0 : max_keys,
-      });
-    }
+    try {
+      if (!this.#query) {
+        const { max_keys } = this.options.query;
+        this.#query = parse(this.URL.search.substring(1), "&", "=", {
+          // `0` is no limit
+          maxKeys: max_keys === Number.POSITIVE_INFINITY ? 0 : max_keys,
+        });
+      }
 
-    // Defined, not assigned: a `__proto__` key is a key, not the prototype
-    return Object.fromEntries(
-      Object.entries(this.#query).map(([key, value]) => [
-        key,
-        Array.isArray(value) ? [...value] : value,
-      ]),
-    );
+      // Defined, not assigned: a `__proto__` key is a key, not the prototype
+      return Object.fromEntries(
+        Object.entries(this.#query).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? [...value] : value,
+        ]),
+      );
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** The ranges of the `Range` header */
   public get range(): Range[] {
-    if (typeof this.#range === "undefined") {
-      this.#range = Range.fromString(this.headers.range);
+    try {
+      if (typeof this.#range === "undefined") {
+        this.#range = Range.fromString(this.headers.range);
+      }
+      return [...this.#range];
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return [...this.#range];
   }
 
   /** Whether the protocol is `https:` (see `protocol`) */
   public get secure(): boolean {
-    return this.protocol === "https:";
+    try {
+      return this.protocol === "https:";
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -499,21 +617,46 @@ export class BindenRequest extends IncomingMessage {
    * 3.2). A `400 Bad Request` error without a valid one.
    */
   public get URL(): URL {
-    const target = this.url ?? "/";
-    const { authority, rest } = BindenRequest.#split(target);
-    const { path, query } =
-      target === "*" && this.method === "OPTIONS"
-        ? { path: "*", query: "" }
-        : BindenRequest.#target(rest, this.options.encoded_slashes);
-    const origin = this.#origin(authority);
-    if (origin === null) {
-      throw new BindenError(400);
+    try {
+      const target = this.url ?? "/";
+      const { authority, rest } = BindenRequest.#split(target);
+      const { path, query } =
+        target === "*" && this.method === "OPTIONS"
+          ? { path: "*", query: "" }
+          : BindenRequest.#target(rest, this.options.encoded_slashes);
+      const origin = this.#origin(authority);
+      if (origin === null) {
+        throw new BindenError(400);
+      }
+      const url = new URL(origin);
+      // Set as a path: `//evil.test/x` is a path, not the authority of the URL
+      url.pathname = path;
+      url.search = query === "" ? "" : `?${query}`;
+      return url;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    const url = new URL(origin);
-    // Set as a path: `//evil.test/x` is a path, not the authority of the URL
-    url.pathname = path;
-    url.search = query === "" ? "" : `?${query}`;
-    return url;
+  }
+
+  /**
+   * The socket of a new request, read first as `IncomingMessage` reads it
+   * (its `readableHighWaterMark`, when it is truthy), so that what reading it
+   * throws is formatted (see `formatStack()`) before Node.js reads it again
+   */
+  static #socket(socket: Socket): Socket {
+    const value: unknown = socket;
+    try {
+      // A primitive has no getter of its own
+      if (
+        (typeof value === "object" && value !== null) ||
+        typeof value === "function"
+      ) {
+        Reflect.get(value, "readableHighWaterMark");
+      }
+      return socket;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** The trusted id of the request, or `null` */
