@@ -339,9 +339,9 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   the response after it as part of the body). Set a number or a string.
 - `writeContinue()`, `writeProcessing()`, `writeEarlyHints()` and `writeInformation()` throw
   `ERR_HTTP_HEADERS_SENT` once the head is committed, on every version of Node.js: on Node.js
-  before 24.18, binden 2.0.4 (as `node:http`) wrote the raw `1xx` head into the body, which
-  desynchronized the connection (Node.js 26 throws). A call that is ignored (by a work that can no
-  longer change the response, or for an HTTP/1.0 client) is still ignored.
+  before 24.18, binden 2.0.4 (as `node:http`) wrote the raw `1xx` head of the first three into the
+  body, which desynchronized the connection (Node.js 26 throws). A call that is ignored (by a work
+  that can no longer change the response, or for an HTTP/1.0 client) is still ignored.
 - `Content-Length` values that disagree (`["2", "3"]`, or two `appendHeader()` calls) now throw a
   `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`, "Content-Length values disagree") when the head is
   committed, where Node.js and binden 2.0.4 sent every line. So does any comma list, even one whose
