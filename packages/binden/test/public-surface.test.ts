@@ -29,10 +29,7 @@ const integrating: readonly string[] = [
   "binden:BindenResponse#addTrailers()",
   "binden:BindenResponse#cookies=>.add()",
   "binden:BindenResponse#writeEarlyHints()",
-  "binden:BindenResponse#writeHead()",
-  "binden:BindenResponse#writeHeader()",
   "@binden/compression:Compression#run()",
-  "@binden/compression:Compression#run()=>0.response.writeHead()",
   "@binden/compression:new Compression()",
   // binden/src/binden.ts: the listener refuses a response of another kind
   // by logging it and closing the connection, which no probe observes

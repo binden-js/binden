@@ -343,11 +343,16 @@ suite("BindenResponse (headers, flush, ETag and seal)", () => {
     }
     // An empty name is skipped by Node.js (of a response with headers)
     response[kValidateHead](200, { "": "\n" });
-    // An invalid status code is left to `writeHead()`
-    response[kValidateHead](1000, "a\nb");
-    throws(() => response.writeHead(1000, "a\nb"), {
-      code: "ERR_HTTP_INVALID_STATUS_CODE",
-    });
+    // An invalid status code first, as `writeHead()` of Node.js refuses it
+    for (const validate of [
+      (): unknown => response[kValidateHead](1000, "a\nb"),
+      (): unknown => response.writeHead(1000, "a\nb"),
+    ]) {
+      throws(validate, {
+        code: "ERR_HTTP_INVALID_STATUS_CODE",
+        message: "Invalid status code: 1000",
+      });
+    }
     deepStrictEqual(state(), before);
     response.writeHead(200, ["X-B", "1"]);
     deepStrictEqual(

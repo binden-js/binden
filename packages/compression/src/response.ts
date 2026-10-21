@@ -250,8 +250,8 @@ function normalize(args: readonly unknown[]): readonly unknown[] {
 /**
  * Sets the headers given to `writeHead()` as Node.js does once headers have
  * been set: an object sets them, a list (flat, or of pairs) replaces each of
- * its names with its values. They have been checked (see `kValidateHead`):
- * a list is of pairs.
+ * its names with its values. They are the copies that binden has read once
+ * and checked (see `kValidateHead`): a list is of pairs.
  */
 function setGiven(
   response: IResponse,
@@ -266,9 +266,15 @@ function setGiven(
     for (const [name] of pairs) {
       response.removeHeader(name);
     }
+    // The first values of a name set it, as `appendHeader()` of Node.js
+    // does for a header that is not set, but checked (and converted) once
+    const names = new Set<string>();
     for (const [name, value] of pairs) {
-      if (name) {
+      if (name && names.has(name.toLowerCase())) {
         response.appendHeader(name, value as string[] | string);
+      } else if (name) {
+        names.add(name.toLowerCase());
+        response.setHeader(name, value);
       }
     }
   } else if (given) {
@@ -551,27 +557,16 @@ export class CompressedResponse {
     if (this.#allowed() === null) {
       return response;
     }
-    const [code, reason, headers] = args;
-    // As Node.js reads it
-    const status = Number(code) | 0;
-    if (
-      this.#sink !== "pending" ||
-      response.headersSent ||
-      this.#gone() ||
-      status < 100 ||
-      status > 999
-    ) {
-      // Decided already, destroyed (no compressor, see `#gone()`), or
-      // rejected by Node.js before it changes anything
+    if (this.#sink !== "pending" || response.headersSent || this.#gone()) {
+      // Decided already, or destroyed (no compressor, see `#gone()`): as
+      // without the compression, which reads nothing of the arguments
       return Reflect.apply(this.#writeHead, response, args) as IResponse;
     }
-    const given = (
-      typeof reason === "string" ? headers : (headers ?? reason)
-    ) as OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined;
     this.#commit(() => {
-      // What Node.js would refuse (e.g. a reason phrase), before anything is
-      // changed: no compressor is created
-      response[kValidateHead](...args);
+      // What Node.js would refuse (e.g. a status code or a reason phrase),
+      // before anything is changed: no compressor is created. Read once, as
+      // Node.js gets them (see `kValidateHead`)
+      const [status, reason, given] = response[kValidateHead](...args);
       setGiven(response, given);
       response.statusCode = status;
       this.#apply(this.#outcome(null));
@@ -817,11 +812,13 @@ export class CompressedResponse {
     let sent: { readonly value: T } | null = null;
     this.#commit(() => {
       // What Node.js would refuse (e.g. a reason phrase), before anything is
-      // changed: no compressor is created
-      response[kValidateHead](response.statusCode);
+      // changed: no compressor is created. The status is converted once, as
+      // Node.js converts it (see `kValidateHead`), and decided by
+      const [status] = response[kValidateHead](response.statusCode);
+      response.statusCode = status;
       this.#apply(this.#outcome(size));
       if (this.#sink === "compressor") {
-        this.#writeHead(response.statusCode);
+        this.#writeHead(status);
       } else if (this.#sink === "as_is") {
         sent = { value: send() };
       }

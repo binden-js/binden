@@ -5,9 +5,11 @@ import {
   Middleware,
 } from "binden";
 import { Compression, isCompressible, skipCompression } from "../index.js";
+import { IncomingMessage, ServerResponse } from "node:http";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { fetchRaw, serve, within } from "./helpers.js";
 import { suite, test } from "node:test";
+import { Socket } from "node:net";
 
 /** An error of the application's own (e.g. of a getter, or of a trap) */
 class OwnError extends Error {}
@@ -262,6 +264,104 @@ suite(
           ];
         }),
       );
+    });
+
+    test("writeHead(), and the commit of an end() that it decides, convert the status and the header values as often as plain Node.js, and read them once (R27-R3-4)", async () => {
+      /** A value that counts its conversions, which converts to `converted` */
+      const countingTo = (
+        converted: number | string,
+      ): { value: object; conversions(): number } => {
+        let conversions = 0;
+        const convert = (): number | string => {
+          conversions += 1;
+          return converted;
+        };
+        return {
+          value: {
+            toString: convert,
+            valueOf: convert,
+            [Symbol.toPrimitive]: convert,
+          },
+          conversions: () => conversions,
+        };
+      };
+      const variants: Record<
+        string,
+        [(response: ServerResponse, value: object) => unknown, number | string]
+      > = {
+        "an invalid status": [
+          (response, value): unknown => response.writeHead(value as never),
+          "a",
+        ],
+        "a valid status": [
+          (response, value): unknown => response.writeHead(value as never),
+          200,
+        ],
+        "a value": [
+          (response, value): unknown =>
+            response.writeHead(200, { "x-a": value as never }),
+          "a",
+        ],
+        "a value of pairs after a reason phrase": [
+          (response, value): unknown =>
+            response.writeHead(200, "OK", ["x-a", value as never]),
+          "a",
+        ],
+        "the status of an end()": [
+          (response, value): unknown => {
+            response.statusCode = value as never;
+            return response.end("text");
+          },
+          200,
+        ],
+      };
+      const counts = new Map<string, number>();
+      const served = await serve(
+        {},
+        new Compression({ threshold: 0 }),
+        (context: Context): void => {
+          const { response } = context;
+          const name = decodeURIComponent(context.url.pathname.slice(1));
+          const [call, converted] = variants[name] as [
+            (response: ServerResponse, value: object) => unknown,
+            number | string,
+          ];
+          const counted = countingTo(converted);
+          try {
+            call(response, counted.value);
+          } catch {
+            // Refused as Node.js refuses it
+          }
+          counts.set(name, counted.conversions());
+          if (!response.writableEnded) {
+            response.end();
+          }
+        },
+      );
+      try {
+        for (const name of Object.keys(variants)) {
+          await fetchRaw(served.url, {
+            path: `/${encodeURIComponent(name)}`,
+            headers: { "accept-encoding": "gzip" },
+          });
+        }
+      } finally {
+        await served.close();
+      }
+      const plain = new Map<string, number>();
+      for (const [name, [call, converted]] of Object.entries(variants)) {
+        const counted = countingTo(converted);
+        try {
+          call(
+            new ServerResponse(new IncomingMessage(new Socket())),
+            counted.value,
+          );
+        } catch {
+          // Refused
+        }
+        plain.set(name, counted.conversions());
+      }
+      deepStrictEqual(Object.fromEntries(counts), Object.fromEntries(plain));
     });
   },
 );

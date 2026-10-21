@@ -76,8 +76,9 @@ const checked: Partial<Record<string, (response: BindenResponse) => unknown>> =
   };
 
 /**
- * Replies that Node.js refuses once the decision is taken: a status out of
- * range, and a `Trailer` of a body that is not chunked (of HTTP/1.0)
+ * Replies that Node.js refuses: a status out of range (which `kValidateHead`
+ * refuses before the decision, as Node.js refuses it), and a `Trailer` of a
+ * body that is not chunked (of HTTP/1.0), once the decision is taken
  */
 const refused: Partial<Record<string, (response: BindenResponse) => unknown>> =
   {
@@ -214,8 +215,9 @@ suite("A head that Node.js refuses", () => {
         { "accept-ranges": "bytes", etag: '"f"' },
         [],
       ],
+      // Refused before the decision: no compressor
+      "/status": ["ERR_HTTP_INVALID_STATUS_CODE", 1000, false, {}, []],
       // Created, then destroyed
-      "/status": ["ERR_HTTP_INVALID_STATUS_CODE", 1000, false, {}, [true]],
       "/trailer": ["ERR_HTTP_TRAILER_INVALID", 200, false, {}, [true]],
       "/trailer-end": [
         "ERR_HTTP_TRAILER_INVALID",

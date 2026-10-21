@@ -97,6 +97,7 @@ import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
 import { createHash } from "node:crypto";
+import { format } from "node:util";
 import { isStatus } from "./status.js";
 import { parseHttpDate } from "./headers/http-date.js";
 import { property } from "./property.js";
@@ -115,6 +116,20 @@ export type IHeadersValue = number | string | readonly string[];
 
 /** Headers by name */
 export type IHeaders = Record<string, IHeadersValue>;
+
+/**
+ * The arguments of `writeHead()` as Node.js gets them from binden, each read
+ * once (see `kValidateHead`): the status code, converted as Node.js converts
+ * it, the reason phrase (`null` when none is given), and copies of the
+ * headers given (`undefined` when none are). For the packages of binden only.
+ *
+ * @internal
+ */
+export type IHead = readonly [
+  statusCode: number,
+  reason: string | null,
+  headers: OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined,
+];
 
 /** The options of the responses of an application (`Binden` sets them) */
 export interface IResponseOptions {
@@ -506,6 +521,60 @@ function jsonText(data: unknown): string | undefined {
   } catch (error: unknown) {
     throw formatStack(error as Error);
   }
+}
+
+/**
+ * A copy of a value read once: an array, by its indexes (a hole is an
+ * element), its elements that are arrays copied as well down to `depth`
+ * levels; anything else as it is
+ */
+function copied(value: unknown, depth: number): unknown {
+  if (depth === 0 || !Array.isArray(value)) {
+    return value;
+  }
+  const copy: unknown[] = [];
+  const { length } = value;
+  for (let index = 0; index < length; index += 1) {
+    copy.push(copied(value[index], depth - 1));
+  }
+  return copy;
+}
+
+/**
+ * The headers given to `writeHead()`, read once, as Node.js reads them: an
+ * array by its indexes, as are its pairs and the values of a header (see
+ * `copied()`), and an object (or a function) by its own enumerable
+ * properties, each array of values copied. Node.js then gets the copies,
+ * which hold exactly the values that binden has read and checked (a getter
+ * of the application, or a proxy, never runs again). Anything else (e.g.
+ * `undefined`, or a string, which Node.js reads as an object of its
+ * characters) is kept as it is.
+ */
+function headersOf(given: unknown): unknown {
+  if (Array.isArray(given)) {
+    return copied(given, 3);
+  } else if (
+    (typeof given === "object" && given !== null) ||
+    typeof given === "function"
+  ) {
+    return Object.fromEntries(
+      Object.entries(given).map(([name, value]) => [name, copied(value, 1)]),
+    );
+  }
+  return given;
+}
+
+/**
+ * Whether a value of a header (see `headersOf()`) is checked without running
+ * code of the application: anything but an object or a function, or an
+ * array of such values. A value of another type is checked by Node.js
+ * itself, which converts it as it does without binden.
+ */
+function inert(value: unknown): boolean {
+  const primitive = (element: unknown): boolean =>
+    (typeof element !== "object" || element === null) &&
+    typeof element !== "function";
+  return Array.isArray(value) ? value.every(primitive) : primitive(value);
 }
 
 /** The serialization of `URLSearchParams` of Node.js (see `formText()`) */
@@ -1696,24 +1765,28 @@ export class BindenResponse<
   ): this {
     if (!this.#allows()) {
       return this;
-    } else if (!this.headersSent) {
-      // Node.js would throw only once it has changed the response (its status
-      // and reason phrase, and some of the headers)
-      this[kValidateHead](statusCode, reason, headers);
+    } else if (this.headersSent) {
+      // Node.js throws `ERR_HTTP_HEADERS_SENT` before it reads anything
+      return super.writeHead(statusCode, reason as string, headers);
     }
-    // As `writeHead()` of Node.js: the headers follow a reason phrase, or are
-    // the second argument
-    const given = typeof reason === "string" ? headers : (headers ?? reason);
+    // Node.js would throw only once it has changed the response (its status
+    // and reason phrase, and some of the headers). Read once, and checked:
+    // Node.js gets exactly these (see `IHead`)
+    const [code, message, given] = this[kValidateHead](
+      statusCode,
+      reason,
+      headers,
+    );
     const write = (
       fields: OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined,
     ): this => {
-      if (typeof reason === "string") {
-        return super.writeHead(statusCode, reason, fields);
+      if (typeof message === "string") {
+        return super.writeHead(code, message, fields);
       }
-      return super.writeHead(statusCode, fields);
+      return super.writeHead(code, fields);
     };
     return this.#restoring(() => {
-      if (this.headersSent || this.cookies.size === 0) {
+      if (this.cookies.size === 0) {
         return write(given);
       }
       // Not sent when Node.js refuses the head (e.g. an invalid status code):
@@ -1843,11 +1916,16 @@ export class BindenResponse<
 
   /**
    * Checks the arguments of `writeHead()` as Node.js does, without changing
-   * the response (see `kValidateHead`): the reason phrase that it would send
-   * (the one given, or else the one of the response), and the names and the
-   * values of the headers given (a list must be of pairs). An invalid status
-   * code is left to `writeHead()`, which throws before it changes anything.
-   * The `Content-Length` values that the head would have (the ones given, or
+   * the response (see `kValidateHead`), and returns them as Node.js gets them
+   * (see `IHead`): each is read once, and converted no more than Node.js
+   * converts it. The status code is converted once, as Node.js converts it,
+   * and refused as Node.js refuses it (`ERR_HTTP_INVALID_STATUS_CODE`, the
+   * value given in its message, as Node.js formats it). Then the reason
+   * phrase that it would send (the one given, or else the one of the
+   * response), and the names and the values of the headers given (a list must
+   * be of pairs), as copies (see `headersOf()`): a name that is not a string,
+   * and a value of another type (see `inert()`), which Node.js converts as it
+   * checks them, are left to Node.js. The `Content-Length` values that the head would have (the ones given, or
    * else the ones set) must each be a number or a string, checked before
    * anything converts them (also a hole of an array, see `lengthValues()`),
    * and be neither a list nor disagree (see `lengthRefusal()`): every path
@@ -1857,22 +1935,33 @@ export class BindenResponse<
    *
    * @internal
    */
-  public [kValidateHead](...args: unknown[]): void {
+  public [kValidateHead](...args: unknown[]): IHead {
     // What it throws is formatted (see `formatStack()`), e.g. the errors of
     // Node.js for a header that it refuses
     try {
-      this.#validateHead(args);
+      return this.#validateHead(args);
     } catch (error: unknown) {
       throw formatStack(error as Error);
     }
   }
 
   /** `[kValidateHead]()`, which may throw an error that is not formatted */
-  #validateHead(args: readonly unknown[]): void {
+  #validateHead(args: readonly unknown[]): IHead {
+    if (this.headersSent) {
+      // As `writeHead()` of Node.js, before it reads anything
+      throw BindenResponse.#headersSent();
+    }
     const [statusCode, reason, headers] = args;
+    // Converted once, as Node.js converts it (which gets the number)
     const code = (statusCode as number) | 0;
     if (code < 100 || code > 999) {
-      return;
+      // The value given, which Node.js formats in its message
+      throw Object.assign(
+        formatStack(
+          new RangeError(format("Invalid status code: %s", statusCode)),
+        ),
+        { code: "ERR_HTTP_INVALID_STATUS_CODE" },
+      );
     }
     const message = typeof reason === "string" ? reason : this.statusMessage;
     if (typeof message === "string" && invalidReason.test(message)) {
@@ -1883,7 +1972,11 @@ export class BindenResponse<
         },
       );
     }
-    const given = typeof reason === "string" ? headers : (headers ?? reason);
+    // As `writeHead()` of Node.js: the headers follow a reason phrase, or are
+    // the second argument. Read once: Node.js gets the copies
+    const given = headersOf(
+      typeof reason === "string" ? headers : (headers ?? reason),
+    );
     const pairs: unknown[] = Array.isArray(given)
       ? Array.isArray(given[0])
         ? given.flat()
@@ -1900,10 +1993,12 @@ export class BindenResponse<
     /** The `Content-Length` values given, which replace the ones set */
     let lengths: (number | string)[] | null = null;
     for (let index = 0; index < pairs.length; index += 2) {
-      const name = pairs[index] as string;
+      const name = pairs[index];
       const value = pairs[index + 1];
-      // Node.js skips an empty name (of the headers that it sets)
-      if (name !== "") {
+      // Node.js skips an empty name (of the headers that it sets), and
+      // refuses one that is not a string itself (converting it as it
+      // describes it)
+      if (typeof name === "string" && name !== "") {
         validateHeaderName(name);
         if (name.toLowerCase() === "content-length") {
           // Each a number or a string, before anything converts it (see
@@ -1913,8 +2008,11 @@ export class BindenResponse<
             ...lengthValues(Array.isArray(value) ? value : [value]),
           );
         }
-        // Also an array (of the values of the header) or a number
-        validateHeaderValue(name, value as string);
+        // Also an array (of the values of the header) or a number, but
+        // never converted (see `inert()`)
+        if (inert(value)) {
+          validateHeaderValue(name, value as string);
+        }
       }
     }
     // Each a number or a string (see `lengthValues()`), never converted
@@ -1926,6 +2024,11 @@ export class BindenResponse<
         code: "ERR_HTTP_INVALID_HEADER_VALUE",
       });
     }
+    return [
+      code,
+      typeof reason === "string" ? reason : null,
+      given as IHead[2],
+    ];
   }
 
   /**
@@ -2720,14 +2823,19 @@ export class BindenResponse<
     if (old || !this.#allows()) {
       return false;
     } else if (this.headersSent) {
-      throw Object.assign(
-        formatStack(
-          new Error("Cannot write headers after they are sent to the client"),
-        ),
-        { code: "ERR_HTTP_HEADERS_SENT" },
-      );
+      throw BindenResponse.#headersSent();
     }
     return true;
+  }
+
+  /** The error of Node.js for a head written once it is committed, formatted (see `formatStack()`) */
+  static #headersSent(): Error {
+    return Object.assign(
+      formatStack(
+        new Error("Cannot write headers after they are sent to the client"),
+      ),
+      { code: "ERR_HTTP_HEADERS_SENT" },
+    );
   }
 
   /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */

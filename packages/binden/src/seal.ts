@@ -226,15 +226,17 @@ export interface IResponseOperation {
 
 /**
  * The key of the method of `BindenResponse` that checks the arguments of
- * `writeHead()` as Node.js does, without changing the response:
- * `response[kValidateHead](statusCode, reason, headers)` throws the error
- * that `writeHead()` would throw for the reason phrase that it would send (the
- * one given, or the one of the response) or for a header given, after it had
- * changed the response, and the error of binden for `Content-Length` values
- * (the ones given, or else the ones set) of another type than a number or a
- * string, never converted, or that disagree. A library that takes
- * a decision at the commit of the headers (e.g. `@binden/compression`) checks
- * them first. For the packages of binden only.
+ * `writeHead()` as Node.js does, without changing the response, and returns
+ * them as Node.js gets them, each read once, converted no more than Node.js
+ * converts it (see `IHead`): `response[kValidateHead](statusCode, reason,
+ * headers)` throws the error that `writeHead()` would throw for the status
+ * code, for the reason phrase that it would send (the one given, or the one
+ * of the response) or for a header given, after it had changed the response,
+ * and the error of binden for `Content-Length` values (the ones given, or
+ * else the ones set) of another type than a number or a string, never
+ * converted, or that disagree. A library that takes a decision at the commit
+ * of the headers (e.g. `@binden/compression`) checks them first, and commits
+ * the head with what it returns. For the packages of binden only.
  *
  * @internal
  */
