@@ -63,6 +63,14 @@ suite("Process safety", () => {
     });
   });
 
+  test("a Content-Length of another type, set once a send has started and committed around binden, is no length that completes the body as the client goes away: the send rejects, no crash", () => {
+    deepStrictEqual(run("foreign-length.ts"), {
+      status: 0,
+      stdout: "rejected\n",
+      stderr: "",
+    });
+  });
+
   test("a pipe whose write or end throws fails its work: one reply, no crash", () => {
     deepStrictEqual(run("pipe-failures.ts"), {
       status: 0,

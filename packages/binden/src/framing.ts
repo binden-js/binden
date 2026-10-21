@@ -123,12 +123,19 @@ export function lengthRefusal(value: unknown): string | null {
 
 /**
  * The values of a `Content-Length` (see `framingLength()`), copied once (an
- * array read by its indexes), each a number or a string: anything else is
- * refused with a `TypeError` that describes it (see `described()`) before
- * anything converts it. What reading them throws (e.g. a revoked proxy) is
- * formatted (see `formatStack()`).
+ * array read by its indexes, so that a hole is an element), each a number or
+ * a string: anything else (also `undefined` or `null` as an element, `true`,
+ * or an object whose `toString()` gives a length) is refused with a
+ * `TypeError` of `ERR_HTTP_INVALID_HEADER_VALUE` that describes it (see
+ * `described()`), before anything converts it. Node.js would send such a
+ * value converted, while binden could not frame the body by it. What reading
+ * them throws (e.g. a revoked proxy) is formatted (see `formatStack()`).
+ * `undefined` is no value (the header is not set). For the packages of binden
+ * only.
+ *
+ * @internal
  */
-function lengthValues(value: unknown): readonly (number | string)[] {
+export function lengthValues(value: unknown): readonly (number | string)[] {
   const values: unknown[] = [];
   try {
     if (Array.isArray(value)) {
@@ -144,8 +151,11 @@ function lengthValues(value: unknown): readonly (number | string)[] {
   }
   for (const element of values) {
     if (typeof element !== "number" && typeof element !== "string") {
-      throw formatStack(
-        new TypeError(`Invalid Content-Length: ${described(element)}`),
+      throw Object.assign(
+        formatStack(
+          new TypeError(`Invalid Content-Length: ${described(element)}`),
+        ),
+        { code: "ERR_HTTP_INVALID_HEADER_VALUE" },
       );
     }
   }
@@ -158,9 +168,11 @@ function lengthValues(value: unknown): readonly (number | string)[] {
  * array, which agrees with the others), `null` without a valid one: none for
  * an empty array, nor for values that `BindenResponse` refuses (see
  * `lengthRefusal()`). binden frames the body by it, and `@binden/compression`
- * decides by it. A value (or an element) that is neither a number nor a
- * string is refused with a `TypeError`, before anything converts it (see
- * `lengthValues()`). For the packages of binden only.
+ * decides by it. A value (or an element, also a hole) that is neither a
+ * number nor a string is refused with a `TypeError` of
+ * `ERR_HTTP_INVALID_HEADER_VALUE`, before anything converts it (see
+ * `lengthValues()`), never read as no length. For the packages of binden
+ * only.
  *
  * @internal
  */

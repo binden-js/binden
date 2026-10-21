@@ -15,6 +15,7 @@ import {
 import { capture, ioTurn, listen, never, sleep, within } from "./helpers.js";
 import { deepStrictEqual, ok, rejects, throws } from "node:assert/strict";
 import { suite, test } from "node:test";
+import { Readable } from "node:stream";
 import { kFramework } from "../src/seal.js";
 import { once } from "node:events";
 
@@ -1046,6 +1047,234 @@ suite("Content-Length values that disagree", () => {
         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnext",
       closed: true,
     });
+  });
+});
+
+suite("A Content-Length of another type (F1)", () => {
+  /** `undefined`, which the linter does not let the tests write */
+  const absent = ({} as { value?: undefined }).value;
+  /** The conversions of `counting` */
+  let conversions = 0;
+  /** An object whose conversion is a length, which Node.js would send */
+  const counting = {
+    toString(): string {
+      conversions += 1;
+      return "2";
+    },
+  };
+  /** An array of two lengths with a hole between them */
+  const holed = (): string[] => {
+    const values = ["2"];
+    values[2] = "2";
+    return values;
+  };
+  /** Flat pairs whose value is a hole */
+  const holedPair = (): string[] => {
+    const pairs = ["Content-Length"];
+    pairs.length = 2;
+    return pairs;
+  };
+  /** A source that is never read */
+  const pending = (): Readable =>
+    new Readable({
+      read(): void {
+        // Never
+      },
+    });
+  /** A value set or given in a way, then the call that commits the head, and how it is described */
+  const cases: Record<string, [(response: BindenResponse) => unknown, string]> =
+    {
+      "an object whose conversion is a length, then write()": [
+        (response): unknown => {
+          response.setHeader("Content-Length", counting as never);
+          conversions = 0;
+          return response.write("ab");
+        },
+        "(an object)",
+      ],
+      "an object, then write() under strictContentLength": [
+        (response): unknown => {
+          response.strictContentLength = true;
+          response.setHeader("Content-Length", counting as never);
+          conversions = 0;
+          return response.write("ab");
+        },
+        "(an object)",
+      ],
+      "true, then end() with a chunk": [
+        (response): unknown =>
+          response.setHeader("Content-Length", true as never).end("ab"),
+        "true",
+      ],
+      "null, then end()": [
+        (response): unknown =>
+          response.setHeader("Content-Length", null as never).end(),
+        "null",
+      ],
+      "a bigint, then flushHeaders()": [
+        (response): void => {
+          response.setHeader("Content-Length", 2n as never).flushHeaders();
+        },
+        "2n",
+      ],
+      "an array of an object, then writeHead()": [
+        (response): unknown => {
+          response.setHeader("Content-Length", [counting] as never);
+          conversions = 0;
+          return response.writeHead(200);
+        },
+        "(an object)",
+      ],
+      "an array with a hole, then write()": [
+        (response): unknown =>
+          response.setHeader("Content-Length", holed()).write("ab"),
+        "undefined",
+      ],
+      "two values appended, one undefined, then end()": [
+        (response): unknown =>
+          response
+            .appendHeader("Content-Length", ["2", absent] as never)
+            .end("ab"),
+        "undefined",
+      ],
+      "an object given to writeHead()": [
+        (response): unknown => {
+          conversions = 0;
+          return response.writeHead(200, {
+            "Content-Length": counting as never,
+          });
+        },
+        "(an object)",
+      ],
+      "undefined given to writeHead() in place of a valid one set": [
+        (response): unknown =>
+          response
+            .setHeader("Content-Length", 2)
+            .writeHead(200, "OK", { "content-length": absent as never }),
+        "undefined",
+      ],
+      "an array with a hole given to writeHead()": [
+        (response): unknown =>
+          response.writeHead(200, { "Content-Length": holed() }),
+        "undefined",
+      ],
+      "a hole of pairs given to writeHead()": [
+        (response): unknown => response.writeHead(200, holedPair()),
+        "undefined",
+      ],
+      "an object, then send() of a Readable": [
+        (response): unknown => {
+          response.setHeader("Content-Length", counting as never);
+          conversions = 0;
+          return response.send(pending());
+        },
+        "(an object)",
+      ],
+      "an array with a hole, then send() of a Readable": [
+        (response): unknown => {
+          response.setHeader("Content-Length", holed());
+          return response.send(pending());
+        },
+        "undefined",
+      ],
+      // Of a length of its own, which replaces it: sent
+      "an object, then send() of a string": [
+        (response): unknown => {
+          response.setHeader("Content-Length", counting as never);
+          return response.send("ab");
+        },
+        "",
+      ],
+      "true, then sendFile()": [
+        (response): unknown => {
+          response.setHeader("Content-Length", true as never);
+          return response.sendFile(import.meta.filename, {
+            content_type: "text/plain",
+          });
+        },
+        "",
+      ],
+    };
+
+  test("is refused before anything is committed, never converted: the call that would commit the head throws (a send rejects), and the error is replied on a connection that is reused, where Node.js sends it converted", async () => {
+    const outcomes: unknown[] = [];
+    const app = new Binden().use(async ({ response, url }: Context) => {
+      const name = decodeURIComponent(url.pathname.slice(1));
+      if (name === "next") {
+        response.end("next");
+        return;
+      }
+      const [run] = cases[name] as [
+        (response: BindenResponse) => unknown,
+        string,
+      ];
+      try {
+        await run(response);
+      } catch (error: unknown) {
+        const { code, message } = error as { code?: unknown; message: string };
+        outcomes.push([
+          name,
+          error instanceof TypeError,
+          code,
+          message,
+          response.headersSent,
+          response.destroyed,
+          conversions,
+        ]);
+        throw error;
+      }
+    });
+    const listening = await listen(app);
+    try {
+      for (const [name, [, described]] of Object.entries(cases)) {
+        const conversation = await converse(
+          listening.port,
+          `GET /${encodeURIComponent(name)} HTTP/1.1\r\nHost: a\r\n\r\n` +
+            "GET /next HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n",
+        );
+        if (described === "") {
+          // Sent, by its own length
+          ok(
+            conversation.data.startsWith("HTTP/1.1 200 OK") &&
+              /\r\nContent-Length: \d+\r\n/u.test(conversation.data) &&
+              conversation.data.endsWith("\r\n\r\nnext"),
+            name,
+          );
+        } else {
+          deepStrictEqual(
+            conversation,
+            {
+              data:
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n" +
+                "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 4\r\n\r\nnext",
+              closed: true,
+            },
+            name,
+          );
+        }
+      }
+      deepStrictEqual(
+        outcomes,
+        Object.entries(cases)
+          .filter(([, [, described]]) => described !== "")
+          .map(([name, [, described]]) => [
+            name,
+            true,
+            "ERR_HTTP_INVALID_HEADER_VALUE",
+            `Invalid Content-Length: ${described}`,
+            false,
+            false,
+            0,
+          ]),
+      );
+    } finally {
+      await listening.close();
+    }
+    // Node.js sends it converted, and frames the body by it
+    const node = new ServerResponse(new IncomingMessage(new Socket()));
+    node.setHeader("Content-Length", counting as never);
+    node.flushHeaders();
+    ok(String(Reflect.get(node, "_header")).includes("Content-Length: 2\r\n"));
   });
 });
 

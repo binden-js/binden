@@ -186,7 +186,7 @@ suite(
       deepStrictEqual(counter.conversions(), 0);
     });
 
-    test("a Content-Length of another type, which Node.js converts as it sends the head, is no length that it decides by: never converted, nor a failure", async () => {
+    test("a Content-Length of another type (an element, also a hole) is refused before the decision, never converted, as binden refuses it: the work can still reply, compressed", async () => {
       const body = "Some text to compress. ".repeat(100);
       const converted = { count: 0 };
       const object = {
@@ -195,16 +195,19 @@ suite(
           return String(body.length);
         },
       };
-      const lengths: unknown[] = [
-        body.length,
-        String(body.length),
-        [String(body.length)],
-        true,
-        object,
-        [object],
+      const holed = [String(body.length)];
+      holed[2] = String(body.length);
+      const lengths: [unknown, string | null][] = [
+        [body.length, null],
+        [String(body.length), null],
+        [[String(body.length)], null],
+        [true, "true"],
+        [object, "(an object)"],
+        [[object], "(an object)"],
+        [holed, "undefined"],
       ];
-      const codings: unknown[] = [];
-      for (const length of lengths) {
+      const outcomes: unknown[] = [];
+      for (const [length, described] of lengths) {
         const served = await serve(
           {},
           new Compression({ threshold: 4096 }),
@@ -214,7 +217,21 @@ suite(
             response.setHeader("Content-Length", length as never);
             // Converted by Node.js as it checks the value: not by binden
             converted.count = 0;
-            response.write(body);
+            const failed = outcome(() => response.write(body));
+            const thrown = failed?.thrown as
+              { code?: unknown; message?: unknown } | undefined;
+            outcomes.push([
+              thrown?.message ?? null,
+              thrown?.code ?? null,
+              failed?.formatted ?? null,
+              response.headersSent,
+              converted.count,
+            ]);
+            if (failed !== null) {
+              // Nothing has been decided: the reply is
+              response.removeHeader("Content-Length");
+              response.write(body);
+            }
             response.end();
           },
         );
@@ -222,17 +239,29 @@ suite(
           const { headers, body: received } = await fetchRaw(served.url, {
             headers: { "accept-encoding": "gzip" },
           });
-          codings.push(headers["content-encoding"] ?? null);
-          deepStrictEqual(received, body);
+          deepStrictEqual(
+            [headers["content-encoding"] ?? null, received],
+            [described === null ? null : "gzip", body],
+          );
         } finally {
           await served.close();
         }
-        // Never converted (a compressed response has no Content-Length,
-        // which Node.js would convert as it sends it)
-        ok(typeof length !== "object" || converted.count === 0);
       }
-      // A known length below the threshold, otherwise unknown: compressed
-      deepStrictEqual(codings, [null, null, null, "gzip", "gzip", "gzip"]);
+      deepStrictEqual(
+        outcomes,
+        lengths.map(([, described]): unknown[] => {
+          if (described === null) {
+            return [null, null, null, true, 0];
+          }
+          return [
+            `Invalid Content-Length: ${described}`,
+            "ERR_HTTP_INVALID_HEADER_VALUE",
+            true,
+            false,
+            0,
+          ];
+        }),
+      );
     });
   },
 );

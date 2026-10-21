@@ -116,21 +116,16 @@ function listOf(value: number | string | string[] | undefined): string[] {
 }
 
 /**
- * The `Content-Length` of a response as the compression decides by it (see
- * `framingLength()`), as binden frames by it: a number, a string, or an array
- * of them. A value of another type (e.g. `true`, or an object), which
- * `setHeader()` of Node.js accepts and converts only as it sends the head, is
- * no length that the compression knows (none, as an empty array): it never
- * converts it,
- * nor fails for it.
+ * The `Content-Length` of a response as the compression decides by it, as
+ * binden frames by it (see `framingLength()`), `null` without a valid one: a
+ * number, a string, or an array of them. A value of another type (or an
+ * element, also a hole of an array, e.g. `true`, or an object whose
+ * `toString()` gives a length), which Node.js would send converted, throws
+ * the `TypeError` of binden (`ERR_HTTP_INVALID_HEADER_VALUE`) before anything
+ * is decided: never converted, never read as no length
  */
-function lengthOf(response: IResponse): OutgoingHttpHeader {
-  const value = response.getHeader("Content-Length");
-  const known = (element: unknown): boolean =>
-    typeof element === "number" || typeof element === "string";
-  return known(value) || (Array.isArray(value) && value.every(known))
-    ? (value as OutgoingHttpHeader)
-    : [];
+function lengthOf(response: IResponse): number | null {
+  return framingLength(response.getHeader("Content-Length"));
 }
 
 /** Whether `Content-Encoding` names `identity` only (no coding at all) */
@@ -923,8 +918,7 @@ export class CompressedResponse {
     const response = this.#response;
     // The body that `end()` writes is not the one of the `200` of a `304`
     return this.#decide(
-      framingLength(lengthOf(response)) ??
-        (response.statusCode === 304 ? null : size),
+      lengthOf(response) ?? (response.statusCode === 304 ? null : size),
     );
   }
 
@@ -1063,7 +1057,7 @@ export class CompressedResponse {
   #code(coding: ICompressEncodings): boolean {
     const response = this.#response;
     const status = response.statusCode;
-    const empty = status !== 304 && framingLength(lengthOf(response)) === 0;
+    const empty = status !== 304 && lengthOf(response) === 0;
     if (!empty) {
       this.#remove("Content-Length");
     }

@@ -339,7 +339,7 @@ suite("The methods that binden defines over those of Node.js", () => {
     deepStrictEqual(validateResponseOptions({ etag: true }), { etag: true });
   });
 
-  test("a Content-Length of another type, which Node.js converts as it sends the head, is no length that binden knows: never converted, nor a failure", () => {
+  test("a Content-Length of another type (an element, also a hole) refuses send() of a stream, the stream-like and to HEAD before anything is sent: never converted, the head not committed, the source released", async () => {
     let conversions = 0;
     const counting = {
       toString(): string {
@@ -347,25 +347,76 @@ suite("The methods that binden defines over those of Node.js", () => {
         return "2";
       },
     };
-    for (const value of [counting, true, [counting]]) {
-      const response = detached();
-      response.setHeader("Content-Length", value as never);
-      // Converted by Node.js as it checks the value: not by binden
-      conversions = 0;
-      const sent = response.send(
-        new Readable({
+    const sparse = ["2"];
+    sparse[2] = "2";
+    const cases: [unknown, string][] = [
+      [counting, "(an object)"],
+      [true, "true"],
+      [null, "null"],
+      [2n, "2n"],
+      [[counting], "(an object)"],
+      [sparse, "undefined"],
+      [["2", Reflect.get({}, "absent")], "undefined"],
+    ];
+    for (const [value, described] of cases) {
+      for (const kind of ["readable", "stream-like", "head"]) {
+        const response =
+          kind === "head"
+            ? new BindenResponse(
+                Object.assign(new IncomingMessage(new Socket()), {
+                  httpVersionMajor: 1,
+                  httpVersionMinor: 1,
+                  method: "HEAD",
+                }),
+              )
+            : detached();
+        response.setHeader("Content-Length", value as never);
+        const before = response.getHeader("Content-Length");
+        // Converted by Node.js as it checks the value: not by binden
+        conversions = 0;
+        const source = new Readable({
           read(): void {
             // Never
           },
-        }),
-      );
-      deepStrictEqual(response.getHeader("Content-Length"), value);
-      deepStrictEqual(conversions, 0);
-      response.destroy();
-      // Not awaited: a response without a socket is closed by its connection
-      // (see the exchange), which this one has not, and an older Node.js
-      // (e.g. 24.14.1) does not close it on destroy()
-      sent.catch(() => null);
+        });
+        let paused = 0;
+        const streamLike = {
+          on: (): unknown => streamLike,
+          pause: (): void => {
+            paused += 1;
+          },
+          resume: (): void => {
+            // Never read
+          },
+          removeListener: (): unknown => streamLike,
+        };
+        const failed = await outcome(() =>
+          response.send(kind === "stream-like" ? streamLike : source),
+        );
+        ok(failed?.thrown instanceof TypeError, `${described} ${kind}`);
+        deepStrictEqual(
+          [
+            failed.thrown.message,
+            (failed.thrown as { code?: unknown }).code,
+            failed.formatted,
+            conversions,
+            response.headersSent,
+            response.getHeader("Content-Length"),
+            // Released (see the informational status)
+            kind === "stream-like" ? paused > 0 : source.destroyed,
+          ],
+          [
+            `Invalid Content-Length: ${described}`,
+            "ERR_HTTP_INVALID_HEADER_VALUE",
+            true,
+            0,
+            false,
+            before,
+            true,
+          ],
+          `${described} ${kind}`,
+        );
+      }
     }
   });
 

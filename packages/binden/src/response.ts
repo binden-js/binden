@@ -10,6 +10,7 @@ import {
   kRestoreFraming,
   kSaveFraming,
   lengthRefusal,
+  lengthValues,
 } from "./framing.js";
 import {
   type IListener,
@@ -505,23 +506,6 @@ function jsonText(data: unknown): string | undefined {
   } catch (error: unknown) {
     throw formatStack(error as Error);
   }
-}
-
-/**
- * The `Content-Length` of a response as binden frames by it (see
- * `framingLength()`): a number, a string, or an array of them. A value of
- * another type (e.g. `true`, or an object), which `setHeader()` of Node.js
- * accepts and converts only as it sends the head, is no length that binden
- * knows (none, as an empty array): binden never converts it (no `toString()` of the
- * application runs), nor fails for it. `@binden/compression` reads it the
- * same way.
- */
-function lengthHeader(value: unknown): OutgoingHttpHeader {
-  const known = (element: unknown): boolean =>
-    typeof element === "number" || typeof element === "string";
-  return known(value) || (Array.isArray(value) && value.every(known))
-    ? (value as OutgoingHttpHeader)
-    : [];
 }
 
 /** The serialization of `URLSearchParams` of Node.js (see `formText()`) */
@@ -1793,11 +1777,16 @@ export class BindenResponse<
     // What reading the state throws is formatted (see `formatStack()`)
     try {
       this[kFramework](() => {
-        for (const name of this.getHeaderNames()) {
-          super.removeHeader(name);
-        }
-        for (const [name, value] of state.headers) {
-          super.setHeader(name, BindenResponse.#copy(value));
+        // Set again only when they have changed: `setHeader()` of Node.js
+        // converts a value of another type as it checks it (e.g. a
+        // `Content-Length` that binden has refused, see `kValidateHead`)
+        if (!this.#hasHeaders(state.headers)) {
+          for (const name of this.getHeaderNames()) {
+            super.removeHeader(name);
+          }
+          for (const [name, value] of state.headers) {
+            super.setHeader(name, BindenResponse.#copy(value));
+          }
         }
         for (const [name, value] of state.fields) {
           Reflect.set(this, name, value);
@@ -1812,16 +1801,43 @@ export class BindenResponse<
   }
 
   /**
+   * Whether the response has these headers (see `IFramingState`): the same
+   * names, in the same order and case, and the same values (each element of
+   * an array)
+   */
+  #hasHeaders(headers: IFramingState["headers"]): boolean {
+    const names = (
+      this as unknown as { getRawHeaderNames(): string[] }
+    ).getRawHeaderNames();
+    return (
+      names.length === headers.length &&
+      headers.every(([name, value], index) => {
+        const current: unknown = super.getHeader(name);
+        return (
+          names[index] === name &&
+          (Array.isArray(value)
+            ? Array.isArray(current) &&
+              current.length === value.length &&
+              value.every((element, at) => current[at] === element)
+            : current === value)
+        );
+      })
+    );
+  }
+
+  /**
    * Checks the arguments of `writeHead()` as Node.js does, without changing
    * the response (see `kValidateHead`): the reason phrase that it would send
    * (the one given, or else the one of the response), and the names and the
    * values of the headers given (a list must be of pairs). An invalid status
    * code is left to `writeHead()`, which throws before it changes anything.
    * The `Content-Length` values that the head would have (the ones given, or
-   * else the ones set) must be neither a list nor disagree (see
-   * `lengthRefusal()`): every path that commits the head runs `writeHead()`
-   * (also a first `write()`, an `end()` and `flushHeaders()`), which then
-   * throws before anything is committed.
+   * else the ones set) must each be a number or a string, checked before
+   * anything converts them (also a hole of an array, see `lengthValues()`),
+   * and be neither a list nor disagree (see `lengthRefusal()`): every path
+   * that commits the head runs `writeHead()` (also a first `write()`, an
+   * `end()` and `flushHeaders()`), which then throws
+   * `ERR_HTTP_INVALID_HEADER_VALUE` before anything is committed.
    *
    * @internal
    */
@@ -1866,25 +1882,28 @@ export class BindenResponse<
       );
     }
     /** The `Content-Length` values given, which replace the ones set */
-    const lengths: unknown[] = [];
+    let lengths: (number | string)[] | null = null;
     for (let index = 0; index < pairs.length; index += 2) {
       const name = pairs[index] as string;
+      const value = pairs[index + 1];
       // Node.js skips an empty name (of the headers that it sets)
       if (name !== "") {
         validateHeaderName(name);
-        // Also an array (of the values of the header) or a number
-        validateHeaderValue(name, pairs[index + 1] as string);
         if (name.toLowerCase() === "content-length") {
-          lengths.push(pairs[index + 1]);
+          // Each a number or a string, before anything converts it (see
+          // `lengthValues()`): also a value that is not an array (e.g.
+          // `undefined`), and a hole of an array
+          (lengths ??= []).push(
+            ...lengthValues(Array.isArray(value) ? value : [value]),
+          );
         }
+        // Also an array (of the values of the header) or a number
+        validateHeaderValue(name, value as string);
       }
     }
-    // Of a number or a string, or an array of them: never converted (see
-    // `lengthHeader()`)
+    // Each a number or a string (see `lengthValues()`), never converted
     const refusal = lengthRefusal(
-      lengthHeader(
-        lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
-      ),
+      lengths ?? lengthValues(this.getHeader("Content-Length")),
     );
     if (refusal !== null) {
       throw Object.assign(formatStack(new TypeError(refusal)), {
@@ -3190,13 +3209,15 @@ export class BindenResponse<
     }
 
     if (kind !== "value") {
+      // Read once, before anything of the source runs (see `#pipe()`)
+      const declared = this.#declared(data, kind);
       if (this.#bodiless()) {
         // Nothing of the source would be sent: it is not read at all
         this.#release(data, kind);
         // The representation and the framing of the length that it declares
         // (unknown without one, not empty), without a stale `Transfer-Encoding`
-        this[kRepresentation](this.#length());
-        this.#frame(this.#length());
+        this[kRepresentation](declared);
+        this.#frame(declared);
         this.#remove(...contentDigests);
         return this.#end();
       }
@@ -3213,6 +3234,7 @@ export class BindenResponse<
               },
               this.#streamLikeLogs(),
             ),
+        declared,
       );
     }
 
@@ -3552,6 +3574,23 @@ export class BindenResponse<
     });
   }
 
+  /**
+   * The length that the body of a source declares (see `#length()`): one of
+   * another type refuses its send before anything is sent, and the source is
+   * released (see `#release()`), as for an informational status
+   */
+  #declared(
+    data: unknown,
+    kind: IStreamLikeMethods | "readable",
+  ): number | null {
+    try {
+      return this.#length();
+    } catch (error: unknown) {
+      this.#release(data, kind);
+      throw error;
+    }
+  }
+
   /** A response without a body: to `HEAD`, or with a 1xx, 204, 205 or 304 status */
   #bodiless(): boolean {
     return (
@@ -3628,9 +3667,10 @@ export class BindenResponse<
    * once the response has finished, since nothing of it is written (a client
    * that goes away before may not have its head).
    *
-   * The `Content-Length` that the body declares is read once, before anything
-   * is written (a compression removes the header): a source that fails,
-   * closes before its end, or does not have exactly that length rejects.
+   * The `Content-Length` that the body declares (`declared`, see `#send()`) is
+   * read once, before anything of the source runs (a compression removes the
+   * header): a source that fails, closes before its end, or does not have
+   * exactly that length rejects.
    * Nothing sent yet, before the headers are committed, the error can still
    * be replied (see `.started`); otherwise the response is closed (see
    * `#cutFailed()`), so that a truncated body (or a head that promises one,
@@ -3682,7 +3722,7 @@ export class BindenResponse<
    * `autoDestroy` that fails after its end); a removal that throws is
    * logged (`debug`).
    */
-  #pipe(data: Readable): Promise<void> {
+  #pipe(data: Readable, declared: number | null): Promise<void> {
     if (!data.readableEnded) {
       // Read once (e.g. a getter of the source)
       const { destroyed, errored } = data;
@@ -3697,7 +3737,6 @@ export class BindenResponse<
       }
     }
     const operation = this.#operation();
-    const declared = this.#length();
     // A body of a declared length is framed by it: a stale
     // `Transfer-Encoding` would frame it by chunks as well (RFC 9112,
     // section 6.1), which a client or a proxy may read either way
@@ -3726,9 +3765,16 @@ export class BindenResponse<
     const done = this.#finished(
       () => {
         // An empty body only once the response has finished: nothing is
-        // written of it, and the client may not even have its head
-        const length = this.#length();
-        return length !== null && length > 0 && flushed >= length;
+        // written of it, and the client may not even have its head. Read as
+        // the response closes (e.g. removed by a compression), never by a
+        // listener that throws: bytes have been flushed only once the head
+        // has been committed, whose `Content-Length` binden has checked (see
+        // `kValidateHead`), and a value of another type is no length here
+        if (flushed === 0) {
+          return false;
+        }
+        const length = this.#knownLength();
+        return length !== null && flushed >= length;
       },
       finishing,
       (error) => {
@@ -4433,11 +4479,27 @@ export class BindenResponse<
 
   /**
    * The `Content-Length` of the response, `null` without a valid one (see
-   * `framingLength()`, which `@binden/compression` reads it by as well), and
-   * for a value of another type (see `lengthHeader()`)
+   * `framingLength()`, which `@binden/compression` reads it by as well). A
+   * value of another type (or an element, also a hole of an array) throws
+   * the `TypeError` of `ERR_HTTP_INVALID_HEADER_VALUE` (see
+   * `lengthValues()`): never converted, never read as no length
    */
   #length(): number | null {
-    return framingLength(lengthHeader(this.getHeader("Content-Length")));
+    return framingLength(this.getHeader("Content-Length"));
+  }
+
+  /**
+   * The `Content-Length` of the response (see `#length()`), `null` for a
+   * value that it refuses: only to tell whether a body is complete for the
+   * client, never to frame it (e.g. once the head has been committed around
+   * binden, by `writeHead()` of Node.js)
+   */
+  #knownLength(): number | null {
+    try {
+      return this.#length();
+    } catch {
+      return null;
+    }
   }
 
   /**
