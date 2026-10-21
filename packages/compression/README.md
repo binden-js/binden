@@ -56,7 +56,9 @@ one throws before anything is decided or changed:
   `Buffer.from()` decodes from it: Node.js only estimates its length, which may be more than it
   writes (e.g. for invalid digits). The decision (the `threshold`) and the framing of the body
   are those of its bytes. An explicit `Content-Length` is never replaced, and one that is neither
-  a number nor a string (nor an array of them, e.g. `true`) is no length that the decision reads.
+  a number nor a string (nor an array of them, e.g. `true`, an object whose `toString()` gives a
+  length, or an array with a hole) is refused before anything is decided, as binden refuses it:
+  the write throws `ERR_HTTP_INVALID_HEADER_VALUE`, never converted.
 
 ## Options
 
@@ -75,7 +77,13 @@ Invalid options throw a `TypeError` (or a `RangeError`) in the constructor: also
 compressor (one is created to check them), and `zstd` (by `format` or `encodings`) on a version of
 Node.js whose `node:zlib` does not have it. Options that are not an object (or `undefined`) throw
 "`options` is not an object: …", and what reading them throws (e.g. a revoked proxy) is formatted,
-as by every entry point of binden.
+as by every entry point of binden. The options are read once (also each element of `encodings`, by
+its index, and `brotli.params`). The decision reads the `Accept-Encoding`, the method and the HTTP
+version of the request once, as the compression is installed. `writeHead()` of a compressed
+response reads and converts its status and its headers as binden does (once, as Node.js gets
+them): a `bigint` status throws as with Node.js and binden (`Cannot mix BigInt and other types`).
+The headers given in pairs set a name by its first value and append the others, as Node.js does,
+each value checked once.
 
 The quality of `br` is 4 by default, rather than the 11 of `node:zlib`: 11 is meant for compressing
 ahead of time, and is far too slow for responses compressed as they are sent. Set it with

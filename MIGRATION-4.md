@@ -328,6 +328,10 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   longer gets a default `Content-Type`.
 - The cookies of `response.cookies` are added when the headers are sent by any path (`writeHead()`,
   `write()`, `end()`, a piped stream), not only by `send()`.
+- `response.cookies.add()` throws a `TypeError` ("`cookie` is not an object: …") for anything but
+  an object, also a string: binden 2.0.4 added any value, then failed as the head was sent
+  (`null`, `undefined`), or sent it converted as a `Set-Cookie` (a string as it is, a symbol as
+  `Symbol(…)`). Add a `Cookie` (or an object whose `toString()` gives the value).
 - A `write()` or an `end()` that Node.js throws from once the head is committed (e.g. a body that
   does not have its `Content-Length` under `strictContentLength`) closes the connection: the
   response is destroyed before the error is thrown, so that nothing that it has queued is flushed,
@@ -337,13 +341,16 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `strictContentLength`, a first `write()` past a valid `Content-Length` throws
   `ERR_HTTP_CONTENT_LENGTH_MISMATCH` before anything is committed, where Node.js 24 and 26 and
   binden 2.0.4 send the whole chunk (the client reads its excess as the next response).
-- A `Content-Length` that is neither a number nor a string (e.g. an object with a `toString()`),
-  or an array with such an element or a hole, throws a `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`,
-  "Invalid Content-Length: …", the value described) when the head is committed, and a `send()`
-  rejects with it before anything is sent (the error can be replied): binden 2.0.4, as Node.js,
-  sent it converted (e.g. `Content-Length: 5` for `{ toString: () => "5" }`) without counting the
-  body by it, so that a body of another length desynchronized the connection (the client read
-  the response after it as part of the body). Set a number or a string.
+- A `Content-Length` that is neither a number nor a string (e.g. `true`, `null`, a `bigint` or an
+  object with a `toString()`), or an array with such an element or a hole, makes the call that
+  commits the head (`writeHead()`, a first `write()`, `end()` or `flushHeaders()`) throw a
+  `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`, "Invalid Content-Length: …", the value described,
+  `undefined` for a hole), and a `send()` of a stream rejects with it before anything is sent (the
+  error can be replied): binden 2.0.4, as Node.js, sent it converted (e.g. `Content-Length: 5` for
+  `{ toString: () => "5" }`) without counting the body by it, so that a body of another length
+  desynchronized the connection (the client read the response after it as part of the body), and
+  threw an unrelated `TypeError` for a `bigint`. Set a number or a string. @binden/compression
+  refuses it in the same way, before it decides.
 - `writeContinue()`, `writeProcessing()`, `writeEarlyHints()` and `writeInformation()` throw
   `ERR_HTTP_HEADERS_SENT` once the head is committed, on every version of Node.js: on Node.js
   before 24.18, binden 2.0.4 (as `node:http`) wrote the raw `1xx` head of the first three into the
@@ -822,6 +829,10 @@ headers are known:
   matched.
 - A reason phrase, a header or a status that Node.js refuses throws before the decision (or leaves
   nothing of it), and the error is replied as without a compression, without compressed bytes.
+- A `Content-Length` that is neither a number nor a string (or an array with such an element or a
+  hole) makes the write that would decide throw (`ERR_HTTP_INVALID_HEADER_VALUE`) before the
+  decision, as binden refuses it (see [Replies](#replies)): @binden/compression 3.0.0 left it to
+  binden 2.0.4, which sent it converted.
 - `new Compression()` throws a `TypeError` for options that are neither an object nor `undefined`
   ("`options` is not an object: …"), also a function: @binden/compression 3.0.0 read a string or
   a number as no options, and the properties of a function as the options.
