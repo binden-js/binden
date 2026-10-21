@@ -133,11 +133,23 @@ export type IClearCookie = Pick<
 
 /**
  * Validates the options of the responses (`etag` is `false` by default): a
- * `TypeError` for an invalid one
+ * `TypeError` for an invalid one, and for anything but an object. What reading
+ * them throws (e.g. a revoked proxy) is formatted (see `formatting()`).
  */
-export function validateResponseOptions({
-  etag = false,
-}: { readonly etag?: boolean | undefined } = {}): Readonly<IResponseOptions> {
+export function validateResponseOptions(
+  options: { readonly etag?: boolean | undefined } = {},
+): Readonly<IResponseOptions> {
+  const { etag = false } = formatting(() => {
+    const given: unknown = options;
+    if (typeof given !== "object" || given === null) {
+      throw formatStack(
+        new TypeError(`\`options\` is not an object: ${described(given)}`),
+      );
+    }
+    // Read once
+    const { etag: value } = options;
+    return { etag: value };
+  });
   if (typeof etag !== "boolean") {
     throw formatStack(new TypeError("`etag` is not a boolean"));
   }
@@ -495,6 +507,23 @@ function jsonText(data: unknown): string | undefined {
   }
 }
 
+/**
+ * The `Content-Length` of a response as binden frames by it (see
+ * `framingLength()`): a number, a string, or an array of them. A value of
+ * another type (e.g. `true`, or an object), which `setHeader()` of Node.js
+ * accepts and converts only as it sends the head, is no length that binden
+ * knows (none, as an empty array): binden never converts it (no `toString()` of the
+ * application runs), nor fails for it. `@binden/compression` reads it the
+ * same way.
+ */
+function lengthHeader(value: unknown): OutgoingHttpHeader {
+  const known = (element: unknown): boolean =>
+    typeof element === "number" || typeof element === "string";
+  return known(value) || (Array.isArray(value) && value.every(known))
+    ? (value as OutgoingHttpHeader)
+    : [];
+}
+
 /** The serialization of `URLSearchParams` of Node.js (see `formText()`) */
 const searchParamsText = Reflect.get(URLSearchParams.prototype, "toString");
 
@@ -782,13 +811,29 @@ class Cookies extends Set<Cookie> {
 }
 
 /**
+ * `ServerResponse`, whose constructor formats what it throws (see
+ * `formatStack()`), e.g. the `TypeError` of a request that is not an object,
+ * which Node.js reads: the constructor of `BindenResponse`, which has private
+ * fields, can only call it at its root, outside of a `try`
+ */
+const FormattedResponse = class extends ServerResponse {
+  public constructor(...args: [request: IncomingMessage, options?: unknown]) {
+    try {
+      super(...(args as [IncomingMessage]));
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
+  }
+} as unknown as typeof ServerResponse;
+
+/**
  * A response (`ServerResponse`) with helpers to reply (`send()`, `json()`,
  * `sendFile()`, `redirect()`, …) and its cookies: the `ServerResponse`
  * class of the servers
  */
 export class BindenResponse<
   Request extends IncomingMessage = IncomingMessage,
-> extends ServerResponse<Request> {
+> extends FormattedResponse<Request> {
   #cookies?: Cookies;
   /** Whether a stream has been piped into the response (by its owner) */
   #piped = false;
@@ -891,36 +936,48 @@ export class BindenResponse<
         },
       },
     });
+    // What the methods of the listeners throw (e.g. the error of Node.js
+    // for a listener that is not a function, of a listener itself, or of an
+    // event name that it cannot convert) is formatted (see `formatStack()`),
+    // inline: they are hot paths
     function rawListeners(
       this: BindenResponse,
       event: string | symbol,
     ): IListener[] {
-      return rawListenersOf(this, event as string).map((raw) => {
-        const binding = bindingOf(raw);
-        return binding && !binding.once ? binding.listener : raw;
-      });
+      try {
+        return rawListenersOf(this, event as string).map((raw) => {
+          const binding = bindingOf(raw);
+          return binding && !binding.once ? binding.listener : raw;
+        });
+      } catch (error: unknown) {
+        throw formatStack(error as Error);
+      }
     }
     function emit(
       this: BindenResponse,
       event: string | symbol,
       ...args: unknown[]
     ): boolean {
-      if (event === "pipe") {
-        this.#piping(args[0]);
-      } else if (event === "unpipe") {
-        this.#unpiped(args[0]);
-      } else if (event === "socket") {
-        // Before its listeners, and before Node.js flushes the response
-        this.#assigned(args[0] as Duplex);
-      } else if (
-        event === "error" &&
-        this.#absorbing.has(owners.getStore() as object)
-      ) {
-        // Re-emitted by a listener of an abandoned work (e.g. the pipe of
-        // Node.js once it has unpiped): the framework handles the error
-        return false;
+      try {
+        if (event === "pipe") {
+          this.#piping(args[0]);
+        } else if (event === "unpipe") {
+          this.#unpiped(args[0]);
+        } else if (event === "socket") {
+          // Before its listeners, and before Node.js flushes the response
+          this.#assigned(args[0] as Duplex);
+        } else if (
+          event === "error" &&
+          this.#absorbing.has(owners.getStore() as object)
+        ) {
+          // Re-emitted by a listener of an abandoned work (e.g. the pipe of
+          // Node.js once it has unpiped): the framework handles the error
+          return false;
+        }
+        return this.#emit(event, args);
+      } catch (error: unknown) {
+        throw formatStack(error as Error);
       }
-      return this.#emit(event, args);
     }
     // The listeners added by the application run as the work that has added
     // them (see `bind()`), never as whoever emits their event. Replaced at
@@ -934,18 +991,26 @@ export class BindenResponse<
       listener: IListener,
     ) => BindenResponse) =>
       function listen(this: BindenResponse, event, listener) {
-        const owner = owners.getStore();
-        const bound = bind(
-          listener,
-          owner,
-          "user",
-          once ? { emitter: this, event } : null,
-        );
-        const result = parent[name].call(this, event, bound) as BindenResponse;
-        if (event === "close") {
-          this.#late(owner, bound);
+        try {
+          const owner = owners.getStore();
+          const bound = bind(
+            listener,
+            owner,
+            "user",
+            once ? { emitter: this, event } : null,
+          );
+          const result = parent[name].call(
+            this,
+            event,
+            bound,
+          ) as BindenResponse;
+          if (event === "close") {
+            this.#late(owner, bound);
+          }
+          return result;
+        } catch (error: unknown) {
+          throw formatStack(error as Error);
         }
-        return result;
       };
     // Writable, as the methods of Node.js: an instrumentation may wrap them
     // on a response (its wrapper calls them)
@@ -1613,6 +1678,22 @@ export class BindenResponse<
     reason?: OutgoingHttpHeader[] | OutgoingHttpHeaders | string,
     headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
   ): this {
+    // What it throws is formatted (see `formatStack()`), e.g. the errors of
+    // Node.js for a status code or a header that it refuses, or what the
+    // `toString()` of a cookie throws
+    try {
+      return this.#writeHead(statusCode, reason, headers);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
+  }
+
+  /** `writeHead()`, which may throw an error that is not formatted */
+  #writeHead(
+    statusCode: number,
+    reason?: OutgoingHttpHeader[] | OutgoingHttpHeaders | string,
+    headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
+  ): this {
     if (!this.#allows()) {
       return this;
     } else if (!this.headersSent) {
@@ -1709,20 +1790,25 @@ export class BindenResponse<
    * @internal
    */
   public [kRestoreFraming](state: IFramingState): void {
-    this[kFramework](() => {
-      for (const name of this.getHeaderNames()) {
-        super.removeHeader(name);
-      }
-      for (const [name, value] of state.headers) {
-        super.setHeader(name, BindenResponse.#copy(value));
-      }
-      for (const [name, value] of state.fields) {
-        Reflect.set(this, name, value);
-      }
-    });
-    this.#statusCode = state.status;
-    this.#statusMessage = state.reason;
-    this.#framing = state.generation;
+    // What reading the state throws is formatted (see `formatStack()`)
+    try {
+      this[kFramework](() => {
+        for (const name of this.getHeaderNames()) {
+          super.removeHeader(name);
+        }
+        for (const [name, value] of state.headers) {
+          super.setHeader(name, BindenResponse.#copy(value));
+        }
+        for (const [name, value] of state.fields) {
+          Reflect.set(this, name, value);
+        }
+      });
+      this.#statusCode = state.status;
+      this.#statusMessage = state.reason;
+      this.#framing = state.generation;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -1740,6 +1826,17 @@ export class BindenResponse<
    * @internal
    */
   public [kValidateHead](...args: unknown[]): void {
+    // What it throws is formatted (see `formatStack()`), e.g. the errors of
+    // Node.js for a header that it refuses
+    try {
+      this.#validateHead(args);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
+  }
+
+  /** `[kValidateHead]()`, which may throw an error that is not formatted */
+  #validateHead(args: readonly unknown[]): void {
     const [statusCode, reason, headers] = args;
     const code = (statusCode as number) | 0;
     if (code < 100 || code > 999) {
@@ -1782,8 +1879,12 @@ export class BindenResponse<
         }
       }
     }
+    // Of a number or a string, or an array of them: never converted (see
+    // `lengthHeader()`)
     const refusal = lengthRefusal(
-      lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
+      lengthHeader(
+        lengths.length > 0 ? lengths.flat() : this.getHeader("Content-Length"),
+      ),
     );
     if (refusal !== null) {
       throw Object.assign(formatStack(new TypeError(refusal)), {
@@ -1809,8 +1910,13 @@ export class BindenResponse<
     headers?: OutgoingHttpHeader[] | OutgoingHttpHeaders,
   ): this;
   public writeHeader(...args: unknown[]): this {
-    // The method of the response itself (e.g. of a compression)
-    return this.writeHead(...(args as [number, string]));
+    // The method of the response itself (e.g. of a compression, or of a
+    // subclass): what it throws is formatted (see `formatStack()`)
+    try {
+      return this.writeHead(...(args as [number, string]));
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -1882,26 +1988,33 @@ export class BindenResponse<
     callback?: (error: Error | null | undefined) => void,
   ): boolean;
   public override write(...args: unknown[]): boolean {
-    if (!this.#allows()) {
-      BindenResponse.#ignore(args);
-      return true;
+    // What it throws is formatted (see `formatStack()`), e.g. the errors of
+    // Node.js for a chunk that it refuses, or what the `toString()` of a
+    // cookie throws as the head is committed: inline, a hot path
+    try {
+      if (!this.#allows()) {
+        BindenResponse.#ignore(args);
+        return true;
+      }
+      const [chunk] = args;
+      if (typeof chunk !== "string" && !isUint8Array(chunk)) {
+        // Refused by Node.js before anything else (e.g. `null`), whatever the
+        // state of the response
+        return super.write(...(args as [unknown]));
+      }
+      const written = this.#normalized(args, false);
+      this.#beyond(written);
+      // Node.js counts the bytes of its chunk before it commits the head (see
+      // `#restoring()`)
+      return this.#stopping(() =>
+        this.#restoring(() => {
+          this.#ordered(written, false);
+          return super.write(...(callbacksOf(written) as [unknown]));
+        }),
+      );
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    const [chunk] = args;
-    if (typeof chunk !== "string" && !isUint8Array(chunk)) {
-      // Refused by Node.js before anything else (e.g. `null`), whatever the
-      // state of the response
-      return super.write(...(args as [unknown]));
-    }
-    const written = this.#normalized(args, false);
-    this.#beyond(written);
-    // Node.js counts the bytes of its chunk before it commits the head (see
-    // `#restoring()`)
-    return this.#stopping(() =>
-      this.#restoring(() => {
-        this.#ordered(written, false);
-        return super.write(...(callbacksOf(written) as [unknown]));
-      }),
-    );
   }
 
   /**
@@ -2116,20 +2229,28 @@ export class BindenResponse<
     callback?: () => void,
   ): this;
   public override end(...args: unknown[]): this {
-    if (!this.#allows()) {
-      BindenResponse.#ignore(args);
-      return this;
+    // What it throws is formatted (see `formatStack()`), as for `write()`:
+    // inline, a hot path
+    try {
+      if (!this.#allows()) {
+        BindenResponse.#ignore(args);
+        return this;
+      }
+      this.#chunkOfEnd(args[0]);
+      const ended = this.#normalized(args, true);
+      // Node.js frames the body of its chunk before it commits the head (see
+      // `#restoring()`)
+      return this.#stopping(() =>
+        this.#restoring(() => {
+          this.#ordered(ended, true);
+          return this.#uncorking(() =>
+            super.end(...(callbacksOf(ended) as [])),
+          );
+        }),
+      );
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    this.#chunkOfEnd(args[0]);
-    const ended = this.#normalized(args, true);
-    // Node.js frames the body of its chunk before it commits the head (see
-    // `#restoring()`)
-    return this.#stopping(() =>
-      this.#restoring(() => {
-        this.#ordered(ended, true);
-        return this.#uncorking(() => super.end(...(callbacksOf(ended) as [])));
-      }),
-    );
   }
 
   /**
@@ -2174,10 +2295,18 @@ export class BindenResponse<
     }
   }
 
-  /** Sends the headers (see `flushHeaders()` of Node.js), unless the response is sealed */
+  /**
+   * Sends the headers (see `flushHeaders()` of Node.js), unless the response
+   * is sealed: what it throws is formatted (see `formatStack()`), e.g. the
+   * error of Node.js for a head that it refuses
+   */
   public override flushHeaders(): void {
-    if (this.#allows()) {
-      super.flushHeaders();
+    try {
+      if (this.#allows()) {
+        super.flushHeaders();
+      }
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
   }
 
@@ -2192,12 +2321,17 @@ export class BindenResponse<
     name: string,
     value: number | string | readonly string[],
   ): this {
-    if (!this.#allows()) {
+    // What it throws is formatted (see `formatStack()`), e.g. the error of
+    // Node.js for a name or a value that it refuses: inline, a hot path
+    try {
+      if (this.#allows()) {
+        super.setHeader(name, BindenResponse.#copy(value));
+        this.#reframed(name);
+      }
       return this;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    super.setHeader(name, BindenResponse.#copy(value));
-    this.#reframed(name);
-    return this;
   }
 
   /**
@@ -2218,7 +2352,12 @@ export class BindenResponse<
   public override getHeader(
     name: string,
   ): number | string | string[] | undefined {
-    return BindenResponse.#copy(super.getHeader(name));
+    // What it throws is formatted (see `formatStack()`): inline, a hot path
+    try {
+      return BindenResponse.#copy(super.getHeader(name));
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -2238,49 +2377,81 @@ export class BindenResponse<
     return Array.isArray(value) ? ([...(value as unknown[])] as T) : value;
   }
 
-  /** Appends a header (see `appendHeader()` of Node.js), unless the response is sealed */
+  /**
+   * Appends a header (see `appendHeader()` of Node.js), unless the response
+   * is sealed (what it throws is formatted, see `formatStack()`)
+   */
   public override appendHeader(
     name: string,
     value: string | readonly string[],
   ): this {
-    if (!this.#allows()) {
+    try {
+      if (this.#allows()) {
+        super.appendHeader(name, value);
+        this.#reframed(name);
+      }
       return this;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    super.appendHeader(name, value);
-    this.#reframed(name);
-    return this;
   }
 
-  /** Sets headers (see `setHeaders()` of Node.js), unless the response is sealed */
+  /**
+   * Sets headers (see `setHeaders()` of Node.js), unless the response is
+   * sealed (what it throws is formatted, see `formatStack()`)
+   */
   public override setHeaders(
     headers: Headers | Map<string, number | string | readonly string[]>,
   ): this {
-    return this.#allows() ? super.setHeaders(headers) : this;
+    try {
+      return this.#allows() ? super.setHeaders(headers) : this;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
    * Sets the timeout of the socket (see `setTimeout()` of Node.js), unless the
    * response is sealed: the abandoned work cannot cut the reply of the
-   * framework by the timeout of its connection
+   * framework by the timeout of its connection (what it throws is formatted,
+   * see `formatStack()`)
    */
   public override setTimeout(msecs: number, callback?: () => void): this {
-    return this.#allows() ? super.setTimeout(msecs, callback) : this;
-  }
-
-  /** Removes a header (see `removeHeader()` of Node.js), unless the response is sealed */
-  public override removeHeader(name: string): void {
-    if (this.#allows()) {
-      super.removeHeader(name);
-      this.#reframed(name);
+    try {
+      return this.#allows() ? super.setTimeout(msecs, callback) : this;
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
   }
 
-  /** Adds trailers (see `addTrailers()` of Node.js), unless the response is sealed */
+  /**
+   * Removes a header (see `removeHeader()` of Node.js), unless the response
+   * is sealed (what it throws is formatted, see `formatStack()`)
+   */
+  public override removeHeader(name: string): void {
+    try {
+      if (this.#allows()) {
+        super.removeHeader(name);
+        this.#reframed(name);
+      }
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
+  }
+
+  /**
+   * Adds trailers (see `addTrailers()` of Node.js), unless the response is
+   * sealed (what it throws is formatted, see `formatStack()`)
+   */
   public override addTrailers(
     headers: OutgoingHttpHeaders | readonly [string, string][],
   ): void {
-    if (this.#allows()) {
-      super.addTrailers(headers);
+    try {
+      if (this.#allows()) {
+        super.addTrailers(headers);
+      }
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
   }
 
@@ -2298,6 +2469,17 @@ export class BindenResponse<
    * `#cutQueued()`).
    */
   public override destroy(error?: Error): this {
+    // What it throws is formatted (see `formatStack()`), e.g. what Node.js
+    // throws as it reads an error that is a revoked proxy
+    try {
+      return this.#destroy(error);
+    } catch (thrown: unknown) {
+      throw formatStack(thrown as Error);
+    }
+  }
+
+  /** `destroy()`, which may throw an error that is not formatted */
+  #destroy(error?: Error): this {
     const marker = this.#marker;
     const owner = owners.getStore() ?? this.#replier();
     if (
@@ -2388,6 +2570,7 @@ export class BindenResponse<
    * HTTP/1.0 (its callback is then called asynchronously)
    */
   public override writeContinue(callback?: () => void): void {
+    // Node.js takes anything as its callback: nothing to format
     if (!this.#informs()) {
       BindenResponse.#ignore([callback]);
       return;
@@ -2400,6 +2583,7 @@ export class BindenResponse<
    * HTTP/1.0 (its callback is then called asynchronously)
    */
   public override writeProcessing(callback?: () => void): void {
+    // Node.js takes anything as its callback: nothing to format
     if (!this.#informs()) {
       BindenResponse.#ignore([callback]);
       return;
@@ -2415,34 +2599,61 @@ export class BindenResponse<
     hints: Record<string, string[] | string>,
     callback?: () => void,
   ): void {
-    if (!this.#informs()) {
-      BindenResponse.#ignore([callback]);
-      return;
+    try {
+      if (!this.#informs()) {
+        BindenResponse.#ignore([callback]);
+        return;
+      }
+      super.writeEarlyHints(hints, ...(callbacksOf([callback]) as []));
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    super.writeEarlyHints(hints, ...(callbacksOf([callback]) as []));
   }
 
   /**
    * Sends an informational response (see `writeInformation()` of Node.js,
    * from 24.18.0), unless the response is sealed or the request is HTTP/1.0
-   * (its callback is then called asynchronously)
+   * (its callback is then called asynchronously). Without it (before Node.js
+   * 24.18.0), it throws a `TypeError` of binden.
    */
   public override writeInformation(
     statusCode: number,
     headers?: OutgoingHttpHeaders | readonly string[],
     callback?: () => void,
   ): void;
-  /** Sends an informational response without headers (as the first signature) */
+  /**
+   * Sends an informational response without headers (as the first signature,
+   * which Node.js has: binden gives it no headers)
+   */
   public override writeInformation(
     statusCode: number,
     callback: () => void,
   ): void;
   public override writeInformation(...args: unknown[]): void {
-    if (!this.#informs()) {
-      BindenResponse.#ignore(args);
-      return;
+    try {
+      // Of Node.js from 24.18.0, read as it is called
+      const informational: unknown = Reflect.get(parent, "writeInformation");
+      if (!this.#informs()) {
+        BindenResponse.#ignore(args);
+        return;
+      } else if (typeof informational !== "function") {
+        throw formatStack(
+          new TypeError(
+            "writeInformation() is not supported by this version of Node.js (24.18.0 or later)",
+          ),
+        );
+      }
+      // The callback in place of the headers, which Node.js does not take:
+      // no headers
+      const [statusCode, second] = args;
+      const given =
+        args.length === 2 && typeof second === "function"
+          ? [statusCode, null, second]
+          : args;
+      Reflect.apply(informational, this, callbacksOf(given));
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    super.writeInformation(...(callbacksOf(args) as [number]));
   }
 
   /** Calls the callback (if any) of an ignored call once, asynchronously and without an error */
@@ -2503,17 +2714,25 @@ export class BindenResponse<
     revoked: readonly object[],
     failure: IPipeFailure | null,
   ): Promise<void> {
-    for (const owner of revoked) {
+    // Read once, at once: what reading them throws is formatted (see
+    // `formatting()`), never thrown on the next tick
+    const [works, failed] = formatting(
+      () =>
+        [
+          [...revoked],
+          failure === null
+            ? null
+            : { owner: failure.owner, error: failure.error },
+        ] as const,
+    );
+    for (const owner of works) {
       this.#revoked.set(owner, false);
     }
     return new Promise<void>((resolve) => {
       process.nextTick(() => {
-        for (const owner of revoked) {
+        for (const owner of works) {
           this.#revoked.set(owner, true);
-          this.#deliver(
-            owner,
-            failure?.owner === owner ? [failure.error] : null,
-          );
+          this.#deliver(owner, failed?.owner === owner ? [failed.error] : null);
         }
         resolve();
       });
@@ -2543,17 +2762,24 @@ export class BindenResponse<
   public [kListen](
     event: string,
     listener: (...args: never[]) => unknown,
-    {
-      once = true,
-    }: {
+    options: {
       /** Whether it runs once (`true`), and is removed then */
       readonly once?: boolean | undefined;
     } = {},
   ): () => void {
+    // Checked, and read once, before anything is changed: never a value that
+    // would throw as its event is emitted (see `formatting()`)
+    const given: unknown = listener;
+    if (typeof given !== "function") {
+      throw formatStack(
+        new TypeError(`The listener is not a function: ${described(given)}`),
+      );
+    }
+    const { once = true } = formatting(() => ({ once: options.once }));
     const observer: IObserver = {
       listener: listener as IListener,
       owner: owners.getStore(),
-      once,
+      once: Boolean(once),
       fired: false,
     };
     const observers = this.#observers.get(event) ?? [];
@@ -2779,7 +3005,13 @@ export class BindenResponse<
    * @internal
    */
   public [kFramework]<T>(fn: () => T): T {
-    return force(this, fn);
+    // What it throws is formatted (see `formatStack()`), e.g. for a value
+    // that is not a function
+    try {
+      return force(this, fn);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -2892,8 +3124,8 @@ export class BindenResponse<
     } catch (error: unknown) {
       // E.g. a reason phrase or a `Trailer` that Node.js refuses once it sends
       // the headers: the response is unchanged, and the error can be replied
-      const failure = error as Error;
-      return Promise.reject(failure);
+      // (formatted, see `formatStack()`)
+      return Promise.reject(formatStack(error as Error));
     }
   }
 
@@ -3196,8 +3428,7 @@ export class BindenResponse<
       return this.#send(data, type);
     } catch (error: unknown) {
       // As `send()`: the response is unchanged, and the error can be replied
-      const failure = error as Error;
-      return Promise.reject(failure);
+      return Promise.reject(formatStack(error as Error));
     }
   }
 
@@ -4202,10 +4433,11 @@ export class BindenResponse<
 
   /**
    * The `Content-Length` of the response, `null` without a valid one (see
-   * `framingLength()`, which `@binden/compression` reads it by as well)
+   * `framingLength()`, which `@binden/compression` reads it by as well), and
+   * for a value of another type (see `lengthHeader()`)
    */
   #length(): number | null {
-    return framingLength(this.getHeader("Content-Length"));
+    return framingLength(lengthHeader(this.getHeader("Content-Length")));
   }
 
   /**

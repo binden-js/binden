@@ -1,8 +1,8 @@
-import { type AddressInfo, connect } from "node:net";
+import { type AddressInfo, Socket, connect } from "node:net";
 import { Binden, BindenResponse, type Context } from "../index.js";
 import { type IListening, listen, sleep, within } from "./helpers.js";
 import {
-  type IncomingMessage,
+  IncomingMessage,
   OutgoingMessage,
   ServerResponse,
   createServer,
@@ -13,6 +13,8 @@ import { Readable } from "node:stream";
 import { once } from "node:events";
 
 const hints = { link: "</style.css>; rel=preload; as=style" };
+/** `undefined` (no method), which the linter does not let the tests write */
+const absent = ({} as { value?: undefined }).value;
 const body = Buffer.from("bytes");
 
 /** A promise with its `resolve()` */
@@ -717,6 +719,96 @@ suite("Informational responses, then a native write in any encoding", () => {
           chunks[2].buffer === large.buffer &&
           chunks[2].byteOffset === large.byteOffset + 20,
       );
+    }
+  });
+});
+
+suite("writeInformation() on every version of Node.js", () => {
+  /** A response to an HTTP/1.1 request, without a connection */
+  function response(): BindenResponse {
+    const request = new IncomingMessage(new Socket());
+    request.httpVersionMajor = 1;
+    request.httpVersionMinor = 1;
+    return new BindenResponse(request);
+  }
+
+  /** Runs `run` with `writeInformation()` of Node.js replaced by `method` */
+  function replacing(method: unknown, run: () => void): void {
+    const prototype = ServerResponse.prototype as object;
+    const descriptor = Reflect.getOwnPropertyDescriptor(
+      prototype,
+      "writeInformation",
+    );
+    Reflect.defineProperty(prototype, "writeInformation", {
+      configurable: true,
+      writable: true,
+      value: method,
+    });
+    try {
+      run();
+    } finally {
+      if (typeof descriptor === "undefined") {
+        Reflect.deleteProperty(prototype, "writeInformation");
+      } else {
+        Reflect.defineProperty(prototype, "writeInformation", descriptor);
+      }
+    }
+  }
+
+  test("each declared signature reaches the method of Node.js: a callback in place of the headers is given no headers", () => {
+    const calls: unknown[][] = [];
+    const callback = (): void => {
+      // Nothing
+    };
+    replacing(
+      (...args: unknown[]): void => {
+        calls.push(args.map((arg) => typeof arg));
+      },
+      () => {
+        const informing = response();
+        informing.writeInformation(102, callback);
+        informing.writeInformation(103, hints, callback);
+        informing.writeInformation(103, hints);
+        informing.writeInformation(102);
+      },
+    );
+    deepStrictEqual(calls, [
+      ["number", "object", "function"],
+      ["number", "object", "function"],
+      ["number", "object"],
+      ["number"],
+    ]);
+  });
+
+  test("without the method of Node.js (before 24.18.0): a TypeError of binden, formatted, unless the call is ignored (HTTP/1.0)", () => {
+    const formatted = new WeakSet<object>();
+    const previous: unknown = Reflect.get(Error, "prepareStackTrace");
+    Reflect.set(Error, "prepareStackTrace", (error: Error): string => {
+      formatted.add(error);
+      return `${error.name}: ${error.message}`;
+    });
+    try {
+      replacing(absent, () => {
+        let thrown: unknown = null;
+        try {
+          response().writeInformation(102, {});
+        } catch (error: unknown) {
+          thrown = error;
+        }
+        ok(thrown instanceof TypeError);
+        ok(formatted.has(thrown));
+        deepStrictEqual(
+          thrown.message,
+          "writeInformation() is not supported by this version of Node.js (24.18.0 or later)",
+        );
+        // An HTTP/1.0 request: ignored, as it would be with the method
+        new BindenResponse(new IncomingMessage(new Socket())).writeInformation(
+          102,
+          {},
+        );
+      });
+    } finally {
+      Reflect.set(Error, "prepareStackTrace", previous);
     }
   });
 });

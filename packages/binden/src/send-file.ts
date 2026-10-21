@@ -1,6 +1,7 @@
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { type IRepresentation, kRepresentation } from "./seal.js";
 import { contentDigests, representationDigests } from "./digests.js";
+import { described, formatting } from "./formatting.js";
 import native, { type PlatformPath, join } from "node:path";
 import { BindenError } from "./error.js";
 import { BindenRequest } from "./request.js";
@@ -104,9 +105,10 @@ function parseRoot(root: unknown): string | null {
   if (typeof root === "undefined") {
     return null;
   } else if (root instanceof URL) {
-    if (root.protocol !== "file:") {
+    const { protocol } = root;
+    if (protocol !== "file:") {
       throw formatStack(
-        new TypeError(`Protocol ${root.protocol} is not supported`),
+        new TypeError(`Protocol ${described(protocol)} is not supported`),
       );
     }
     return fileURLToPath(root);
@@ -137,7 +139,11 @@ function parseOptions({
     throw formatStack(
       new TypeError("`dotfiles` is not one of allow, deny and ignore"),
     );
-  } else if (typeof validator !== "undefined" && !strongTag.test(validator)) {
+  } else if (
+    typeof validator !== "undefined" &&
+    // A string before the regular expression, which would convert it
+    (typeof validator !== "string" || !strongTag.test(validator))
+  ) {
     throw formatStack(new TypeError("`validator` is not a strong entity-tag"));
   } else if (
     typeof cache_control !== "undefined" &&
@@ -148,7 +154,7 @@ function parseOptions({
     );
   } else if (
     typeof cache_control !== "undefined" &&
-    !fieldValue.test(cache_control)
+    (typeof cache_control !== "string" || !fieldValue.test(cache_control))
   ) {
     throw formatStack(
       new TypeError("`cache_control` is not a valid field value"),
@@ -249,20 +255,17 @@ export function within(
 }
 
 /**
- * The file of `path`: as it is without `root` (a trusted path, or a `file:`
- * URL), otherwise the real path of a relative path that stays inside the real
- * path of `root` (404 outside of it, for a symbolic link that leads out, or
- * for anything but a regular file: a socket, a device or a FIFO is not opened)
+ * The file of a trusted path (without `root`): a path, or a `file:` URL,
+ * which is copied. What reading it throws (e.g. a revoked proxy, or a getter
+ * of a subclass of `URL`) is formatted (see `formatting()`).
  */
-async function locate(
-  path: URL | string,
-  { root, dotfiles }: IFileOptions,
-): Promise<ILocation> {
-  if (root === null) {
+function trusted(path: unknown): ILocation {
+  return formatting(() => {
     if (path instanceof URL) {
-      if (path.protocol !== "file:") {
+      const { protocol } = path;
+      if (protocol !== "file:") {
         throw formatStack(
-          new TypeError(`Protocol ${path.protocol} is not supported`),
+          new TypeError(`Protocol ${described(protocol)} is not supported`),
         );
       }
       return {
@@ -274,6 +277,22 @@ async function locate(
       throw formatStack(new TypeError("The path is not a string or a URL"));
     }
     return { file: path, name: path, contained: false };
+  });
+}
+
+/**
+ * The file of `path`: as it is without `root` (a trusted path, or a `file:`
+ * URL, see `trusted()`), otherwise the real path of a relative path that stays
+ * inside the real path of `root` (404 outside of it, for a symbolic link that
+ * leads out, or for anything but a regular file: a socket, a device or a FIFO
+ * is not opened)
+ */
+async function locate(
+  path: URL | string,
+  { root, dotfiles }: IFileOptions,
+): Promise<ILocation> {
+  if (root === null) {
+    return trusted(path);
   } else if (typeof path !== "string") {
     throw formatStack(
       new TypeError("With `root`, the path must be a relative string"),
@@ -564,7 +583,10 @@ export async function sendFileTo(
   // The status that the application has set (e.g. `404` for a page of an
   // error): the file is its body
   const status = response.statusCode;
-  const parsed = parseOptions(options ?? {});
+  // What reading the options throws (e.g. a revoked proxy, or a getter that
+  // throws) is formatted (see `formatting()`), as what reading the path
+  // throws (see `trusted()`)
+  const parsed = formatting(() => parseOptions(options ?? {}));
   const location = await locate(path, parsed);
   if (stopped()) {
     return;
