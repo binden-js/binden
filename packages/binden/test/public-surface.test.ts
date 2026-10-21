@@ -196,3 +196,49 @@ suite("The public surface of the packages of binden", () => {
     );
   });
 });
+
+suite(
+  "A refusal of an entry point that formats what it throws, kept by the application without its stack read, keeps neither the request nor the response",
+  () => {
+    for (const [mode, how] of [
+      ["cookieNull", "of `new Cookie(null)`"],
+      ["acceptsSymbol", "of `request.accepts(Symbol())`"],
+      ["headerNull", "of `request.header(null)`"],
+      ["errorRevoked", "of `new BindenError(500, revoked)`"],
+      ["sendFileRevoked", "of `response.sendFile(revoked)`"],
+      ["setHeaderSymbol", "of `response.setHeader(Symbol())`, by Node.js"],
+      [
+        "compressionEncoding",
+        "of the encoding of a write through @binden/compression",
+      ],
+    ] as const) {
+      test(
+        how,
+        { todo: "until the formatting of every entry point is integrated" },
+        () => {
+          const { status, stdout, stderr } = spawnSync(
+            process.execPath,
+            [
+              "--expose-gc",
+              "--no-warnings",
+              "--import",
+              "tsx",
+              join(
+                import.meta.dirname,
+                "fixtures",
+                "created-error-retention.ts",
+              ),
+              mode,
+            ],
+            { encoding: "utf8", timeout: 30_000 },
+          );
+          // 60 requests, whose errors are kept
+          deepStrictEqual(
+            { status, stdout, stderr },
+            { status: 0, stdout: "collected 60 TypeError\n", stderr: "" },
+          );
+        },
+      );
+    }
+  },
+);

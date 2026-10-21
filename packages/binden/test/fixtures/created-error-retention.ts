@@ -17,17 +17,20 @@
 // `statusNullProto`, `redirectStatusNullProto`, `typeSymbol`, `varySymbol`,
 // `varyNull`, `setNull`, `sendEncodingNullProto`, `writeEncodingNullProto`,
 // `clearSameSiteSymbol`, `clearSameSiteNull`, `clearExpiresProxy`,
-// `jsonClass` and `jsonRevoked`: see `refusals`), caught by the middleware,
-// and `throw` (the `BindenError` of `context.throw()`): the error handler
-// keeps the error.
+// `jsonClass` and `jsonRevoked`: see `refusals`), the refusals of the entry
+// points that format what they throw (`cookieNull`, `acceptsSymbol`,
+// `headerNull`, `errorRevoked`, `sendFileRevoked`, `setHeaderSymbol`, through
+// an override of Node.js, and `compressionEncoding`, of a write through
+// @binden/compression, whose built entry it uses, with the one of binden),
+// caught by the middleware, and `throw` (the `BindenError` of
+// `context.throw()`): the error handler keeps the error.
 // Prints whether the responses and the requests are collected, and the kinds
 // of the errors that the application keeps.
 import { type AddressInfo, connect } from "node:net";
-import {
-  Binden,
-  BindenRequest,
-  BindenResponse,
-  type Context,
+import type {
+  Context,
+  BindenResponse as IResponse,
+  Middleware,
 } from "../../index.js";
 import { HOST, capture } from "../helpers.js";
 import { once } from "node:events";
@@ -39,6 +42,24 @@ setTimeout(() => {
 }, 25_000).unref();
 
 const [mode = "argument"] = process.argv.slice(2);
+
+/** Whether the mode uses the built entries (of binden and of a package) */
+const built = mode === "compressionEncoding";
+/** Imports a module by a specifier that is not resolved at compile time */
+async function load(specifier: string): Promise<unknown> {
+  return (await import(specifier)) as unknown;
+}
+const { Binden, BindenError, BindenRequest, BindenResponse, Cookie } = built
+  ? ((await load("binden")) as typeof import("../../index.js"))
+  : await import("../../index.js");
+/** The middleware of @binden/compression (of `compressionEncoding`) */
+const Compression = built
+  ? (
+      (await load("@binden/compression")) as {
+        readonly Compression: new (options: object) => object;
+      }
+    ).Compression
+  : null;
 
 /** A view of a detached `ArrayBuffer` (transferred) */
 function detached(): Uint8Array {
@@ -63,6 +84,13 @@ function revoked(): () => string {
   return proxy;
 }
 
+/** An object whose proxy has been revoked: reading it throws */
+function revokedObject(): object {
+  const { proxy, revoke } = Proxy.revocable({}, {});
+  revoke();
+  return proxy;
+}
+
 /**
  * The calls of the modes whose refusal the middleware catches (thrown or
  * rejected with): of a location that is not a URL, a nested `bigint`, a view
@@ -70,37 +98,47 @@ function revoked(): () => string {
  * place of the declared ones (e.g. a `Symbol`, or an object without a
  * primitive value, which a conversion would refuse with an error of V8)
  */
-const refusals: Partial<Record<string, (response: BindenResponse) => unknown>> =
-  {
-    redirect: (response) => response.redirect("http://[bad"),
-    json: (response) => response.json({ big: 1n }),
-    detached: (response) => response.send(detached()),
-    form: (response) => response.form(null as unknown as URLSearchParams),
-    options: (response) =>
-      response.redirect("/", 302, null as unknown as { allow_external: false }),
-    stringify: (response) =>
-      response.json({}, 5 as unknown as (data: object) => string),
-    statusSymbol: (response) => response.status(given(Symbol("status"))),
-    statusNullProto: (response) => response.status(given(Object.create(null))),
-    redirectStatusNullProto: (response) =>
-      response.redirect("/", given(Object.create(null))),
-    typeSymbol: (response) => response.type(given(Symbol("type"))),
-    varySymbol: (response) => response.vary(given(Symbol("field"))),
-    varyNull: (response) => response.vary(given(null)),
-    setNull: (response) => response.set(given(null)),
-    sendEncodingNullProto: (response) =>
-      response.send("data", given(Object.create(null))),
-    writeEncodingNullProto: (response) =>
-      response.write("data", given(Object.create(null))),
-    clearSameSiteSymbol: (response) =>
-      response.clearCookie("a", { same_site: given(Symbol("same_site")) }),
-    clearSameSiteNull: (response) =>
-      response.clearCookie("a", { same_site: given(Object.create(null)) }),
-    clearExpiresProxy: (response) =>
-      response.clearCookie("a", given({ expires: new Proxy(new Date(0), {}) })),
-    jsonClass: (response) => response.json({}, given(Stringify)),
-    jsonRevoked: (response) => response.json({}, revoked()),
-  };
+const refusals: Partial<
+  Record<string, (response: IResponse, context: Context) => unknown>
+> = {
+  redirect: (response) => response.redirect("http://[bad"),
+  json: (response) => response.json({ big: 1n }),
+  detached: (response) => response.send(detached()),
+  form: (response) => response.form(null as unknown as URLSearchParams),
+  options: (response) =>
+    response.redirect("/", 302, null as unknown as { allow_external: false }),
+  stringify: (response) =>
+    response.json({}, 5 as unknown as (data: object) => string),
+  statusSymbol: (response) => response.status(given(Symbol("status"))),
+  statusNullProto: (response) => response.status(given(Object.create(null))),
+  redirectStatusNullProto: (response) =>
+    response.redirect("/", given(Object.create(null))),
+  typeSymbol: (response) => response.type(given(Symbol("type"))),
+  varySymbol: (response) => response.vary(given(Symbol("field"))),
+  varyNull: (response) => response.vary(given(null)),
+  setNull: (response) => response.set(given(null)),
+  sendEncodingNullProto: (response) =>
+    response.send("data", given(Object.create(null))),
+  writeEncodingNullProto: (response) =>
+    response.write("data", given(Object.create(null))),
+  clearSameSiteSymbol: (response) =>
+    response.clearCookie("a", { same_site: given(Symbol("same_site")) }),
+  clearSameSiteNull: (response) =>
+    response.clearCookie("a", { same_site: given(Object.create(null)) }),
+  clearExpiresProxy: (response) =>
+    response.clearCookie("a", given({ expires: new Proxy(new Date(0), {}) })),
+  jsonClass: (response) => response.json({}, given(Stringify)),
+  jsonRevoked: (response) => response.json({}, revoked()),
+  cookieNull: () => new Cookie(given(null)),
+  acceptsSymbol: (_, context) => context.request.accepts(given(Symbol("type"))),
+  headerNull: (_, context) => context.request.header(given(null)),
+  errorRevoked: () => new BindenError(500, given(revokedObject())),
+  sendFileRevoked: (response) => response.sendFile(given(revokedObject())),
+  setHeaderSymbol: (response) =>
+    response.setHeader(given(Symbol("name")), "value"),
+  compressionEncoding: (response) =>
+    response.write("data", given(Object.create(null))),
+};
 
 const requests = 60;
 const errors: unknown[] = [];
@@ -116,7 +154,11 @@ const app = new Binden({
       .status(typeof status === "number" ? status : 500)
       .send();
   },
-}).use((context: Context) => {
+});
+if (Compression !== null) {
+  app.use(new Compression({ threshold: 0 }) as Middleware);
+}
+app.use((context: Context) => {
   const root = import.meta.dirname;
   switch (mode) {
     case "argument":
@@ -140,9 +182,9 @@ const app = new Binden({
       return new Promise((resolve) => {
         // What the call throws rejects, as what it rejects with
         resolve(
-          (refusals[mode] as (response: BindenResponse) => unknown)(
-            context.response,
-          ),
+          (
+            refusals[mode] as (response: IResponse, context: Context) => unknown
+          )(context.response, context),
         );
       }).then(
         () => context.response.status(500).send(),
@@ -171,8 +213,10 @@ const request = (): Promise<void> =>
     });
     // An invalid `Host` (with a space) for `url`
     const host = mode === "url" ? "bad host" : HOST;
+    // A body that @binden/compression codes (of `compressionEncoding`)
+    const coding = built ? "Accept-Encoding: gzip\r\n" : "";
     socket.write(
-      `GET / HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`,
+      `GET / HTTP/1.1\r\nHost: ${host}\r\n${coding}Connection: close\r\n\r\n`,
     );
   });
 for (let sent = 0; sent < requests; sent += 10) {
