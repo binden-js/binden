@@ -3297,11 +3297,14 @@ async function installedBy(
   };
   const env = environment();
   const method = await holder(env)
-    .then(
-      (object) =>
-        typeof Reflect.getOwnPropertyDescriptor(object, key)?.value ===
-        "function",
-    )
+    .then((object) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(object, key);
+      if (typeof descriptor === "undefined") {
+        // A fixture that names nothing
+        throw new TypeError(`${name} is not installed`);
+      }
+      return typeof descriptor.value === "function";
+    })
     .finally(async () => {
       findings.push(
         ...(await clean(env)).map((what) => ({
