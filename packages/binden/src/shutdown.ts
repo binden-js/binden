@@ -81,7 +81,14 @@ export function register(
   registrations.set(server, registration);
   const listen = server.listen.bind(server);
   server.listen = ((...args: unknown[]): IServer => {
-    Reflect.apply(listen, server, args);
+    // What Node.js throws for its arguments (e.g. a port that is not one, or
+    // a revoked proxy) is formatted, as by every entry point of binden (see
+    // `formatting()`); its coercions (e.g. of a host or a backlog) stay
+    try {
+      Reflect.apply(listen, server, args);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
     // Bound later, e.g. once the address of a host name has been looked up
     // (a `listen()` that throws is not pending)
     registration.pending = !server.listening;

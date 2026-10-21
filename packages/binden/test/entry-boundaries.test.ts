@@ -659,6 +659,34 @@ suite("The servers of binden format what their arguments throw (R27-1)", () => {
     );
   });
 
+  test("the listen() of a server registered for shutdown() formats what Node.js throws for its arguments", async () => {
+    const server = createServer();
+    const closing = shutdown(server, { timeout: 1 });
+    deepStrictEqual(
+      [
+        outcome((): unknown => server.listen(given(Symbol("port")))),
+        // Without its message, which tells the trap that Node.js runs first
+        // (`get` or `getPrototypeOf`, by its version)
+        (
+          outcome((): unknown => server.listen(given(revoked()))) as unknown[]
+        ).filter((_, index) => index !== 1),
+        outcome((): unknown => server.listen(given(throwing()))),
+      ],
+      [
+        [
+          "TypeError",
+          "The argument 'options' is invalid. Received { port: Symbol(port) }",
+          true,
+          false,
+        ],
+        ["TypeError", true, false],
+        ownError,
+      ],
+    );
+    // Never bound: closed at once
+    await within(closing);
+  });
+
   test("the serializer of a context tells the type of a value that a revoked proxy is, without throwing", () => {
     deepStrictEqual(
       [serializers.context(revoked()), createSerializers().context(throwing())],
