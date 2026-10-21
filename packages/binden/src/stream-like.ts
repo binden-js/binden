@@ -963,12 +963,17 @@ function hooked(hooks: { current: IReadableHooks | null }): Readable {
  * and throw then, or a `prepareStackTrace` of the application that throws), and
  * so is the source then: the send takes the carrier for the value (see
  * `uncarried()`), as the send of a Node.js `Readable` rejects with it, whatever
- * it destroys its source with. A source that refuses the listener of `error` of
- * its guard keeps the one of the send (see `forwarder()`), and is destroyed
- * without the error that decides the send; one that has neither is left
- * untouched (see `releaseStreamLike()`): `unreleased()` tells it. A refusal of
- * its guard, a `pause()` that throws once it is no longer read, and a removal
- * that throws are logged by `logs` (see `IStreamLikeLogs`), not as late errors.
+ * it destroys its source with. So it is when code of the application redefines
+ * that `stack` once binden has checked it (e.g. a getter of its `name`, which
+ * V8 reads as it formats the stack, or the `destroy()` of the source): the
+ * readable is destroyed with the carrier then, and emits it, while the
+ * `destroy()` of the source is called once. A source that refuses the
+ * listener of `error` of its guard keeps the one of the send (see
+ * `forwarder()`), and is destroyed without the error that decides the send;
+ * one that has neither is left untouched (see `releaseStreamLike()`):
+ * `unreleased()` tells it. A refusal of its guard, a `pause()` that throws once
+ * it is no longer read, and a removal that throws are logged by `logs` (see
+ * `IStreamLikeLogs`), not as late errors.
  * A log that throws (also `unreleased()`, e.g. a logger of the application
  * whose own `debug()` throws) is ignored, and the release goes on (see
  * `quietly()`). Once destroyed, the readable holds none of them, nor `reason()`
@@ -1197,8 +1202,17 @@ export function readStreamLike(
             }
           });
         }
-        // With the error that decides the send, never one of its release
-        callback(error);
+        // With the error that decides the send, never one of its release.
+        // Node.js reads its `stack` again then (and would leave the readable
+        // destroyed without its `error` nor its `close` if that threw): code
+        // of the source that has run since it was read (e.g. its own
+        // `destroy()`, given that error) may have redefined it, and its
+        // carrier, for the value that it stands for, is called back then
+        callback(
+          error === null || readsSafely(error)
+            ? error
+            : carry(readable, uncarried(error, readable)),
+        );
       },
     },
   });
@@ -1206,16 +1220,28 @@ export function readStreamLike(
   links.set(readable, source);
   /**
    * Destroys the readable with an error of the source, or with what its code
-   * has thrown, by one call of its `destroy()`: with that value itself only
+   * has thrown, by the `destroy()` of Node.js: with that value itself only
    * when Node.js reads its `stack` (once before the readable is destroyed,
    * and again once `destroy` has called back) without running code of the
    * application, otherwise with its carrier (see `safely()`), which the send
    * takes for that value, so that the readable is destroyed in any case,
    * emits its `error` and its `close`, and releases the source (see
-   * `destroy`) with that same value
+   * `destroy`) with that same value. A verdict that has gone stale (code of
+   * the application that has run since, e.g. a getter of its `name` while
+   * its stack is formatted, has redefined its `stack`) makes Node.js throw
+   * as it reads it, before the readable is destroyed, and before anything of
+   * the source has run (its `destroy()` is called once, by `destroy`): it is
+   * destroyed once more then, with its carrier
    */
   const destroyWith = (error: unknown): void => {
-    readable.destroy(safely(readable, error) as Error);
+    try {
+      readable.destroy(safely(readable, error) as Error);
+    } catch {
+      // What reading its `stack` has thrown is of the value, which the
+      // carrier carries (as `readsSafely()` ignores it). Node.js destroys a
+      // readable once: a readable destroyed already would be left as it is
+      readable.destroy(carry(readable, error));
+    }
   };
   /**
    * Fails the readable with an error of the source (`closed`: by its
