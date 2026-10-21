@@ -25,4 +25,13 @@ suite("BodyParser (process safety)", () => {
       stderr: "",
     });
   });
+
+  test("what a context that only looks like one throws later is the rejection, never a crash", () => {
+    deepStrictEqual(run("late-context.ts"), {
+      status: 0,
+      stdout:
+        "200 200 | setHeader of the context | removeEventListener of the context\n",
+      stderr: "",
+    });
+  });
 });

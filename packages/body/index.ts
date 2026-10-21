@@ -109,8 +109,39 @@ type IOutcome<R> =
   | { readonly ok: true; readonly value: R }
   | { readonly ok: false; readonly error: unknown };
 
-/** The logger of the parser (`context.log`, whose calls never fail) */
+/** The logger of the parser (a child of `context.log`) */
 type ILog = Context["log"];
+
+/** What the parse of a body uses of its context, each read once (see `#start()`) */
+interface IExchange {
+  readonly request: Context["request"];
+  readonly response: Context["response"];
+  readonly signal: AbortSignal;
+}
+
+/** The body as read (see `#read()`): decoded, and as received with `verify_encoded` */
+interface IRead {
+  readonly decoded: Buffer;
+  readonly encoded: Buffer | null;
+}
+
+/** A parse that has started (see `#start()`), with what the rest of it needs */
+interface IStarted {
+  readonly request: Context["request"];
+  readonly kind: IBodyKind;
+  readonly decoder: TextDecoder | null;
+  readonly log: ILog;
+  readonly signal: AbortSignal;
+  readonly read: Promise<IRead>;
+}
+
+/**
+ * The first failure of a late call of a context, formatted: the rejection of
+ * its parse (what is thrown may be anything, an error or not)
+ */
+interface IFailure {
+  readonly error: Error;
+}
 
 /** The most content codings that a body may have */
 const MAX_CODINGS = 2;
@@ -480,13 +511,26 @@ export class BodyParser<T = unknown> extends Middleware {
   public async run(context: Context): Promise<void> {
     // What reading the context throws (e.g. of a value that is not a
     // context) is formatted (see `formatting()`): it is read before anything
-    // is awaited, and its signal is kept
+    // is awaited, each of its properties once, and what it gives is kept
     const started = formatting(() => this.#start(context));
     if (started === null) {
       return;
     }
-    const { request, kind, decoder, log, signal } = started;
-    const { decoded, encoded } = await started.read;
+    try {
+      await this.#complete(context, started);
+    } catch (error: unknown) {
+      // Also what the context gives throws once something has been awaited
+      // (e.g. its logger, its signal or the setter of `request.body`)
+      throw formatStack(error as Error);
+    }
+  }
+
+  /** Verifies and parses the body once it is read (see `run()`) */
+  async #complete(
+    context: Context,
+    { request, kind, decoder, log, signal, read }: IStarted,
+  ): Promise<void> {
+    const { decoded, encoded } = await read;
 
     if (this.#verify) {
       const verify = this.#verify;
@@ -524,7 +568,7 @@ export class BodyParser<T = unknown> extends Middleware {
       // An empty JSON body has no value (`undefined`)
       return;
     }
-    const body =
+    request.body =
       kind === "json"
         ? await this.#json(text, signal, log)
         : kind === "form"
@@ -532,9 +576,6 @@ export class BodyParser<T = unknown> extends Middleware {
           : kind === "text"
             ? text
             : decoded;
-    formatting(() => {
-      request.body = body;
-    });
   }
 
   /**
@@ -542,14 +583,7 @@ export class BodyParser<T = unknown> extends Middleware {
    * `null` when it is not parsed, otherwise the read of the body (see
    * `#read()`), and what the rest of the parse needs of the context
    */
-  #start(context: Context): {
-    readonly request: Context["request"];
-    readonly kind: IBodyKind;
-    readonly decoder: TextDecoder | null;
-    readonly log: ILog;
-    readonly signal: AbortSignal;
-    readonly read: Promise<{ decoded: Buffer; encoded: Buffer | null }>;
-  } | null {
+  #start(context: Context): IStarted | null {
     const { request, signal } = context;
     const log = context.log.child({ middleware: BodyParser.name });
     const { method = "GET", content_type } = request;
@@ -571,8 +605,14 @@ export class BodyParser<T = unknown> extends Middleware {
     }
     claimed.add(request);
 
-    const { decoders, decoder } = this.#prepare(context, kind, log);
-    const read = this.#read(context, decoders, log);
+    const exchange: IExchange = { request, response: context.response, signal };
+    const { decoders, decoder } = this.#prepare(
+      exchange,
+      content_type as ContentType,
+      kind,
+      log,
+    );
+    const read = this.#read(exchange, decoders, log);
     return { request, kind, decoder, log, signal, read };
   }
 
@@ -610,21 +650,21 @@ export class BodyParser<T = unknown> extends Middleware {
    * the reply, as the body is not read.
    */
   #prepare(
-    context: Context,
+    { request, response }: IExchange,
+    content_type: ContentType,
     kind: IBodyKind,
     log: ILog,
   ): { decoders: IDecoder[]; decoder: TextDecoder | null } {
-    const { request } = context;
     const refuse = (error: Error, message: string, extra?: object): Error => {
       log.debug(message, { ...extra });
-      if (!context.response.headersSent) {
-        context.setHeader("Connection", "close");
+      if (!response.headersSent) {
+        response.setHeader("Connection", "close");
       }
       return error;
     };
 
     // An aborted signal stops the reading (see `#read()`)
-    if (context.response.writableFinished) {
+    if (response.writableFinished) {
       // Node.js reads and discards what has not been read once the response
       // has finished: what is left of the body would be missing
       log.error(DISCARDED);
@@ -659,7 +699,7 @@ export class BodyParser<T = unknown> extends Middleware {
 
     let decoder: TextDecoder | null = null;
     if (kind !== "raw") {
-      const charset = context.request.content_type?.charset ?? "utf-8";
+      const charset = content_type.charset ?? "utf-8";
       try {
         decoder = new TextDecoder(charset, { fatal: true });
       } catch (error: unknown) {
@@ -699,14 +739,16 @@ export class BodyParser<T = unknown> extends Middleware {
    * (`encoded_limit`). A refusal (or an abort) stops the reading: the
    * request is paused (not destroyed, so that the reply is sent), every
    * decoder destroyed and the connection closed after the reply. A client
-   * that goes away is an abort, also once the response has finished.
+   * that goes away is an abort, also once the response has finished. What a
+   * later call of the request, the response, the signal or the logger
+   * throws (e.g. of a context that only looks like one) stops it the same
+   * way, and is the rejection, formatted (the first one, see `IFailure`).
    */
   #read(
-    context: Context,
+    { request, response, signal }: IExchange,
     decoders: readonly IDecoder[],
     log: ILog,
-  ): Promise<{ decoded: Buffer; encoded: Buffer | null }> {
-    const { request, response, signal } = context;
+  ): Promise<IRead> {
     const kept: Buffer[] | null =
       this.#verify_encoded && decoders.length > 0 ? [] : null;
     const wire = counter(this.#encoded_limit, kept);
@@ -734,48 +776,81 @@ export class BodyParser<T = unknown> extends Middleware {
     });
 
     return new Promise((resolve, reject) => {
-      // What Node.js throws for what the context has given (e.g. a signal
-      // that is not an `AbortSignal`) is formatted (see `formatStack()`)
-      try {
-        let settled = false;
-        const cleanups: (() => void)[] = [];
-        const settle = (): boolean => {
-          if (settled) {
-            return false;
-          }
-          settled = true;
-          for (const cleanup of cleanups) {
-            cleanup();
-          }
-          return true;
-        };
-        const fail = (error: Error, message: string): void => {
-          if (!settle()) {
-            return;
-          }
+      let settled = false;
+      let failure: IFailure | null = null;
+      const cleanups: (() => void)[] = [];
+      const record = (error: unknown): IFailure => {
+        failure ??= { error: formatStack(error as Error) };
+        return failure;
+      };
+      // A call of the context: what it throws is recorded, and the parse
+      // goes on stopping (or ending)
+      const guarded = (call: () => void): void => {
+        try {
+          call();
+        } catch (error: unknown) {
+          record(error);
+        }
+      };
+      const settle = (): boolean => {
+        if (settled) {
+          return false;
+        }
+        settled = true;
+        for (const cleanup of cleanups) {
+          guarded(cleanup);
+        }
+        return true;
+      };
+      const fail = (error: Error, message: string): void => {
+        if (!settle()) {
+          return;
+        }
+        guarded(() => {
           log.debug(message, { failure: serializers.error(error) });
-          // Paused (once nothing else reads it), not destroyed: the reply is sent
+        });
+        // Paused (once nothing else reads it), not destroyed: the reply is sent
+        guarded(() => {
           request.unpipe(wire);
-          for (const stream of [...stages, sink]) {
-            stream.destroy();
-          }
+        });
+        for (const stream of [...stages, sink]) {
+          stream.destroy();
+        }
+        guarded(() => {
           if (!response.headersSent) {
             response.setHeader("Connection", "close");
           }
-          reject(error);
-        };
+        });
+        reject(failure === null ? error : failure.error);
+      };
+      // A callback of the signal or of the streams of the context: what it
+      // throws stops the parse
+      const late = (call: () => void): void => {
+        try {
+          call();
+        } catch (error: unknown) {
+          fail(record(error).error, "A call of the context has failed");
+        }
+      };
 
+      // What Node.js throws for what the context has given (e.g. a signal
+      // that is not an `AbortSignal`) stops it too, formatted
+      try {
         const listener = addAbortListener(signal, () => {
-          fail(abortError(signal.reason), "The request has been aborted");
+          late(() => {
+            fail(abortError(signal.reason), "The request has been aborted");
+          });
+        });
+        cleanups.push(() => {
+          listener[Symbol.dispose]();
         });
         cleanups.push(
-          () => {
-            listener[Symbol.dispose]();
-          },
           finished(request, (error) => {
-            if (error) {
-              fail(abortError(error), "The request has been aborted");
-            }
+            late(() => {
+              if (error) {
+                fail(abortError(error), "The request has been aborted");
+              }
+            });
           }),
         );
         pipeline([...stages, sink], (error) => {
@@ -789,10 +864,15 @@ export class BodyParser<T = unknown> extends Middleware {
             const invalid = new BindenError(400, { cause });
             fail(invalid, "The body cannot be decoded");
           } else if (settle()) {
-            resolve({
-              decoded: Buffer.concat(chunks),
-              encoded: kept === null ? null : Buffer.concat(kept),
-            });
+            if (failure === null) {
+              resolve({
+                decoded: Buffer.concat(chunks),
+                encoded: kept === null ? null : Buffer.concat(kept),
+              });
+            } else {
+              // A cleanup of the context has failed
+              reject(failure.error);
+            }
           }
         });
         request.pipe(wire);
@@ -804,16 +884,18 @@ export class BodyParser<T = unknown> extends Middleware {
         // destroyed the request.)
         const { socket } = request;
         const closed = (): void => {
-          if (!request.complete) {
-            fail(abortError(null), "The request has been aborted");
-          }
+          late(() => {
+            if (!request.complete) {
+              fail(abortError(null), "The request has been aborted");
+            }
+          });
         };
         socket.once("close", closed);
         cleanups.push(() => {
           socket.off("close", closed);
         });
       } catch (error: unknown) {
-        reject(formatStack(error as Error));
+        fail(record(error).error, "The body cannot be read");
       }
     });
   }
@@ -882,21 +964,29 @@ export class BodyParser<T = unknown> extends Middleware {
     signal: AbortSignal,
     log: ILog,
   ): Promise<IOutcome<R>> {
-    const outcome = await new Promise<IOutcome<R> | null>((resolve) => {
+    const outcome = await new Promise<IOutcome<R> | null>((resolve, reject) => {
       // Called (in a microtask) when the signal has already been aborted
       const listener = addAbortListener(signal, () => {
         resolve(null);
       });
+      // What removing the listener throws (e.g. of a signal that only looks
+      // like one) is the rejection: the outcome is observed either way
+      const done = (settled: IOutcome<R>): void => {
+        try {
+          listener[Symbol.dispose]();
+          resolve(settled);
+        } catch (error: unknown) {
+          reject(formatStack(error as Error));
+        }
+      };
       Promise.resolve()
         .then(call)
         .then(
           (value) => {
-            listener[Symbol.dispose]();
-            resolve({ ok: true, value });
+            done({ ok: true, value });
           },
           (error: unknown) => {
-            listener[Symbol.dispose]();
-            resolve({ ok: false, error });
+            done({ ok: false, error });
           },
         );
     });
