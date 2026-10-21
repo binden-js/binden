@@ -1,5 +1,5 @@
 import { Binden, type Context } from "../index.js";
-import { deepStrictEqual, strictEqual } from "node:assert/strict";
+import { deepStrictEqual, ok, strictEqual } from "node:assert/strict";
 import { listen, send, within } from "./helpers.js";
 import { suite, test } from "node:test";
 import { join } from "node:path";
@@ -150,6 +150,67 @@ suite(
             stderr: "",
           },
           mode,
+        );
+      }
+    });
+
+    test("by a writer that gives them to binden, then ends the response inside that write: framed and queued, the send still rejects with the TypeError of binden, formatted, and the connection is closed, the pipelined response never read as the body (C27-1)", () => {
+      const { status, stdout, stderr } = spawnSync(
+        process.execPath,
+        [
+          "--no-warnings",
+          "--import",
+          "tsx",
+          join(import.meta.dirname, "fixtures", "detaching-writes.ts"),
+          "ending",
+        ],
+        { encoding: "utf8", timeout: 30_000 },
+      );
+      deepStrictEqual({ status, stderr }, { status: 0, stderr: "" });
+      const { received, ...outcome } = JSON.parse(String(stdout)) as Record<
+        string,
+        unknown
+      >;
+      deepStrictEqual(outcome, {
+        formatted: true,
+        send: refusal,
+        headersSent: true,
+        destroyed: true,
+      });
+      // The end of the writer may have flushed the head (Node.js uncorks the
+      // socket), but never a body, nor the pipelined response
+      ok(
+        typeof received === "string" &&
+          !received.includes("next") &&
+          (received === "" || received.endsWith("\r\n\r\n")),
+        String(received),
+      );
+    });
+
+    test("by the head of a writer that replaces the response inside that write, which drops them and calls the write back: no part of the response, the send resolves, and the pipelined request is answered (C27-1)", () => {
+      for (const mode of ["replaced", "replaced-chunks"]) {
+        const { status, stdout, stderr } = spawnSync(
+          process.execPath,
+          [
+            "--no-warnings",
+            "--import",
+            "tsx",
+            join(import.meta.dirname, "fixtures", "detaching-writes.ts"),
+            mode,
+          ],
+          { encoding: "utf8", timeout: 30_000 },
+        );
+        deepStrictEqual({ status, stderr }, { status: 0, stderr: "" }, mode);
+        const { send: settled, received } = JSON.parse(
+          String(stdout),
+        ) as Record<string, unknown>;
+        strictEqual(settled, "resolved", mode);
+        ok(
+          typeof received === "string" &&
+            /^HTTP\/1\.1 406 [^]*\r\nContent-Length: 0\r\n[^]*\r\n\r\nHTTP\/1\.1 200 [^]*\r\n\r\nnext$/u.test(
+              received,
+            ),
+          `${mode} ${String(received)}`,
         );
       }
     });

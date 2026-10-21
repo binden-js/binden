@@ -1,5 +1,5 @@
-import { deepStrictEqual, ok } from "node:assert";
 import { suite, test } from "node:test";
+import { deepStrictEqual } from "node:assert";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -72,30 +72,19 @@ suite("Process safety", () => {
     }
   });
 
-  test("the 406 that replaces a response inside the write of binden: with the bytes of the view (or of the chunks of a Readable of views) as they were, the send resolves, the 406 is replied, and the connection is reused; with bytes that the `filter` has detached, the send rejects and the connection is closed, although that write has ended the response (H26-1)", () => {
+  test("the 406 that replaces a response inside the write of binden drops the bytes of the view (or of the chunks of a Readable of views), whether the `filter` has detached them or not: the send resolves, the 406 is replied, and the connection is reused (C27-1)", () => {
     for (const mode of ["send", "chunks"]) {
-      deepStrictEqual(
-        run("detaching-filter.ts", mode, "406", "keep"),
-        {
-          status: 0,
-          stdout: "resolved | HTTP/1.1 406 HTTP/1.1 200 next\n",
-          stderr: "",
-        },
-        mode,
-      );
-      const { status, stdout, stderr } = run(
-        "detaching-filter.ts",
-        mode,
-        "406",
-        "detach",
-      );
-      deepStrictEqual({ status, stderr }, { status: 0, stderr: "" }, mode);
-      // The empty `406` may have been flushed as the replacement has ended
-      // the response, but nothing after it
-      ok(
-        [`${lost} | \n`, `${lost} | HTTP/1.1 406\n`].includes(String(stdout)),
-        String(stdout),
-      );
+      for (const detach of ["keep", "detach"]) {
+        deepStrictEqual(
+          run("detaching-filter.ts", mode, "406", detach),
+          {
+            status: 0,
+            stdout: "resolved | HTTP/1.1 406 HTTP/1.1 200 next\n",
+            stderr: "",
+          },
+          `${mode} ${detach}`,
+        );
+      }
     }
   });
 

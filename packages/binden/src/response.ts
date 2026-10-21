@@ -890,6 +890,11 @@ export class BindenResponse<
    * its socket, once Node.js assigns one, is destroyed (see `#cutQueued()`)
    */
   #cut = false;
+  /**
+   * The chunks that `write()` of binden has given to Node.js, which frames
+   * and queues them (see `#dropped()`)
+   */
+  #handed = 0;
 
   static {
     // The status of a sealed response is not changed by the abandoned work
@@ -2028,6 +2033,7 @@ export class BindenResponse<
       return this.#stopping(() =>
         this.#restoring(() => {
           this.#ordered(written, false);
+          this.#handed += 1;
           return super.write(...(callbacksOf(written) as [unknown]));
         }),
       );
@@ -3323,15 +3329,16 @@ export class BindenResponse<
     // (e.g. the client went away) rejects, although Node.js 24 emits `finish`
     // once the response is ended. Its length keeps it from being chunked.
     return new Promise<void>((resolve, reject) => {
+      const handed = this.#handed;
       this.write(body, (error?: Error | null) => {
         if (error) {
           reject(error);
         }
       });
-      if (bytesLost(body, length)) {
+      if (bytesLost(body, length) && !this.#dropped(handed)) {
         // Detached by code of the application inside that write (see
         // `bytesLost()`): never flushed, also once that write has ended the
-        // response (e.g. a compression that has replaced it)
+        // response, unless the bytes have been dropped (see `#dropped()`)
         this.#cutLost();
         reject(detachedView());
         return;
@@ -4265,6 +4272,7 @@ export class BindenResponse<
                   fail(BindenResponse.#mismatch(sent + size, declared), true);
                   return;
                 }
+                const handed = this.#handed;
                 const accepted = this.write(written, (error?: Error | null) => {
                   if (error) {
                     // Not delivered: the client went away, and the error of
@@ -4277,12 +4285,16 @@ export class BindenResponse<
                     flushed += size;
                   }
                 });
-                if (written !== chunk && bytesLost(written as Buffer, size)) {
+                if (
+                  written !== chunk &&
+                  bytesLost(written as Buffer, size) &&
+                  !this.#dropped(handed)
+                ) {
                   // Detached by code of the application inside that write
                   // (see `bytesLost()`): never flushed, and the send rejects,
-                  // also once that write has ended the response (e.g. a
-                  // compression that has replaced it), which `fail` would
-                  // leave as it is
+                  // also once that write has ended the response (which
+                  // `fail` would leave as it is), unless the bytes have been
+                  // dropped (see `#dropped()`)
                   this.#cutLost();
                   settle({ error: detachedView(), own: true });
                   return;
@@ -4460,13 +4472,29 @@ export class BindenResponse<
   }
 
   /**
+   * Whether the bytes of a write of a send (`handed`, the count of the chunks
+   * given to Node.js before it, see `#handed`) have been dropped, rather than
+   * framed and queued: nothing has been given to Node.js since, and the
+   * response has been ended inside that write by the writer that replaces it
+   * (e.g. the `406` of `@binden/compression`, which discards the writes of
+   * the application and calls back each of them). Bytes that are gone then
+   * (see `bytesLost()`) are not part of the response, whose head frames its
+   * own empty body: no mismatch, and the send settles as the response does.
+   * The bytes that a writer has given to binden, or to a compressor, are
+   * framed and queued, also when that write has ended the response.
+   */
+  #dropped(handed: number): boolean {
+    return this.#handed === handed && this.writableEnded;
+  }
+
+  /**
    * Closes a response whose bytes are gone once binden has written them (see
    * `bytesLost()`), with the rights of the framework, before Node.js flushes
    * what it has queued: its head declares bytes that are never written (or,
    * in chunks, they are dropped), and the client would read the next
    * response of the connection as its body. Also once the response has ended
-   * (e.g. replaced by a compression inside that write), and whichever work
-   * may mutate it: one that waits for the response before it on its
+   * (e.g. by a writer that has given them to binden, then ended it, inside
+   * that write), and whichever work may mutate it: one that waits for the response before it on its
    * connection is cut once it gets its socket (see `#cutQueued()`).
    */
   #cutLost(): void {

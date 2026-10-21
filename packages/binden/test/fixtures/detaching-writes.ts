@@ -5,11 +5,18 @@
 // given to `send()`; `cl`: the first chunk of a `Readable` of a
 // `Content-Length` of 20 bytes; `chunked`: the same without a length), or
 // (`shrink`) shrinks the resizable `ArrayBuffer` of a view given to `send()`,
-// whose bytes are then out of the bounds of binden's `Buffer`. The
+// whose bytes are then out of the bounds of binden's `Buffer`, or (`ending`)
+// a view given to `send()` whose `write()` (of a writer of the application)
+// gives the bytes to binden, then ends the response inside that write. The
 // send must reject with the `TypeError` of binden, formatted before the
 // application gets it, and the connection must be closed before its head is
 // flushed: the pipelined request is never answered (its response would be
-// read as the body), and the process does not crash. Prints the outcome.
+// read as the body), and the process does not crash. But (`replaced`, a view
+// given to `send()`, and `replaced-chunks`, a `Readable` of views) a writer
+// that replaces the response inside the write with an empty `406` (whose
+// head detaches the bytes) drops them, and calls back the write: they are no
+// part of the response, the send resolves, and the pipelined request is
+// answered. Prints the outcome.
 import { type AddressInfo, connect } from "node:net";
 import { Binden, type Context } from "../../index.js";
 import { HOST } from "../helpers.js";
@@ -61,9 +68,35 @@ const app = new Binden({ logger: silent }).use(async (context: Context) => {
   } as never);
   if (mode === "cl") {
     context.response.setHeader("Content-Length", 20);
+  } else if (mode === "ending") {
+    const { response } = context;
+    const write = response.write.bind(response) as (
+      ...args: unknown[]
+    ) => boolean;
+    response.write = (...args: unknown[]): boolean => {
+      const accepted = write(...args);
+      response.end();
+      return accepted;
+    };
+  } else if (mode.startsWith("replaced")) {
+    const { response } = context;
+    response.write = (...args: unknown[]): boolean => {
+      if (!response.writableEnded) {
+        response.statusCode = 406;
+        response.setHeader("Content-Length", 0).end();
+      }
+      const callback = args.find((arg) => typeof arg === "function");
+      if (typeof callback === "function") {
+        process.nextTick(callback, null);
+      }
+      return true;
+    };
   }
   const data =
-    mode === "send" || mode === "shrink"
+    mode === "send" ||
+    mode === "shrink" ||
+    mode === "ending" ||
+    mode === "replaced"
       ? new Uint8Array(buffer)
       : Readable.from([new Uint8Array(buffer), Buffer.from("tail")], {
           objectMode: true,
