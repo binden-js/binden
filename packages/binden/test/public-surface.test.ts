@@ -27,12 +27,6 @@ interface IReport {
 const integrating: readonly string[] = [
   // binden/src/response.ts and @binden/compression
   "binden:BindenResponse#[binden.validate_head]()",
-  // binden/src/binden.ts: the listener refuses a response of another kind
-  // by logging it and closing the connection, which no probe observes
-  "binden:Binden#callback()=>()",
-  // binden/src/request.ts: `URL` and `query` of a request without a target
-  // throw its 400 whatever its socket, once another reader has run a trap
-  "binden:new BindenRequest()",
 ];
 
 /** How many processes probe the surface in parallel, each a shard of it */

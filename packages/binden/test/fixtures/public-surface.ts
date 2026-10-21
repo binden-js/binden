@@ -441,6 +441,26 @@ const silent = {
   child: (): unknown => silent,
 };
 
+/**
+ * The valid request of the last call of the listener of `callback()`, and
+ * the messages that its application has logged at `error` since
+ */
+const listened: { request: IncomingMessage | null; errors: unknown[] } = {
+  request: null,
+  errors: [],
+};
+/** What the listener of `callback()` logs for a request of another kind */
+const otherKind =
+  "The request and the response are not those of the application (`serverOptions()`)";
+/** A logger that logs nothing, but records its messages at `error` */
+const recording = {
+  ...silent,
+  error(message: unknown): void {
+    listened.errors.push(message);
+  },
+  child: (): unknown => recording,
+};
+
 /** A destination of `pino` that keeps nothing */
 const sink = { write: noop };
 
@@ -829,6 +849,13 @@ interface IFixtureOptions {
    * states of a response too (see `states`)
    */
   readonly states?: boolean | undefined;
+  /**
+   * Whether a call has refused its arguments without throwing, as it
+   * documents (e.g. the listener of `callback()` logs a request or a
+   * response of another kind, and closes its connection): a probe whose
+   * call does examines its hostile value, and a baseline must not
+   */
+  readonly refused?: ((values: readonly unknown[]) => boolean) | undefined;
 }
 
 /** The fixture of an entry point */
@@ -1290,8 +1317,9 @@ define("binden:", {
         ...requestNested,
       ]),
     },
-    // The instance of the prototype members: one that logs nothing
-    () => [{ logger: silent }],
+    // The instance of the prototype members: one that logs nothing but the
+    // errors of its listener (see `listened`)
+    () => [{ logger: recording }],
     () => [],
     () => [bindenOptions()],
   ),
@@ -1379,14 +1407,25 @@ define("binden:", {
   "Binden#callback()": probed(
     {
       installed: { "0.listen": listen((env) => env.server()) },
-      returned: call((_, listener) => {
-        const { IncomingMessage: Request, ServerResponse: Response } =
-          applicationOf(listener).serverOptions();
-        const request = new Request(new Socket());
-        request.method = "GET";
-        request.url = "/";
-        return [request, new Response(request)];
-      }),
+      returned: probed(
+        {
+          // A request or a response of another kind (also a proxy of one of
+          // the application) is logged, and its connection closed
+          refused: (): boolean =>
+            listened.request?.socket.destroyed === true &&
+            listened.errors.includes(otherKind),
+        },
+        (_, listener) => {
+          const { IncomingMessage: Request, ServerResponse: Response } =
+            applicationOf(listener).serverOptions();
+          const request = new Request(new Socket());
+          request.method = "GET";
+          request.url = "/";
+          listened.request = request;
+          listened.errors.length = 0;
+          return [request, new Response(request)];
+        },
+      ),
     },
     (env) => [env.server()],
   ),
@@ -2681,7 +2720,8 @@ interface IFinding {
 /**
  * What a thrown (or rejected) value shows: an `Error` must be formatted (a
  * baseline must throw an `Error`), and a hostile value whose trap has
- * thrown must get the error of the test
+ * thrown in that call (or that read, the traps after the first `since`)
+ * must get the error of the test
  */
 function judged(
   how: string,
@@ -2689,6 +2729,7 @@ function judged(
   given: IHostile | null,
   unexpected: boolean,
   baseline: boolean,
+  since = 0,
 ): string[] {
   const isError = !isProxy(error) && isNativeError(error);
   const isFormatted = isError && formatted.has(error);
@@ -2702,7 +2743,7 @@ function judged(
   if (given !== null) {
     if (own && !given.thrown.includes(error)) {
       found.push(`${how} another error of the test`);
-    } else if (given.thrown.length > 0 && !own) {
+    } else if (given.thrown.length > since && !own) {
       found.push(`${how} ${describe(error)}, not the error of the test`);
     }
   }
@@ -3000,6 +3041,11 @@ async function probe(
           }
         }
       }
+      const refused =
+        outcome.kind === "returned" && (fixture.refused?.(values) ?? false);
+      if (path === null && refused) {
+        found.push("refuses its valid arguments (`refused`)");
+      }
       found.push(
         ...evaluate(
           fixture,
@@ -3018,6 +3064,9 @@ async function probe(
           readers[reader] = (target): unknown => read(target);
         }
         for (const [reader, read] of Object.entries(readers)) {
+          // A reader is judged by the traps that run as it reads (e.g. not
+          // by those of a reader before it)
+          const since = given?.thrown.length ?? 0;
           const readOutcome = await outcomeOf(() => read(receiver, result), ms);
           if (readOutcome.kind === "pending") {
             found.push(
@@ -3034,6 +3083,7 @@ async function probe(
                 given,
                 false,
                 false,
+                since,
               ),
             );
           }
@@ -3048,6 +3098,7 @@ async function probe(
         // throw something else
         examined =
           (!succeeded && failure !== expected) ||
+          refused ||
           total > 0 ||
           given.thrown.length > 0;
         if (total > 0) {
