@@ -120,6 +120,42 @@ suite(
   },
 );
 
+suite(
+  "Bytes that application code detaches inside the write of binden (H26-1)",
+  () => {
+    test("by the toString() of a cookie as the head is committed (a view given to send(), a chunk of a Readable with a Content-Length or chunked, or a view whose resizable ArrayBuffer shrinks): the send rejects with the TypeError of binden, formatted, the connection is closed before the head is flushed, and the pipelined response is never read as the body", () => {
+      for (const mode of ["send", "cl", "chunked", "shrink"]) {
+        const { status, stdout, stderr } = spawnSync(
+          process.execPath,
+          [
+            "--no-warnings",
+            "--import",
+            "tsx",
+            join(import.meta.dirname, "fixtures", "detaching-writes.ts"),
+            mode,
+          ],
+          { encoding: "utf8", timeout: 30_000 },
+        );
+        deepStrictEqual(
+          { status, stdout, stderr },
+          {
+            status: 0,
+            stdout: `${JSON.stringify({
+              formatted: true,
+              send: refusal,
+              headersSent: true,
+              destroyed: true,
+              received: "",
+            })}\n`,
+            stderr: "",
+          },
+          mode,
+        );
+      }
+    });
+  },
+);
+
 test("The refusal of send() for a view of a detached ArrayBuffer, kept by the application without its stack read, keeps neither the request nor the response", () => {
   const { status, stdout, stderr } = spawnSync(
     process.execPath,

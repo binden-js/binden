@@ -460,6 +460,28 @@ function bytesOf(view: ArrayBufferView): Buffer {
 }
 
 /**
+ * Whether bytes that binden has counted (`size`, see `bytesOf()`) are gone
+ * once their `write()` has returned, as the getters of the engine tell them:
+ * the `ArrayBuffer` of the `Buffer` of binden, which shares the memory of the
+ * view of the application, has been detached, or the `Buffer` has fewer bytes
+ * (e.g. out of the bounds of a resizable `ArrayBuffer` that has shrunk).
+ * Application code runs inside that `write()` before the bytes are queued
+ * (e.g. the `toString()` of a cookie as the head is committed, or the
+ * `filter` of `@binden/compression`), and may detach them: the head would then
+ * declare bytes that are never written (see `BindenResponse.#cutLost()`).
+ */
+function bytesLost(bytes: Buffer, size: number): boolean {
+  const [bufferOf, , byteLength] = typedArrayGetters;
+  const buffer = Reflect.apply(bufferOf, bytes, []);
+  return (
+    size > 0 &&
+    ((isArrayBuffer(buffer) &&
+      Reflect.apply(arrayBufferDetached, buffer, []) === true) ||
+      (Reflect.apply(byteLength, bytes, []) as number) < size)
+  );
+}
+
+/**
  * The JSON text of a value (`JSON.stringify()`). What it throws (e.g. the
  * `TypeError` of a nested `bigint` or of a cycle, which V8 creates while the
  * frames of the response are on the stack) is formatted (see
@@ -2997,7 +3019,9 @@ export class BindenResponse<
       return this.#end();
     }
 
-    this.#frame(body.length);
+    // Counted once: the bytes that the head declares (see `bytesLost()`)
+    const { length } = body;
+    this.#frame(length);
 
     if (this.#bodiless()) {
       // The headers of the body (as for `GET`), but not the body itself, nor
@@ -3015,6 +3039,14 @@ export class BindenResponse<
           reject(error);
         }
       });
+      if (bytesLost(body, length)) {
+        // Detached by code of the application inside that write (see
+        // `bytesLost()`): never flushed, also once that write has ended the
+        // response (e.g. a compression that has replaced it)
+        this.#cutLost();
+        reject(detachedView());
+        return;
+      }
       this.#end().then(resolve, reject);
     });
   }
@@ -3917,6 +3949,16 @@ export class BindenResponse<
                     flushed += size;
                   }
                 });
+                if (written !== chunk && bytesLost(written as Buffer, size)) {
+                  // Detached by code of the application inside that write
+                  // (see `bytesLost()`): never flushed, and the send rejects,
+                  // also once that write has ended the response (e.g. a
+                  // compression that has replaced it), which `fail` would
+                  // leave as it is
+                  this.#cutLost();
+                  settle({ error: detachedView(), own: true });
+                  return;
+                }
                 // Once written: a first write that throws (e.g. for a reason
                 // phrase that Node.js refuses) has sent nothing
                 sent += size;
@@ -4087,6 +4129,21 @@ export class BindenResponse<
     if (this.#allows()) {
       this[kFramework](() => this.destroy());
     }
+  }
+
+  /**
+   * Closes a response whose bytes are gone once binden has written them (see
+   * `bytesLost()`), with the rights of the framework, before Node.js flushes
+   * what it has queued: its head declares bytes that are never written (or,
+   * in chunks, they are dropped), and the client would read the next
+   * response of the connection as its body. Also once the response has ended
+   * (e.g. replaced by a compression inside that write), and whichever work
+   * may mutate it: one that waits for the response before it on its
+   * connection is cut once it gets its socket (see `#cutQueued()`).
+   */
+  #cutLost(): void {
+    this.#cut = true;
+    this[kFramework](() => this.destroy());
   }
 
   /**

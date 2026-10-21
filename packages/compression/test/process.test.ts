@@ -1,5 +1,5 @@
+import { deepStrictEqual, ok } from "node:assert";
 import { suite, test } from "node:test";
-import { deepStrictEqual } from "node:assert";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -8,14 +8,22 @@ import { spawnSync } from "node:child_process";
  * unhandled rejection) is its exit code and output, not a failure of the
  * test runner
  */
-function run(fixture: string): Record<string, unknown> {
+function run(fixture: string, ...args: string[]): Record<string, unknown> {
   const { status, stdout, stderr } = spawnSync(
     process.execPath,
-    ["--import", "tsx", join(import.meta.dirname, "fixtures", fixture)],
+    [
+      "--import",
+      "tsx",
+      join(import.meta.dirname, "fixtures", fixture),
+      ...args,
+    ],
     { encoding: "utf8", timeout: 30_000 },
   );
   return { status, stdout, stderr };
 }
+
+/** The refusal of a view whose bytes are gone, formatted before the application gets it */
+const lost = "The data is a view of a detached ArrayBuffer (formatted)";
 
 suite("Process safety", () => {
   test("a `filter` that returns a rejected promise does not crash the process", () => {
@@ -41,6 +49,54 @@ suite("Process safety", () => {
       ].join("\n"),
       stderr: "",
     });
+  });
+
+  test("a `filter` that detaches the bytes of a view given to send(), or of a chunk of a Readable, inside the write of binden: the send rejects with the TypeError of binden, formatted, and the connection is closed before the head is flushed, compressed or not (H26-1)", () => {
+    for (const mode of ["send", "chunks"]) {
+      for (const threshold of ["0", "100000"]) {
+        deepStrictEqual(
+          run("detaching-filter.ts", mode, threshold, "detach"),
+          { status: 0, stdout: `${lost} | \n`, stderr: "" },
+          `${mode} ${threshold}`,
+        );
+        deepStrictEqual(
+          run("detaching-filter.ts", mode, threshold, "keep"),
+          {
+            status: 0,
+            stdout: "resolved | HTTP/1.1 200 HTTP/1.1 200 next\n",
+            stderr: "",
+          },
+          `${mode} ${threshold}`,
+        );
+      }
+    }
+  });
+
+  test("the 406 that replaces a response inside the write of binden: with the bytes of the view (or of the chunks of a Readable of views) as they were, the send resolves, the 406 is replied, and the connection is reused; with bytes that the `filter` has detached, the send rejects and the connection is closed, although that write has ended the response (H26-1)", () => {
+    for (const mode of ["send", "chunks"]) {
+      deepStrictEqual(
+        run("detaching-filter.ts", mode, "406", "keep"),
+        {
+          status: 0,
+          stdout: "resolved | HTTP/1.1 406 HTTP/1.1 200 next\n",
+          stderr: "",
+        },
+        mode,
+      );
+      const { status, stdout, stderr } = run(
+        "detaching-filter.ts",
+        mode,
+        "406",
+        "detach",
+      );
+      deepStrictEqual({ status, stderr }, { status: 0, stderr: "" }, mode);
+      // The empty `406` may have been flushed as the replacement has ended
+      // the response, but nothing after it
+      ok(
+        [`${lost} | \n`, `${lost} | HTTP/1.1 406\n`].includes(String(stdout)),
+        String(stdout),
+      );
+    }
   });
 
   test("a head that Node.js refuses under a decision does not crash the process", () => {
