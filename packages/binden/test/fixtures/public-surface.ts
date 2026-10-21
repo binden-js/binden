@@ -80,6 +80,12 @@ for (const name of packages) {
 }
 const binden = entries.get("binden") as IObject;
 const pino = (await load("pino")).default as IFunction;
+const BindenRequest = binden.BindenRequest as new (
+  socket: Socket,
+) => IncomingMessage;
+const BindenResponse = binden.BindenResponse as new (
+  request: IncomingMessage,
+) => object;
 
 /** The error that the traps of the hostile proxy throw */
 class OwnError extends Error {}
@@ -322,6 +328,11 @@ interface IFixtureOptions {
    * (see `headerInit` and `nodeCoercion`)
    */
   readonly converts?: Readonly<Record<string, string>> | undefined;
+  /**
+   * The fixture of the function that its first valid call returns (e.g. the
+   * listener of `callback()`): probed as an entry point of its own
+   */
+  readonly returned?: IFixture | undefined;
   /**
    * Whether its baselines throw by design (e.g. `context.throw()`), or the
    * indexes of those that do: a formatted error
@@ -619,6 +630,8 @@ define("binden:", {
     () => [{ guarded: true }],
   ),
   "Router#guarded =": call(() => [true]),
+  // A function of the middlewares of a method
+  "Router#middlewares": probed({ returned: call(() => ["GET"]) }, () => []),
   "Router#on()": call(() => ["GET", middleware, middleware]),
   "Router#off()": call(() => ["GET", middleware]),
   "new Binden()": probed(
@@ -631,13 +644,26 @@ define("binden:", {
         ...requestNested,
       ]),
     },
+    // The instance of the prototype members: one that logs nothing
+    () => [{ logger: silent }],
     () => [],
     () => [bindenOptions()],
   ),
   "Binden#createServer()": call(() => [{}]),
   "Binden#createSecureServer()": call(() => [{}]),
   "Binden#serverOptions()": call(() => []),
-  "Binden#callback()": call((env) => [env.server()]),
+  // Its listener of the requests of the server
+  "Binden#callback()": probed(
+    {
+      returned: call(() => {
+        const request = new BindenRequest(new Socket());
+        request.method = "GET";
+        request.url = "/";
+        return [request, new BindenResponse(request)];
+      }),
+    },
+    (env) => [env.server()],
+  ),
 });
 for (const verb of [
   "delete",
@@ -1007,11 +1033,11 @@ define("binden:BindenResponse#", {
     new Error("An error"),
     new EventEmitter(),
   ]),
-  "[binden.listen]()": probed({ deep: [[2, "once"]] }, () => [
-    "close",
-    noop,
-    { once: true },
-  ]),
+  // Returns what removes the observer
+  "[binden.listen]()": probed(
+    { deep: [[2, "once"]], returned: call(() => []) },
+    () => ["close", noop, { once: true }],
+  ),
   "[binden.unlisten]()": call(() => ["close", noop]),
   "[binden.cancel]()": call(() => [new Error("A reason")]),
   "[binden.cancelling]()": call(() => [new Error("A reason")]),
@@ -1330,7 +1356,7 @@ type IOutcome =
   | { readonly kind: "pending" }
   | { readonly kind: "rejected"; readonly error: unknown }
   | { readonly kind: "resolved" }
-  | { readonly kind: "returned" }
+  | { readonly kind: "returned"; readonly value: unknown }
   | IThrown;
 /** A call that has thrown */
 interface IThrown {
@@ -1369,7 +1395,7 @@ async function invoke(
   }
   const { result } = started;
   if (!isPromise(result)) {
-    return { kind: "returned" };
+    return { kind: "returned", value: result };
   }
   const promise = result;
   const { promise: expired, resolve } = Promise.withResolvers<IOutcome>();
@@ -1509,6 +1535,15 @@ function evaluate(
       if (path === null && throwing) {
         return ["does not throw"];
       }
+      if (
+        path === null &&
+        outcome.kind === "returned" &&
+        typeof outcome.value === "function" &&
+        !isClass(outcome.value) &&
+        typeof fixture.returned === "undefined"
+      ) {
+        return ["returns a function that has no fixture (`returned`)"];
+      }
       return converted ? [conversions] : [];
     case "thrown":
     case "rejected":
@@ -1613,47 +1648,85 @@ for (const id of Object.keys(receivers)) {
     findings.push({ entry: id, probe: "-", what: "names no class" });
   }
 }
-for (const entry of all.filter(({ id }) => only.test(id))) {
-  const fixture = Object.hasOwn(fixtures, entry.id)
-    ? fixtures[entry.id]
-    : entry.kind === "get"
-      ? call(() => [])
-      : null;
-  if (fixture === null) {
-    findings.push({ entry: entry.id, probe: "-", what: "no baseline" });
-  } else {
-    /** The positions probed, as the keys of `converts` name them */
-    const covered = new Set<string>();
-    for (const [index, made] of fixture.calls.entries()) {
-      probes += 1;
-      const failures = await probe(entry, fixture, index, null, null);
-      findings.push(...failures);
-      if (failures.length === 0 && entry.kind !== "get") {
-        const env = environment();
-        const receiver =
-          entry.receiver === null ? null : await entry.receiver(env);
-        const baseline = await made(env, receiver);
-        await clean(env);
-        for (const path of positions(fixture, baseline)) {
-          covered.add(path.join("."));
-          for (const name of hostileNames) {
-            probes += 1;
-            findings.push(
-              ...(await probe(entry, fixture, index, path, hostile(name))),
-            );
-          }
+/**
+ * The function that the first valid call of an entry point returns, as an
+ * entry point of its own (see `returned`): called by a function of the test
+ * on the function that a fresh call has returned
+ */
+function returnedBy(entry: IEntry, fixture: IFixture): IEntry {
+  const [made] = fixture.calls;
+  return {
+    id: `${entry.id}=>()`,
+    kind: "method",
+    fn(this: unknown, ...values: unknown[]): unknown {
+      return Reflect.apply(this as IFunction, null, values);
+    },
+    async receiver(env: IEnv): Promise<unknown> {
+      const receiver =
+        entry.receiver === null ? null : await entry.receiver(env);
+      const values = await made(env, receiver);
+      return entry.kind === "construct"
+        ? Reflect.construct(entry.fn, values)
+        : Reflect.apply(entry.fn, receiver, values);
+    },
+  };
+}
+
+/**
+ * Probes an entry point with its fixture, and the function that it returns
+ * (see `returned`)
+ */
+async function run(entry: IEntry, fixture: IFixture): Promise<void> {
+  /** The positions probed, as the keys of `converts` name them */
+  const covered = new Set<string>();
+  for (const [index, made] of fixture.calls.entries()) {
+    probes += 1;
+    const failures = await probe(entry, fixture, index, null, null);
+    findings.push(...failures);
+    if (failures.length === 0 && entry.kind !== "get") {
+      const env = environment();
+      const receiver =
+        entry.receiver === null ? null : await entry.receiver(env);
+      const baseline = await made(env, receiver);
+      await clean(env);
+      for (const path of positions(fixture, baseline)) {
+        covered.add(path.join("."));
+        for (const name of hostileNames) {
+          probes += 1;
+          findings.push(
+            ...(await probe(entry, fixture, index, path, hostile(name))),
+          );
         }
       }
     }
-    for (const position of Object.keys(fixture.converts ?? {})) {
-      if (!covered.has(position)) {
-        findings.push({
-          entry: entry.id,
-          probe: position,
-          what: "a documented conversion of a position not probed",
-        });
-      }
+  }
+  for (const position of Object.keys(fixture.converts ?? {})) {
+    if (!covered.has(position)) {
+      findings.push({
+        entry: entry.id,
+        probe: position,
+        what: "a documented conversion of a position not probed",
+      });
     }
+  }
+  if (typeof fixture.returned !== "undefined") {
+    const returned = returnedBy(entry, fixture);
+    ids.add(returned.id);
+    await run(returned, fixture.returned);
+  }
+}
+
+for (const entry of all.filter(({ id }) => only.test(id))) {
+  if (Object.hasOwn(fixtures, entry.id)) {
+    await run(entry, fixtures[entry.id]);
+  } else if (entry.kind === "get") {
+    // A getter takes no argument: it is read on a fresh receiver
+    await run(
+      entry,
+      call(() => []),
+    );
+  } else {
+    findings.push({ entry: entry.id, probe: "-", what: "no baseline" });
   }
 }
 
