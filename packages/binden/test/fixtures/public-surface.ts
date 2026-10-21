@@ -23,7 +23,10 @@
 // allowance that permits more than happens is a finding too.
 // Prints a JSON report: `{ entries, probes, findings }`, each finding as
 // `<entry> | <probe>: <what>` with `--lines` (one per line), and
-// `--only=<text>` probes only the entries whose id contains it.
+// `--only=<text>` probes only the entries whose id contains it, and
+// `--shard=<index>/<count>` one of `count` shards of them (every `count`-th
+// one, from the `index`-th, counted from 0), which processes of their own
+// probe in parallel: the first shard also checks the fixtures themselves.
 import { type AddressInfo, Server as NetServer, Socket } from "node:net";
 import { EventEmitter, once } from "node:events";
 import {
@@ -74,6 +77,12 @@ const args = process.argv.slice(2);
 // A plain substring, not a regular expression built from an argument
 const only =
   args.find((arg) => arg.startsWith("--only="))?.slice("--only=".length) ?? "";
+const [shard = 0, shards = 1] = (
+  args.find((arg) => arg.startsWith("--shard="))?.slice("--shard=".length) ??
+  "0/1"
+)
+  .split("/")
+  .map(Number);
 
 /** A function of the public surface */
 type IFunction = (...values: unknown[]) => unknown;
@@ -403,6 +412,23 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
     }
   }
 }
+
+/**
+ * The hostile values of the probes of a receiver in another state than the
+ * default one (see `states`): one of each kind (a refusal of its type, a
+ * proxy that V8 refuses, an error of the application, a conversion, an
+ * absent value and a later use), so that a path that the state takes is
+ * probed, at a fraction of the cost of every value (every baseline is probed
+ * in every state)
+ */
+const stateHostiles: ReadonlySet<IHostileName> = new Set([
+  "symbol",
+  "undefined",
+  "revoked",
+  "throwing",
+  "counting",
+  "late-use",
+]);
 
 /** A logger that logs nothing (and so formats no error) */
 const silent = {
@@ -3217,19 +3243,21 @@ const [all, classes] = surface();
 const findings: IFinding[] = [];
 let probes = 0;
 const ids = new Set(all.map(({ id }) => id));
+/** The checks of the fixtures themselves, which the first shard makes */
+const checked: IFinding[] = [];
 for (const id of Object.keys(fixtures)) {
   if (!ids.has(id)) {
-    findings.push({ entry: id, probe: "-", what: "names nothing" });
+    checked.push({ entry: id, probe: "-", what: "names nothing" });
   }
 }
 for (const id of Object.keys(receivers)) {
   if (!classes.has(id)) {
-    findings.push({ entry: id, probe: "-", what: "names no class" });
+    checked.push({ entry: id, probe: "-", what: "names no class" });
   }
 }
 for (const id of exportedInstances) {
   if (!Object.hasOwn(instances, id)) {
-    findings.push({
+    checked.push({
       entry: id,
       probe: "-",
       what: "an instance of an exported class that is not probed, without a reason (`instances`)",
@@ -3238,8 +3266,11 @@ for (const id of exportedInstances) {
 }
 for (const id of Object.keys(instances)) {
   if (!exportedInstances.has(id)) {
-    findings.push({ entry: id, probe: "-", what: "names no instance" });
+    checked.push({ entry: id, probe: "-", what: "names no instance" });
   }
+}
+if (shard === 0) {
+  findings.push(...checked);
 }
 
 /**
@@ -3424,7 +3455,8 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
           for (const name of hostileNames.filter(
             (hostileName) =>
               (hostileName !== "late" || path.length > 1) &&
-              (hostileName !== "late-use" || isObject(value)),
+              (hostileName !== "late-use" || isObject(value)) &&
+              (isDefault || stateHostiles.has(hostileName)),
           )) {
             probes += 1;
             const outcomeOfHostile = await probe(
@@ -3576,7 +3608,9 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
   }
 }
 
-for (const entry of all.filter(({ id }) => id.includes(only))) {
+for (const entry of all
+  .filter(({ id }) => id.includes(only))
+  .filter((_, index) => index % shards === shard)) {
   if (Object.hasOwn(fixtures, entry.id)) {
     await run(entry, fixtures[entry.id]);
   } else if (entry.kind === "get") {

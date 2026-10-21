@@ -1,7 +1,8 @@
-import { deepStrictEqual, ok, strictEqual } from "node:assert/strict";
+import { deepStrictEqual, ok } from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
 import { suite, test } from "node:test";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { once } from "node:events";
 
 /** A finding of `fixtures/public-surface.ts` */
 interface IFinding {
@@ -34,33 +35,63 @@ const integrating: readonly string[] = [
   "binden:new BindenRequest()",
 ];
 
+/** How many processes probe the surface in parallel, each a shard of it */
+const shards = 4;
+
 /**
- * Runs the fixture of the public surface in a process of its own (it sets
- * `Error.prepareStackTrace` and listens for the late failures of the process),
- * bounded: it stops itself after 100 s
+ * Runs a shard of the fixture of the public surface in a process of its own
+ * (it sets `Error.prepareStackTrace` and listens for the late failures of the
+ * process), bounded: it stops itself after 100 s, and is killed after 110 s
  */
-function surveyed(): IReport {
-  const { status, stdout, stderr } = spawnSync(
+async function survey(shard: number): Promise<IReport> {
+  const child = spawn(
     process.execPath,
     [
       "--no-warnings",
       "--import",
       "tsx",
       join(import.meta.dirname, "fixtures", "public-surface.ts"),
+      `--shard=${String(shard)}/${String(shards)}`,
     ],
-    { encoding: "utf8", timeout: 110_000 },
+    { stdio: ["ignore", "pipe", "pipe"], timeout: 110_000 },
   );
-  strictEqual(stderr, "");
-  strictEqual(status, 0);
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  const [status, signal] = (await once(child, "close")) as [
+    number | null,
+    NodeJS.Signals | null,
+  ];
+  deepStrictEqual(
+    { shard, status, signal, stderr },
+    { shard, status: 0, signal: null, stderr: "" },
+  );
   return JSON.parse(stdout) as IReport;
+}
+
+/** The reports of every shard, together */
+async function surveyed(): Promise<IReport> {
+  const reports = await Promise.all(
+    Array.from({ length: shards }, (_, shard) => survey(shard)),
+  );
+  return {
+    entries: [...new Set(reports.flatMap(({ entries }) => entries))],
+    probes: reports.reduce((sum, { probes }) => sum + probes, 0),
+    findings: reports.flatMap(({ findings }) => findings),
+  };
 }
 
 suite("The public surface of the packages of binden", () => {
   test(
     "every entry point (each export, constructor, static and prototype member of every package, also by a symbol, and what they return or install) has a validated baseline, and formats what it throws or rejects with for a hostile value in any argument position (also once a response is sent, ended or destroyed, and in what reads what it stores), passes an error of the application on as itself, reads each option once, examines each position, and refuses without a conversion that is not documented, made as often as documented",
     { timeout: 120_000 },
-    () => {
-      const { entries, probes, findings } = surveyed();
+    async () => {
+      const { entries, probes, findings } = await surveyed();
       // Not vacuous: every package has entry points, each one probed
       for (const name of [
         "binden",
