@@ -1932,7 +1932,7 @@ define("binden:BindenResponse#", {
   "[binden.validate_head]()": probed(
     {
       deep: [[2, "x-a"]],
-      converts: { 0: nodeCheck, "2.x-a": nodeCheck },
+      converts: { 0: nodeCheck },
       node: plainly("writeHead"),
       untouched: { 1: reasonUntouched },
     },
