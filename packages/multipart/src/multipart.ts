@@ -4,6 +4,7 @@ import {
   type Context,
   Middleware,
   formatStack,
+  formatting,
 } from "binden";
 import {
   DiskStore,
@@ -542,9 +543,13 @@ class Parser {
 export class Multipart extends Middleware {
   readonly #options: IParserOptions;
 
-  /** Checks the options: a `TypeError` or a `RangeError` for an invalid one */
+  /**
+   * Checks the options: a `TypeError` or a `RangeError` for an invalid one.
+   * What reading them throws (e.g. a revoked proxy, or a getter that throws)
+   * is formatted (see `formatting()`).
+   */
   public constructor(options: IMultipartOptions = {}) {
-    const { middleware, parser } = validateOptions(options);
+    const { middleware, parser } = formatting(() => validateOptions(options));
     super(middleware);
     this.#options = parser;
   }
@@ -555,6 +560,20 @@ export class Multipart extends Middleware {
    * `400` (`aborted`), a deadline or a shutdown the reason of the signal
    */
   public async run(context: Context): Promise<void> {
+    // What reading the context throws (e.g. of a value that is not a
+    // context) is formatted (see `formatting()`): it is read before anything
+    // is awaited
+    const parsing = formatting(() => this.#start(context));
+    if (parsing !== null) {
+      await parsing;
+    }
+  }
+
+  /**
+   * Starts the parse of the body of the request of a context (see `run()`):
+   * `null` when it is not parsed
+   */
+  #start(context: Context): Promise<null> | null {
     const { request } = context;
     const log = context.log.child({ middleware: Multipart.name });
     const { method = "GET", headers } = request;
@@ -562,15 +581,15 @@ export class Multipart extends Middleware {
 
     if (methods.has(method)) {
       log.debug("The method has no body to parse", { method });
-      return;
+      return null;
     } else if (type !== "multipart/form-data") {
       log.debug("The body is not `multipart/form-data`", { type });
-      return;
+      return null;
     }
     const info = startParse(request);
     if (info === null) {
       log.debug("The body has already been parsed");
-      return;
+      return null;
     } else if (context.response.writableFinished) {
       // Node.js reads and discards what has not been read once the response
       // has finished: what is left of the body would be missing
@@ -578,6 +597,6 @@ export class Multipart extends Middleware {
       log.error(message);
       throw new BindenError(500, { message });
     }
-    await new Parser(context, log, info, this.#options).run();
+    return new Parser(context, log, info, this.#options).run();
   }
 }

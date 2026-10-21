@@ -1,4 +1,4 @@
-import type { Context } from "binden";
+import { type Context, formatting } from "binden";
 
 /** A limit of busboy on the count of the parts */
 export type ILimitName = "fields" | "files" | "parts";
@@ -41,7 +41,8 @@ export function startParse(request: object): IParseInfo | null {
  * (e.g. another media type)
  */
 export function multipartInfo(context: Context): IMultipartInfo | null {
-  const info = infos.get(context.request);
+  // What reading the context throws is formatted (see `formatting()`)
+  const info = formatting(() => infos.get(context.request));
   if (typeof info === "undefined") {
     return null;
   }

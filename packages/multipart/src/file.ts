@@ -1,3 +1,5 @@
+import { formatStack } from "binden";
+
 /** The options of a `MultipartFile`: those of a `File`, and whether it is truncated */
 export interface IMultipartFileOptions extends NonNullable<
   ConstructorParameters<typeof File>[2]
@@ -7,24 +9,42 @@ export interface IMultipartFileOptions extends NonNullable<
 }
 
 /**
+ * Whether the content of each `MultipartFile` has been truncated: a class
+ * with private fields cannot call the constructor of `File` inside a `try`
+ * (see `MultipartFile`)
+ */
+const truncations = new WeakMap<object, unknown>();
+
+/**
  * A file of the memory storage: a `File` that tells whether its content has
  * been truncated (`fileSize`, with `throw_limits: false`)
  */
 export class MultipartFile extends File {
-  readonly #truncated: boolean;
-
-  /** A file of the content, the name and the options of a `File`, and `truncated` */
+  /**
+   * A file of the content, the name and the options of a `File`, and
+   * `truncated`: what reading them throws, and the errors of the constructor
+   * of `File` (e.g. for content that is not a sequence), are formatted (see
+   * `formatStack()`)
+   */
   public constructor(
     bits: ConstructorParameters<typeof File>[0],
     name: string,
-    { truncated = false, ...options }: IMultipartFileOptions = {},
+    init: IMultipartFileOptions = {},
   ) {
-    super(bits, name, options);
-    this.#truncated = truncated;
+    // Read before the constructor of `File`, which may throw
+    const read: { truncated?: unknown } = {};
+    try {
+      const { truncated = false, ...options } = init;
+      read.truncated = truncated;
+      super(bits, name, options);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
+    truncations.set(this, read.truncated);
   }
 
   /** Whether the content has been truncated to `fileSize` */
   public get truncated(): boolean {
-    return this.#truncated;
+    return truncations.get(this) as boolean;
   }
 }
