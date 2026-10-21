@@ -321,8 +321,11 @@ interface IFixtureOptions {
    * (see `headerInit` and `nodeCoercion`)
    */
   readonly converts?: Readonly<Record<string, string>> | undefined;
-  /** Whether a baseline throws by design (e.g. `context.throw()`) */
-  readonly throws?: boolean | undefined;
+  /**
+   * Whether its baselines throw by design (e.g. `context.throw()`), or the
+   * indexes of those that do: a formatted error
+   */
+  readonly throws?: boolean | readonly number[] | undefined;
 }
 
 /** The fixture of an entry point */
@@ -365,6 +368,24 @@ const receivers: Record<string, (env: IEnv) => unknown> = {
 function define(prefix: string, defined: Record<string, IFixture>): void {
   for (const [key, fixture] of Object.entries(defined)) {
     fixtures[`${prefix}${key}`] = fixture;
+  }
+}
+
+/**
+ * Whether Node.js refuses a call of a method of a plain response of its own
+ * (e.g. a method or an overload that its version lacks), which the override
+ * of binden throws then too
+ */
+function refuses(method: string, values: readonly unknown[]): boolean {
+  try {
+    Reflect.apply(
+      Reflect.get(ServerResponse.prototype, method) as IFunction,
+      new ServerResponse(new IncomingMessage(new Socket())),
+      values,
+    );
+    return false;
+  } catch {
+    return true;
   }
 }
 
@@ -770,16 +791,23 @@ define("binden:BindenResponse#", {
   "writeContinue()": call(() => [noop]),
   "writeProcessing()": call(() => [noop]),
   "writeEarlyHints()": call(() => [{ link: "</a>; rel=preload" }, noop]),
-  // Node.js has it from 24.18.0 (binden throws without it); its overload
-  // without headers (`writeInformation(102, callback)`) is refused by Node.js
-  // 26.11.1 itself, whose headers must be an object
+  // As Node.js does (from 24.18.0): it throws without it, and refuses the
+  // overload without headers (e.g. 26.11.1, whose headers must be an object)
   "writeInformation()": probed(
     {
-      throws:
-        typeof Reflect.get(ServerResponse.prototype, "writeInformation") !==
-        "function",
+      throws: [
+        [103, { link: "</a>; rel=preload" }, noop],
+        [102, noop],
+      ]
+        .map((values, index) => ({
+          index,
+          refused: refuses("writeInformation", values),
+        }))
+        .filter(({ refused }) => refused)
+        .map(({ index }) => index),
     },
     () => [103, { link: "</a>; rel=preload" }, noop],
+    () => [102, noop],
   ),
   "flush()": call(() => []),
   "statusCode =": call(() => [201]),
@@ -1231,6 +1259,7 @@ interface IFinding {
 /** Evaluates what a probe has done (see `probe()`) */
 function evaluate(
   fixture: IFixture,
+  throwing: boolean,
   path: readonly (number | string)[] | null,
   given: IHostile | null,
   outcome: IOutcome,
@@ -1246,7 +1275,7 @@ function evaluate(
       return [`still pending after ${String(pendingMs)} ms`];
     case "returned":
     case "resolved":
-      if (path === null && fixture.throws === true) {
+      if (path === null && throwing) {
         return ["does not throw"];
       }
       return converted ? [conversions] : [];
@@ -1258,11 +1287,9 @@ function evaluate(
       const isError = !isProxy(error) && isNativeError(error);
       const isFormatted = isError && formatted.has(error);
       const found: string[] = [];
-      if (path === null) {
-        if (fixture.throws !== true || !isFormatted) {
-          found.push(`${how} ${describe(error)}`);
-        }
-      } else if (isError && !isFormatted) {
+      if (path === null && !throwing) {
+        found.push(`${how} ${describe(error)}`);
+      } else if (!isFormatted && (isError || path === null)) {
         found.push(`${how} UNFORMATTED ${describe(error)}`);
       }
       if (given !== null) {
@@ -1285,7 +1312,7 @@ function evaluate(
 async function probe(
   entry: IEntry,
   fixture: IFixture,
-  made: ICall,
+  index: number,
   path: readonly (number | string)[] | null,
   given: IHostile | null,
 ): Promise<IFinding[]> {
@@ -1293,6 +1320,10 @@ async function probe(
   const at =
     path === null ? "baseline" : `${path.join(".")} ${given?.name ?? ""}`;
   const found: string[] = [];
+  const made = fixture.calls[index];
+  const { throws = false } = fixture;
+  const throwing =
+    typeof throws === "boolean" ? throws : throws.includes(index);
   try {
     const receiver = entry.receiver === null ? null : await entry.receiver(env);
     const baseline = entry.kind === "get" ? [] : await made(env, receiver);
@@ -1304,6 +1335,7 @@ async function probe(
       found.push(
         ...evaluate(
           fixture,
+          throwing,
           path,
           given,
           await invoke(entry, receiver, values),
@@ -1357,9 +1389,9 @@ for (const entry of all.filter(({ id }) => only.test(id))) {
   } else {
     /** The positions probed, as the keys of `converts` name them */
     const covered = new Set<string>();
-    for (const made of fixture.calls) {
+    for (const [index, made] of fixture.calls.entries()) {
       probes += 1;
-      const failures = await probe(entry, fixture, made, null, null);
+      const failures = await probe(entry, fixture, index, null, null);
       findings.push(...failures);
       if (failures.length === 0 && entry.kind !== "get") {
         const env = environment();
@@ -1372,7 +1404,7 @@ for (const entry of all.filter(({ id }) => only.test(id))) {
           for (const name of hostileNames) {
             probes += 1;
             findings.push(
-              ...(await probe(entry, fixture, made, path, hostile(name))),
+              ...(await probe(entry, fixture, index, path, hostile(name))),
             );
           }
         }
