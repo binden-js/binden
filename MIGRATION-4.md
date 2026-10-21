@@ -375,7 +375,8 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   override of a subclass). Anything else now rejects with a `TypeError` ("The parameters are not
   URLSearchParams"); send a string with `text()` or `send()` and the `Content-Type` that it needs.
 - The `q_value` of an `AcceptEncoding` must be a number or `null`: binden 2.0.4 kept any value (e.g.
-  `"0.5"`) and serialized it as it was. Anything else now throws a `TypeError` ("`q_value` is not a
+  `"0.5"`) as its `q_value`, but serialized only a number (`toString()` dropped the weight of any
+  other value, e.g. `gzip` for `"0.5"`). Anything else now throws a `TypeError` ("`q_value` is not a
   number").
 - `response.type()` throws a `TypeError` for a parameter that is not a token with a token or a
   quoted string as value (e.g. `text/plain; charset`), which it used to drop.
