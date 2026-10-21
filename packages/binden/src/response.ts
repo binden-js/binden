@@ -85,7 +85,12 @@ import {
   validateHeaderValue,
 } from "node:http";
 import { contentDigests, representationDigests } from "./digests.js";
-import { isProxy, isUint8Array } from "node:util/types";
+import {
+  isArrayBuffer,
+  isDataView,
+  isProxy,
+  isUint8Array,
+} from "node:util/types";
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
@@ -347,6 +352,55 @@ const readableDestroyed = Reflect.get(
   Object(Reflect.getOwnPropertyDescriptor(Readable.prototype, "destroyed")),
   "get",
 ) as (this: Readable) => boolean;
+
+/** The getter of a property of an object of the engine (e.g. of a prototype) */
+function getterOf(target: object, key: string): () => unknown {
+  return Reflect.get(
+    Object(Reflect.getOwnPropertyDescriptor(target, key)),
+    "get",
+  ) as () => unknown;
+}
+
+/** The getter of `buffer` of the typed arrays (e.g. of a `Uint8Array`) */
+const typedArrayBuffer = getterOf(
+  Reflect.getPrototypeOf(Uint8Array.prototype) as object,
+  "buffer",
+);
+
+/** The getter of `buffer` of a `DataView` */
+const dataViewBuffer = getterOf(DataView.prototype, "buffer");
+
+/** The getter of `detached` of an `ArrayBuffer` */
+const arrayBufferDetached = getterOf(ArrayBuffer.prototype, "detached");
+
+/**
+ * Whether a value is a view of an `ArrayBuffer` that has been detached (e.g.
+ * by its `transfer()`): it has no bytes left, and Node.js throws once it
+ * writes it (e.g. as it uncorks the connection on the next tick, out of any
+ * call: the process crashes). Read by the getters of the engine, never by a
+ * getter of the view's own; a `SharedArrayBuffer` is never detached.
+ */
+function isDetached(value: unknown): boolean {
+  if (!ArrayBuffer.isView(value)) {
+    return false;
+  }
+  const buffer = Reflect.apply(
+    isDataView(value) ? dataViewBuffer : typedArrayBuffer,
+    value,
+    [],
+  );
+  return (
+    isArrayBuffer(buffer) &&
+    Reflect.apply(arrayBufferDetached, buffer, []) === true
+  );
+}
+
+/** The refusal of a view of an `ArrayBuffer` that has been detached (see `isDetached()`) */
+function detachedView(): TypeError {
+  return formatStack(
+    new TypeError("The data is a view of a detached ArrayBuffer"),
+  );
+}
 
 /**
  * The JSON text of a value (`JSON.stringify()`). What it throws (e.g. the
@@ -2693,12 +2747,14 @@ export class BindenResponse<
    * Send a response: a string (or a number), bytes, a `Readable`, a
    * stream-like source (see `IStreamLike`, e.g. of `readable-stream`), or no
    * body. Any other object rejects with a `TypeError` before anything is
-   * sent. It resolves once the response is flushed to the connection. When
-   * the client goes away before, it rejects with the error of the connection
-   * when a pending write fails first (e.g. `EPIPE`, `ECONNRESET` or
-   * `ECANCELED`, whichever Node.js and the system report), otherwise as a
-   * premature close (`ERR_STREAM_PREMATURE_CLOSE`): a release of its source
-   * never decides it.
+   * sent, and so does a view of a detached `ArrayBuffer` (e.g. transferred),
+   * also as a chunk of a `Readable`, which is never written (the response is
+   * cut once it has sent anything). It resolves once the response is flushed
+   * to the connection. When the client goes away before, it rejects with the
+   * error of the connection when a pending write fails first (e.g. `EPIPE`,
+   * `ECONNRESET` or `ECANCELED`, whichever Node.js and the system report),
+   * otherwise as a premature close (`ERR_STREAM_PREMATURE_CLOSE`): a release
+   * of its source never decides it.
    */
   public send(
     data?:
@@ -2740,6 +2796,9 @@ export class BindenResponse<
           ),
         ),
       );
+    } else if (isDetached(data)) {
+      // Its bytes are gone: Node.js would throw once it writes it
+      return Promise.reject(detachedView());
     } else if (
       typeof encoding !== "undefined" &&
       !Buffer.isEncoding(encoding)
@@ -3700,6 +3759,13 @@ export class BindenResponse<
                 return;
               }
               try {
+                if (isDetached(chunk)) {
+                  // Never written: Node.js would throw once it writes it
+                  // (e.g. as it uncorks the connection on the next tick, out
+                  // of any call), an error of binden decided as above
+                  fail(detachedView(), true);
+                  return;
+                }
                 const size = Buffer.byteLength(chunk);
                 if (declared !== null && sent + size > declared) {
                   fail(BindenResponse.#mismatch(sent + size, declared), true);
