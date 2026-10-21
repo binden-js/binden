@@ -14,7 +14,7 @@ npm install @binden/multipart
 
 ## Usage
 
-The fields and the files are parsed into a `FormData` (`request.body`), in the order of the request. A file is a `MultipartFile`: a `File` that tells whether its content has been truncated. Its constructor (`new MultipartFile(bits, name, options)`) takes the arguments of `File`, and `truncated`: the constructor of `File` of Node.js converts the name, `type` and `lastModified` as it does for a plain `File` (e.g. a name that is not a string, by `String()`), no more often, and what it throws is formatted (see `formatStack()` of binden).
+The fields and the files are parsed into a `FormData` (`request.body`), in the order of the request. A file is a `MultipartFile`: a `File` that tells whether its content has been truncated. Its constructor (`new MultipartFile(bits, name, options)`) takes the arguments of `File`, and `truncated`, a boolean (`false` by default: anything else throws a `TypeError`, "`truncated` is not a boolean: …", before the content is read): the constructor of `File` of Node.js converts the name, `type` and `lastModified` as it does for a plain `File` (e.g. a name that is not a string, by `String()`), no more often, and what it throws is formatted (see `formatStack()` of binden).
 
 ```typescript
 import { type Context, Router } from "binden";
@@ -203,21 +203,25 @@ The `filename` of a file is the name that the client has sent, without its contr
 
 ### Errors
 
-| Situation                                                      | Reply                                                                      |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| A limit (`limit`, `config.limits` with `throw_limits`)         | `413 Content Too Large`                                                    |
-| A malformed body, a missing or invalid `boundary`              | `400 Bad Request`                                                          |
-| A file refused by `file_filter`, a field of an unknown charset | `415 Unsupported Media Type`                                               |
-| A content coding other than `identity` (`Content-Encoding`)    | `415 Unsupported Media Type`                                               |
-| A `BindenError` thrown by `file_filter` or `on_file`           | Its status                                                                 |
-| Another failure of `file_filter`, `on_file` or the storage     | `500 Internal Server Error`                                                |
-| A parse that starts once the response has finished             | `500 Internal Server Error`                                                |
-| Another media type than `multipart/form-data`                  | Skipped: the body is not read                                              |
-| The client goes away                                           | `run()` rejects with a `400` of code `aborted`                             |
-| The deadline passes, or the server shuts down                  | `run()` rejects with the reason of `context.signal` (a `BindenAbortError`) |
-| A file once the cleanup of the request has started (disk)      | `run()` rejects with a `500`                                               |
+| Situation                                                                                                                              | Reply                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| A limit (`limit`, `config.limits` with `throw_limits`)                                                                                 | `413 Content Too Large`                                                    |
+| A malformed body, a missing or invalid `boundary`                                                                                      | `400 Bad Request`                                                          |
+| A file refused by `file_filter`, a field of an unknown charset                                                                         | `415 Unsupported Media Type`                                               |
+| A content coding other than `identity` (`Content-Encoding`)                                                                            | `415 Unsupported Media Type`                                               |
+| A `BindenError` thrown by `file_filter` or `on_file`                                                                                   | Its status                                                                 |
+| Another failure of `file_filter`, `on_file` or the storage                                                                             | `500 Internal Server Error`                                                |
+| A parse that starts once the response has finished                                                                                     | `500 Internal Server Error`                                                |
+| Another media type than `multipart/form-data`                                                                                          | Skipped: the body is not read                                              |
+| The client goes away                                                                                                                   | `run()` rejects with a `400` of code `aborted`                             |
+| The deadline passes, or the server shuts down                                                                                          | `run()` rejects with the reason of `context.signal` (a `BindenAbortError`) |
+| A file once the cleanup of the request has started (disk)                                                                              | `run()` rejects with a `500`                                               |
+| A use of the context that throws once the parse has started (its request, response, signal or logger, or the setter of `request.body`) | `run()` rejects with that error, formatted (the first one)                 |
+| A `file_filter` or `on_file` that throws a value whose check throws (e.g. a revoked proxy)                                             | `run()` rejects with the error of that check, formatted                    |
 
 After a refusal the body is not read further, nor parsed, but the connection is kept: the client that is still sending its body receives the status (with `Connection: close`), and the connection is closed after the reply. Only a response whose headers have been sent destroys the request (its reply cannot tell the error): a send whose headers are not sent yet (e.g. of a stream that has not given its first chunk) is left to the framework, whose reply closes the connection.
+
+Each property of the context is read once, as the parse starts (`onCleanup` when the disk storage stores its first file). A later failure refuses the parse as any refusal does: listeners removed, request unpiped and paused, busboy and the file streams destroyed. What reading `onCleanup` throws is the rejection, and what calling it throws is the `500` above, with that error as its cause.
 
 After the deadline, the framework replies `503 Service Unavailable` and closes the connection (a send that has not sent its headers is cancelled first). When the server shuts down and its `timeout` passes, the connection is closed without a reply.
 

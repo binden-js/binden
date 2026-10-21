@@ -100,7 +100,14 @@ coerced or ignored.
 
 So does `new BindenError()` (and `context.throw()`): an `expose` that is not a boolean, a `json`
 that is not a plain object (e.g. an array, which was sent as an object with numeric keys) or a
-`message` that is not a string throws a `TypeError`.
+`message` that is not a string throws a `TypeError`. Its `json` is copied once, by the
+constructor, which throws what reading it throws: binden 2.0.4 kept the object and copied it on
+every read of `error.json`, so that a later change of the object showed, and its getters ran on
+each read.
+
+`new Context()` throws a `TypeError` for a `request` that is not a `BindenRequest`, a `response`
+that is not a `BindenResponse` (also a proxy of one) and a `report` that is not a function:
+binden 2.0.4 accepted any request (it read its `id`) and any response.
 
 Options that are neither an object nor `undefined` throw a `TypeError` ("`options` is not an
 object") in `new Binden()`, `createServer()`, `createSecureServer()`, `new Router()`, the
@@ -481,6 +488,9 @@ const decodable = (context: Context): void => {
   `IfModifiedSince` (an Invalid Date, or a year out of 0 to 9999).
 - `ContentType#toString()` includes every parameter, and `Forwarded#toString()` quotes the values
   that are not tokens.
+- `new ContentType({ charset })` throws a `TypeError` for a `charset` that is neither a string nor
+  `null` or `undefined` ("`charset` is not a string: …"), for every media type: binden 2.0.4
+  dropped it.
 - `ContentType` requires the `boundary` of `multipart/form-data` in any case of the media type
   (e.g. `Multipart/Form-Data`), and refuses a parameter value that is not a valid field value (a
   control character, or a character above `\xFF`): so does `response.type()`.

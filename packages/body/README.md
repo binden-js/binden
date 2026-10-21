@@ -277,6 +277,16 @@ not been read of the body. A parser that starts later (e.g. after a middleware t
 without `done`) refuses the body with a `500 Internal Server Error` (logged at `error`), never
 with an empty body.
 
+`run()` reads each property of its context once, before anything is awaited (the request, the
+response, the signal and the logger). What a later use of them throws stops the parse as any other
+failure does: the request is unpiped, the decoders destroyed, the listeners removed, and the
+connection closed after the reply. Examples are a context that only looks like one, such as a proxy
+whose response's `setHeader()` throws as a chunked body goes over the limit, or whose signal's
+`removeEventListener()` throws once the body is read. That error is the rejection of `run()`: the
+first such error, as it is, formatted. It never crashes the process nor leaves `run()` pending, and
+what the parse throws once something has been awaited (e.g. a logger, or the setter of
+`request.body`) is formatted too.
+
 ## Errors
 
 | Situation                                                                                                                                                          | Reply                          |
@@ -291,6 +301,7 @@ with an empty body.
 | A `BindenError` of `parse` or `verify`                                                                                                                             | that error                     |
 | Any other failure of `parse` or `verify`, a `type` function that fails, a body that something else has read                                                        | `500 Internal Server Error`    |
 | A parser that starts once the response has finished                                                                                                                | `500 Internal Server Error`    |
+| A use of the context that throws once the parse has started                                                                                                        | that error, formatted (`500`)  |
 
 The parser never logs the body itself: its logs have the reason of the refusal, and the type,
 known `code` and status of an error.
