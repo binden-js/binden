@@ -518,6 +518,41 @@ suite(
       }
     });
 
+    test("a charset of ContentType that is neither a string nor null is refused, described without converting it, for every media type (R28)", () => {
+      conversions = 0;
+      for (const type of ["text/plain", "multipart/form-data"]) {
+        const create =
+          (charset: unknown): (() => unknown) =>
+          (): unknown =>
+            new ContentType({ type, boundary: "b", charset: given(charset) });
+        deepStrictEqual(
+          [
+            outcome(create(Symbol("s"))),
+            outcome(create(5)),
+            outcome(create(counting("utf-8"))),
+            outcome(create(revoked())),
+          ],
+          [
+            refused("`charset` is not a string: (a symbol)"),
+            refused("`charset` is not a string: 5"),
+            refused("`charset` is not a string: (an object)"),
+            refused("`charset` is not a string: (an object)"),
+          ],
+          type,
+        );
+      }
+      deepStrictEqual(conversions, 0);
+      // `null`, `undefined` and an empty string are no charset
+      deepStrictEqual(
+        [null, none, "", "utf-8"].map((charset) =>
+          String(
+            new ContentType({ type: "text/plain", charset: given(charset) }),
+          ),
+        ),
+        ["text/plain", "text/plain", "text/plain", "text/plain; charset=utf-8"],
+      );
+    });
+
     test("an unknown coding or scheme is described, never converted", () => {
       conversions = 0;
       deepStrictEqual(

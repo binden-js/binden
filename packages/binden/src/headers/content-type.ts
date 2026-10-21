@@ -14,7 +14,7 @@ export interface IContentType {
   type: string;
   /**
    * The `charset` parameter, or `null` (by default): not of
-   * `multipart/form-data`
+   * `multipart/form-data`. A value of another type is refused.
    */
   charset?: string | null;
   /**
@@ -57,8 +57,9 @@ export class ContentType implements IContentType {
    * name, and a value that a field value can carry (no control characters but
    * tabs, nothing above `\xFF`), sent as a quoted string when it is not a
    * token. Invalid ones throw a `TypeError`, and so does an init or parameters
-   * that are not an object. What reading them throws (e.g. a revoked proxy)
-   * is formatted (see `formatting()`).
+   * that are not an object, or a `charset` that is not a string (nor `null`),
+   * described without converting it. What reading them throws (e.g. a
+   * revoked proxy) is formatted (see `formatting()`).
    */
   public constructor(init: IContentType) {
     // Each value is read once (e.g. by a getter), and so are the parameters
@@ -154,7 +155,8 @@ export class ContentType implements IContentType {
    * `boundary` and all its parameters by their names in lowercase (the first
    * one of a name wins, but the options), the media type and the values of
    * the parameters converted once when they are not strings (see
-   * `stringOf()`), or why it is invalid
+   * `stringOf()`), or why it is invalid (e.g. a `charset` of another type than
+   * a string, refused by its type, for every media type)
    */
   static #checked({
     type,
@@ -170,6 +172,9 @@ export class ContentType implements IContentType {
       (parameters as unknown) === null
     ) {
       return `\`parameters\` is not an object: ${described(parameters)}`;
+    } else if (charset !== null && typeof charset !== "string") {
+      // Never converted, nor dropped
+      return `\`charset\` is not a string: ${described(charset)}`;
     }
     const all = new Map<string, string>();
     for (const [name, value] of Object.entries(parameters)) {
