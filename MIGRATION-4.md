@@ -374,6 +374,12 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   binden 2.0.4 sent `params.toString()` of whatever it was given (e.g. a string as it is, or the
   override of a subclass). Anything else now rejects with a `TypeError` ("The parameters are not
   URLSearchParams"); send a string with `text()` or `send()` and the `Content-Type` that it needs.
+- `response.set()` sets the own enumerable properties of its object (by `Object.entries()`), and
+  throws a `TypeError` ("`headers` is not an object") for anything but an object, also a function.
+  binden 2.0.4 set every enumerable property by `for…in`, also an inherited one (e.g. of
+  `Object.create(defaults)`): it did nothing for `null`, `undefined` or a number, set the headers
+  `0` and `1` for `"ab"`, and set the enumerable properties of a function. Copy inherited headers
+  into the object (e.g. `set({ ...defaults, ...headers })`).
 - The `q_value` of an `AcceptEncoding` must be a number or `null`: binden 2.0.4 kept any value (e.g.
   `"0.5"`) as its `q_value`, but serialized only a number (`toString()` dropped the weight of any
   other value, e.g. `gzip` for `"0.5"`). Anything else now throws a `TypeError` ("`q_value` is not a
