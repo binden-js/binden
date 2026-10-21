@@ -126,20 +126,21 @@ const creations: readonly (readonly [RegExp, string | null])[] = [
     null,
   ],
   // Or exported without its name, whose constructions (e.g. by a default
-  // import, of any name) are not seen: as the default export (but a
-  // construction or a member of it, found above), or renamed to a name that
-  // does not end with `Error` or `Exception` by a list of exports or imports
-  // (e.g. `export { TypeError as Refusal }`)
+  // import, of any name) are not seen: as the default export, also in
+  // parentheses (but a construction or a member of it, found above), or
+  // renamed to a name that does not end with `Error` or `Exception` by a list
+  // of exports or imports, each rename of a list (e.g. `export { TypeError as
+  // Refusal }`, `TypeError as "Refusal"` or `TypeError as default`)
   [
     new RegExp(
-      String.raw`\bexport\s+default\s+${qualifiers}(?<name>${errorName})(?![\w$])(?!${gap}(?:\??\.|\[|\())`,
+      String.raw`\bexport\s+default(?:${gap}\()*${gap}${qualifiers}(?<name>${errorName})(?![\w$])(?!${gap}(?:\??\.|\[|\())`,
       "gu",
     ),
     null,
   ],
   [
     new RegExp(
-      String.raw`\{[^}]*?(?<![\w$.])(?<name>${errorName})\s+as\s+(?![\w$]*(?:Error|Exception)(?![\w$]))[\w$]+[^}]*\}`,
+      String.raw`(?<=\{[^{}]*)(?<![\w$.])(?<name>${errorName})\s+as\s+(?!(?:[\w$]*|"[^"]*|'[^']*)(?:Error|Exception)["']?(?![\w$]))(?:[\w$]+|"[^"]*"|'[^']*')(?=[^{}]*\})`,
       "gu",
     ),
     null,
@@ -345,6 +346,16 @@ suite("The errors that the packages of binden create", () => {
       "export default globalThis.RangeError;",
       "export { TypeError as Refusal };",
       'import { BindenAbortError as Abort } from "binden";',
+      // Each rename of a list (also on a line of its own, and to a string
+      // or `default`), and a default export in parentheses
+      "export {",
+      "  TypeError as Refusal,",
+      "  RangeError as Other,",
+      "};",
+      'import { formatStack, AbortError as Abort, URIError as Failure } from "x";',
+      'export { TypeError as "Refusal", RangeError as default };',
+      "export default (TypeError);",
+      "export default ( /* why */ globalThis.RangeError );",
       // None creates an error
       "reportError(error);",
       "const failed = error instanceof TypeError;",
@@ -361,6 +372,9 @@ suite("The errors that the packages of binden create", () => {
       "controller.abort(voided);",
       "export default class Refusal {}",
       "export { TypeError as OwnError };",
+      'export { RangeError as OwnError, TypeError as "OtherError" };',
+      "export default (TypeError.name);",
+      "const cast = { error: value as TypeError };",
       'export { Refused, type IRefusal } from "./refusal.js";',
       'export default formatStack(new TypeError("formatted"));',
       "export default TypeError.name;",
@@ -407,6 +421,14 @@ suite("The errors that the packages of binden create", () => {
       "source.ts:58 RangeError",
       "source.ts:59 TypeError",
       "source.ts:60 BindenAbortError",
+      "source.ts:62 TypeError",
+      "source.ts:63 RangeError",
+      "source.ts:65 AbortError",
+      "source.ts:65 URIError",
+      "source.ts:66 TypeError",
+      "source.ts:66 RangeError",
+      "source.ts:67 TypeError",
+      "source.ts:68 RangeError",
     ]);
   });
 });
