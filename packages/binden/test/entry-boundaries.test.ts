@@ -459,6 +459,53 @@ suite(
         [ownError, "returned", "returned", ownError],
       );
     });
+
+    test("the json of a BindenError is copied once by its constructor: what that runs is formatted, and its getter runs no code of the application", () => {
+      /** A new error of the test (see `own`) */
+      const fresh = (): RangeError => {
+        own = new RangeError("A trap of the test");
+        return own;
+      };
+      deepStrictEqual(
+        [
+          outcome((): unknown => {
+            const error = fresh();
+            return new BindenError(400, {
+              json: {
+                get a(): never {
+                  throw error;
+                },
+              },
+            });
+          }),
+          outcome((): unknown => {
+            const error = fresh();
+            const json = new Proxy(
+              { a: 1 },
+              {
+                ownKeys: (): never => {
+                  throw error;
+                },
+              },
+            );
+            return new BindenError(400, { json });
+          }),
+        ],
+        [ownError, ownError],
+      );
+      let reads = 0;
+      const json: Record<string, unknown> = {
+        get a(): number {
+          reads += 1;
+          return reads;
+        },
+      };
+      const created = new BindenError(400, { json, expose: true });
+      json.b = 2;
+      const [first, second] = [created.json, created.json];
+      deepStrictEqual([first, second, reads], [{ a: 1 }, { a: 1 }, 1]);
+      ok(first !== second);
+    });
   },
 );
 

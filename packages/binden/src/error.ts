@@ -131,8 +131,9 @@ export class BindenError extends Error {
    * `expose` that is not a boolean, a `json` that is not a plain object or a
    * `message` that is not a string) throw a `TypeError`, and so do options
    * that are not an object. The status is checked first (the default message
-   * is the one of the status), and each option is read once: what reading
-   * them throws (e.g. a revoked proxy) is formatted (see `formatting()`).
+   * is the one of the status), and each option is read once (`json` is
+   * copied then): what reading them throws (e.g. a revoked proxy, or a getter
+   * of `json`) is formatted (see `formatting()`).
    */
   public constructor(status: number, options?: IBindenErrorOptions) {
     const checked = BindenError.#checked(status, options);
@@ -197,7 +198,9 @@ export class BindenError extends Error {
       return {
         message,
         expose,
-        json,
+        // Copied once (e.g. its getters run here): the getter of `json` copies
+        // the copy, and runs no code of the application
+        json: typeof json === "undefined" ? json : { ...json },
         cause,
         code,
         headers: copyHeaders(headers),
@@ -227,7 +230,10 @@ export class BindenError extends Error {
     return this.#status;
   }
 
-  /** The JSON body sent when `expose` is `true` (a shallow copy), or `null` */
+  /**
+   * The JSON body sent when `expose` is `true`, or `null`: a shallow copy of
+   * the one that the constructor has copied from its `json`
+   */
   public get json(): Record<string, unknown> | null {
     return this.#json ? { ...this.#json } : null;
   }
