@@ -6,7 +6,9 @@ import {
   type Context,
   type IMiddlewareParams,
   Middleware,
+  described,
   formatStack,
+  formatting,
   serializers,
 } from "binden";
 import { Duplex, Transform, Writable, finished, pipeline } from "node:stream";
@@ -235,7 +237,7 @@ function validateTypes(type: unknown): readonly string[] {
   return type.map((entry: unknown) => {
     if (typeof entry !== "string" || !mediaRange.test(entry)) {
       throw formatStack(
-        new TypeError(`Invalid media type in \`type\`: ${String(entry)}`),
+        new TypeError(`Invalid media type in \`type\`: ${described(entry)}`),
       );
     }
     return entry.toLowerCase();
@@ -294,6 +296,141 @@ function guard(decoder: IDecoding, trailing: (() => boolean)[]): Transform {
   });
 }
 
+/** The options of a `BodyParser`, each read once (see `readOptions()`) */
+interface IReadOptions {
+  readonly parse: unknown;
+  readonly limit: unknown;
+  readonly encoded_limit: unknown;
+  readonly type: unknown;
+  readonly raw: unknown;
+  readonly strict: unknown;
+  readonly parameter_limit: unknown;
+  readonly verify: unknown;
+  readonly verify_encoded: unknown;
+  readonly zstd: unknown;
+  readonly rest: IMiddlewareParams;
+}
+
+/** The settings of a `BodyParser`, validated */
+interface ISettings<T> {
+  readonly parse: IParse<T> | null;
+  readonly limit: number;
+  readonly encoded_limit: number;
+  readonly types: readonly string[] | null;
+  readonly type: ((content_type: ContentType) => unknown) | null;
+  readonly strict: boolean;
+  readonly parameter_limit: number;
+  readonly verify: IVerify | null;
+  readonly verify_encoded: boolean;
+  readonly zstd: boolean;
+}
+
+/** The media types that a `BodyParser` parses by default */
+const defaultTypes: readonly string[] = [
+  "application/json",
+  "+json",
+  "text/plain",
+  "application/x-www-form-urlencoded",
+];
+
+/**
+ * Reads the options of a `BodyParser` once, with their defaults: anything but
+ * an object is refused with a `TypeError` before anything is read, which
+ * describes it (see `described()`)
+ */
+function readOptions(options: unknown): IReadOptions {
+  if (typeof options !== "object" || options === null) {
+    throw formatStack(
+      new TypeError(`\`options\` is not an object: ${described(options)}`),
+    );
+  }
+  const {
+    parse,
+    limit = Infinity,
+    encoded_limit = Infinity,
+    type,
+    raw = false,
+    strict = true,
+    parameter_limit = 1000,
+    verify,
+    verify_encoded = false,
+    zstd = false,
+    ...rest
+  } = options as IBodyParserOptions;
+  return {
+    parse,
+    limit,
+    encoded_limit,
+    type,
+    raw,
+    strict,
+    parameter_limit,
+    verify,
+    verify_encoded,
+    zstd,
+    rest,
+  };
+}
+
+/** Validates the options of a `BodyParser` (see `readOptions()`) */
+function settingsOf<T>({
+  parse,
+  limit,
+  encoded_limit,
+  type,
+  raw,
+  strict,
+  parameter_limit,
+  verify,
+  verify_encoded,
+  zstd,
+}: IReadOptions): ISettings<T> {
+  if (typeof parse !== "undefined" && typeof parse !== "function") {
+    throw formatStack(new TypeError("`parse` is not a function"));
+  } else if (typeof verify !== "undefined" && typeof verify !== "function") {
+    throw formatStack(new TypeError("`verify` is not a function"));
+  }
+  const limits = {
+    limit: validateLimit("limit", limit),
+    encoded_limit: validateLimit("encoded_limit", encoded_limit),
+    parameter_limit: validateLimit("parameter_limit", parameter_limit),
+  };
+  const raws = validateBoolean("raw", raw);
+  const flags = {
+    strict: validateBoolean("strict", strict),
+    verify_encoded: validateBoolean("verify_encoded", verify_encoded),
+    zstd: validateBoolean("zstd", zstd),
+  };
+
+  let types: readonly string[] | null = null;
+  let select: ((content_type: ContentType) => unknown) | null = null;
+  if (typeof type === "function") {
+    if (raws) {
+      throw formatStack(
+        new TypeError("`raw` cannot be used with a `type` function"),
+      );
+    }
+    select = type as (content_type: ContentType) => unknown;
+  } else {
+    const listed =
+      typeof type === "undefined" ? defaultTypes : validateTypes(type);
+    types = raws ? [...listed, "application/octet-stream"] : listed;
+  }
+
+  return {
+    ...limits,
+    ...flags,
+    types,
+    type: select,
+    // `JSON.parse` itself is the default parse
+    parse:
+      typeof parse === "undefined" || parse === JSON.parse
+        ? null
+        : (parse as IParse<T>),
+    verify: (verify as IVerify | undefined) ?? null,
+  };
+}
+
 /**
  * Parses the body of a request into `request.body`: JSON (with `parse`),
  * text, a form (`URLSearchParams`) or raw bytes (a `Buffer`), once its
@@ -315,58 +452,24 @@ export class BodyParser<T = unknown> extends Middleware {
   /**
    * A body parser with its options (see `IBodyParserOptions`), checked: an
    * invalid one throws a `TypeError` (or a `RangeError` for a limit that is not
-   * a non-negative integer or `Infinity`)
+   * a non-negative integer or `Infinity`), and so does anything but an object
+   * (or `undefined`, the defaults). What reading them throws (e.g. a revoked
+   * proxy, or a getter that throws) is formatted (see `formatting()`).
    */
-  public constructor({
-    parse,
-    limit = Infinity,
-    encoded_limit = Infinity,
-    type,
-    raw = false,
-    strict = true,
-    parameter_limit = 1000,
-    verify,
-    verify_encoded = false,
-    zstd = false,
-    ...rest
-  }: IBodyParserOptions<T> = {}) {
-    super(rest);
-    if (typeof parse !== "undefined" && typeof parse !== "function") {
-      throw formatStack(new TypeError("`parse` is not a function"));
-    } else if (typeof verify !== "undefined" && typeof verify !== "function") {
-      throw formatStack(new TypeError("`verify` is not a function"));
-    }
-    this.#limit = validateLimit("limit", limit);
-    this.#encoded_limit = validateLimit("encoded_limit", encoded_limit);
-    this.#parameter_limit = validateLimit("parameter_limit", parameter_limit);
-    validateBoolean("raw", raw);
-    this.#strict = validateBoolean("strict", strict);
-    this.#verify_encoded = validateBoolean("verify_encoded", verify_encoded);
-    this.#zstd = validateBoolean("zstd", zstd);
-
-    if (typeof type === "function") {
-      if (raw) {
-        throw formatStack(
-          new TypeError("`raw` cannot be used with a `type` function"),
-        );
-      }
-      this.#type = type;
-      this.#types = null;
-    } else {
-      const types =
-        typeof type === "undefined"
-          ? BodyParser.#defaults
-          : validateTypes(type);
-      this.#types = raw ? [...types, "application/octet-stream"] : types;
-      this.#type = null;
-    }
-
-    // `JSON.parse` itself is the default parse
-    this.#parse =
-      typeof parse === "undefined" || (parse as unknown) === JSON.parse
-        ? null
-        : parse;
-    this.#verify = verify ?? null;
+  public constructor(options: IBodyParserOptions<T> = {}) {
+    const read = formatting(() => readOptions(options));
+    super(read.rest);
+    const settings = formatting(() => settingsOf<T>(read));
+    this.#parse = settings.parse;
+    this.#limit = settings.limit;
+    this.#encoded_limit = settings.encoded_limit;
+    this.#types = settings.types;
+    this.#type = settings.type;
+    this.#strict = settings.strict;
+    this.#parameter_limit = settings.parameter_limit;
+    this.#verify = settings.verify;
+    this.#verify_encoded = settings.verify_encoded;
+    this.#zstd = settings.zstd;
   }
 
   /**
@@ -375,29 +478,15 @@ export class BodyParser<T = unknown> extends Middleware {
    * a `BindenError` for a body that cannot be parsed (see the README)
    */
   public async run(context: Context): Promise<void> {
-    const { request } = context;
-    const log = context.log.child({ middleware: BodyParser.name });
-    const { method = "GET", content_type } = request;
-
-    if (BodyParser.#methods.has(method)) {
-      log.debug("A method without a body", { method });
+    // What reading the context throws (e.g. of a value that is not a
+    // context) is formatted (see `formatting()`): it is read before anything
+    // is awaited, and its signal is kept
+    const started = formatting(() => this.#start(context));
+    if (started === null) {
       return;
     }
-
-    const kind = content_type === null ? null : this.#kind(content_type, log);
-    if (kind === null) {
-      log.debug("The `Content-Type` is not selected", {
-        content_type: content_type?.type ?? null,
-      });
-      return;
-    } else if (claimed.has(request)) {
-      log.debug("The body has already been parsed");
-      return;
-    }
-    claimed.add(request);
-
-    const { decoders, decoder } = this.#prepare(context, kind, log);
-    const { decoded, encoded } = await this.#read(context, decoders, log);
+    const { request, kind, decoder, log, signal } = started;
+    const { decoded, encoded } = await started.read;
 
     if (this.#verify) {
       const verify = this.#verify;
@@ -406,7 +495,7 @@ export class BodyParser<T = unknown> extends Middleware {
       };
       const outcome = await BodyParser.#call(
         () => verify(decoded, context, info),
-        context,
+        signal,
         log,
       );
       if (!outcome.ok) {
@@ -435,14 +524,56 @@ export class BodyParser<T = unknown> extends Middleware {
       // An empty JSON body has no value (`undefined`)
       return;
     }
-    request.body =
+    const body =
       kind === "json"
-        ? await this.#json(text, context, log)
+        ? await this.#json(text, signal, log)
         : kind === "form"
           ? this.#form(text, log)
           : kind === "text"
             ? text
             : decoded;
+    formatting(() => {
+      request.body = body;
+    });
+  }
+
+  /**
+   * Starts the parse of the body of the request of a context (see `run()`):
+   * `null` when it is not parsed, otherwise the read of the body (see
+   * `#read()`), and what the rest of the parse needs of the context
+   */
+  #start(context: Context): {
+    readonly request: Context["request"];
+    readonly kind: IBodyKind;
+    readonly decoder: TextDecoder | null;
+    readonly log: ILog;
+    readonly signal: AbortSignal;
+    readonly read: Promise<{ decoded: Buffer; encoded: Buffer | null }>;
+  } | null {
+    const { request, signal } = context;
+    const log = context.log.child({ middleware: BodyParser.name });
+    const { method = "GET", content_type } = request;
+
+    if (BodyParser.#methods.has(method)) {
+      log.debug("A method without a body", { method });
+      return null;
+    }
+
+    const kind = content_type === null ? null : this.#kind(content_type, log);
+    if (kind === null) {
+      log.debug("The `Content-Type` is not selected", {
+        content_type: content_type?.type ?? null,
+      });
+      return null;
+    } else if (claimed.has(request)) {
+      log.debug("The body has already been parsed");
+      return null;
+    }
+    claimed.add(request);
+
+    const { decoders, decoder } = this.#prepare(context, kind, log);
+    const read = this.#read(context, decoders, log);
+    return { request, kind, decoder, log, signal, read };
   }
 
   /** The kind of a body, `null` when `type` does not select it */
@@ -603,81 +734,87 @@ export class BodyParser<T = unknown> extends Middleware {
     });
 
     return new Promise((resolve, reject) => {
-      let settled = false;
-      const cleanups: (() => void)[] = [];
-      const settle = (): boolean => {
-        if (settled) {
-          return false;
-        }
-        settled = true;
-        for (const cleanup of cleanups) {
-          cleanup();
-        }
-        return true;
-      };
-      const fail = (error: Error, message: string): void => {
-        if (!settle()) {
-          return;
-        }
-        log.debug(message, { failure: serializers.error(error) });
-        // Paused (once nothing else reads it), not destroyed: the reply is sent
-        request.unpipe(wire);
-        for (const stream of [...stages, sink]) {
-          stream.destroy();
-        }
-        if (!response.headersSent) {
-          response.setHeader("Connection", "close");
-        }
-        reject(error);
-      };
-
-      const listener = addAbortListener(signal, () => {
-        fail(abortError(signal.reason), "The request has been aborted");
-      });
-      cleanups.push(
-        () => {
-          listener[Symbol.dispose]();
-        },
-        finished(request, (error) => {
-          if (error) {
-            fail(abortError(error), "The request has been aborted");
+      // What Node.js throws for what the context has given (e.g. a signal
+      // that is not an `AbortSignal`) is formatted (see `formatStack()`)
+      try {
+        let settled = false;
+        const cleanups: (() => void)[] = [];
+        const settle = (): boolean => {
+          if (settled) {
+            return false;
           }
-        }),
-      );
-      pipeline([...stages, sink], (error) => {
-        if (error instanceof BindenError) {
-          fail(error, "The body is too large");
-        } else if (error) {
-          const invalid = new BindenError(400, { cause: error });
-          fail(invalid, "The body cannot be decoded");
-        } else if (trailing.some((left) => left())) {
-          const cause = formatStack(new Error(TRAILING));
-          const invalid = new BindenError(400, { cause });
-          fail(invalid, "The body cannot be decoded");
-        } else if (settle()) {
-          resolve({
-            decoded: Buffer.concat(chunks),
-            encoded: kept === null ? null : Buffer.concat(kept),
-          });
-        }
-      });
-      request.pipe(wire);
+          settled = true;
+          for (const cleanup of cleanups) {
+            cleanup();
+          }
+          return true;
+        };
+        const fail = (error: Error, message: string): void => {
+          if (!settle()) {
+            return;
+          }
+          log.debug(message, { failure: serializers.error(error) });
+          // Paused (once nothing else reads it), not destroyed: the reply is sent
+          request.unpipe(wire);
+          for (const stream of [...stages, sink]) {
+            stream.destroy();
+          }
+          if (!response.headersSent) {
+            response.setHeader("Connection", "close");
+          }
+          reject(error);
+        };
 
-      // Once the response has finished, Node.js no longer tells the request
-      // that the client has gone away, but its connection closes. A body that
-      // has been received whole is still read. (A parser does not start once
-      // the response has finished, and before, a closed connection has
-      // destroyed the request.)
-      const { socket } = request;
-      const closed = (): void => {
-        if (!request.complete) {
-          fail(abortError(null), "The request has been aborted");
-        }
-      };
-      socket.once("close", closed);
-      cleanups.push(() => {
-        socket.off("close", closed);
-      });
+        const listener = addAbortListener(signal, () => {
+          fail(abortError(signal.reason), "The request has been aborted");
+        });
+        cleanups.push(
+          () => {
+            listener[Symbol.dispose]();
+          },
+          finished(request, (error) => {
+            if (error) {
+              fail(abortError(error), "The request has been aborted");
+            }
+          }),
+        );
+        pipeline([...stages, sink], (error) => {
+          if (error instanceof BindenError) {
+            fail(error, "The body is too large");
+          } else if (error) {
+            const invalid = new BindenError(400, { cause: error });
+            fail(invalid, "The body cannot be decoded");
+          } else if (trailing.some((left) => left())) {
+            const cause = formatStack(new Error(TRAILING));
+            const invalid = new BindenError(400, { cause });
+            fail(invalid, "The body cannot be decoded");
+          } else if (settle()) {
+            resolve({
+              decoded: Buffer.concat(chunks),
+              encoded: kept === null ? null : Buffer.concat(kept),
+            });
+          }
+        });
+        request.pipe(wire);
+
+        // Once the response has finished, Node.js no longer tells the request
+        // that the client has gone away, but its connection closes. A body that
+        // has been received whole is still read. (A parser does not start once
+        // the response has finished, and before, a closed connection has
+        // destroyed the request.)
+        const { socket } = request;
+        const closed = (): void => {
+          if (!request.complete) {
+            fail(abortError(null), "The request has been aborted");
+          }
+        };
+        socket.once("close", closed);
+        cleanups.push(() => {
+          socket.off("close", closed);
+        });
+      } catch (error: unknown) {
+        reject(formatStack(error as Error));
+      }
     });
   }
 
@@ -685,7 +822,7 @@ export class BodyParser<T = unknown> extends Middleware {
    * The value of a JSON body that is not empty: a `400 Bad Request` when it
    * has only whitespace or cannot be parsed
    */
-  async #json(text: string, context: Context, log: ILog): Promise<unknown> {
+  async #json(text: string, signal: AbortSignal, log: ILog): Promise<unknown> {
     if (text.trim() === "") {
       log.debug("The JSON body has only whitespace");
       throw new BindenError(400);
@@ -705,7 +842,7 @@ export class BodyParser<T = unknown> extends Middleware {
     }
 
     const parse = this.#parse;
-    const outcome = await BodyParser.#call(() => parse(text), context, log);
+    const outcome = await BodyParser.#call(() => parse(text), signal, log);
     if (!outcome.ok) {
       log.debug("`parse` has failed", {
         failure: serializers.error(outcome.error),
@@ -742,10 +879,9 @@ export class BodyParser<T = unknown> extends Middleware {
    */
   static async #call<R>(
     call: () => R | PromiseLike<R>,
-    context: Context,
+    signal: AbortSignal,
     log: ILog,
   ): Promise<IOutcome<R>> {
-    const { signal } = context;
     const outcome = await new Promise<IOutcome<R> | null>((resolve) => {
       // Called (in a microtask) when the signal has already been aborted
       const listener = addAbortListener(signal, () => {
@@ -782,14 +918,6 @@ export class BodyParser<T = unknown> extends Middleware {
     "OPTIONS",
     "TRACE",
   ]);
-
-  /** The bodies parsed by default */
-  static readonly #defaults: readonly string[] = [
-    "application/json",
-    "+json",
-    "text/plain",
-    "application/x-www-form-urlencoded",
-  ];
 }
 
 /**
