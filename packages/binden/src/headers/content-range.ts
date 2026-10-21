@@ -1,4 +1,6 @@
 import { type IRange, Range } from "./range.js";
+import { formatting, objectOf } from "../formatting.js";
+import { checkFieldValue } from "./list.js";
 import { formatStack } from "../exchange.js";
 
 /** The range of `Content-Range` (none when unsatisfied) and the size of the content */
@@ -14,16 +16,23 @@ export class ContentRange extends Range implements IContentRange {
   /**
    * The range of `start` to `end` (non-negative integers, `end` within `size`),
    * or neither of them (an unsatisfied range, which needs a numeric `size`),
-   * and the size of the content: anything else throws a `TypeError`
+   * and the size of the content: anything else throws a `TypeError`, and so
+   * does an init that is not an object. What reading it throws (e.g. a
+   * revoked proxy) is formatted (see `formatting()`).
    */
-  public constructor({ start = null, end = null, size }: IContentRange) {
-    const refusal = ContentRange.#refusal({ start, end, size });
+  public constructor(init: IContentRange) {
+    // Each value is read once (e.g. by a getter): the values checked are the
+    // ones kept
+    const checked = formatting(() =>
+      ContentRange.#read(objectOf(init, "init") as IContentRange),
+    );
+    const refusal = ContentRange.#refusal(checked);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
 
-    super({ start, end });
-    this.#size = size;
+    super({ start: checked.start, end: checked.end });
+    this.#size = checked.size;
   }
 
   /** The size of the whole content in bytes, or `*` */
@@ -44,9 +53,11 @@ export class ContentRange extends Range implements IContentRange {
   /**
    * A range (`bytes 0-9/100`, or with an unknown size `*`) or an unsatisfied
    * range (an asterisk and the size) of RFC 9110 (section 14.4), with decimal
-   * positions only: anything else is not a content range
+   * positions only: anything else is not a content range. An input that is
+   * neither a string nor `undefined` throws a `TypeError`.
    */
   public static fromString(input?: string): [] | [ContentRange] {
+    checkFieldValue(input);
     const {
       first,
       last,
@@ -72,6 +83,15 @@ export class ContentRange extends Range implements IContentRange {
     return init !== null && ContentRange.#refusal(init) === null
       ? [new ContentRange(init)]
       : [];
+  }
+
+  /** The values of an init, each read once */
+  static #read({ start = null, end = null, size }: IContentRange): {
+    readonly start: number | null;
+    readonly end: number | null;
+    readonly size: number | "*";
+  } {
+    return { start, end, size };
   }
 
   /**

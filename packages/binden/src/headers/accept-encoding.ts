@@ -1,4 +1,13 @@
-import { isQvalue, preferred, qvalue, qvalueRefusal, token } from "./list.js";
+import { described, formatting, objectOf } from "../formatting.js";
+import {
+  fieldLinesOf,
+  isQvalue,
+  offersOf,
+  preferred,
+  qvalue,
+  qvalueRefusal,
+  token,
+} from "./list.js";
 import { formatStack } from "../exchange.js";
 
 /** The content codings of `Accept-Encoding` that are known (and `*`) */
@@ -20,18 +29,26 @@ export class AcceptEncoding implements IAcceptEncoding {
 
   /**
    * A known content coding (or `*`) and its weight (a qvalue): invalid ones
-   * throw a `TypeError`
+   * throw a `TypeError` (an unknown coding described without converting it,
+   * see `described()`), and so does an init that is not an object. What
+   * reading it throws (e.g. a revoked proxy) is formatted (see
+   * `formatting()`).
    */
-  public constructor({ encoding, q_value = null }: IAcceptEncoding) {
-    if (!AcceptEncoding.#encodings.includes(encoding)) {
+  public constructor(init: IAcceptEncoding) {
+    // Each value is read once (e.g. by a getter): the values checked are the
+    // ones kept
+    const checked = formatting(() =>
+      AcceptEncoding.#read(objectOf(init, "init") as IAcceptEncoding),
+    );
+    if (!AcceptEncoding.#encodings.includes(checked.encoding)) {
       throw formatStack(
-        new TypeError(`Unknown content coding: ${String(encoding)}`),
+        new TypeError(`Unknown content coding: ${described(checked.encoding)}`),
       );
-    } else if (!isQvalue(q_value)) {
-      throw formatStack(new TypeError(qvalueRefusal(q_value)));
+    } else if (!isQvalue(checked.q_value)) {
+      throw formatStack(new TypeError(qvalueRefusal(checked.q_value)));
     }
-    this.#encoding = encoding;
-    this.#q_value = q_value;
+    this.#encoding = checked.encoding;
+    this.#q_value = checked.q_value;
   }
 
   /** The content coding, or `*` */
@@ -53,15 +70,18 @@ export class AcceptEncoding implements IAcceptEncoding {
   /**
    * The elements of the header with a known coding (in lowercase) and a valid
    * weight, from the greatest weight (a missing one is 1), in their order on a
-   * tie
+   * tie. An input that is neither a string, an array of strings nor
+   * `undefined` throws a `TypeError`.
    */
   public static fromString(string?: string[] | string): AcceptEncoding[] {
-    return AcceptEncoding.#parse(string)
-      .filter((e): e is [IAcceptEncodings, number | null] =>
-        AcceptEncoding.#encodings.includes(e[0]),
-      )
-      .map(([encoding, q_value]) => new AcceptEncoding({ encoding, q_value }))
-      .sort(({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1));
+    return formatting(() =>
+      AcceptEncoding.#parse(fieldLinesOf(string))
+        .filter((e): e is [IAcceptEncodings, number | null] =>
+          AcceptEncoding.#encodings.includes(e[0]),
+        )
+        .map(([encoding, q_value]) => new AcceptEncoding({ encoding, q_value }))
+        .sort(({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1)),
+    );
   }
 
   /**
@@ -72,34 +92,48 @@ export class AcceptEncoding implements IAcceptEncoding {
    * Unknown codings of the header count too. `identity` is acceptable unless
    * excluded (`identity;q=0`, or `*;q=0` without `identity`), but the least
    * preferred when the header does not name it. An offer that is not a token
-   * throws a `TypeError`.
+   * (also one that is not a string), offers that are not an array and a
+   * header of another type than `fromString()` takes throw a `TypeError`.
    */
   public static negotiate(
     offers: readonly string[],
     input?: string[] | string,
   ): string | false {
-    for (const offer of offers) {
-      if (!token.test(offer) || offer === "*") {
-        throw formatStack(new TypeError(`Invalid content coding: ${offer}`));
+    return formatting(() => {
+      const list = offersOf(
+        offers,
+        "Invalid content coding",
+        (offer) => token.test(offer) && offer !== "*",
+      );
+      const header = fieldLinesOf(input);
+      if (typeof header === "undefined") {
+        return list.at(0) ?? false;
       }
-    }
-    if (typeof input === "undefined") {
-      return offers.at(0) ?? false;
-    }
-    const elements = AcceptEncoding.#parse(input).map(([coding, q_value]) => ({
-      coding: AcceptEncoding.#canonical(coding),
-      q_value,
-      implicit: false,
-    }));
-    // The smallest weight, less specific than any element of the header
-    elements.push({ coding: "identity", q_value: 0.001, implicit: true });
-    return preferred(offers, elements, ({ coding, implicit }, offer) => {
-      const match = coding === AcceptEncoding.#canonical(offer);
-      if (implicit) {
-        return match ? -1 : null;
-      }
-      return coding === "*" ? 0 : match ? 1 : null;
+      const elements = AcceptEncoding.#parse(header).map(
+        ([coding, q_value]) => ({
+          coding: AcceptEncoding.#canonical(coding),
+          q_value,
+          implicit: false,
+        }),
+      );
+      // The smallest weight, less specific than any element of the header
+      elements.push({ coding: "identity", q_value: 0.001, implicit: true });
+      return preferred(list, elements, ({ coding, implicit }, offer) => {
+        const match = coding === AcceptEncoding.#canonical(offer);
+        if (implicit) {
+          return match ? -1 : null;
+        }
+        return coding === "*" ? 0 : match ? 1 : null;
+      });
     });
+  }
+
+  /** The values of an init, each read once */
+  static #read({ encoding, q_value = null }: IAcceptEncoding): {
+    readonly encoding: IAcceptEncodings;
+    readonly q_value: number | null;
+  } {
+    return { encoding, q_value };
   }
 
   /** A content coding in lowercase, with `x-gzip` as `gzip` */

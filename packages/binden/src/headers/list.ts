@@ -1,3 +1,4 @@
+import { described } from "../formatting.js";
 import { formatStack } from "../exchange.js";
 
 /** A token (RFC 9110, section 5.6.2) */
@@ -130,6 +131,103 @@ export function stringOf(value: unknown): string {
     return String(value);
   } catch (error: unknown) {
     throw formatStack(error as Error);
+  }
+}
+
+/**
+ * A copy of an array, read once (its `length`, then each element by its
+ * index, e.g. by a getter of a proxy), so that the values checked are the
+ * ones used; anything else is refused with a `TypeError` (`name` is not an
+ * array) that describes it (see `described()`), formatted (see
+ * `formatStack()`). An error that reading it throws (e.g. of a revoked
+ * proxy) is left to the boundary of the caller (see `formatting()`).
+ */
+export function arrayOf(value: unknown, name: string): unknown[] {
+  if (!Array.isArray(value)) {
+    throw formatStack(
+      new TypeError(`${name} is not an array: ${described(value)}`),
+    );
+  }
+  const { length } = value;
+  const copy: unknown[] = [];
+  for (let index = 0; index < length; index += 1) {
+    copy.push(value[index]);
+  }
+  return copy;
+}
+
+/**
+ * Checks the input of a parser of a header that takes one field value
+ * (`fromString()`): `undefined` or a string, anything else refused with a
+ * `TypeError` that describes it (see `described()`), formatted (see
+ * `formatStack()`), before anything reads or converts it. A string is then
+ * parsed without any error of V8.
+ */
+export function checkFieldValue(input: unknown): void {
+  if (typeof input !== "undefined" && typeof input !== "string") {
+    throw formatStack(
+      new TypeError(`The header is not a string: ${described(input)}`),
+    );
+  }
+}
+
+/**
+ * The input of a parser of a header that takes its field lines too
+ * (`fromString()`, `parse()`, and the header of `negotiate()`): `undefined`,
+ * a string, or an array of strings, copied once (see `arrayOf()`). Anything
+ * else (also an element that is not a string) is refused with a `TypeError`
+ * that describes it (see `described()`), formatted (see `formatStack()`),
+ * before anything converts it.
+ */
+export function fieldLinesOf(input: unknown): string[] | string | undefined {
+  if (typeof input === "undefined" || typeof input === "string") {
+    return input;
+  }
+  const lines = arrayOf(input, "The header");
+  for (const line of lines) {
+    if (typeof line !== "string") {
+      throw formatStack(
+        new TypeError(`A field line is not a string: ${described(line)}`),
+      );
+    }
+  }
+  return lines as string[];
+}
+
+/**
+ * The offers of a content negotiation (`negotiate()`), copied once (see
+ * `arrayOf()`), each checked by `valid` (which a string must pass): anything
+ * else (e.g. `null`, a number, or an object, whatever its `toString()`
+ * tells) is refused with a `TypeError` (`refusal` and the offer, described
+ * without converting it, see `described()`), formatted (see `formatStack()`)
+ */
+export function offersOf(
+  offers: unknown,
+  refusal: string,
+  valid: (offer: string) => boolean,
+): string[] {
+  const copy = arrayOf(offers, "`offers`");
+  for (const offer of copy) {
+    if (typeof offer !== "string" || !valid(offer)) {
+      throw formatStack(new TypeError(`${refusal}: ${described(offer)}`));
+    }
+  }
+  return copy as string[];
+}
+
+/** `Date.prototype.getTime()` of the engine */
+const getTime: unknown = Reflect.get(Date.prototype, "getTime");
+
+/**
+ * The time of a `Date` (also of a subclass), which the engine reads from the
+ * date itself, never by its methods nor by the traps of a proxy (a proxy of
+ * a date has no time), or `null` for anything else
+ */
+export function timeOf(date: unknown): number | null {
+  try {
+    return Reflect.apply(getTime as () => number, date, []);
+  } catch {
+    return null;
   }
 }
 

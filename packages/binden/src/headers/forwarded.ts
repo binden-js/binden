@@ -1,4 +1,12 @@
-import { fieldValue, quote, split, splitFromEnd, unquote } from "./list.js";
+import {
+  fieldLinesOf,
+  fieldValue,
+  quote,
+  split,
+  splitFromEnd,
+  unquote,
+} from "./list.js";
+import { formatting, objectOf } from "../formatting.js";
 import { formatStack } from "../exchange.js";
 
 /** The parameters of a `Forwarded` element */
@@ -36,18 +44,23 @@ export class Forwarded implements IForwarded {
   /**
    * The parameters of an element: strings that a field value can carry (no
    * control characters but tabs), sent as quoted strings when they are not
-   * tokens. Anything else throws a `TypeError`.
+   * tokens. Anything else throws a `TypeError`, and so does an init that is
+   * not an object. What reading it throws (e.g. a revoked proxy) is formatted
+   * (see `formatting()`).
    */
-  public constructor({ by, host, secret, proto, ..._ }: IForwarded) {
+  public constructor(init: IForwarded) {
     // Each value is read once (e.g. by a getter): the values checked are the
     // ones kept
-    const parameters = {
-      for: _.for,
-      by: by ?? null,
-      host: host ?? null,
-      secret: secret ?? null,
-      proto: proto ?? null,
-    };
+    const parameters = formatting(() => {
+      const given = objectOf(init, "init") as IForwarded;
+      return {
+        for: given.for,
+        by: given.by ?? null,
+        host: given.host ?? null,
+        secret: given.secret ?? null,
+        proto: given.proto ?? null,
+      };
+    });
     const refusal = Forwarded.#refusal(parameters);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
@@ -93,10 +106,16 @@ export class Forwarded implements IForwarded {
       .join(";");
   }
 
-  /** The valid elements of the header (see `.parse()`) */
+  /**
+   * The valid elements of the header (see `.parse()`). An input that is
+   * neither a string, an array of strings nor `undefined` throws a
+   * `TypeError`.
+   */
   public static fromString(input?: readonly string[] | string): Forwarded[] {
-    return Forwarded.parse(input).filter(
-      (element): element is Forwarded => element !== null,
+    return formatting(() =>
+      Forwarded.#elements(fieldLinesOf(input)).filter(
+        (element): element is Forwarded => element !== null,
+      ),
     );
   }
 
@@ -109,11 +128,18 @@ export class Forwarded implements IForwarded {
    * 9110, section 5.6.1). Their position tells which proxy has added them:
    * every proxy appends its own, so a field line is read from its end, where a
    * quoted string that is not terminated (e.g. sent by a client) invalidates
-   * the element that has it and those before it only.
+   * the element that has it and those before it only. An input that is
+   * neither a string, an array of strings nor `undefined` throws a
+   * `TypeError`.
    */
   public static parse(
     input?: readonly string[] | string,
   ): (Forwarded | null)[] {
+    return formatting(() => Forwarded.#elements(fieldLinesOf(input)));
+  }
+
+  /** The elements of the header, `null` for an invalid one (see `parse()`) */
+  static #elements(input?: readonly string[] | string): (Forwarded | null)[] {
     const lines = typeof input === "string" ? [input] : (input ?? []);
     return lines.flatMap((line) =>
       splitFromEnd(line, ",")

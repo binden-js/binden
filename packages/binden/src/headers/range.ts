@@ -1,5 +1,6 @@
+import { checkFieldValue, trimOws } from "./list.js";
+import { formatting, objectOf } from "../formatting.js";
 import { formatStack } from "../exchange.js";
-import { trimOws } from "./list.js";
 
 /** A range of `Range`: its first and last positions, either one optional */
 export interface IRange {
@@ -26,12 +27,20 @@ export class Range implements IRange {
 
   /**
    * A range of `start` to `end` (non-negative integers), from `start` to the
-   * end (without `end`), or of the last `end` bytes (without `start`)
+   * end (without `end`), or of the last `end` bytes (without `start`): anything
+   * else throws a `TypeError`, and so does an init that is not an object. What
+   * reading it throws (e.g. a revoked proxy) is formatted (see
+   * `formatting()`).
    */
-  public constructor({ start = null, end = null }: IRange) {
+  public constructor(init: IRange) {
+    // Each value is read once (e.g. by a getter): the values checked are the
+    // ones kept
+    const checked = formatting(() =>
+      Range.#read(objectOf(init, "init") as IRange),
+    );
     for (const [name, value] of [
-      ["start", start],
-      ["end", end],
+      ["start", checked.start],
+      ["end", checked.end],
     ] as const) {
       if (value !== null && !(Number.isSafeInteger(value) && value >= 0)) {
         throw formatStack(
@@ -40,14 +49,30 @@ export class Range implements IRange {
       }
     }
     // Only an unsatisfied `ContentRange` has neither
-    if (new.target === Range && start === null && end === null) {
+    if (
+      new.target === Range &&
+      checked.start === null &&
+      checked.end === null
+    ) {
       throw formatStack(new TypeError("A range has a `start` or an `end`"));
-    } else if (start !== null && end !== null && end < start) {
+    } else if (
+      checked.start !== null &&
+      checked.end !== null &&
+      checked.end < checked.start
+    ) {
       throw formatStack(new TypeError("`end` is less than `start`"));
     }
     this.#unit = "bytes";
-    this.#start = start;
-    this.#end = end;
+    this.#start = checked.start;
+    this.#end = checked.end;
+  }
+
+  /** The values of an init, each read once */
+  static #read({ start = null, end = null }: IRange): {
+    readonly start: number | null;
+    readonly end: number | null;
+  } {
+    return { start, end };
   }
 
   /** The range unit: `bytes` */
@@ -78,9 +103,11 @@ export class Range implements IRange {
   /**
    * The byte ranges (RFC 9110, section 14.1.1): `first-pos "-" [ last-pos ]` or
    * `"-" suffix-length`, of plain digits. Spaces and tabs may surround them, and
-   * an invalid range is skipped.
+   * an invalid range is skipped. An input that is neither a string nor
+   * `undefined` throws a `TypeError`.
    */
   public static fromString(input?: string): Range[] {
+    checkFieldValue(input);
     // The unit is case-insensitive (RFC 9110, section 14.1)
     const ranges =
       /^[ \t]*bytes=(?<ranges>.*)$/iu.exec(input ?? "")?.groups?.ranges ?? "";

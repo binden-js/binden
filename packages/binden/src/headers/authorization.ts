@@ -1,4 +1,5 @@
-import { fieldValue, stringOf } from "./list.js";
+import { checkFieldValue, fieldValue, stringOf } from "./list.js";
+import { described, formatting, objectOf } from "../formatting.js";
 import { formatStack } from "../exchange.js";
 
 /** The supported authentication schemes, in their usual casing */
@@ -33,22 +34,24 @@ export class Authorization implements IAuthorization {
   /**
    * A supported scheme (in its usual casing) and its credentials: `null`, or
    * what a field value can carry, without leading or trailing whitespace.
-   * Anything else throws a `TypeError`.
+   * Anything else throws a `TypeError` (an unsupported scheme described
+   * without converting it, see `described()`), and so does an init that is
+   * not an object. What reading it throws (e.g. a revoked proxy) is formatted
+   * (see `formatting()`).
    */
-  public constructor({ type, credentials = null }: IAuthorization) {
+  public constructor(init: IAuthorization) {
     // Each value is read once (e.g. by a getter), and the credentials
     // converted once when they are not a string (see `stringOf()`): the
     // values checked are the ones kept
-    const init = {
-      type,
-      credentials: credentials === null ? null : stringOf(credentials),
-    };
-    const refusal = Authorization.#refusal(init);
+    const checked = formatting(() =>
+      Authorization.#read(objectOf(init, "init") as IAuthorization),
+    );
+    const refusal = Authorization.#refusal(checked);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    this.#type = type;
-    this.#credentials = init.credentials;
+    this.#type = checked.type;
+    this.#credentials = checked.credentials;
   }
 
   /** The authentication scheme, in its usual casing */
@@ -71,9 +74,11 @@ export class Authorization implements IAuthorization {
   /**
    * The header (its scheme in any case), or `null` when it is missing,
    * malformed, of an unsupported scheme or with invalid credentials (e.g.
-   * control characters)
+   * control characters). An input that is neither a string nor `undefined`
+   * throws a `TypeError`.
    */
   public static fromString(input?: string): Authorization | null {
+    checkFieldValue(input);
     // auth-scheme [ 1*SP ( token68 / #auth-param ) ] (RFC 9110, section 11.4),
     // split at the first space (a regular expression with ` +` before `.*`
     // would backtrack polynomially on long runs of spaces)
@@ -98,12 +103,23 @@ export class Authorization implements IAuthorization {
       : null;
   }
 
+  /** The values of an init, each read once, the credentials converted once */
+  static #read({ type, credentials = null }: IAuthorization): {
+    readonly type: IAuthenticationType;
+    readonly credentials: string | null;
+  } {
+    return {
+      type,
+      credentials: credentials === null ? null : stringOf(credentials),
+    };
+  }
+
   /**
    * Why a header is invalid (see the constructor), `null` when it is valid
    */
   static #refusal({ type, credentials = null }: IAuthorization): string | null {
     if (!Authorization.isValidType(type)) {
-      return `Unsupported authentication scheme: ${String(type)}`;
+      return `Unsupported authentication scheme: ${described(type)}`;
     } else if (
       credentials !== null &&
       (credentials === "" ||

@@ -1,4 +1,11 @@
-import { fieldValue, split, stringOf, unquote } from "./list.js";
+import {
+  checkFieldValue,
+  fieldValue,
+  split,
+  stringOf,
+  unquote,
+} from "./list.js";
+import { described, formatting, objectOf } from "../formatting.js";
 import { formatStack } from "../exchange.js";
 
 /** A media type of `Content-Type` and its parameters */
@@ -49,19 +56,21 @@ export class ContentType implements IContentType {
    * A media type (`type/subtype`, of tokens) with its parameters: a token as
    * name, and a value that a field value can carry (no control characters but
    * tabs, nothing above `\xFF`), sent as a quoted string when it is not a
-   * token. Invalid ones throw a `TypeError`.
+   * token. Invalid ones throw a `TypeError`, and so does an init or parameters
+   * that are not an object. What reading them throws (e.g. a revoked proxy)
+   * is formatted (see `formatting()`).
    */
-  public constructor({
-    type,
-    charset = null,
-    boundary = null,
-    parameters = {},
-  }: IContentType) {
-    const checked = ContentType.#checked({
-      type,
-      charset,
-      boundary,
-      parameters,
+  public constructor(init: IContentType) {
+    // Each value is read once (e.g. by a getter), and so are the parameters
+    // (see `#checked()`): the values checked are the ones kept
+    const checked = formatting(() => {
+      const {
+        type,
+        charset = null,
+        boundary = null,
+        parameters = {},
+      } = objectOf(init, "init") as IContentType;
+      return ContentType.#checked({ type, charset, boundary, parameters });
     });
     if (typeof checked === "string") {
       throw formatStack(new TypeError(checked));
@@ -105,8 +114,13 @@ export class ContentType implements IContentType {
     ].join("; ");
   }
 
-  /** `type/subtype *( OWS ";" OWS parameter )` (RFC 9110, section 8.3.1) */
+  /**
+   * `type/subtype *( OWS ";" OWS parameter )` (RFC 9110, section 8.3.1), or
+   * `null` (invalid or missing). An input that is neither a string nor
+   * `undefined` throws a `TypeError`.
+   */
   public static fromString(input?: string): ContentType | null {
+    checkFieldValue(input);
     const [rawType = "", ...rest] = split(input ?? "", ";");
     const type = rawType.trim().toLowerCase();
 
@@ -151,6 +165,11 @@ export class ContentType implements IContentType {
     const media = stringOf(type);
     if (!mediaType.test(media)) {
       return `Invalid media type: ${media}`;
+    } else if (
+      typeof parameters !== "object" ||
+      (parameters as unknown) === null
+    ) {
+      return `\`parameters\` is not an object: ${described(parameters)}`;
     }
     const all = new Map<string, string>();
     for (const [name, value] of Object.entries(parameters)) {

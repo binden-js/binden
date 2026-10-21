@@ -1,10 +1,13 @@
 import {
+  fieldLinesOf,
   isQvalue,
+  offersOf,
   preferred,
   qvalueRefusal,
   stringOf,
   weighted,
 } from "./list.js";
+import { formatting, objectOf } from "../formatting.js";
 import { formatStack } from "../exchange.js";
 
 /** An element of `Accept-Language` */
@@ -26,18 +29,21 @@ export class AcceptLanguage implements IAcceptLanguage {
   /**
    * A language range (`*`, or subtags of up to 8 letters and digits, the first
    * one of letters) and its weight (a qvalue). Invalid ones throw a
-   * `TypeError`.
+   * `TypeError`, and so does an init that is not an object. What reading it
+   * throws (e.g. a revoked proxy) is formatted (see `formatting()`).
    */
-  public constructor({ language, q_value = null }: IAcceptLanguage) {
+  public constructor(init: IAcceptLanguage) {
     // Each value is read once (e.g. by a getter), and converted once when it
     // is not a string (see `stringOf()`): the values checked are the ones kept
-    const init = { language: stringOf(language), q_value };
-    const refusal = AcceptLanguage.#refusal(init);
+    const checked = formatting(() =>
+      AcceptLanguage.#read(objectOf(init, "init") as IAcceptLanguage),
+    );
+    const refusal = AcceptLanguage.#refusal(checked);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    this.#language = init.language;
-    this.#q_value = init.q_value;
+    this.#language = checked.language;
+    this.#q_value = checked.q_value;
   }
 
   /** The language range: a language tag, or `*` */
@@ -59,11 +65,14 @@ export class AcceptLanguage implements IAcceptLanguage {
   /**
    * The valid elements of the header (other parameters than the weight are
    * ignored), from the greatest weight (a missing one is 1), in their order on
-   * a tie
+   * a tie. An input that is neither a string, an array of strings nor
+   * `undefined` throws a `TypeError`.
    */
   public static fromString(input?: string[] | string): AcceptLanguage[] {
-    return AcceptLanguage.#parse(input).toSorted(
-      ({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1),
+    return formatting(() =>
+      AcceptLanguage.#parse(fieldLinesOf(input)).toSorted(
+        ({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1),
+      ),
     );
   }
 
@@ -72,29 +81,32 @@ export class AcceptLanguage implements IAcceptLanguage {
    * without the header, otherwise the one of the greatest weight, given by the
    * longest language range that is the tag or one of its prefixes (basic
    * filtering, RFC 4647, section 3.3.1), then `*`, or `false` when none is
-   * acceptable. An offer that is not a language tag throws a `TypeError`.
+   * acceptable. An offer that is not a language tag (also one that is not a
+   * string), offers that are not an array and a header of another type than
+   * `fromString()` takes throw a `TypeError`.
    */
   public static negotiate(
     offers: readonly string[],
     input?: string[] | string,
   ): string | false {
-    for (const offer of offers) {
-      if (!tag.test(offer)) {
-        throw formatStack(new TypeError(`Invalid language tag: ${offer}`));
+    return formatting(() => {
+      const list = offersOf(offers, "Invalid language tag", (offer) =>
+        tag.test(offer),
+      );
+      const header = fieldLinesOf(input);
+      if (typeof header === "undefined") {
+        return list.at(0) ?? false;
       }
-    }
-    if (typeof input === "undefined") {
-      return offers.at(0) ?? false;
-    }
-    return preferred(offers, AcceptLanguage.#parse(input), (range, offer) => {
-      const language = range.language.toLowerCase();
-      const lower = offer.toLowerCase();
-      if (language === "*") {
-        return 0;
-      } else if (lower === language || lower.startsWith(`${language}-`)) {
-        return language.split("-").length;
-      }
-      return null;
+      return preferred(list, AcceptLanguage.#parse(header), (range, offer) => {
+        const language = range.language.toLowerCase();
+        const lower = offer.toLowerCase();
+        if (language === "*") {
+          return 0;
+        } else if (lower === language || lower.startsWith(`${language}-`)) {
+          return language.split("-").length;
+        }
+        return null;
+      });
     });
   }
 
@@ -108,6 +120,14 @@ export class AcceptLanguage implements IAcceptLanguage {
         ? [new AcceptLanguage(init)]
         : [];
     });
+  }
+
+  /** The values of an init, each read once, the language converted once */
+  static #read({ language, q_value = null }: IAcceptLanguage): {
+    readonly language: string;
+    readonly q_value: number | null;
+  } {
+    return { language: stringOf(language), q_value };
   }
 
   /**

@@ -1,6 +1,7 @@
-import { described } from "../formatting.js";
+import { checkFieldValue, stringOf, timeOf } from "./list.js";
+import { described, formatting, objectOf } from "../formatting.js";
 import { formatStack } from "../exchange.js";
-import { stringOf } from "./list.js";
+
 /** A cookie: its name, value and attributes (RFC 6265) */
 export interface ICookie {
   /** The name of the cookie: a token */
@@ -74,9 +75,41 @@ export class Cookie implements ICookie {
   /**
    * A cookie with its attributes (by default `Path=/`, `HttpOnly` and
    * `SameSite=Lax`): a name, a value or an attribute that could add attributes
-   * to `Set-Cookie` throws a `TypeError`
+   * to `Set-Cookie` throws a `TypeError`, and so does an init that is not an
+   * object. What reading it throws (e.g. a revoked proxy) is formatted (see
+   * `formatting()`).
    */
-  public constructor({
+  public constructor(init: ICookie) {
+    // Each attribute is read once (e.g. by a getter), and its value converted
+    // once when it is not a string (see `stringOf()`): the values checked are
+    // the ones kept, and so is the copy of the date (whose methods could tell
+    // another time than its own, e.g. of a subclass)
+    const checked = formatting(() =>
+      Cookie.#read(objectOf(init, "init") as ICookie),
+    );
+    const refusal = Cookie.#refusal(checked);
+    if (refusal !== null) {
+      throw formatStack(new TypeError(refusal));
+    }
+
+    this.#key = checked.key;
+    this.#value = checked.value;
+    this.#max_age = checked.max_age;
+    this.#domain = checked.domain;
+    this.#path = checked.path;
+    this.#secure = checked.secure;
+    this.#http_only = checked.http_only;
+    this.#same_site = checked.same_site;
+    this.#partitioned = checked.partitioned;
+    this.#expires = checked.expires;
+  }
+
+  /**
+   * The attributes of an init, each read once, with their defaults, the
+   * strings converted once (see `stringOf()`) and the date copied (see
+   * `#copy()`)
+   */
+  static #read({
     key,
     value,
     expires = null,
@@ -87,12 +120,11 @@ export class Cookie implements ICookie {
     http_only = true,
     same_site = "Lax",
     partitioned = false,
-  }: ICookie) {
-    // Each attribute is read once (e.g. by a getter), and its value converted
-    // once when it is not a string (see `stringOf()`): the values checked are
-    // the ones kept, and so is the copy of the date (whose methods could tell
-    // another time than its own, e.g. of a subclass)
-    const init = {
+  }: ICookie): Required<ICookie> & {
+    readonly expires: Date | null;
+    readonly max_age: number | null;
+  } {
+    return {
       key: stringOf(key),
       value: stringOf(value),
       expires: Cookie.#copy(expires),
@@ -100,37 +132,29 @@ export class Cookie implements ICookie {
       domain: domain === null ? null : stringOf(domain),
       path: path === null ? null : stringOf(path),
       same_site,
+      secure: Boolean(secure),
+      http_only: Boolean(http_only),
+      partitioned: Boolean(partitioned),
     };
-    const refusal = Cookie.#refusal(init);
-    if (refusal !== null) {
-      throw formatStack(new TypeError(refusal));
-    }
-
-    this.#key = init.key;
-    this.#value = init.value;
-    this.#max_age = max_age;
-    this.#domain = init.domain;
-    this.#path = init.path;
-    this.#secure = Boolean(secure);
-    this.#http_only = Boolean(http_only);
-    this.#same_site = same_site;
-    this.#partitioned = Boolean(partitioned);
-    this.#expires = init.expires;
   }
 
   /**
    * The copy of the `Expires` of a cookie: a `Date` (also of a subclass) by
-   * its time, anything else `null`. What copying it throws (e.g. the
-   * `TypeError` that V8 creates for a proxy of a `Date`, which has no time of
-   * its own, while the frames of the call are on the stack) is formatted
-   * (see `formatStack()`).
+   * its time, which the engine reads (see `timeOf()`), anything else `null`.
+   * A proxy of a `Date`, which has no time of its own, is refused with a
+   * `TypeError`. Called inside the boundary of the constructor (see
+   * `formatting()`), which formats what checking it throws (e.g. of a revoked
+   * proxy).
    */
   static #copy(expires: unknown): Date | null {
-    try {
-      return expires instanceof Date ? new Date(expires) : null;
-    } catch (error: unknown) {
-      throw formatStack(error as Error);
+    if (!(expires instanceof Date)) {
+      return null;
     }
+    const time = timeOf(expires);
+    if (time === null) {
+      throw formatStack(new TypeError("The Expires is not a Date"));
+    }
+    return new Date(time);
   }
 
   /**
@@ -248,9 +272,11 @@ export class Cookie implements ICookie {
   /**
    * The valid cookies of a `Cookie` header (`name=value` pairs, separated by
    * `;`), with the double quotes of their values removed: the first cookie of a
-   * name wins, and invalid ones are skipped
+   * name wins, and invalid ones are skipped. An input that is neither a
+   * string nor `undefined` throws a `TypeError`.
    */
   public static fromString(input?: string): Cookie[] {
+    checkFieldValue(input);
     if (typeof input !== "string") {
       return [];
     }

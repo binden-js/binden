@@ -54,3 +54,20 @@ export function described(value: unknown): string {
       return value === null ? "null" : "(an object)";
   }
 }
+
+/**
+ * The init of a header (`name` in the message), checked before any of its
+ * properties is read: an object (an array too). Anything else (e.g. `null`,
+ * a string, a number, or a function) is refused with a `TypeError` that
+ * describes it (see `described()`), formatted (see `formatStack()`):
+ * destructuring would read a primitive as an object without the values, and
+ * fail (with an error of V8) on `null`.
+ */
+export function objectOf(value: unknown, name: string): object {
+  if (typeof value !== "object" || value === null) {
+    throw formatStack(
+      new TypeError(`\`${name}\` is not an object: ${described(value)}`),
+    );
+  }
+  return value;
+}

@@ -1,6 +1,9 @@
+import { described, formatting, objectOf } from "../formatting.js";
 import {
+  fieldLinesOf,
   fieldValue,
   isQvalue,
+  offersOf,
   preferred,
   quote,
   qvalueRefusal,
@@ -36,13 +39,22 @@ export class Accept implements IAccept {
   /**
    * A media range (`*\/*`, `type/*` or `type/subtype`, of tokens), its
    * parameters (a token as name, other than `q`, and a value without control
-   * characters) and its weight (a qvalue). Invalid ones throw a `TypeError`.
+   * characters) and its weight (a qvalue). Invalid ones throw a `TypeError`,
+   * and so does an init or parameters that are not an object. What reading
+   * them throws (e.g. a revoked proxy) is formatted (see `formatting()`).
    */
-  public constructor({ type, parameters = {}, q_value = null }: IAccept) {
+  public constructor(init: IAccept) {
     // Each value is read once (e.g. by a getter), and so are the parameters,
     // each converted once when it is not a string (see `stringOf()`): the
     // values checked are the ones kept
-    const checked = Accept.#checked({ type, parameters, q_value });
+    const checked = formatting(() => {
+      const {
+        type,
+        parameters = {},
+        q_value = null,
+      } = objectOf(init, "init") as IAccept;
+      return Accept.#checked({ type, parameters, q_value });
+    });
     if (typeof checked === "string") {
       throw formatStack(new TypeError(checked));
     }
@@ -80,11 +92,15 @@ export class Accept implements IAccept {
 
   /**
    * The valid elements of the header (with their media ranges in lowercase),
-   * from the greatest weight (a missing one is 1), in their order on a tie
+   * from the greatest weight (a missing one is 1), in their order on a tie.
+   * An input that is neither a string, an array of strings nor `undefined`
+   * throws a `TypeError`.
    */
   public static fromString(input?: string[] | string): Accept[] {
-    return Accept.#parse(input).toSorted(
-      ({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1),
+    return formatting(() =>
+      Accept.#parse(fieldLinesOf(input)).toSorted(
+        ({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1),
+      ),
     );
   }
 
@@ -94,19 +110,29 @@ export class Accept implements IAccept {
    * of the greatest weight, given by the most specific media range that matches
    * it (`text/html;level=1`, then `text/html`, `text/*` and `*\/*`), or `false`
    * when none is acceptable (RFC 9110, section 12.5.1). An offer that is not a
-   * media type throws a `TypeError`.
+   * media type (also one that is not a string), offers that are not an array
+   * and a header of another type than `fromString()` takes throw a
+   * `TypeError`.
    */
   public static negotiate(
     offers: readonly string[],
     input?: string[] | string,
   ): string | false {
-    const types = new Map(offers.map((offer) => [offer, Accept.#offer(offer)]));
-    if (typeof input === "undefined") {
-      return offers.at(0) ?? false;
-    }
-    return preferred(offers, Accept.#parse(input), (range, offer) =>
-      Accept.#specificity(range, types.get(offer) as IMediaType),
-    );
+    return formatting(() => {
+      const types = new Map<string, IMediaType>();
+      const list = offersOf(offers, "Invalid media type", (offer) => {
+        const media = Accept.#offer(offer);
+        types.set(offer, media as IMediaType);
+        return media !== null;
+      });
+      const header = fieldLinesOf(input);
+      if (typeof header === "undefined") {
+        return list.at(0) ?? false;
+      }
+      return preferred(list, Accept.#parse(header), (range, offer) =>
+        Accept.#specificity(range, types.get(offer) as IMediaType),
+      );
+    });
   }
 
   /** The valid elements of the header, in their order */
@@ -149,6 +175,11 @@ export class Accept implements IAccept {
       return `Invalid media range: ${range}`;
     } else if (!isQvalue(q_value)) {
       return qvalueRefusal(q_value);
+    } else if (
+      typeof parameters !== "object" ||
+      (parameters as unknown) === null
+    ) {
+      return `\`parameters\` is not an object: ${described(parameters)}`;
     }
     const all = new Map<string, string>();
     for (const [name, given] of Object.entries(parameters)) {
@@ -166,8 +197,8 @@ export class Accept implements IAccept {
     return { type: range, parameters: all, q_value };
   }
 
-  /** A media type, without wildcards nor a weight, or a `TypeError` */
-  static #offer(offer: string): IMediaType {
+  /** A media type, without wildcards nor a weight, or `null` */
+  static #offer(offer: string): IMediaType | null {
     // One element (without a weight): an offer with a `,` would be several
     const [element = null, ...others] = weighted(offer);
     const [type = "", subtype = "", ...rest] =
@@ -182,7 +213,7 @@ export class Accept implements IAccept {
       type === "*" ||
       subtype === "*"
     ) {
-      throw formatStack(new TypeError(`Invalid media type: ${offer}`));
+      return null;
     }
     return { type, subtype, parameters: new Map(element.parameters) };
   }

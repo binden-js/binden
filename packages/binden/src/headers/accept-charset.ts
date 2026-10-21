@@ -1,11 +1,14 @@
 import {
+  fieldLinesOf,
   isQvalue,
+  offersOf,
   preferred,
   qvalueRefusal,
   stringOf,
   token,
   weighted,
 } from "./list.js";
+import { formatting, objectOf } from "../formatting.js";
 import { formatStack } from "../exchange.js";
 
 /** An element of `Accept-Charset` */
@@ -23,18 +26,21 @@ export class AcceptCharset implements IAcceptCharset {
 
   /**
    * A charset (a token, or `*`) and its weight (a qvalue). Invalid ones throw
-   * a `TypeError`.
+   * a `TypeError`, and so does an init that is not an object. What reading it
+   * throws (e.g. a revoked proxy) is formatted (see `formatting()`).
    */
-  public constructor({ charset, q_value = null }: IAcceptCharset) {
+  public constructor(init: IAcceptCharset) {
     // Each value is read once (e.g. by a getter), and converted once when it
     // is not a string (see `stringOf()`): the values checked are the ones kept
-    const init = { charset: stringOf(charset), q_value };
-    const refusal = AcceptCharset.#refusal(init);
+    const checked = formatting(() =>
+      AcceptCharset.#read(objectOf(init, "init") as IAcceptCharset),
+    );
+    const refusal = AcceptCharset.#refusal(checked);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    this.#charset = init.charset;
-    this.#q_value = init.q_value;
+    this.#charset = checked.charset;
+    this.#q_value = checked.q_value;
   }
 
   /** The charset (a token), or `*` */
@@ -56,11 +62,14 @@ export class AcceptCharset implements IAcceptCharset {
   /**
    * The valid elements of the header (other parameters than the weight are
    * ignored), from the greatest weight (a missing one is 1), in their order on
-   * a tie
+   * a tie. An input that is neither a string, an array of strings nor
+   * `undefined` throws a `TypeError`.
    */
   public static fromString(input?: string[] | string): AcceptCharset[] {
-    return AcceptCharset.#parse(input).toSorted(
-      ({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1),
+    return formatting(() =>
+      AcceptCharset.#parse(fieldLinesOf(input)).toSorted(
+        ({ q_value: a }, { q_value: b }) => (b ?? 1) - (a ?? 1),
+      ),
     );
   }
 
@@ -68,23 +77,28 @@ export class AcceptCharset implements IAcceptCharset {
    * The preferred one of the offered charsets, as given: the first one without
    * the header, otherwise the one of the greatest weight, given by the element
    * of the charset (case-insensitive), then `*`, or `false` when none is
-   * acceptable. An offer that is not a token throws a `TypeError`.
+   * acceptable. An offer that is not a token (also one that is not a
+   * string), offers that are not an array and a header of another type than
+   * `fromString()` takes throw a `TypeError`.
    */
   public static negotiate(
     offers: readonly string[],
     input?: string[] | string,
   ): string | false {
-    for (const offer of offers) {
-      if (!token.test(offer) || offer === "*") {
-        throw formatStack(new TypeError(`Invalid charset: ${offer}`));
+    return formatting(() => {
+      const list = offersOf(
+        offers,
+        "Invalid charset",
+        (offer) => token.test(offer) && offer !== "*",
+      );
+      const header = fieldLinesOf(input);
+      if (typeof header === "undefined") {
+        return list.at(0) ?? false;
       }
-    }
-    if (typeof input === "undefined") {
-      return offers.at(0) ?? false;
-    }
-    return preferred(offers, AcceptCharset.#parse(input), (element, offer) => {
-      const charset = element.charset.toLowerCase();
-      return charset === "*" ? 0 : charset === offer.toLowerCase() ? 1 : null;
+      return preferred(list, AcceptCharset.#parse(header), (element, offer) => {
+        const charset = element.charset.toLowerCase();
+        return charset === "*" ? 0 : charset === offer.toLowerCase() ? 1 : null;
+      });
     });
   }
 
@@ -98,6 +112,14 @@ export class AcceptCharset implements IAcceptCharset {
         ? [new AcceptCharset(init)]
         : [];
     });
+  }
+
+  /** The values of an init, each read once, the charset converted once */
+  static #read({ charset, q_value = null }: IAcceptCharset): {
+    readonly charset: string;
+    readonly q_value: number | null;
+  } {
+    return { charset: stringOf(charset), q_value };
   }
 
   /**
