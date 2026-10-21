@@ -1,4 +1,4 @@
-import { fieldValue } from "./list.js";
+import { fieldValue, stringOf } from "./list.js";
 import { formatStack } from "../exchange.js";
 
 /** The supported authentication schemes, in their usual casing */
@@ -36,12 +36,19 @@ export class Authorization implements IAuthorization {
    * Anything else throws a `TypeError`.
    */
   public constructor({ type, credentials = null }: IAuthorization) {
-    const refusal = Authorization.#refusal({ type, credentials });
+    // Each value is read once (e.g. by a getter), and the credentials
+    // converted once when they are not a string (see `stringOf()`): the
+    // values checked are the ones kept
+    const init = {
+      type,
+      credentials: credentials === null ? null : stringOf(credentials),
+    };
+    const refusal = Authorization.#refusal(init);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
     this.#type = type;
-    this.#credentials = credentials;
+    this.#credentials = init.credentials;
   }
 
   /** The authentication scheme, in its usual casing */

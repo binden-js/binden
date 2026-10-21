@@ -1,4 +1,11 @@
-import { isQvalue, preferred, token, weighted } from "./list.js";
+import {
+  isQvalue,
+  preferred,
+  qvalueRefusal,
+  stringOf,
+  token,
+  weighted,
+} from "./list.js";
 import { formatStack } from "../exchange.js";
 
 /** An element of `Accept-Charset` */
@@ -19,14 +26,15 @@ export class AcceptCharset implements IAcceptCharset {
    * a `TypeError`.
    */
   public constructor({ charset, q_value = null }: IAcceptCharset) {
-    // Each value is read once (e.g. by a getter): the values checked are the
-    // ones kept
-    const refusal = AcceptCharset.#refusal({ charset, q_value });
+    // Each value is read once (e.g. by a getter), and converted once when it
+    // is not a string (see `stringOf()`): the values checked are the ones kept
+    const init = { charset: stringOf(charset), q_value };
+    const refusal = AcceptCharset.#refusal(init);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    this.#charset = charset;
-    this.#q_value = q_value;
+    this.#charset = init.charset;
+    this.#q_value = init.q_value;
   }
 
   /** The charset (a token), or `*` */
@@ -99,7 +107,7 @@ export class AcceptCharset implements IAcceptCharset {
     if (!token.test(charset)) {
       return `Invalid charset: ${charset}`;
     } else if (!isQvalue(q_value)) {
-      return `\`q_value\` is not a qvalue: ${q_value}`;
+      return qvalueRefusal(q_value);
     }
     return null;
   }

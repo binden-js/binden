@@ -1,4 +1,4 @@
-import { fieldValue, split, unquote } from "./list.js";
+import { fieldValue, split, stringOf, unquote } from "./list.js";
 import { formatStack } from "../exchange.js";
 
 /** A media type of `Content-Type` and its parameters */
@@ -27,8 +27,12 @@ const mediaType = new RegExp(`^${token}/${token}$`, "u");
 /** The name of a parameter */
 const parameterName = new RegExp(`^${token}$`, "u");
 
-/** The options of a valid media type, and all its parameters by name */
+/**
+ * A valid media type (converted once, see `stringOf()`), its options, and all
+ * its parameters by name
+ */
 interface IChecked {
+  readonly type: string;
   charset: string | null;
   boundary: string | null;
   readonly parameters: ReadonlyMap<string, string>;
@@ -62,7 +66,7 @@ export class ContentType implements IContentType {
     if (typeof checked === "string") {
       throw formatStack(new TypeError(checked));
     }
-    this.#type = type;
+    this.#type = checked.type;
     this.#boundary = checked.boundary;
     this.#charset = checked.charset;
     this.#parameters = checked.parameters;
@@ -134,7 +138,9 @@ export class ContentType implements IContentType {
   /**
    * The state of a valid media type (see the constructor): its `charset`, its
    * `boundary` and all its parameters by their names in lowercase (the first
-   * one of a name wins, but the options), or why it is invalid
+   * one of a name wins, but the options), the media type and the values of
+   * the parameters converted once when they are not strings (see
+   * `stringOf()`), or why it is invalid
    */
   static #checked({
     type,
@@ -142,20 +148,26 @@ export class ContentType implements IContentType {
     boundary = null,
     parameters = {},
   }: IContentType): IChecked | string {
-    if (!mediaType.test(type)) {
-      return `Invalid media type: ${type}`;
+    const media = stringOf(type);
+    if (!mediaType.test(media)) {
+      return `Invalid media type: ${media}`;
     }
     const all = new Map<string, string>();
     for (const [name, value] of Object.entries(parameters)) {
       const key = name.toLowerCase();
       if (!all.has(key)) {
-        all.set(key, value);
+        all.set(key, stringOf(value));
       }
     }
     // `boundary` (of `multipart/form-data` only, in any case) and `charset`
     // (of the other types) are the options themselves
-    const state: IChecked = { charset: null, boundary: null, parameters: all };
-    if (type.toLowerCase() === "multipart/form-data") {
+    const state: IChecked = {
+      type: media,
+      charset: null,
+      boundary: null,
+      parameters: all,
+    };
+    if (media.toLowerCase() === "multipart/form-data") {
       if (typeof boundary !== "string" || !boundary) {
         return "`boundary` is missing";
       }

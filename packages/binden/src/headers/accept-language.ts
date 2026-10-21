@@ -1,4 +1,10 @@
-import { isQvalue, preferred, weighted } from "./list.js";
+import {
+  isQvalue,
+  preferred,
+  qvalueRefusal,
+  stringOf,
+  weighted,
+} from "./list.js";
 import { formatStack } from "../exchange.js";
 
 /** An element of `Accept-Language` */
@@ -23,14 +29,15 @@ export class AcceptLanguage implements IAcceptLanguage {
    * `TypeError`.
    */
   public constructor({ language, q_value = null }: IAcceptLanguage) {
-    // Each value is read once (e.g. by a getter): the values checked are the
-    // ones kept
-    const refusal = AcceptLanguage.#refusal({ language, q_value });
+    // Each value is read once (e.g. by a getter), and converted once when it
+    // is not a string (see `stringOf()`): the values checked are the ones kept
+    const init = { language: stringOf(language), q_value };
+    const refusal = AcceptLanguage.#refusal(init);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
-    this.#language = language;
-    this.#q_value = q_value;
+    this.#language = init.language;
+    this.#q_value = init.q_value;
   }
 
   /** The language range: a language tag, or `*` */
@@ -113,7 +120,7 @@ export class AcceptLanguage implements IAcceptLanguage {
     if (language !== "*" && !tag.test(language)) {
       return `Invalid language range: ${language}`;
     } else if (!isQvalue(q_value)) {
-      return `\`q_value\` is not a qvalue: ${q_value}`;
+      return qvalueRefusal(q_value);
     }
     return null;
   }

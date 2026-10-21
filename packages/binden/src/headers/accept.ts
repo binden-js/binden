@@ -3,6 +3,8 @@ import {
   isQvalue,
   preferred,
   quote,
+  qvalueRefusal,
+  stringOf,
   token,
   weighted,
 } from "./list.js";
@@ -37,15 +39,16 @@ export class Accept implements IAccept {
    * characters) and its weight (a qvalue). Invalid ones throw a `TypeError`.
    */
   public constructor({ type, parameters = {}, q_value = null }: IAccept) {
-    // Each value is read once (e.g. by a getter), and so are the parameters:
-    // the values checked are the ones kept
+    // Each value is read once (e.g. by a getter), and so are the parameters,
+    // each converted once when it is not a string (see `stringOf()`): the
+    // values checked are the ones kept
     const checked = Accept.#checked({ type, parameters, q_value });
     if (typeof checked === "string") {
       throw formatStack(new TypeError(checked));
     }
-    this.#type = type;
-    this.#parameters = checked;
-    this.#q_value = q_value;
+    this.#type = checked.type;
+    this.#parameters = checked.parameters;
+    this.#q_value = checked.q_value;
   }
 
   /** The media range (in lowercase when parsed) */
@@ -123,38 +126,44 @@ export class Accept implements IAccept {
   }
 
   /**
-   * The parameters of a valid element (see the constructor) by their names in
-   * lowercase (the first one of a name wins), each read once, or why the
+   * A valid element (see the constructor): its media range, its parameters by
+   * their names in lowercase (the first one of a name wins), each read once,
+   * and its weight, the strings converted once (see `stringOf()`), or why the
    * element is invalid
    */
-  static #checked({
-    type,
-    parameters = {},
-    q_value = null,
-  }: IAccept): ReadonlyMap<string, string> | string {
-    const [main = "", subtype = "", ...rest] = type.split("/");
+  static #checked({ type, parameters = {}, q_value = null }: IAccept):
+    | {
+        readonly type: string;
+        readonly parameters: ReadonlyMap<string, string>;
+        readonly q_value: number | null;
+      }
+    | string {
+    const range = stringOf(type);
+    const [main = "", subtype = "", ...rest] = range.split("/");
     if (
       rest.length > 0 ||
       !token.test(main) ||
       !token.test(subtype) ||
       (main === "*" && subtype !== "*")
     ) {
-      return `Invalid media range: ${type}`;
+      return `Invalid media range: ${range}`;
     } else if (!isQvalue(q_value)) {
-      return `\`q_value\` is not a qvalue: ${q_value}`;
+      return qvalueRefusal(q_value);
     }
     const all = new Map<string, string>();
-    for (const [name, value] of Object.entries(parameters)) {
+    for (const [name, given] of Object.entries(parameters)) {
       const key = name.toLowerCase();
       if (!token.test(key) || key === "q") {
         return `Invalid parameter name: ${name}`;
-      } else if (!fieldValue.test(value)) {
+      }
+      const value = stringOf(given);
+      if (!fieldValue.test(value)) {
         return `Invalid value of the parameter ${name}`;
       } else if (!all.has(key)) {
         all.set(key, value);
       }
     }
-    return all;
+    return { type: range, parameters: all, q_value };
   }
 
   /** A media type, without wildcards nor a weight, or a `TypeError` */

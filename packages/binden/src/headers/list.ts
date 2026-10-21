@@ -1,3 +1,5 @@
+import { formatStack } from "../exchange.js";
+
 /** A token (RFC 9110, section 5.6.2) */
 export const token = /^[!#$%&'*+.^_`|~\w-]+$/u;
 
@@ -90,9 +92,45 @@ export function quote(value: string): string {
     : `"${value.replaceAll(/(?<char>["\\])/gu, "\\$<char>")}"`;
 }
 
-/** Whether a weight is a qvalue (`null` is the default weight) */
-export function isQvalue(q_value: number | null): boolean {
-  return q_value === null || qvalue.test(`${q_value}`);
+/**
+ * Whether a weight is a qvalue (`null` is the default weight): a number,
+ * never anything that converts to one (e.g. an object of JavaScript, whose
+ * `toString()` may tell another number on a later call)
+ */
+export function isQvalue(q_value: unknown): q_value is number | null {
+  return (
+    q_value === null ||
+    (typeof q_value === "number" && qvalue.test(`${q_value}`))
+  );
+}
+
+/** Why a weight is not a qvalue (see `isQvalue()`), without converting it */
+export function qvalueRefusal(q_value: unknown): string {
+  return typeof q_value === "number"
+    ? `\`q_value\` is not a qvalue: ${q_value}`
+    : "`q_value` is not a number";
+}
+
+/**
+ * A value of the init of a header as a string, converted once (`String()`):
+ * the types declare a string, but JavaScript may give anything (e.g. an
+ * object whose `toString()` tells another string on a later call), so that
+ * the string checked is the one kept. A `Symbol` is refused (as JavaScript
+ * refuses to convert it implicitly), and so is what the conversion throws
+ * (e.g. the `TypeError` of V8 for an object without a primitive value), each
+ * formatted (see `formatStack()`).
+ */
+export function stringOf(value: unknown): string {
+  if (typeof value === "symbol") {
+    throw formatStack(
+      new TypeError("Cannot convert a Symbol value to a string"),
+    );
+  }
+  try {
+    return String(value);
+  } catch (error: unknown) {
+    throw formatStack(error as Error);
+  }
 }
 
 /** An element of a list with weights: its value, parameters and weight */

@@ -1,4 +1,4 @@
-import { preferred, qvalue, token } from "./list.js";
+import { isQvalue, preferred, qvalue, qvalueRefusal, token } from "./list.js";
 import { formatStack } from "../exchange.js";
 
 /** The content codings of `Accept-Encoding` that are known (and `*`) */
@@ -27,10 +27,8 @@ export class AcceptEncoding implements IAcceptEncoding {
       throw formatStack(
         new TypeError(`Unknown content coding: ${String(encoding)}`),
       );
-    } else if (q_value !== null && !qvalue.test(`${q_value}`)) {
-      throw formatStack(
-        new TypeError(`\`q_value\` is not a qvalue: ${q_value}`),
-      );
+    } else if (!isQvalue(q_value)) {
+      throw formatStack(new TypeError(qvalueRefusal(q_value)));
     }
     this.#encoding = encoding;
     this.#q_value = q_value;

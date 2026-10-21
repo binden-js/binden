@@ -1,4 +1,5 @@
 import { formatStack } from "../exchange.js";
+import { stringOf } from "./list.js";
 /** A cookie: its name, value and attributes (RFC 6265) */
 export interface ICookie {
   /** The name of the cookie: a token */
@@ -86,33 +87,34 @@ export class Cookie implements ICookie {
     same_site = "Lax",
     partitioned = false,
   }: ICookie) {
-    // Each attribute is read once (e.g. by a getter): the values checked are
+    // Each attribute is read once (e.g. by a getter), and its value converted
+    // once when it is not a string (see `stringOf()`): the values checked are
     // the ones kept, and so is the copy of the date (whose methods could tell
     // another time than its own, e.g. of a subclass)
-    const date = expires instanceof Date ? new Date(expires) : null;
-    const refusal = Cookie.#refusal({
-      key,
-      value,
-      expires: date,
+    const init = {
+      key: stringOf(key),
+      value: stringOf(value),
+      expires: expires instanceof Date ? new Date(expires) : null,
       max_age,
-      domain,
-      path,
+      domain: domain === null ? null : stringOf(domain),
+      path: path === null ? null : stringOf(path),
       same_site,
-    });
+    };
+    const refusal = Cookie.#refusal(init);
     if (refusal !== null) {
       throw formatStack(new TypeError(refusal));
     }
 
-    this.#key = key;
-    this.#value = value;
+    this.#key = init.key;
+    this.#value = init.value;
     this.#max_age = max_age;
-    this.#domain = domain;
-    this.#path = path;
+    this.#domain = init.domain;
+    this.#path = init.path;
     this.#secure = Boolean(secure);
     this.#http_only = Boolean(http_only);
     this.#same_site = same_site;
     this.#partitioned = Boolean(partitioned);
-    this.#expires = date;
+    this.#expires = init.expires;
   }
 
   /**
