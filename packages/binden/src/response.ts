@@ -416,6 +416,24 @@ function jsonText(data: unknown): string | undefined {
   }
 }
 
+/** The serialization of `URLSearchParams` of Node.js (see `formText()`) */
+const searchParamsText = Reflect.get(URLSearchParams.prototype, "toString");
+
+/**
+ * The text of `URLSearchParams` (`application/x-www-form-urlencoded`), by the
+ * serialization of Node.js. Anything else (e.g. `null`, a string, or an object
+ * that only looks like them) is refused with a `TypeError` of binden: the
+ * error of Node.js (or of V8), created while the frames of the response are
+ * on the stack, is not kept (see `formatStack()`).
+ */
+function formText(params: unknown): string {
+  try {
+    return Reflect.apply(searchParamsText, params, []);
+  } catch {
+    throw formatStack(new TypeError("The parameters are not URLSearchParams"));
+  }
+}
+
 /** The report of a late error of a source of a response that is not owned */
 function unreported(): void {
   // Nobody to tell
@@ -2983,7 +3001,7 @@ export class BindenResponse<
    * Send a JSON value as `application/json`. A value that has no JSON text
    * (`undefined`, a function or a symbol), a `bigint` or a cyclic value
    * rejects with a `TypeError` before the response is started, as does a
-   * custom `stringify` that does not return a string.
+   * `stringify` that is not a function, or that does not return a string.
    */
   public async json<T = unknown>(
     data: T,
@@ -3000,6 +3018,11 @@ export class BindenResponse<
       type === "bigint"
     ) {
       throw formatStack(new TypeError(`A ${type} is not a JSON value`));
+    } else if (
+      typeof stringify !== "undefined" &&
+      typeof stringify !== "function"
+    ) {
+      throw formatStack(new TypeError("`stringify` is not a function"));
     }
     const body: unknown =
       typeof stringify === "undefined" ? jsonText(data) : stringify(data);
@@ -3029,12 +3052,17 @@ export class BindenResponse<
     );
   }
 
-  /** Send `URLSearchParams` as `application/x-www-form-urlencoded` */
+  /**
+   * Send `URLSearchParams` as `application/x-www-form-urlencoded`: anything
+   * else rejects with a `TypeError` before the response is started (see
+   * `formText()`)
+   */
   public async form(params: URLSearchParams): Promise<void> {
     if (!this.#allows()) {
       return;
     }
-    await this.setHeader("Content-Type", ct_form).send(params.toString());
+    const text = formText(params);
+    await this.setHeader("Content-Type", ct_form).send(text);
   }
 
   /**
@@ -3044,12 +3072,12 @@ export class BindenResponse<
    * relative one stays relative). A location with userinfo, a control
    * character, whitespace, a backslash or a scheme other than `http` and
    * `https` rejects with a `TypeError`, as does an external one without
-   * `allow_external`.
+   * `allow_external`, and options that are not an object.
    */
   public async redirect(
     location: URL | string,
     status: IRedirectStatus = 302,
-    { allow_external = false }: IRedirectOptions = {},
+    options: IRedirectOptions = {},
   ): Promise<void> {
     if (!this.#allows()) {
       return;
@@ -3057,7 +3085,14 @@ export class BindenResponse<
       throw formatStack(
         new TypeError(`Status code ${String(status)} is not a redirect`),
       );
-    } else if (typeof allow_external !== "boolean") {
+    }
+    // Checked as given (e.g. `null` by JavaScript)
+    const given: unknown = options;
+    if (typeof given !== "object" || given === null) {
+      throw formatStack(new TypeError("`options` is not an object"));
+    }
+    const { allow_external = false } = options;
+    if (typeof allow_external !== "boolean") {
       throw formatStack(new TypeError("`allow_external` is not a boolean"));
     }
     const { base, origin } = this.#base();

@@ -8,11 +8,14 @@
 // leaves its root), `url` (the `400` that `context.url` throws for an invalid
 // `Host`), `redirect` (the `TypeError` of `response.redirect()` for a location
 // that is not a URL), `json` (the `TypeError` that `JSON.stringify()` throws in
-// `response.json()` for a nested `bigint`) and `detached` (the `TypeError` of
-// `response.send()` for a view of a detached `ArrayBuffer`), caught by the
-// middleware, and `throw` (the `BindenError` of `context.throw()`): the error
-// handler keeps the error. Prints whether the responses and the requests are
-// collected, and the kinds of the errors that the application keeps.
+// `response.json()` for a nested `bigint`), `detached` (the `TypeError` of
+// `response.send()` for a view of a detached `ArrayBuffer`), `form` (the
+// `TypeError` of `response.form(null)`), `options` (of `response.redirect()`
+// with `null` options) and `stringify` (of `response.json()` with a `stringify`
+// that is not a function), caught by the middleware, and `throw` (the
+// `BindenError` of `context.throw()`): the error handler keeps the error.
+// Prints whether the responses and the requests are collected, and the kinds
+// of the errors that the application keeps.
 import { type AddressInfo, connect } from "node:net";
 import {
   Binden,
@@ -37,6 +40,24 @@ function detached(): Uint8Array {
   bytes.buffer.transfer();
   return bytes;
 }
+/**
+ * The calls of the modes whose refusal the middleware catches: of a location
+ * that is not a URL, a nested `bigint`, a view of a detached `ArrayBuffer`,
+ * and the arguments that JavaScript may give in place of the declared ones
+ */
+const refusals: Partial<
+  Record<string, (response: BindenResponse) => Promise<void>>
+> = {
+  redirect: (response) => response.redirect("http://[bad"),
+  json: (response) => response.json({ big: 1n }),
+  detached: (response) => response.send(detached()),
+  form: (response) => response.form(null as unknown as URLSearchParams),
+  options: (response) =>
+    response.redirect("/", 302, null as unknown as { allow_external: false }),
+  stringify: (response) =>
+    response.json({}, 5 as unknown as (data: object) => string),
+};
+
 const requests = 60;
 const errors: unknown[] = [];
 
@@ -69,15 +90,11 @@ const app = new Binden({
       return context.response.sendFile("../../package.json", { root });
     case "url":
       return context.response.send(context.url.pathname);
-    case "redirect":
-    case "json":
-    case "detached":
-      return (
-        mode === "redirect"
-          ? context.response.redirect("http://[bad")
-          : mode === "json"
-            ? context.response.json({ big: 1n })
-            : context.response.send(detached())
+    case "throw":
+      return context.throw(418);
+    default:
+      return (refusals[mode] as (response: BindenResponse) => Promise<void>)(
+        context.response,
       ).then(
         () => context.response.status(500).send(),
         (error: unknown) => {
@@ -85,8 +102,6 @@ const app = new Binden({
           return context.response.status(400).send();
         },
       );
-    default:
-      return context.throw(418);
   }
 });
 
