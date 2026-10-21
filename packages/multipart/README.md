@@ -14,7 +14,7 @@ npm install @binden/multipart
 
 ## Usage
 
-The fields and the files are parsed into a `FormData` (`request.body`), in the order of the request. A file is a `MultipartFile`: a `File` that tells whether its content has been truncated.
+The fields and the files are parsed into a `FormData` (`request.body`), in the order of the request. A file is a `MultipartFile`: a `File` that tells whether its content has been truncated. Its constructor (`new MultipartFile(bits, name, options)`) takes the arguments of `File`, and `truncated`: the constructor of `File` of Node.js converts the name, `type` and `lastModified` as it does for a plain `File` (e.g. a name that is not a string, by `String()`), no more often, and what it throws is formatted (see `formatStack()` of binden).
 
 ```typescript
 import { type Context, Router } from "binden";

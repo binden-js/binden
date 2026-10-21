@@ -106,7 +106,10 @@ Options that are neither an object nor `undefined` throw a `TypeError` ("`option
 object") in `new Binden()`, `createServer()`, `createSecureServer()`, `new Router()`, the
 constructor of every `Middleware` and `new BindenError()` (also through `context.throw()`): binden
 2.0.4 read a string or a number as an object without options, e.g.
-`new BindenError(404, "Not found")` replied with the default message, `Not Found`.
+`new BindenError(404, "Not found")` replied with the default message, `Not Found`. A function is
+not an object of options either ("`options` is not an object: (a function)"), also one that
+carries the options as its properties (which TypeScript accepts for the option types): binden
+2.0.4 read its properties as the options.
 
 ```diff
 -throw new BindenError(404, "Not found");
@@ -327,6 +330,18 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `strictContentLength`, a first `write()` past a valid `Content-Length` throws
   `ERR_HTTP_CONTENT_LENGTH_MISMATCH` before anything is committed, where Node.js 24 and 26 and
   binden 2.0.4 send the whole chunk (the client reads its excess as the next response).
+- A `Content-Length` that is neither a number nor a string (e.g. an object with a `toString()`),
+  or an array with such an element or a hole, throws a `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`,
+  "Invalid Content-Length: …", the value described) when the head is committed, and a `send()`
+  rejects with it before anything is sent (the error can be replied): binden 2.0.4, as Node.js,
+  sent it converted (e.g. `Content-Length: 5` for `{ toString: () => "5" }`) without counting the
+  body by it, so that a body of another length desynchronized the connection (the client read
+  the response after it as part of the body). Set a number or a string.
+- `writeContinue()`, `writeProcessing()`, `writeEarlyHints()` and `writeInformation()` throw
+  `ERR_HTTP_HEADERS_SENT` once the head is committed, on every version of Node.js: on Node.js
+  before 24.18, binden 2.0.4 (as `node:http`) wrote the raw `1xx` head into the body, which
+  desynchronized the connection (Node.js 26 throws). A call that is ignored (by a work that can no
+  longer change the response, or for an HTTP/1.0 client) is still ignored.
 - `Content-Length` values that disagree (`["2", "3"]`, or two `appendHeader()` calls) now throw a
   `TypeError` (`ERR_HTTP_INVALID_HEADER_VALUE`, "Content-Length values disagree") when the head is
   committed, where Node.js and binden 2.0.4 sent every line. So does any comma list, even one whose
@@ -384,7 +399,10 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
 - `text()`, `html()`, `form()` and `json()` of a response that has ended resolve without doing
   anything, as `send()` did and does: binden 2.0.4 set their `Content-Type` first, so that
   `text()`, `html()` and `form()` threw `ERR_HTTP_HEADERS_SENT` synchronously, and `json()`
-  rejected with it.
+  rejected with it. Of a response whose head is sent but that has not ended (e.g. after a
+  `write()`), they reject with `ERR_HTTP_HEADERS_SENT`, also `text()`, `html()` and `form()`,
+  which threw it synchronously: await them (a `try` around a call that is not awaited no longer
+  catches it).
 - `form()` sends only `URLSearchParams`, serialized by `URLSearchParams.prototype.toString()`:
   binden 2.0.4 sent `params.toString()` of whatever it was given (e.g. a string as it is, or the
   override of a subclass). Anything else now rejects with a `TypeError` ("The parameters are not
@@ -472,7 +490,9 @@ const decodable = (context: Context): void => {
   `Set-Cookie` header (e.g. a value with `;`), and `request.cookies` skips such cookies.
 - The constructor of every header throws a `TypeError` for an init that is not an object
   ("`init` is not an object: …"): binden 2.0.4 read a string as an object without its properties
-  (e.g. `new Range("bytes=0-1")` was `bytes=-`), or threw an unrelated error.
+  (e.g. `new Range("bytes=0-1")` was `bytes=-`), or threw an unrelated error. A function is not an
+  init either: binden 2.0.4 read its properties as the init (e.g. `new Range(init)` of
+  `Object.assign(() => {}, { start: 0, end: 1 })` was `bytes=0-1`).
 - `Cookie.fromString()`, `Range.fromString()` and `IfModifiedSince.fromString()` throw a
   `TypeError` for anything but a string or `undefined` ("The header is not a string: …"), where
   binden 2.0.4 returned no cookies, no ranges or `null` for e.g. `null`, a number or an array. So
@@ -481,9 +501,16 @@ const decodable = (context: Context): void => {
 - `AcceptEncoding.fromString()` throws a `TypeError` for an element of an array that is not a
   string ("A field line is not a string: …"), which binden 2.0.4 converted with `join()` (e.g. by
   its `toString()`).
-- `new IfModifiedSince({ date })` takes a `Date`, a number or a string: `null` (1970 for binden
-  2.0.4) and other objects (converted, e.g. by their `valueOf()`) throw a `TypeError` ("The date
-  is not a Date: …").
+- `AcceptEncoding.fromString()`, `Authorization.fromString()`, `ContentEncoding.fromString()`,
+  `ContentRange.fromString()`, `ContentType.fromString()` and `Forwarded.fromString()` throw a
+  `TypeError` for a `String` object (e.g. "The header is not a string: (an object)"), which binden
+  2.0.4 parsed as its string: so do `request.content_type` and `request.authorization` for a
+  `String` object that the application has put into `request.headers`. Give a string (e.g.
+  `String(value)`).
+- `new IfModifiedSince({ date })` takes a `Date`, a number or a string: `null` and a boolean (1970
+  for binden 2.0.4, e.g. `{ date: true }`), `undefined` (an Invalid Date for binden 2.0.4) and
+  other objects (converted, e.g. by their `valueOf()`) throw a `TypeError` ("The date is not a
+  Date: …").
 - `request.header()` and `router.middlewares()` throw a `TypeError` for a name or a method that is
   not a string, where binden 2.0.4 accepted a `String` object, or anything with a `toLowerCase()`
   (a `toUpperCase()` for `middlewares()`).
@@ -587,9 +614,10 @@ const invalid = new ValidationError("Invalid email");
 - The `serializers` option replaces the default serializers of its own keys only: it used to
   replace all of them.
 - `new Logger()` throws a `TypeError` for options that are neither an object nor `undefined`
-  ("`options` is not an object: …"): @binden/logger 2.0.3 read a string or a number as no
-  options. `Logger.getLevel()` throws a `TypeError` for a name that is not a string, which 2.0.3
-  converted (e.g. `5` read the variable `5`).
+  ("`options` is not an object: …"), also a function: @binden/logger 2.0.3 read a string or a
+  number as no options, and the properties of a function as the options. `Logger.getLevel()`
+  throws a `TypeError` for a name that is not a string, which 2.0.3 converted (e.g. `5` read the
+  variable `5`).
 - `logger` (an existing `pino` logger) and any other option (`destination`, `level`,
   `serializers`, `error_details`, …) throw a `TypeError` together: the other options do not apply
   to it (`logger` used to be ignored with `destination`, and the other options with `logger`). A
@@ -649,7 +677,8 @@ application a `500`.
   through (e.g. the `SyntaxError` of `JSON.parse()`) is now a `500`.
 - Nothing limits the size of a body by default (as before): set `limit` and `encoded_limit`.
 - `new BodyParser()` throws a `TypeError` for options that are neither an object nor `undefined`
-  ("`options` is not an object: …"): @binden/body 2.0.1 read a string or a number as no options.
+  ("`options` is not an object: …"), also a function: @binden/body 2.0.1 read a string or a
+  number as no options, and the properties of a function as the options.
 - A body that the parser refuses before it has read it in full (e.g. over a limit, or with a coding
   or a charset that it does not support) closes the connection after the reply, whoever replies
   (the default error reply, or an `error_handler` of the application, also one that echoes the
@@ -694,7 +723,10 @@ const values = new BodyParser({ strict: false, limit: 1024 * 1024 });
   ```
 
 - The options are validated when the middleware is created: an unknown option (also in `config`
-  and `config.limits`) or an invalid value throws a `TypeError` or a `RangeError`.
+  and `config.limits`) or an invalid value throws a `TypeError` or a `RangeError`, and so do
+  options that are neither an object nor `undefined` ("`options` is not an object"), also a
+  function: @binden/multipart 2.0.3 read a string or a number as no options, and the properties
+  of a function as the options.
 - A body over a limit of `config.limits` gets `413 Content Too Large` (it was a `415`), a malformed
   body or boundary `400 Bad Request` (it was a `415`), and a `multipart/form-data` request without
   a boundary `400` (it was skipped).
@@ -781,8 +813,8 @@ headers are known:
 - A reason phrase, a header or a status that Node.js refuses throws before the decision (or leaves
   nothing of it), and the error is replied as without a compression, without compressed bytes.
 - `new Compression()` throws a `TypeError` for options that are neither an object nor `undefined`
-  ("`options` is not an object: …"): @binden/compression 3.0.0 read a string or a number as no
-  options.
+  ("`options` is not an object: …"), also a function: @binden/compression 3.0.0 read a string or
+  a number as no options, and the properties of a function as the options.
 
 ```diff
 -import type { IComressFormats } from "@binden/compression";
