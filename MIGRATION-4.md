@@ -103,7 +103,7 @@ that is not a plain object (e.g. an array, which was sent as an object with nume
 `message` that is not a string throws a `TypeError`.
 
 Options that are neither an object nor `undefined` throw a `TypeError` ("`options` is not an
-object: …") in `new Binden()`, `createServer()`, `createSecureServer()`, `new Router()`, the
+object") in `new Binden()`, `createServer()`, `createSecureServer()`, `new Router()`, the
 constructor of every `Middleware` and `new BindenError()` (also through `context.throw()`): binden
 2.0.4 read a string or a number as an object without options, e.g.
 `new BindenError(404, "Not found")` replied with the default message, `Not Found`.
