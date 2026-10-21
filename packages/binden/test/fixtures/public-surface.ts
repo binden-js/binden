@@ -371,24 +371,6 @@ function define(prefix: string, defined: Record<string, IFixture>): void {
   }
 }
 
-/**
- * Whether Node.js refuses a call of a method of a plain response of its own
- * (e.g. a method or an overload that its version lacks), which the override
- * of binden throws then too
- */
-function refuses(method: string, values: readonly unknown[]): boolean {
-  try {
-    Reflect.apply(
-      Reflect.get(ServerResponse.prototype, method) as IFunction,
-      new ServerResponse(new IncomingMessage(new Socket())),
-      values,
-    );
-    return false;
-  } catch {
-    return true;
-  }
-}
-
 /** A fixture of its valid calls */
 function call(...calls: ICall[]): IFixture {
   return { calls };
@@ -791,20 +773,13 @@ define("binden:BindenResponse#", {
   "writeContinue()": call(() => [noop]),
   "writeProcessing()": call(() => [noop]),
   "writeEarlyHints()": call(() => [{ link: "</a>; rel=preload" }, noop]),
-  // As Node.js does (from 24.18.0): it throws without it, and refuses the
-  // overload without headers (e.g. 26.11.1, whose headers must be an object)
+  // Of Node.js from 24.18.0: binden refuses it before (both overloads), and
+  // sends the one without headers as `(102, null, callback)`
   "writeInformation()": probed(
     {
-      throws: [
-        [103, { link: "</a>; rel=preload" }, noop],
-        [102, noop],
-      ]
-        .map((values, index) => ({
-          index,
-          refused: refuses("writeInformation", values),
-        }))
-        .filter(({ refused }) => refused)
-        .map(({ index }) => index),
+      throws:
+        typeof Reflect.get(ServerResponse.prototype, "writeInformation") !==
+        "function",
     },
     () => [103, { link: "</a>; rel=preload" }, noop],
     () => [102, noop],
@@ -1364,6 +1339,10 @@ function positions(
   ];
 }
 
+// A relative path (of `sendFile()`) is of this directory, also without the
+// `root` of its options (e.g. once a probe has replaced them)
+const cwd = process.cwd();
+process.chdir(import.meta.dirname);
 const [all, classes] = surface();
 const findings: IFinding[] = [];
 let probes = 0;
@@ -1422,6 +1401,7 @@ for (const entry of all.filter(({ id }) => only.test(id))) {
   }
 }
 
+process.chdir(cwd);
 server.closeAllConnections();
 server.close();
 // Exits once the report is written (a pipe may take it asynchronously)
