@@ -14,8 +14,17 @@ const gap = String.raw`(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*)*`;
 /** A name that ends with `Error` or `Exception` (e.g. `DOMException`) */
 const errorName = String.raw`(?:[A-Z][\w$]*)?(?:Error|Exception)`;
 
-/** The qualifiers of a name, maybe none (e.g. `globalThis.`) */
-const qualifiers = String.raw`(?:[\w$]+\s*\.\s*)*`;
+/**
+ * The qualifiers of a name, maybe none (e.g. `globalThis.`), also optional
+ * ones (e.g. `globalThis?.`)
+ */
+const qualifiers = String.raw`(?:[\w$]+\s*\??\.\s*)*`;
+
+/**
+ * The opening of a call after a name (`(`), also of an optional call (e.g.
+ * `?.(`)
+ */
+const call = String.raw`${gap}(?:\?\.${gap})?\(`;
 
 /**
  * The creations of an error that the scan finds, each with what it creates
@@ -24,22 +33,26 @@ const qualifiers = String.raw`(?:[\w$]+\s*\.\s*)*`;
  * and whose name does not end so (whose constructions it would not see), and
  * the calls that create an error or capture the frames of the caller.
  *
- * A static scan cannot see every creation: a constructor that it does not
- * find by such a name (e.g. passed as an argument, returned by a call, or a
- * computed member), a class that extends an expression (e.g. a mixin), and
- * the errors that V8 or Node.js create in the methods that binden calls (e.g.
- * the `TypeError` of a wrong argument). The check of those is at run time:
- * `fixtures/created-error-retention.ts`, for the refusals of binden. A
+ * A static scan cannot see every creation: a constructor or a method that
+ * it does not find by its name as it is called (e.g. passed as an argument,
+ * returned by a call, an element of an array or a property of another name,
+ * a part of an expression larger than the whole value of an assignment, e.g.
+ * a conditional, a name in parentheses, a computed member, or the tag of a
+ * template), a class that extends an expression (e.g. a mixin), an
+ * `abort()` whose reason is `undefined` only at run time (e.g. a variable),
+ * and the errors that V8 or Node.js create in the methods that binden calls
+ * (e.g. the `TypeError` of a wrong argument). The check of those is at run
+ * time: `fixtures/created-error-retention.ts`, for the refusals of binden. A
  * creation quoted in a comment or a string may be found too: the scan errs
  * towards a finding.
  */
 const creations: readonly (readonly [RegExp, string | null])[] = [
   // A construction, with or without `new` (a built-in constructor may be
-  // called, also by `call()` or `apply()`), maybe qualified (e.g.
-  // `globalThis.TypeError`)
+  // called, also optionally, e.g. `TypeError?.()`, by `call()` or `apply()`,
+  // or once bound by `bind()`), maybe qualified (e.g. `globalThis.TypeError`)
   [
     new RegExp(
-      String.raw`(?:\bnew\s+)?(?<![\w$.])${qualifiers}(?<name>${errorName})(?:\s*\.\s*(?:call|apply))?${gap}\(`,
+      String.raw`(?:\bnew\s+)?(?<![\w$.])${qualifiers}(?<name>${errorName})(?:\s*\??\.\s*(?:call|apply|bind))?${call}`,
       "gu",
     ),
     null,
@@ -66,41 +79,48 @@ const creations: readonly (readonly [RegExp, string | null])[] = [
     "subclass",
   ],
   [
-    new RegExp(String.raw`\bReflect\s*\.\s*construct${gap}\(`, "gu"),
+    new RegExp(String.raw`\bReflect\s*\??\.\s*construct${call}`, "gu"),
     "Reflect.construct",
   ],
-  // An abort without a reason, whose `AbortError` Node.js creates (but one
-  // quoted in a comment, e.g. `Exchange.abort()`), and a signal of a timeout,
-  // whose `TimeoutError` it creates
+  // An abort without a reason (none, `undefined` or a `void` expression),
+  // whose `AbortError` Node.js creates (but one quoted in a comment, e.g.
+  // `Exchange.abort()`), and a signal of a timeout, whose `TimeoutError` it
+  // creates
   [
     new RegExp(
-      String.raw`\.\s*abort${gap}\(${gap}(?:undefined${gap})?\)(?!\x60)`,
+      String.raw`\.\s*abort${call}${gap}(?:\)(?!\x60)|undefined${gap}[,)]|void(?![\w$]))`,
       "gu",
     ),
     "abort()",
   ],
   [
-    new RegExp(String.raw`\bAbortSignal\s*\.\s*timeout${gap}\(`, "gu"),
+    new RegExp(String.raw`\bAbortSignal\s*\??\.\s*timeout${call}`, "gu"),
     "AbortSignal.timeout()",
   ],
   // The frames of the caller, captured (but one quoted in a comment, e.g.
   // `Error.captureStackTrace()`)
   [
-    new RegExp(String.raw`(?<![\w$])captureStackTrace${gap}\((?!\)\x60)`, "gu"),
+    new RegExp(String.raw`(?<![\w$])captureStackTrace${call}(?!\)\x60)`, "gu"),
     "captureStackTrace()",
   ],
-  // A constructor kept in a variable, or destructured, whose constructions
-  // are not seen
+  // A constructor kept in a variable, whose constructions are not seen: the
+  // whole value of an assignment (a declaration, a plain or a logical
+  // assignment, e.g. `E = TypeError` or `E ??= TypeError`, or a default),
+  // but not a comparison, one that a destructuring reads (e.g. `const {
+  // name } = TypeError`), the type of an alias, nor a member or a call of it
+  // (found above)
   [
     new RegExp(
-      String.raw`\b(?:const|let|var)\s+[\w$]+\s*=\s*${qualifiers}(?<name>${errorName})\s*[,;]`,
+      String.raw`(?<![=!]|\}\s*|\btype\s+[\w$]+(?:<[^;]*>)?\s*)=${gap}${qualifiers}(?<name>${errorName})(?![\w$])(?!${gap}(?:\??\.|\[|\())`,
       "gu",
     ),
     null,
   ],
+  // Or destructured, also by an assignment without a declaration (but a
+  // type that an arrow function returns)
   [
     new RegExp(
-      String.raw`\b(?:const|let|var)\s*\{[^}]*?(?<![\w$.])(?<name>${errorName})(?![\w$])[^}]*\}\s*=`,
+      String.raw`\{[^}]*?(?<![\w$.])(?<name>${errorName})(?![\w$])[^}]*\}\s*=(?!>)`,
       "gu",
     ),
     null,
@@ -282,11 +302,39 @@ suite("The errors that the packages of binden create", () => {
       "controller.abort(reason);",
       "const signal = AbortSignal.timeout(1000);",
       "const { TypeError: Destructured } = globalThis;",
+      // Optional calls and qualifiers, and a bound constructor
+      'throw TypeError?.("not formatted");',
+      'throw formatStack(RangeError?.("formatted"));',
+      'throw globalThis?.TypeError("not formatted");',
+      'throw Error?.call?.(undefined, "not formatted");',
+      'throw Error.bind(null)("not formatted");',
+      'throw Reflect?.construct?.(RangeError, ["not formatted"]);',
+      "controller?.abort?.();",
+      "const deadline = AbortSignal?.timeout?.(1000);",
+      "Error.captureStackTrace?.(target);",
+      // An abort whose reason is `undefined`
+      "controller.abort(void 0);",
+      "controller.abort(undefined, reason);",
+      // A constructor kept by an assignment without a declaration, a logical
+      // one, a default or a destructuring
+      "Assigned = TypeError;",
+      "this.#constructor ??= globalThis.RangeError;",
+      "function construct(Constructor = TypeError) {}",
+      "({ TypeError: Assigned } = globalThis);",
       // None creates an error
       "reportError(error);",
       "const failed = error instanceof TypeError;",
       "class Cookies extends Set<Cookie> {}",
       "const { status, headers } = response;",
+      "type Alias = TypeError;",
+      "type Generic<T> = TypeError | T;",
+      "const same = error.constructor === TypeError;",
+      "const other = error.constructor != TypeError;",
+      "const read = (): { error: TypeError } => value;",
+      "const { name } = TypeError;",
+      "const kind = TypeError.name;",
+      "const codes = ErrorCodes;",
+      "controller.abort(voided);",
     ].join("\n");
     deepStrictEqual(unformatted("source.ts", source), [
       "source.ts:1 TypeError",
@@ -312,6 +360,20 @@ suite("The errors that the packages of binden create", () => {
       "source.ts:38 abort()",
       "source.ts:40 AbortSignal.timeout()",
       "source.ts:41 TypeError",
+      "source.ts:42 TypeError",
+      "source.ts:44 TypeError",
+      "source.ts:45 Error",
+      "source.ts:46 Error",
+      "source.ts:47 Reflect.construct",
+      "source.ts:48 abort()",
+      "source.ts:49 AbortSignal.timeout()",
+      "source.ts:50 captureStackTrace()",
+      "source.ts:51 abort()",
+      "source.ts:52 abort()",
+      "source.ts:53 TypeError",
+      "source.ts:54 RangeError",
+      "source.ts:55 TypeError",
+      "source.ts:56 TypeError",
     ]);
   });
 });
