@@ -61,6 +61,64 @@ function formatStack<T extends Error>(error: T): T {
   return error;
 }
 
+/**
+ * Runs the body of an entry point of this package (e.g. what reads or calls
+ * an argument): what it throws is formatted (see `formatStack()`) before the
+ * caller gets it, as binden formats it (e.g. the `TypeError` of V8 for a
+ * revoked proxy, or an error of `pino` for its options), and an error of the
+ * application's own (e.g. of a getter) is thrown as it is (formatted too)
+ */
+function formatting<T>(run: () => T): T {
+  try {
+    return run();
+  } catch (error: unknown) {
+    throw formatStack(error as Error);
+  }
+}
+
+/**
+ * A value that an argument error of this package refuses, as its message
+ * shows it, without converting it (as binden describes it): a string, a
+ * number, a boolean, `undefined` or `null` as it is, a `bigint` with its `n`,
+ * and anything else by its type, so that neither a conversion throws nor code
+ * of the application runs (e.g. a `toString()`)
+ */
+function described(value: unknown): string {
+  switch (typeof value) {
+    case "string":
+      return value;
+    case "number":
+    case "boolean":
+      return `${value}`;
+    case "bigint":
+      return `${value}n`;
+    case "undefined":
+      return "undefined";
+    case "symbol":
+      return "(a symbol)";
+    case "function":
+      return "(a function)";
+    case "object":
+    default:
+      return value === null ? "null" : "(an object)";
+  }
+}
+
+/**
+ * The options of an entry point (`name` in the message), checked before any
+ * of them is read (`undefined` is the default of its parameter): anything but
+ * an object is refused with a `TypeError` that describes it (see
+ * `described()`)
+ */
+function optionsOf(value: unknown, name: string): object {
+  if (typeof value !== "object" || value === null) {
+    throw formatStack(
+      new TypeError(`\`${name}\` is not an object: ${described(value)}`),
+    );
+  }
+  return value;
+}
+
 /** The built-in error classes, the nearest of which is the type of an error */
 const errorTypes: ReadonlyMap<object, string> = new Map<object, string>([
   [AggregateError.prototype, "AggregateError"],
@@ -163,9 +221,17 @@ export interface ISerializers {
  * messages that quote them) stays out of the logs. A value of another kind is
  * reduced to its type.
  */
-export function createSerializers({
-  error_details = false,
-}: { error_details?: boolean | undefined } = {}): ISerializers {
+export function createSerializers(
+  options: { error_details?: boolean | undefined } = {},
+): ISerializers {
+  // Read once: what reading the options throws is formatted (see
+  // `formatting()`)
+  const { error_details = false } = formatting(() => {
+    const { error_details: given } = optionsOf(options, "options") as {
+      error_details?: unknown;
+    };
+    return { error_details: given };
+  });
   if (typeof error_details !== "boolean") {
     throw formatStack(new TypeError("`error_details` is not a boolean"));
   }
@@ -248,24 +314,11 @@ export class Logger implements ILogger {
    * `pino` logger) throws a `TypeError`.
    */
   public constructor(all: LoggerOptions = {}) {
-    const {
-      logger,
-      destination,
-      error_details = false,
-      serializers: custom = {},
-      ...options
-    } = all;
-    if (typeof logger !== "undefined") {
-      Logger.#checkPino(logger, all);
-    } else if (typeof error_details !== "boolean") {
-      throw formatStack(new TypeError("`error_details` is not a boolean"));
-    } else if (typeof options.level !== "undefined") {
-      const { customLevels = {}, useOnlyCustomLevels = false } = options;
-      Logger.#checkLevel(options.level, {
-        ...(useOnlyCustomLevels ? {} : pino.levels.values),
-        ...customLevels,
-      });
-    }
+    // Read once, and checked: what reading them throws is formatted (see
+    // `formatting()`)
+    const { logger, destination, error_details, custom, options } = formatting(
+      () => Logger.#read(all),
+    );
     this.#create = (): PinoLogger => {
       if (typeof logger !== "undefined") {
         return logger;
@@ -279,7 +332,63 @@ export class Logger implements ILogger {
         ? pino(merged)
         : pino(merged, destination);
     };
-    this.#logger = Logger.#deferred ? null : this.#create();
+    // What `pino` throws for its options (e.g. a destination that it cannot
+    // read) is formatted (see `formatting()`)
+    this.#logger = Logger.#deferred ? null : formatting(this.#create);
+  }
+
+  /**
+   * The options of a logger, each read once, and checked (see the
+   * constructor): anything but an object is refused with a `TypeError`
+   */
+  static #read(all: unknown): {
+    readonly logger: PinoLogger | undefined;
+    readonly destination: DestinationStream | undefined;
+    readonly error_details: boolean;
+    readonly custom: NonNullable<PinoLoggerOptions["serializers"]>;
+    readonly options: PinoLoggerOptions;
+  } {
+    const given = optionsOf(all, "options") as LoggerOptions;
+    const {
+      logger,
+      destination,
+      error_details,
+      serializers: custom,
+      ...options
+    } = given;
+    if (typeof logger !== "undefined") {
+      // The other options, by their names in the order of the object
+      const named: Record<string, unknown> = {
+        destination,
+        error_details,
+        serializers: custom,
+        ...options,
+      };
+      Logger.#checkPino(
+        logger,
+        Object.keys(given).filter(
+          (name) => name !== "logger" && typeof named[name] !== "undefined",
+        ),
+      );
+    } else if (
+      typeof error_details !== "undefined" &&
+      typeof error_details !== "boolean"
+    ) {
+      throw formatStack(new TypeError("`error_details` is not a boolean"));
+    } else if (typeof options.level !== "undefined") {
+      const { customLevels = {}, useOnlyCustomLevels = false } = options;
+      Logger.#checkLevel(options.level, {
+        ...(useOnlyCustomLevels ? {} : pino.levels.values),
+        ...customLevels,
+      });
+    }
+    return {
+      logger,
+      destination,
+      error_details: error_details ?? false,
+      custom: custom ?? {},
+      options,
+    };
   }
 
   /** A logger that writes with an existing `pino` logger (its options apply) */
@@ -294,14 +403,20 @@ export class Logger implements ILogger {
 
   /** Sets the level of the logger (an unknown one throws a `TypeError`) */
   public set level(level: LevelWithSilent) {
-    const logger = this.#pino();
-    Logger.#checkLevel(level, logger.levels.values);
-    logger.level = level;
+    formatting(() => {
+      const logger = this.#pino();
+      Logger.#checkLevel(level, logger.levels.values);
+      logger.level = level;
+    });
   }
 
-  /** Whether the records of a level are written */
+  /**
+   * Whether the records of a level are written: never those of a level that
+   * is not a string (it is not converted)
+   */
   public isLevelEnabled(level: string): boolean {
-    return this.#pino().isLevelEnabled(level);
+    const given: unknown = level;
+    return typeof given === "string" && this.#pino().isLevelEnabled(given);
   }
 
   /** Writes the buffered records (e.g. before the process exits) */
@@ -321,46 +436,87 @@ export class Logger implements ILogger {
    * A logger that adds `bindings` to every record (with its own level, if
    * given: an unknown one throws a `TypeError`)
    */
-  public child(bindings: Bindings = {}, { level }: IChildOptions = {}): Logger {
-    const logger = this.#pino();
-    if (typeof level !== "undefined") {
-      Logger.#checkLevel(level, logger.levels.values);
-    }
-    return Logger.fromPino(
-      typeof level === "undefined"
-        ? logger.child(bindings)
-        : logger.child(bindings, { level }),
-    );
+  public child(bindings: Bindings = {}, options: IChildOptions = {}): Logger {
+    // What reading the arguments throws, also in `pino`, is formatted (see
+    // `formatting()`)
+    return formatting(() => {
+      const { level } = options;
+      const logger = this.#pino();
+      if (typeof level !== "undefined") {
+        Logger.#checkLevel(level, logger.levels.values);
+      }
+      return Logger.fromPino(
+        typeof level === "undefined"
+          ? logger.child(bindings)
+          : logger.child(bindings, { level }),
+      );
+    });
   }
 
   /** Logs a message (with extra fields) at the `fatal` level */
   public fatal(message: string, extra: Record<string, unknown> = {}): void {
-    this.#pino().fatal(extra, message);
+    // What `pino` throws as it reads `extra` (e.g. a revoked proxy) is
+    // formatted (see `formatStack()`): inline, a hot path
+    try {
+      this.#pino().fatal(extra, message);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** Logs a message (with extra fields) at the `error` level */
   public error(message: string, extra: Record<string, unknown> = {}): void {
-    this.#pino().error(extra, message);
+    // What `pino` throws as it reads `extra` (e.g. a revoked proxy) is
+    // formatted (see `formatStack()`): inline, a hot path
+    try {
+      this.#pino().error(extra, message);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** Logs a message (with extra fields) at the `warn` level */
   public warn(message: string, extra: Record<string, unknown> = {}): void {
-    this.#pino().warn(extra, message);
+    // What `pino` throws as it reads `extra` (e.g. a revoked proxy) is
+    // formatted (see `formatStack()`): inline, a hot path
+    try {
+      this.#pino().warn(extra, message);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** Logs a message (with extra fields) at the `info` level */
   public info(message: string, extra: Record<string, unknown> = {}): void {
-    this.#pino().info(extra, message);
+    // What `pino` throws as it reads `extra` (e.g. a revoked proxy) is
+    // formatted (see `formatStack()`): inline, a hot path
+    try {
+      this.#pino().info(extra, message);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** Logs a message (with extra fields) at the `debug` level */
   public debug(message: string, extra: Record<string, unknown> = {}): void {
-    this.#pino().debug(extra, message);
+    // What `pino` throws as it reads `extra` (e.g. a revoked proxy) is
+    // formatted (see `formatStack()`): inline, a hot path
+    try {
+      this.#pino().debug(extra, message);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** Logs a message (with extra fields) at the `trace` level */
   public trace(message: string, extra: Record<string, unknown> = {}): void {
-    this.#pino().trace(extra, message);
+    // What `pino` throws as it reads `extra` (e.g. a revoked proxy) is
+    // formatted (see `formatStack()`): inline, a hot path
+    try {
+      this.#pino().trace(extra, message);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /** The environment variable of the default level: `BINDEN_LOG_LEVEL` */
@@ -373,9 +529,20 @@ export class Logger implements ILogger {
    * `BINDEN_LOG_LEVEL` by default): `silent` without it, or for an unknown
    * level
    */
-  public static getLevel(env_name = this.ENV_VARIABLE_NAME): LevelWithSilent {
+  public static getLevel(env_name?: string): LevelWithSilent {
+    // A string before it is read, which would convert it (the default
+    // computed inside the formatting, see `formatting()`)
+    const given: unknown =
+      typeof env_name === "undefined"
+        ? formatting(() => this.ENV_VARIABLE_NAME)
+        : env_name;
+    if (typeof given !== "string") {
+      throw formatStack(
+        new TypeError(`\`env_name\` is not a string: ${described(given)}`),
+      );
+    }
     const {
-      env: { [env_name]: LEVEL },
+      env: { [given]: LEVEL },
     } = process;
 
     const level = (LEVEL ?? "").trim().toLowerCase();
@@ -399,7 +566,8 @@ export class Logger implements ILogger {
       typeof level !== "string" ||
       (level !== "silent" && !Object.hasOwn(known, level))
     ) {
-      throw formatStack(new TypeError(`Unknown level: ${String(level)}`));
+      // Described without converting it (see `described()`)
+      throw formatStack(new TypeError(`Unknown level: ${described(level)}`));
     }
   }
 
@@ -407,7 +575,7 @@ export class Logger implements ILogger {
    * Throws a `TypeError` unless `logger` is a `pino` logger (with its methods)
    * that no other option is combined with: they would not apply to it
    */
-  static #checkPino(logger: unknown, options: LoggerOptions): void {
+  static #checkPino(logger: unknown, others: readonly string[]): void {
     const methods = [
       "child",
       "flush",
@@ -422,16 +590,15 @@ export class Logger implements ILogger {
     if (
       typeof logger !== "object" ||
       logger === null ||
-      !methods.every((name) => typeof property(logger, name) === "function")
+      // Read as they are: what a getter or a proxy throws is thrown
+      !methods.every((name) => typeof Reflect.get(logger, name) === "function")
     ) {
       throw formatStack(new TypeError("`logger` is not a `pino` logger"));
     }
-    const [other] = Object.entries(options).filter(
-      ([name, value]) => name !== "logger" && typeof value !== "undefined",
-    );
+    const [other] = others;
     if (typeof other !== "undefined") {
       throw formatStack(
-        new TypeError(`\`logger\` cannot be combined with \`${other[0]}\``),
+        new TypeError(`\`logger\` cannot be combined with \`${other}\``),
       );
     }
   }
