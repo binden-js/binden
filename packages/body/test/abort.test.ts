@@ -432,6 +432,38 @@ suite("BodyParser (aborted requests)", () => {
   );
 
   test(
+    "a request stream that closes before its end, without an error, while the client waits",
+    { timeout: 10_000 },
+    async () => {
+      const watched = watch(new BodyParser(), (context) => {
+        setTimeout(() => {
+          context.request.emit("close");
+        }, 20);
+      });
+      const server = await listen(new Binden().use(watched.middleware));
+      try {
+        const { req, response } = upload(
+          server,
+          { "Content-Type": ct_text, "Content-Length": 1000 },
+          "a",
+        );
+        const reply = await within(response);
+        reply.resume();
+        deepStrictEqual(
+          [reply.statusCode, reply.headers.connection],
+          [400, "close"],
+        );
+        const error = failure(await within(watched.settled));
+        ok(isAborted(error));
+        deepStrictEqual((error as Error).cause, null);
+        req.destroy();
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  test(
     "a request stream that fails while the client waits",
     { timeout: 10_000 },
     async () => {

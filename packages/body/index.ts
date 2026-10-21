@@ -11,7 +11,7 @@ import {
   formatting,
   serializers,
 } from "binden";
-import { Duplex, Transform, Writable, finished, pipeline } from "node:stream";
+import { Duplex, Transform, Writable, pipeline } from "node:stream";
 import { type IZstdBudget, ZstdDecoding } from "./src/zstd.js";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { addAbortListener } from "node:events";
@@ -844,15 +844,29 @@ export class BodyParser<T = unknown> extends Middleware {
         cleanups.push(() => {
           listener[Symbol.dispose]();
         });
-        cleanups.push(
-          finished(request, (error) => {
+        // Not `finished()`, whose listeners read the request again, outside
+        // of any guard: an error of the request, or a close before its end,
+        // is an abort
+        let ended = false;
+        const onEnd = (): void => {
+          ended = true;
+        };
+        const onError = (error: unknown): void => {
+          late(() => {
+            fail(abortError(error), "The request has been aborted");
+          });
+        };
+        const onClose = (): void => {
+          if (!ended) {
             late(() => {
-              if (error) {
-                fail(abortError(error), "The request has been aborted");
-              }
+              fail(abortError(null), "The request has been aborted");
             });
-          }),
-        );
+          }
+        };
+        request.once("end", onEnd).on("error", onError).once("close", onClose);
+        cleanups.push(() => {
+          request.off("end", onEnd).off("error", onError).off("close", onClose);
+        });
         pipeline([...stages, sink], (error) => {
           if (error instanceof BindenError) {
             fail(error, "The body is too large");

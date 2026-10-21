@@ -40,6 +40,44 @@ function ducked<T extends object>(target: T, replaced: IReplaced): T {
 }
 
 /**
+ * A proxy of `target` (and of each object that it gives, e.g. the request of
+ * a context) whose every use throws an error of its own (kept in `errors`)
+ * once `armed()` is true: its methods are bound to their objects
+ */
+function deep<T extends object>(
+  target: T,
+  errors: OwnError[],
+  armed: () => boolean,
+): T {
+  const proxies = new WeakMap<object, object>();
+  const fail = (): never => {
+    const error = new OwnError("A late use of the context");
+    errors.push(error);
+    throw error;
+  };
+  const handler: ProxyHandler<object> = {
+    get(object, key): unknown {
+      if (armed()) {
+        return fail();
+      }
+      const value: unknown = Reflect.get(object, key, object);
+      if (typeof value === "function") {
+        return (value as (...args: unknown[]) => unknown).bind(object);
+      } else if (typeof value !== "object" || value === null) {
+        return value;
+      }
+      const proxy = proxies.get(value) ?? new Proxy(value, handler);
+      proxies.set(value, proxy);
+      return proxy;
+    },
+    set(object, key, value): boolean {
+      return armed() ? fail() : Reflect.set(object, key, value, object);
+    },
+  };
+  return new Proxy(target, handler) as T;
+}
+
+/**
  * A function (a getter, or a method) that throws a new error of its own,
  * kept in `errors`, from its call `from` on
  */
@@ -211,6 +249,40 @@ suite("BodyParser (late calls of a context)", () => {
         served.restore();
         await served.server.close();
       }
+    }
+  });
+
+  test("a context whose every use throws once run() has returned (also of its request, response, signal and logger): the first error is the rejection, formatted, never an uncaught one", async () => {
+    const errors: OwnError[] = [];
+    let armed = false;
+    const served = await serveDucked(
+      new BodyParser({ limit: 4 }),
+      (context) => {
+        setImmediate(() => {
+          armed = true;
+        });
+        return deep(context, errors, () => armed);
+      },
+    );
+    try {
+      const { req, response } = upload(
+        served.server,
+        { "Content-Type": ct_text },
+        "ab",
+      );
+      await within(served.started);
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+      req.write("cdefgh");
+      const settled = await within(served.settled);
+      ok(errors.length > 0);
+      deepStrictEqual(settled, { error: errors[0], formatted: true });
+      req.end();
+      deepStrictEqual(await status(response), 500);
+    } finally {
+      served.restore();
+      await served.server.close();
     }
   });
 
