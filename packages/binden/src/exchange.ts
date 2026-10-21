@@ -151,25 +151,32 @@ export function readsSafely(value: unknown): boolean {
   );
 }
 
+/** The message of a carrier (see `carrierOf()`) */
+const carried = "A stream has failed";
+
+/** `Error.prototype` of the engine (a property that cannot be changed) */
+const errorPrototype = Error.prototype;
+
 /**
  * What a `Readable` is destroyed with in place of a value whose `stack`
- * Node.js cannot read safely (see `readsSafely()`): an `Error` that carries
- * it as its `cause`, formatted (see `formatStack()`), decided as well (see
- * `decided()`), whose stack is its header when a `prepareStackTrace` of the
- * application fails to format it (Node.js would run it again). For the
- * packages of binden only.
+ * Node.js cannot read safely (see `readsSafely()`): an `Error` (an object of
+ * `Error.prototype`) that carries it as its `cause`, decided as well (see
+ * `decided()`), made with its `stack` as a value of its own that can be
+ * neither written nor redefined, its header: no `prepareStackTrace` of the
+ * application ever runs for it (one that redefines or freezes the `stack` of
+ * what it formats would leave a carrier that Node.js cannot read, or that
+ * binden cannot fix), it holds no frames (nothing of the request or of the
+ * response, whoever keeps it), and Node.js reads its `stack` as it is. For
+ * the packages of binden only.
  *
  * @internal
  */
 export function carrierOf(cause: unknown): Error {
-  const carrier = formatStack(new Error("A stream has failed", { cause }));
-  if (!readsSafely(carrier)) {
-    Object.defineProperty(carrier, "stack", {
-      configurable: true,
-      value: "Error: A stream has failed",
-      writable: true,
-    });
-  }
+  const carrier = Object.create(errorPrototype, {
+    message: { configurable: true, value: carried, writable: true },
+    cause: { configurable: true, value: cause, writable: true },
+    stack: { value: `Error: ${carried}` },
+  }) as Error;
   decided(carrier);
   return carrier;
 }

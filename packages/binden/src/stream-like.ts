@@ -282,8 +282,8 @@ const uncarrying = new WeakMap<object, unknown>();
 
 /**
  * The carrier of a value of a stream-like source (see `carrierOf()`: an
- * error of binden, decided as by `own()`, with a stack that Node.js reads as
- * it is, also when a `prepareStackTrace` of the application fails), which a
+ * error of binden, decided as by `own()`, whose `stack` is a value that no
+ * `prepareStackTrace` of the application runs for), which a
  * readable of `readStreamLike()` is destroyed with in its place: recorded for
  * that readable only, whose send takes it for that value (see `uncarried()`)
  */

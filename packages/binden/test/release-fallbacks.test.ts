@@ -126,7 +126,7 @@ suite("A Readable that binden destroys with what its code has thrown", () => {
     });
   }
 
-  test("is destroyed with an `Error` that carries it, whose stack is formatted before it is handed to the `destroy()` of the source (which may keep it)", async () => {
+  test("is destroyed with an `Error` that carries it, whose stack is a value of its own before it is handed to the `destroy()` of the source (which may keep it): it holds no frames, and no `prepareStackTrace` runs for it", async () => {
     const thrown = unstackable();
     /** The errors whose stacks have been formatted, and when */
     const formatted = new WeakSet<object>();
@@ -142,8 +142,11 @@ suite("A Readable that binden destroys with what its code has thrown", () => {
         ].join("\n");
       },
     );
-    /** The errors that its own `destroy()` gets, and whether they are formatted */
-    const destroyed: [unknown, boolean][] = [];
+    /**
+     * The errors that its own `destroy()` gets, whether they are formatted,
+     * and whether their stack is a value of their own
+     */
+    const destroyed: [unknown, boolean, boolean][] = [];
     const source = new (class extends Readable {
       public override destroy(error?: Error): this {
         if (error === thrown) {
@@ -153,6 +156,8 @@ suite("A Readable that binden destroys with what its code has thrown", () => {
         destroyed.push([
           error,
           Object(error) === error && formatted.has(error as object),
+          "value" in
+            Object(Reflect.getOwnPropertyDescriptor(Object(error), "stack")),
         ]);
         return super.destroy(error);
       }
@@ -170,14 +175,15 @@ suite("A Readable that binden destroys with what its code has thrown", () => {
     } finally {
       Reflect.set(Error, "prepareStackTrace", prepare);
     }
-    const [[error, stacked] = []] = destroyed;
+    const [[error, stacked, valued] = []] = destroyed;
     deepStrictEqual(
       [
         destroyed.length,
         (error as Error | undefined)?.cause === thrown,
         stacked,
+        valued,
       ],
-      [1, true, true],
+      [1, true, false, true],
     );
   });
 

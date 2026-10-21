@@ -103,7 +103,7 @@ function recording<T>(run: (formatted: WeakSet<object>) => T): T {
 
 suite("An error that binden creates for a stream-like source (R3.22-2)", () => {
   for (const [name, fail] of failures) {
-    test(`${name}: formatted once created, and decided for every source, whatever stream emits it`, async () => {
+    test(`${name}: formatted once created (the carrier of a value: made with its stack as a value, which holds no frames), and decided for every source, whatever stream emits it`, async () => {
       const reported: unknown[] = [];
       const source = new Source();
       const before = name.startsWith("code");
@@ -120,7 +120,17 @@ suite("An error that binden creates for a stream-like source (R3.22-2)", () => {
         if (!before) {
           fail(source);
         }
-        return [read, recorded.has(read.errored as Error)];
+        const errored = read.errored as Error;
+        // The carrier (see `carrierOf()`) is never formatted: its stack is
+        // a value from the start
+        return [
+          read,
+          before
+            ? !recorded.has(errored) &&
+              "value" in
+                Object(Reflect.getOwnPropertyDescriptor(errored, "stack"))
+            : recorded.has(errored),
+        ];
       });
       const failure = readable.errored as Error;
       // Another stream that the application destroys with it, and the
