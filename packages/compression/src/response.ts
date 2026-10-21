@@ -7,6 +7,7 @@ import {
   type IRepresentation,
   type IResponseOperation,
   bodyHeaders,
+  described,
   formatStack,
   framingLength,
   kListen,
@@ -114,6 +115,24 @@ function listOf(value: number | string | string[] | undefined): string[] {
     .filter((item) => item !== "");
 }
 
+/**
+ * The `Content-Length` of a response as the compression decides by it (see
+ * `framingLength()`), as binden frames by it: a number, a string, or an array
+ * of them. A value of another type (e.g. `true`, or an object), which
+ * `setHeader()` of Node.js accepts and converts only as it sends the head, is
+ * no length that the compression knows (none, as an empty array): it never
+ * converts it,
+ * nor fails for it.
+ */
+function lengthOf(response: IResponse): OutgoingHttpHeader {
+  const value = response.getHeader("Content-Length");
+  const known = (element: unknown): boolean =>
+    typeof element === "number" || typeof element === "string";
+  return known(value) || (Array.isArray(value) && value.every(known))
+    ? (value as OutgoingHttpHeader)
+    : [];
+}
+
 /** Whether `Content-Encoding` names `identity` only (no coding at all) */
 function isIdentity(value: number | string | string[]): boolean {
   const list = listOf(value);
@@ -178,10 +197,14 @@ function hasBody(response: IResponse): boolean {
   );
 }
 
-/** The error of an encoding that binden refuses (see `encodingOf()`), as binden throws it */
+/**
+ * The error of an encoding that binden refuses (see `encodingOf()`), as binden
+ * throws it: it describes the encoding without converting it (see
+ * `described()`)
+ */
 function unknownEncoding(encoding: unknown): Error {
   return Object.assign(
-    formatStack(new TypeError(`Unknown encoding: ${encoding as string}`)),
+    formatStack(new TypeError(`Unknown encoding: ${described(encoding)}`)),
     { code: "ERR_UNKNOWN_ENCODING" },
   );
 }
@@ -459,10 +482,30 @@ export class CompressedResponse {
         this.#chosen = null;
       },
     });
-    response.writeHead = (...args: unknown[]): IResponse =>
-      this.#onWriteHead(args);
-    response.write = (...args: unknown[]): boolean => this.#onWrite(args);
-    response.end = (...args: unknown[]): IResponse => this.#onEnd(args);
+    // What they throw is formatted (see `formatStack()`), as by the methods
+    // of binden that they replace (e.g. the error of Node.js for a chunk that
+    // it refuses): inline, they are hot paths
+    response.writeHead = (...args: unknown[]): IResponse => {
+      try {
+        return this.#onWriteHead(args);
+      } catch (error: unknown) {
+        throw formatStack(error as Error);
+      }
+    };
+    response.write = (...args: unknown[]): boolean => {
+      try {
+        return this.#onWrite(args);
+      } catch (error: unknown) {
+        throw formatStack(error as Error);
+      }
+    };
+    response.end = (...args: unknown[]): IResponse => {
+      try {
+        return this.#onEnd(args);
+      } catch (error: unknown) {
+        throw formatStack(error as Error);
+      }
+    };
     response.flush = (): Promise<void> => {
       // `flush()` of binden writes an empty chunk, whose callback runs once
       // the chunks before it are flushed: for a compressed response, it is
@@ -880,7 +923,7 @@ export class CompressedResponse {
     const response = this.#response;
     // The body that `end()` writes is not the one of the `200` of a `304`
     return this.#decide(
-      framingLength(response.getHeader("Content-Length")) ??
+      framingLength(lengthOf(response)) ??
         (response.statusCode === 304 ? null : size),
     );
   }
@@ -1020,9 +1063,7 @@ export class CompressedResponse {
   #code(coding: ICompressEncodings): boolean {
     const response = this.#response;
     const status = response.statusCode;
-    const empty =
-      status !== 304 &&
-      framingLength(response.getHeader("Content-Length")) === 0;
+    const empty = status !== 304 && framingLength(lengthOf(response)) === 0;
     if (!empty) {
       this.#remove("Content-Length");
     }

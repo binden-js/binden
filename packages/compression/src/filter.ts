@@ -1,4 +1,4 @@
-import type { ContentType, Context } from "binden";
+import { type ContentType, type Context, formatting } from "binden";
 
 /**
  * Decides whether a response is compressed, by its `Content-Type` (`null`
@@ -34,12 +34,16 @@ const types: ReadonlySet<string> = new Set([
  * images are; a response without a valid `Content-Type` is not.
  */
 export function isCompressible(content_type: ContentType | null): boolean {
-  if (content_type === null) {
-    return false;
-  }
-  const type = content_type.type.toLowerCase();
-  if (type.startsWith("text/")) {
-    return type !== "text/event-stream";
-  }
-  return type.endsWith("+json") || type.endsWith("+xml") || types.has(type);
+  // What reading it throws (e.g. of a value that is not a `ContentType`) is
+  // formatted (see `formatting()`)
+  return formatting(() => {
+    if (content_type === null) {
+      return false;
+    }
+    const type = content_type.type.toLowerCase();
+    if (type.startsWith("text/")) {
+      return type !== "text/event-stream";
+    }
+    return type.endsWith("+json") || type.endsWith("+xml") || types.has(type);
+  });
 }

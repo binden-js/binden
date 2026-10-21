@@ -4,7 +4,9 @@ import {
   type Context,
   type IMiddlewareParams,
   Middleware,
+  described,
   formatStack,
+  formatting,
 } from "binden";
 import { CompressedResponse, type ISettings, skip } from "./src/response.js";
 import {
@@ -100,6 +102,55 @@ function checkEncodings(encodings: unknown): readonly ICompressEncodings[] {
   return Object.freeze([...(encodings as ICompressEncodings[])]);
 }
 
+/** The options of a `Compression`, each read once (see `readOptions()`) */
+interface IReadOptions {
+  readonly format: ICompressFormats;
+  readonly encodings: readonly ICompressEncodings[] | undefined;
+  readonly threshold: number;
+  readonly filter: ICompressionFilter;
+  readonly gzip: ZlibOptions;
+  readonly deflate: ZlibOptions;
+  readonly brotli: BrotliOptions;
+  readonly zstd: ZstdOptions;
+  readonly rest: IMiddlewareParams;
+}
+
+/**
+ * Reads the options of a `Compression` once, with their defaults: anything but
+ * an object (or `undefined`, the defaults) is refused with a `TypeError`
+ * before anything is read, which describes it (see `described()`)
+ */
+function readOptions(options: unknown): IReadOptions {
+  if (typeof options !== "object" || options === null) {
+    throw formatStack(
+      new TypeError(`\`options\` is not an object: ${described(options)}`),
+    );
+  }
+  const {
+    format = "auto",
+    encodings,
+    threshold = 1024,
+    filter = (_context: Context, type: ContentType | null): boolean =>
+      isCompressible(type),
+    gzip = {},
+    deflate = {},
+    brotli = {},
+    zstd = {},
+    ...rest
+  } = options as ICompressionOptions;
+  return {
+    format,
+    encodings,
+    threshold,
+    filter,
+    gzip,
+    deflate,
+    brotli,
+    zstd,
+    rest,
+  };
+}
+
 /**
  * Compresses the responses (`br`, `gzip`, `deflate` and `zstd`). The decision
  * is taken once for each response, before its preconditions are evaluated or
@@ -111,22 +162,27 @@ export class Compression extends Middleware {
   /**
    * Validates the options: a `TypeError` (or `RangeError`) for an invalid one,
    * also for the options of a compressor (one is created to check them), or
-   * for `zstd` when `node:zlib` does not have it
+   * for `zstd` when `node:zlib` does not have it. What reading them throws
+   * (e.g. a revoked proxy, or a getter that throws) is formatted (see
+   * `formatting()`).
    */
   public constructor(options: ICompressionOptions = {}) {
-    const {
-      format = "auto",
-      encodings,
-      threshold = 1024,
-      filter = (_context: Context, type: ContentType | null): boolean =>
-        isCompressible(type),
-      gzip = {},
-      deflate = {},
-      brotli = {},
-      zstd = {},
-      ...rest
-    } = options;
-    super(rest);
+    const read = formatting(() => readOptions(options));
+    super(read.rest);
+    this.#settings = formatting(() => Compression.#settingsOf(read));
+  }
+
+  /** The settings of the options (see `IReadOptions`), validated */
+  static #settingsOf({
+    format,
+    encodings,
+    threshold,
+    filter,
+    gzip,
+    deflate,
+    brotli,
+    zstd,
+  }: IReadOptions): ISettings {
     if (!formats.includes(format)) {
       throw formatStack(
         new TypeError(
@@ -179,7 +235,7 @@ export class Compression extends Middleware {
       createCompressor(coding, compressors).close();
     }
 
-    this.#settings = Object.freeze({
+    return Object.freeze({
       format,
       encodings: offered,
       threshold,
@@ -203,7 +259,12 @@ export class Compression extends Middleware {
    * are committed
    */
   public run(context: Context): void {
-    CompressedResponse.install(context, this.#settings);
+    // What reading the context throws is formatted (see `formatStack()`)
+    try {
+      CompressedResponse.install(context, this.#settings);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 }
 
@@ -214,10 +275,16 @@ export class Compression extends Middleware {
  * work that calls it may no longer mutate the response.
  */
 export function skipCompression(response: BindenResponse): void {
-  if (!(response instanceof BindenResponse)) {
-    throw formatStack(new TypeError("The response is not a `BindenResponse`"));
-  }
-  skip(response);
+  // What reading it throws (e.g. a revoked proxy) is formatted (see
+  // `formatting()`)
+  formatting(() => {
+    if (!(response instanceof BindenResponse)) {
+      throw formatStack(
+        new TypeError("The response is not a `BindenResponse`"),
+      );
+    }
+    skip(response);
+  });
 }
 
 /** A compression with the default options */
