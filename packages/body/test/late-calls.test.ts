@@ -270,7 +270,8 @@ suite("BodyParser (late calls of a context)", () => {
         { "Content-Type": ct_text },
         "ab",
       );
-      await within(served.started);
+      const context = await within(served.started);
+      const closed = once(context.request, "close");
       await new Promise((resolve) => {
         setImmediate(resolve);
       });
@@ -280,6 +281,12 @@ suite("BodyParser (late calls of a context)", () => {
       deepStrictEqual(settled, { error: errors[0], formatted: true });
       req.end();
       deepStrictEqual(await status(response), 500);
+      // What still listens to the request (e.g. as it closes) uses it no more
+      context.request.destroy();
+      await within(closed);
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
     } finally {
       served.restore();
       await served.server.close();
