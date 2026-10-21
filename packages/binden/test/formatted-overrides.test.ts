@@ -1,12 +1,16 @@
 import {
   BindenResponse,
+  type IResponseOperation,
   kListen,
+  kNegotiator,
+  kOperation,
+  kRepresentation,
   kRestoreFraming,
   kValidateHead,
   validateResponseOptions,
 } from "../index.js";
 import { IncomingMessage, ServerResponse } from "node:http";
-import { deepStrictEqual, ok } from "node:assert/strict";
+import { deepStrictEqual, ok, strictEqual } from "node:assert/strict";
 import { kFramework, kRevoke } from "../src/seal.js";
 import { suite, test } from "node:test";
 import { Readable } from "node:stream";
@@ -59,6 +63,13 @@ function detached(): BindenResponse {
 /** A revoked proxy */
 function revoked(): object {
   const { proxy, revoke } = Proxy.revocable({}, {});
+  revoke();
+  return proxy;
+}
+
+/** A revoked proxy of a function */
+function revokedFunction(): unknown {
+  const { proxy, revoke } = Proxy.revocable(() => null, {});
   revoke();
   return proxy;
 }
@@ -168,6 +179,29 @@ const failures: [string, (response: BindenResponse) => unknown][] = [
     },
   ],
   ["[kFramework]()", (r): unknown => r[kFramework](null as never)],
+  [
+    "run() of [kOperation]()",
+    (r): unknown => (r[kOperation]() as IResponseOperation).run(5 as never),
+  ],
+  [
+    "run() of [kOperation]() of a revoked function",
+    (r): unknown =>
+      (r[kOperation]() as IResponseOperation).run(revokedFunction() as never),
+  ],
+  [
+    "[kNegotiator]() of no choose()",
+    (r): unknown => {
+      r[kNegotiator]({} as never);
+      return null;
+    },
+  ],
+  [
+    "[kNegotiator]() of a revoked proxy",
+    (r): unknown => {
+      r[kNegotiator](revoked() as never);
+      return null;
+    },
+  ],
   ["[kRevoke]()", (r): unknown => r[kRevoke](revoked() as never, null)],
   [
     "[kListen]() of options",
@@ -215,6 +249,44 @@ suite("The methods that binden defines over those of Node.js", () => {
       [
         "sendFile() of a path",
         (r, own): unknown => r.sendFile(throwing(own) as never),
+      ],
+      [
+        "run() of [kOperation]() of a callback",
+        (r, own): unknown =>
+          (r[kOperation]() as IResponseOperation).run(() => {
+            throw own;
+          }),
+      ],
+      [
+        "transfer() of [kOperation]() of a writableEnded of its own",
+        (r, own): unknown => {
+          Object.defineProperty(r, "writableEnded", {
+            get(): never {
+              throw own;
+            },
+          });
+          (r[kOperation]() as IResponseOperation).transfer();
+          return null;
+        },
+      ],
+      [
+        "[kNegotiator]() of a negotiator",
+        (r, own): unknown => {
+          r[kNegotiator](throwing(own) as never);
+          return null;
+        },
+      ],
+      [
+        "[kRepresentation]() of the choose() of the negotiator",
+        (r, own): unknown => {
+          r[kNegotiator]({
+            choose(): never {
+              throw own;
+            },
+            forget: noop,
+          });
+          return r[kRepresentation](1);
+        },
       ],
     ];
     for (const [label, run] of calls) {
@@ -418,6 +490,73 @@ suite("The methods that binden defines over those of Node.js", () => {
         );
       }
     }
+  });
+
+  test("[kNegotiator]() reads choose and forget once and refuses them unless they are functions, described, keeping nothing; what forget() throws is logged where a send settles", async () => {
+    for (const [given, message] of [
+      [null, "`negotiator` is not an object: null"],
+      [{}, "`negotiator.choose` is not a function: undefined"],
+      [{ choose: noop, forget: 5 }, "`negotiator.forget` is not a function: 5"],
+    ] as const) {
+      const response = detached();
+      const failed = await outcome(() => {
+        response[kNegotiator](given as never);
+      });
+      ok(failed?.thrown instanceof TypeError);
+      deepStrictEqual(
+        [failed.thrown.message, failed.formatted],
+        [message, true],
+      );
+      // Nothing is kept: the body as it is
+      deepStrictEqual(response[kRepresentation](1), {
+        coding: null,
+        status: null,
+      });
+    }
+    // Read once, called on the negotiator
+    const reads: string[] = [];
+    const receivers: unknown[] = [];
+    const negotiator = {
+      get choose(): (length: number | null) => unknown {
+        reads.push("choose");
+        return function choose(this: unknown, length: number | null): unknown {
+          receivers.push(this);
+          return { coding: null, status: length };
+        };
+      },
+      get forget(): () => void {
+        reads.push("forget");
+        return noop;
+      },
+    };
+    const response = detached();
+    response[kNegotiator](negotiator as never);
+    deepStrictEqual(
+      [response[kRepresentation](406), response[kRepresentation](406)],
+      [
+        { coding: null, status: 406 },
+        { coding: null, status: 406 },
+      ],
+    );
+    deepStrictEqual(reads, ["choose", "forget"]);
+    deepStrictEqual(receivers, [negotiator, negotiator]);
+    // A forget() that throws as a send fails before its first chunk: the
+    // send rejects with the error of its source
+    const failing = detached();
+    failing[kNegotiator]({
+      choose: () => ({ coding: null, status: null }),
+      forget(): never {
+        throw new OwnError("forget");
+      },
+    });
+    const gone = new OwnError("gone");
+    const source = new Readable({
+      read(): void {
+        // Never
+      },
+    });
+    source.on("error", noop).destroy(gone);
+    strictEqual((await outcome(() => failing.send(source)))?.thrown, gone);
   });
 
   test("its constructor formats what the constructor of Node.js throws", async () => {

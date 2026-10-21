@@ -25,8 +25,6 @@ interface IReport {
  */
 const integrating: readonly string[] = [
   // binden/src/response.ts and @binden/compression
-  "binden:BindenResponse#[binden.negotiator]()",
-  "binden:BindenResponse#[binden.operation]()=>.run()",
   "binden:BindenResponse#[binden.validate_head]()",
   "binden:BindenResponse#addTrailers()",
   "binden:BindenResponse#cookies=>.add()",

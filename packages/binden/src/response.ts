@@ -86,7 +86,7 @@ import {
   validateHeaderValue,
 } from "node:http";
 import { contentDigests, representationDigests } from "./digests.js";
-import { described, formatting } from "./formatting.js";
+import { described, formatting, objectOf } from "./formatting.js";
 import {
   isArrayBuffer,
   isDataView,
@@ -736,7 +736,9 @@ interface IRights {
 /**
  * An operation on a response (a send of a stream, a file, a compressor): it
  * belongs to the owner of the work that has started it, whose rights its
- * asynchronous callbacks keep (see `IResponseOperation`)
+ * asynchronous callbacks keep (see `IResponseOperation`). What its methods
+ * throw is formatted (see `formatStack()`), e.g. for a callback that is not
+ * a function, or what the callback throws.
  */
 class Operation implements IResponseOperation {
   readonly #owner: object | undefined;
@@ -753,16 +755,25 @@ class Operation implements IResponseOperation {
   }
 
   public run<T>(fn: () => T): T {
-    if (this.#transfer) {
-      const rights = this.#rights;
-      return owners.run(this.#owner as object, () => rights.force(fn));
+    // Inline: a hot path (e.g. each chunk of a compressed response)
+    try {
+      if (this.#transfer) {
+        const rights = this.#rights;
+        return owners.run(this.#owner as object, () => rights.force(fn));
+      }
+      return owners.run(this.#owner as object, fn);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
-    return owners.run(this.#owner as object, fn);
   }
 
   public transfer(): void {
-    if (this.active && this.#rights.ended()) {
-      this.#transfer = true;
+    try {
+      if (this.active && this.#rights.ended()) {
+        this.#transfer = true;
+      }
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
     }
   }
 }
@@ -3111,12 +3122,41 @@ export class BindenResponse<
 
   /**
    * Lets a library (e.g. `@binden/compression`) choose the representation of
-   * the body of the response (see `[kRepresentation]()`)
+   * the body of the response (see `[kRepresentation]()`): an object whose
+   * `choose` and `forget` are functions, read once, and called on it later.
+   * Anything else is refused with a `TypeError` that describes it (see
+   * `described()`), before it is kept. What reading it throws (e.g. a revoked
+   * proxy) is formatted (see `formatting()`).
    *
    * @internal
    */
   public [kNegotiator](negotiator: IRepresentationNegotiator): void {
-    this.#negotiator = negotiator;
+    const { choose, forget } = formatting(() => {
+      const { choose: chosen, forget: forgotten } = objectOf(
+        negotiator,
+        "negotiator",
+      ) as Partial<Record<keyof IRepresentationNegotiator, unknown>>;
+      return { choose: chosen, forget: forgotten };
+    });
+    if (typeof choose !== "function") {
+      throw BindenResponse.#notFunction("negotiator.choose", choose);
+    } else if (typeof forget !== "function") {
+      throw BindenResponse.#notFunction("negotiator.forget", forget);
+    }
+    this.#negotiator = {
+      choose: (length: number | null): IRepresentation =>
+        Reflect.apply(choose, negotiator, [length]) as IRepresentation,
+      forget: (): void => {
+        Reflect.apply(forget, negotiator, []);
+      },
+    };
+  }
+
+  /** The refusal of a value that is not a function (`name`), which describes it (see `described()`) */
+  static #notFunction(name: string, value: unknown): TypeError {
+    return formatStack(
+      new TypeError(`\`${name}\` is not a function: ${described(value)}`),
+    );
   }
 
   /**
@@ -3130,9 +3170,14 @@ export class BindenResponse<
    * @internal
    */
   public [kRepresentation](length: number | null): IRepresentation {
-    return this.#negotiator === null || !this.#allows()
-      ? identity
-      : this.#negotiator.choose(length);
+    // What the negotiator throws is formatted (see `formatStack()`)
+    try {
+      return this.#negotiator === null || !this.#allows()
+        ? identity
+        : this.#negotiator.choose(length);
+    } catch (error: unknown) {
+      throw formatStack(error as Error);
+    }
   }
 
   /**
@@ -3143,7 +3188,13 @@ export class BindenResponse<
    */
   #forget(): void {
     if (this.#allows()) {
-      this.#negotiator?.forget();
+      // Where a send settles (e.g. in a listener of its source): what the
+      // negotiator throws is logged (`debug`), never thrown there
+      try {
+        this.#negotiator?.forget();
+      } catch (error: unknown) {
+        this.#ownership.debug("The negotiator has failed to forget", error);
+      }
     }
   }
 
