@@ -3410,6 +3410,15 @@ export class BindenResponse<
   }
 
   /**
+   * Whether a send (also of `text()`, `html()`, `json()` and `form()`) is
+   * ignored: the response has ended, or the current work may no longer
+   * mutate it (see `[kSeal]()`)
+   */
+  #ignored(): boolean {
+    return this.writableEnded || !this.#allows();
+  }
+
+  /**
    * `send()`, which may throw before it has changed the response. The
    * `Content-Type` of `text()`, `html()`, `json()` and `form()` (`type`) is set
    * once the data and the status are accepted: a refused call changes nothing
@@ -3420,7 +3429,7 @@ export class BindenResponse<
     type: string | null,
     encoding?: BufferEncoding,
   ): Promise<void> {
-    if (this.writableEnded || !this.#allows()) {
+    if (this.#ignored()) {
       // Ignored: nothing of the data is read (e.g. a getter of an object of
       // a work that may no longer mutate the response), but a Node.js
       // `Readable` is released (see `#releaseIgnored()`)
@@ -3648,13 +3657,15 @@ export class BindenResponse<
    * rejects with a `TypeError` before the response is started, as does a
    * `stringify` that is not a function, or that does not return a string;
    * what a `stringify` throws (e.g. one that cannot be called) is formatted
-   * (see `formatting()`).
+   * (see `formatting()`). Ignored as `send()` is, once the response has
+   * ended or the work may no longer mutate it: neither the value nor
+   * `stringify` is read, checked or called.
    */
   public async json<T = unknown>(
     data: T,
     stringify?: (data: T) => string,
   ): Promise<void> {
-    if (!this.#allows()) {
+    if (this.#ignored()) {
       return;
     }
     const type = typeof data;
@@ -3719,10 +3730,12 @@ export class BindenResponse<
   /**
    * Send `URLSearchParams` as `application/x-www-form-urlencoded`: anything
    * else rejects with a `TypeError` before the response is started (see
-   * `formText()`)
+   * `formText()`). Ignored as `send()` is, once the response has ended or
+   * the work may no longer mutate it: nothing of the parameters is read nor
+   * checked.
    */
   public async form(params: URLSearchParams): Promise<void> {
-    if (!this.#allows()) {
+    if (this.#ignored()) {
       return;
     }
     const text = formText(params);

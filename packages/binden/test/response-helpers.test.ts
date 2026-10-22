@@ -5,6 +5,7 @@ import { afterEach, beforeEach, suite, test } from "node:test";
 import { deepStrictEqual, ok, throws } from "node:assert";
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
+import { kSeal } from "../src/seal.js";
 
 /** `undefined`, which the linter does not let the tests write */
 const none = ({} as { value?: undefined }).value;
@@ -167,6 +168,79 @@ suite("BindenResponse helpers", () => {
     await ended.json({});
     await ended.form(params);
     deepStrictEqual(ended.getHeader("Content-Type"), none);
+  });
+
+  test(".json() and .form() of a response that has ended, or that the work may no longer mutate, are ignored as send() is: they resolve without reading, checking or calling anything of their arguments (R28-R3-7)", async () => {
+    for (const state of ["ended", "sealed"]) {
+      let reads = 0;
+      const value = {
+        get a(): number {
+          reads += 1;
+          return 1;
+        },
+      };
+      const stringify = (): string => {
+        reads += 1;
+        return "{}";
+      };
+      const make = (): BindenResponse => {
+        const response = detached();
+        if (state === "ended") {
+          response.end();
+        } else {
+          response[kSeal]();
+        }
+        return response;
+      };
+      const calls: [string, (response: BindenResponse) => Promise<void>][] = [
+        [
+          "json(value)",
+          async (response): Promise<void> => response.json(value),
+        ],
+        [
+          "json(value, stringify)",
+          async (response): Promise<void> => response.json(value, stringify),
+        ],
+        [
+          "json(undefined)",
+          async (response): Promise<void> => response.json(none),
+        ],
+        ["json(1n)", async (response): Promise<void> => response.json(1n)],
+        [
+          "json({}, 5)",
+          async (response): Promise<void> =>
+            response.json({}, 5 as unknown as () => string),
+        ],
+        [
+          "json({}, () => 5)",
+          async (response): Promise<void> =>
+            response.json({}, () => 5 as unknown as string),
+        ],
+        [
+          "form(a string)",
+          async (response): Promise<void> =>
+            response.form("a=b" as unknown as URLSearchParams),
+        ],
+        [
+          "form(a getter)",
+          async (response): Promise<void> =>
+            response.form(value as unknown as URLSearchParams),
+        ],
+      ];
+      for (const [label, call] of calls) {
+        const response = make();
+        deepStrictEqual(
+          await call(response).then(
+            () => "resolved",
+            (error: unknown) => error,
+          ),
+          "resolved",
+          `${state} ${label}`,
+        );
+        ok(!response.hasHeader("Content-Type"), `${state} ${label}`);
+      }
+      deepStrictEqual(reads, 0, state);
+    }
   });
 
   test(".type()", () => {
