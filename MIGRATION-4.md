@@ -289,6 +289,11 @@ behaviours of Node.js:
 - `Binden` is a `Stack`: `app.stack` lists the layers of `use()`, `route()` and `mount()`, whose
   path is a string, a RegExp, `null`, `{ route }` or `{ mount }`. A string path of `use()` still
   matches exactly; the new `route()` and `mount()` take [patterns with parameters](https://github.com/binden-js/binden/tree/main/packages/binden#stack-and-routing).
+- A middleware whose result is an object derived from its context (e.g. `Object.create(context)`)
+  or a proxy of it no longer fails the request: binden 2.0.4 took it for a context, and replied
+  `500` (a `TypeError` of V8 for a private member). binden tells a context by its private brand:
+  that result is ignored, as any other value that is not a context, and the next middlewares get
+  the current context. Return the context itself (or a new `Context`) to replace it.
 - `use()` throws a `TypeError` without a middleware or router, or when its first argument is
   neither one nor a path (a string or a RegExp): `use(stack)` and `use(undefined)` were silently
   ignored. A stack is added with `mount()`.
@@ -363,10 +368,13 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   committed, where Node.js and binden 2.0.4 sent every line. So does any comma list, even one whose
   members agree (`2, 3`, but also `2, 2` and `2,2`, alone or as an element of an array), with
   "Content-Length is a list": Node.js sends it as it is, and cannot read it.
-- `send()` with a `1xx` status rejects with a `TypeError` (use `writeEarlyHints()`), also one
-  assigned as a string (e.g. `"103"`), which binden converts once as Node.js does and names in the
-  message ("Status code 103 is informational"): binden 2.0.4 sent it as the final response. A string
-  sent with an `encoding` is encoded once: the bytes that it decodes to are sent, with their length.
+- `send()` and `sendFile()` with a `1xx` status reject with a `TypeError` (use
+  `writeEarlyHints()`), also one assigned as a string (e.g. `"103"`), which binden converts once as
+  Node.js does and names in the message ("Status code 103 is informational"), before they set a
+  header (`sendFile()` none of its file): binden 2.0.4 sent it as the final response (`sendFile()`
+  with the `Content-Length` of its file), so that the client took the next response of the
+  connection for the reply. A string sent with an `encoding` is encoded once: the bytes that it
+  decodes to are sent, with their length.
   A `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
   default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A `Readable`
   that has ended is an empty body.
@@ -588,7 +596,13 @@ createServer({ IncomingMessage: Request });
   it is first used, still with the level of `BINDEN_LOG_LEVEL`.
 - `context.log` is an `ILogger` (it was the `Logger` class of `@binden/logger`): its methods
   return `unknown`, and its calls never throw. The `logger` option takes any `ILogger`. A logger
-  derived from it (`Object.create(context.log)`) or a proxy of it works as a custom logger.
+  derived from it (`Object.create(context.log)`) or a proxy of it works as a custom logger, but
+  the methods that it overrides apply only to the calls made on it: the records of a request go
+  through its `child()`, which gives a child of the original logger. Override `child()` as well
+  to change them, or pass a custom logger.
+- The framework writes its own records by a private path of its loggers: a method replaced on
+  `context.log` (e.g. a wrapper that adds a field) no longer sees them, as it did in 2.0.4. Wrap
+  the logger given as `logger` instead, or override its `child()`.
 
 To log more details (e.g. outside of production), pass a logger:
 
@@ -650,12 +664,18 @@ const invalid = new ValidationError("Invalid email");
   to `level`), throw a `TypeError` as well.
 - `new Logger()` throws a `TypeError` ("`customLevels` has a level that is not a number: …") for
   a level of `customLevels` that is not a number. @binden/logger 2.0.3 handed it to `pino`, which
-  took a numeric string (`"35"`), a `bigint` (`35n`) or an object with `valueOf()` as that level
-  (converting the object each time it read it), and silently accepted any other value (e.g.
-  `"abc"`, `null`, `true`). Give the levels as numbers. A path of `redact` that is not a string
-  already threw in 2.0.3 (an `Error` of `pino`, "Paths must be (non-empty) strings"): it is now a
-  `TypeError` of @binden/logger ("`redact` has a path that is not a string: …"), thrown before the
-  value is converted.
+  took a numeric string (`"35"`) or a `bigint` (`35n`) as that level, wrote the records of a level
+  given as an object with `valueOf()` with `"level": null` (it converted that object as the logger
+  was created, and as it compared levels, e.g. once its `level` was set, never for a record), and
+  silently accepted any other value (e.g. `"abc"`, `null`, `true`), whose records it never wrote.
+  Give the levels as numbers. A path of `redact` that is not a string already threw in 2.0.3 (an
+  `Error` of `pino`, "Paths must be (non-empty) strings"): it is now a `TypeError` of
+  @binden/logger ("`redact` has a path that is not a string: …"), thrown before the value is
+  converted.
+- `new Logger()` reads each option once, as `pino` reads it, and gives `pino` that copy: also
+  `hooks`, each hook once, so that a hook set on that object once the logger is created is not
+  used, where @binden/logger 2.0.3 gave `pino` the object itself, which used a `streamWrite` set
+  later for each record. Set the hooks before the logger is created.
 - The `err` key, under which `pino` logs an `Error` given as the fields of a record, has the
   default `error` serializer too: the serializer of `pino` logged the message, the stack and
   every property of the error.
