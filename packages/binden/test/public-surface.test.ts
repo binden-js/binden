@@ -43,8 +43,6 @@ const integrating: readonly string[] = [
   "binden:Context#send()",
   "binden:Context#sendFile()",
   "binden:Context#text()",
-  // @binden/logger (its nested options read once)
-  "@binden/logger:new Logger()",
 ];
 
 /** How many processes probe the surface in parallel, each a shard of it */

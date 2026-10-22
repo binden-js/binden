@@ -398,9 +398,10 @@ export class Logger implements ILogger {
     ) {
       throw formatStack(new TypeError("`error_details` is not a boolean"));
     }
-    // Read once (see `#copy()`): the check of the level and `pino` read the
-    // copy (no level is combined with `logger`)
+    // Read once (see `#copy()`): the checks and `pino` read the copy (no
+    // level is combined with `logger`)
     const copied = Logger.#copy(options);
+    Logger.#checkNested(copied);
     if (typeof copied.level !== "undefined") {
       const { customLevels = {}, useOnlyCustomLevels = false } = copied;
       Logger.#checkLevel(copied.level, {
@@ -441,6 +442,38 @@ export class Logger implements ILogger {
       );
     }
     return copied;
+  }
+
+  /**
+   * Throws a `TypeError` for a nested option that `pino` would convert: a
+   * level of `customLevels` that is not a number, and a path of `redact` that
+   * is not a string, checked by their types (never converted)
+   */
+  static #checkNested({ customLevels, redact }: PinoLoggerOptions): void {
+    const levels: unknown = customLevels ?? {};
+    for (const level of Object.values(levels as object) as unknown[]) {
+      if (typeof level !== "number") {
+        throw formatStack(
+          new TypeError(
+            `\`customLevels\` has a level that is not a number: ${described(level)}`,
+          ),
+        );
+      }
+    }
+    const paths: unknown = Array.isArray(redact)
+      ? redact
+      : isObject(redact)
+        ? redact.paths
+        : null;
+    for (const path of Array.isArray(paths) ? (paths as unknown[]) : []) {
+      if (typeof path !== "string") {
+        throw formatStack(
+          new TypeError(
+            `\`redact\` has a path that is not a string: ${described(path)}`,
+          ),
+        );
+      }
+    }
   }
 
   /** A logger that writes with an existing `pino` logger (its options apply) */

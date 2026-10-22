@@ -1,4 +1,4 @@
-import { Logger, createSerializers } from "../index.js";
+import { Logger, type LoggerOptions, createSerializers } from "../index.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { describe, it } from "node:test";
 import pino from "pino";
@@ -177,6 +177,55 @@ describe("The entry points of the logger format what they throw (round 27)", () 
     const detached = outcome(() => Reflect.apply(getLevel, null, []));
     ok(detached?.thrown instanceof TypeError);
     ok(detached.formatted);
+  });
+
+  it("refuses a level of `customLevels` that is not a number, and a path of `redact` that is not a string, without converting them", () => {
+    let conversions = 0;
+    const counting = {
+      toString(): string {
+        conversions += 1;
+        return "30";
+      },
+    };
+    for (const [options, message] of [
+      [
+        { customLevels: { custom: counting } },
+        "`customLevels` has a level that is not a number: (an object)",
+      ],
+      [
+        { customLevels: { custom: "35" } },
+        "`customLevels` has a level that is not a number: 35",
+      ],
+      [
+        { redact: [counting] },
+        "`redact` has a path that is not a string: (an object)",
+      ],
+      [
+        { redact: { paths: ["a", 1] } },
+        "`redact` has a path that is not a string: 1",
+      ],
+    ] as const) {
+      const failed = outcome(
+        () => new Logger({ destination: sink, ...(options as LoggerOptions) }),
+      );
+      ok(failed?.thrown instanceof TypeError);
+      deepStrictEqual(
+        [failed.thrown.message, failed.formatted],
+        [message, true],
+      );
+    }
+    deepStrictEqual(conversions, 0);
+    // Valid ones (`null` is none, as for `pino`)
+    for (const options of [
+      { customLevels: { custom: 35 } },
+      { redact: { paths: ["a"] } },
+      { customLevels: null as never },
+    ]) {
+      deepStrictEqual(
+        outcome(() => new Logger({ destination: sink, ...options })),
+        null,
+      );
+    }
   });
 
   it("formats what `pino` throws as it reads the fields of a record", () => {
