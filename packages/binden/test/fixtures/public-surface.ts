@@ -1032,6 +1032,13 @@ interface IFixtureOptions {
    * call does examines its hostile value, and a baseline must not
    */
   readonly refused?: ((values: readonly unknown[]) => boolean) | undefined;
+  /**
+   * The positions whose every hostile value the call must refuse that way
+   * (see `refused`), as documented, never by throwing (e.g. a response of
+   * another kind given to the listener of `callback()` with a request of the
+   * application, whose connection it closes)
+   */
+  readonly refuses?: readonly string[] | undefined;
 }
 
 /** The fixture of an entry point */
@@ -1602,10 +1609,12 @@ define("binden:", {
       returned: probed(
         {
           // A request or a response of another kind (also a proxy of one of
-          // the application) is logged, and its connection closed
+          // the application) is logged, and its connection closed: always a
+          // response, given with the request of the application
           refused: (): boolean =>
             listened.request?.socket.destroyed === true &&
             listened.errors.includes(otherKind),
+          refuses: ["1"],
         },
         (_, listener) => {
           const { IncomingMessage: Request, ServerResponse: Response } =
@@ -3418,6 +3427,14 @@ async function probe(
         outcome.kind === "returned" && (fixture.refused?.(values) ?? false);
       if (path === null && refused) {
         found.push("refuses its valid arguments (`refused`)");
+      } else if (
+        path !== null &&
+        !refused &&
+        (fixture.refuses ?? []).includes(position)
+      ) {
+        found.push(
+          `is not refused as documented (\`refuses\`), but ${outcome.kind === "thrown" || outcome.kind === "rejected" ? `${outcome.kind} ${describe(outcome.error)}` : outcome.kind}`,
+        );
       }
       found.push(
         ...evaluate(
