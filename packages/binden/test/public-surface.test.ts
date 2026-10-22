@@ -27,22 +27,10 @@ interface IReport {
  * removed from the list), and the list is empty once they are
  */
 const integrating: readonly string[] = [
-  // binden/src/response.ts: an object statusCode converted once on every
-  // commit, and a send whose bytes a writer has lost by end(chunk) rejects
-  "binden:BindenResponse#end()",
-  "binden:BindenResponse#form()",
-  "binden:BindenResponse#html()",
-  "binden:BindenResponse#json()",
+  // binden/src/response.ts: a send whose bytes a writer has lost by
+  // end(chunk) rejects
   "binden:BindenResponse#send()",
-  "binden:BindenResponse#sendFile()",
-  "binden:BindenResponse#text()",
-  "binden:BindenResponse#write()",
-  "binden:Context#form()",
-  "binden:Context#html()",
-  "binden:Context#json()",
   "binden:Context#send()",
-  "binden:Context#sendFile()",
-  "binden:Context#text()",
 ];
 
 /** How many processes probe the surface in parallel, each a shard of it */

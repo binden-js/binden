@@ -1,9 +1,23 @@
-import { BindenResponse, kValidateHead } from "../index.js";
-import { IncomingMessage, ServerResponse } from "node:http";
+import {
+  Binden,
+  BindenResponse,
+  type Context,
+  kValidateHead,
+} from "../index.js";
+import {
+  IncomingMessage,
+  type Server,
+  ServerResponse,
+  createServer,
+} from "node:http";
 import { deepStrictEqual, ok } from "node:assert/strict";
+import { listen, send } from "./helpers.js";
 import { suite, test } from "node:test";
+import { Readable } from "node:stream";
 import { Socket } from "node:net";
+import { join } from "node:path";
 import { kSeal } from "../src/seal.js";
+import { readFileSync } from "node:fs";
 
 /** A value that counts its conversions, which converts to `converted` */
 interface ICounting {
@@ -253,6 +267,194 @@ suite(
         "x-a": ["b"],
       });
       deepStrictEqual([code, reason, given], [200, null, { "x-a": ["b"] }]);
+    });
+  },
+);
+
+/** A file that `sendFile()` sends */
+const file = join(import.meta.dirname, "..", "package.json");
+
+/**
+ * The calls that commit the head implicitly, for binden and for plain
+ * Node.js: a send of binden is an `end()` of the same body (a `write()` of
+ * its chunk for a `Readable`, the content of the file for `sendFile()`)
+ */
+const implicit: Record<
+  string,
+  [(response: BindenResponse) => unknown, (response: ServerResponse) => unknown]
+> = {
+  "write() of a string": [
+    (response): unknown => response.write("abc"),
+    (response): unknown => response.write("abc"),
+  ],
+  "write() of bytes": [
+    (response): unknown => response.write(Buffer.from("abc")),
+    (response): unknown => response.write(Buffer.from("abc")),
+  ],
+  "end() of a chunk": [
+    (response): unknown => response.end("abc"),
+    (response): unknown => response.end("abc"),
+  ],
+  "end()": [
+    (response): unknown => response.end(),
+    (response): unknown => response.end(),
+  ],
+  "flushHeaders()": [
+    (response): void => {
+      response.flushHeaders();
+    },
+    (response): void => {
+      response.flushHeaders();
+    },
+  ],
+  "send() of a string": [
+    async (response): Promise<void> => response.send("abc"),
+    (response): unknown => response.end("abc"),
+  ],
+  "send() of bytes": [
+    async (response): Promise<void> => response.send(Buffer.from("abc")),
+    (response): unknown => response.end(Buffer.from("abc")),
+  ],
+  "send() of a Readable": [
+    async (response): Promise<void> => response.send(Readable.from(["abc"])),
+    (response): unknown => response.write("abc") && response.end(),
+  ],
+  "send() without a body": [
+    async (response): Promise<void> => response.send(),
+    (response): unknown => response.end(),
+  ],
+  "json()": [
+    async (response): Promise<void> => response.json("abc"),
+    (response): unknown => response.end(`"abc"`),
+  ],
+  "sendFile()": [
+    async (response): Promise<void> => response.sendFile(file),
+    (response): unknown => response.end(readFileSync(file)),
+  ],
+};
+
+/**
+ * Replies a request by a call that commits the head with a `statusCode` that
+ * counts its conversions (see `counting()`, or one whose conversion throws):
+ * the conversions, what the call has thrown or rejected with (the reply is
+ * then a `500`), and the status and the body that the client gets
+ */
+async function committed(
+  binden: boolean,
+  name: string,
+  converted: number | string | null,
+): Promise<unknown[]> {
+  const [ours, node] = implicit[name] as [
+    (response: BindenResponse) => unknown,
+    (response: ServerResponse) => unknown,
+  ];
+  const failure = new Error("A conversion");
+  const status =
+    converted === null
+      ? {
+          conversions: (): number => 1,
+          value: {
+            [Symbol.toPrimitive](): never {
+              throw failure;
+            },
+          },
+        }
+      : counting(converted);
+  const settled = Promise.withResolvers<unknown>();
+  /** Settles the reply once the call has: replies `500` once it has failed */
+  const finish = (response: ServerResponse, error: unknown): void => {
+    if (error === null) {
+      settled.resolve(null);
+    } else {
+      const { code, message } = error as { code?: unknown; message: string };
+      settled.resolve(
+        error === failure
+          ? "the error of the conversion"
+          : [(error as Error).constructor.name, code, message],
+      );
+      response.statusCode = 500;
+      response.end("failed");
+    }
+    if (!response.writableEnded) {
+      response.end();
+    }
+  };
+  const reply = async (response: ServerResponse): Promise<void> => {
+    response.statusCode = status.value as never;
+    // What it throws rejects, as what it rejects with
+    await new Promise<unknown>((resolve) => {
+      resolve(binden ? ours(response as BindenResponse) : node(response));
+    }).then(
+      () => {
+        finish(response, null);
+      },
+      (error: unknown) => {
+        finish(response, error);
+      },
+    );
+  };
+  const app = binden
+    ? new Binden().use(async (context: Context) => reply(context.response))
+    : {
+        createServer: (): Server =>
+          createServer((_request, response) => {
+            reply(response).catch(() => null);
+          }),
+      };
+  const listening = await listen(app);
+  try {
+    const { status: code, body } = await send(listening.port);
+    return [
+      // Counted once the response has been received
+      converted === null ? null : status.conversions(),
+      await settled.promise,
+      code,
+      body,
+    ];
+  } finally {
+    await listening.close();
+  }
+}
+
+suite(
+  "An implicit commit converts a statusCode that is not a number once, as plain Node.js does, and Node.js gets that number (C28-2)",
+  () => {
+    for (const name of Object.keys(implicit)) {
+      test(name, async () => {
+        for (const converted of [201, 204, "a", null]) {
+          const node = await committed(false, name, converted);
+          deepStrictEqual(
+            await committed(true, name, converted),
+            node,
+            String(converted),
+          );
+          // Once, and also for the message of a refusal (as `%s`)
+          deepStrictEqual(
+            node[0],
+            converted === null ? null : converted === "a" ? 2 : 1,
+            String(converted),
+          );
+        }
+      });
+    }
+
+    test("once the head is committed, a send does not make a statusCode assigned later its number: it stays as assigned, as for plain Node.js", async () => {
+      const status = counting(200);
+      const kept = Promise.withResolvers<unknown>();
+      const app = new Binden().use(async (context: Context) => {
+        const { response } = context;
+        response.writeHead(200);
+        response.statusCode = status.value as never;
+        await response.send("abc");
+        kept.resolve((response.statusCode as unknown) === status.value);
+      });
+      const listening = await listen(app);
+      try {
+        const { status: code, body } = await send(listening.port);
+        deepStrictEqual([code, body, await kept.promise], [200, "abc", true]);
+      } finally {
+        await listening.close();
+      }
     });
   },
 );

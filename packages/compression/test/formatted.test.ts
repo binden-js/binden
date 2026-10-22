@@ -9,6 +9,7 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { fetchRaw, serve, within } from "./helpers.js";
 import { suite, test } from "node:test";
+import { Readable } from "node:stream";
 import { Socket } from "node:net";
 
 /** An error of the application's own (e.g. of a getter, or of a trap) */
@@ -362,6 +363,132 @@ suite(
         plain.set(name, counted.conversions());
       }
       deepStrictEqual(Object.fromEntries(counts), Object.fromEntries(plain));
+    });
+
+    test("an implicit commit (a write(), an end(), flushHeaders(), a send) converts a statusCode that is not a number once, as plain Node.js, compressed or sent as it is, and the reply has that status (C28-2)", async () => {
+      /** A status that counts its conversions, which converts to `converted` */
+      const countingTo = (
+        converted: number | string,
+      ): { value: object; conversions(): number } => {
+        let conversions = 0;
+        return {
+          value: {
+            [Symbol.toPrimitive](): number | string {
+              conversions += 1;
+              return converted;
+            },
+          },
+          conversions: () => conversions,
+        };
+      };
+      /** Each call, for the compression, and for plain Node.js */
+      const calls: Record<
+        string,
+        [
+          (response: BindenResponse) => unknown,
+          (response: ServerResponse) => unknown,
+        ]
+      > = {
+        "write()": [
+          (response): unknown => response.write("abc"),
+          (response): unknown => response.write("abc"),
+        ],
+        "end() of a chunk": [
+          (response): unknown => response.end("abc"),
+          (response): unknown => response.end("abc"),
+        ],
+        "end()": [
+          (response): unknown => response.end(),
+          (response): unknown => response.end(),
+        ],
+        "flushHeaders()": [
+          (response): void => {
+            response.flushHeaders();
+          },
+          (response): void => {
+            response.flushHeaders();
+          },
+        ],
+        "send() of a string": [
+          async (response): Promise<void> => response.send("abc"),
+          (response): unknown => response.end("abc"),
+        ],
+        "send() of a Readable": [
+          async (response): Promise<void> =>
+            response.send(Readable.from(["abc"])),
+          (response): unknown => response.write("abc"),
+        ],
+        "json()": [
+          async (response): Promise<void> => response.json("abc"),
+          (response): unknown => response.end(`"abc"`),
+        ],
+      };
+      const statuses = [201, 204, "a"];
+      const counted = new Map<string, () => number>();
+      const served = await serve(
+        {},
+        new Compression({ threshold: 0 }),
+        async (context: Context): Promise<void> => {
+          const { response } = context;
+          const [name = "", converted = ""] = decodeURIComponent(
+            context.url.pathname.slice(1),
+          ).split("|");
+          const [call] = calls[name] as [
+            (response: BindenResponse) => unknown,
+            unknown,
+          ];
+          const status = countingTo(
+            converted === "a" ? converted : Number(converted),
+          );
+          counted.set(context.url.pathname, () => status.conversions());
+          response.statusCode = status.value as never;
+          try {
+            await call(response);
+          } catch {
+            // Refused as Node.js refuses it
+            response.statusCode = 500;
+          }
+          if (!response.writableEnded) {
+            response.end();
+          }
+        },
+      );
+      try {
+        for (const [name, [, plainly]] of Object.entries(calls)) {
+          for (const converted of statuses) {
+            for (const coding of ["gzip", "identity"]) {
+              const path = `/${encodeURIComponent(`${name}|${String(converted)}`)}`;
+              const { status } = await fetchRaw(served.url, {
+                path,
+                headers: { "accept-encoding": coding },
+              });
+              const conversions = counted.get(path) as () => number;
+              const plain = countingTo(converted);
+              const node = new ServerResponse(
+                new IncomingMessage(new Socket()),
+              );
+              node.statusCode = plain.value as never;
+              try {
+                plainly(node);
+              } catch {
+                // Refused
+              }
+              deepStrictEqual(
+                conversions(),
+                plain.conversions(),
+                `${name} ${String(converted)} ${coding}`,
+              );
+              deepStrictEqual(
+                status,
+                converted === "a" ? 500 : converted,
+                `${name} ${String(converted)} ${coding}`,
+              );
+            }
+          }
+        }
+      } finally {
+        await served.close();
+      }
     });
   },
 );

@@ -2013,6 +2013,46 @@ export class BindenResponse<
     }
   }
 
+  /**
+   * A status code converted once, as `writeHead()` of Node.js converts it
+   * (`| 0`), and refused out of range as Node.js refuses it
+   * (`ERR_HTTP_INVALID_STATUS_CODE`, with the value given in its message, as
+   * Node.js formats it)
+   */
+  static #statusOf(statusCode: unknown): number {
+    const code = (statusCode as number) | 0;
+    if (code < 100 || code > 999) {
+      throw Object.assign(
+        formatStack(
+          new RangeError(format("Invalid status code: %s", statusCode)),
+        ),
+        { code: "ERR_HTTP_INVALID_STATUS_CODE" },
+      );
+    }
+    return code;
+  }
+
+  /**
+   * The status code that binden decides by before the head is committed by
+   * a first `write()`, an `end()` with a chunk, or a send (see `#hasBody()`,
+   * `#bodiless()`): one that is not a number (e.g. an object assigned to
+   * `statusCode`) is converted once (see `#statusOf()`), and that number is
+   * the status of the response from then on, which Node.js commits (it sets
+   * the number once it has converted it): converted as often as by plain
+   * Node.js. One that its conversion refuses (or that throws as it is
+   * converted) is left as it is, and the call throws, before anything is
+   * changed.
+   */
+  #status(): number {
+    const status = this.#statusCode;
+    if (typeof status === "number" || this.headersSent) {
+      return status;
+    }
+    const code = BindenResponse.#statusOf(status);
+    this.#statusCode = code;
+    return code;
+  }
+
   /** `[kValidateHead]()`, which may throw an error that is not formatted */
   #validateHead(args: readonly unknown[]): IHead {
     if (this.headersSent) {
@@ -2021,16 +2061,7 @@ export class BindenResponse<
     }
     const [statusCode, reason, headers] = args;
     // Converted once, as Node.js converts it (which gets the number)
-    const code = (statusCode as number) | 0;
-    if (code < 100 || code > 999) {
-      // The value given, which Node.js formats in its message
-      throw Object.assign(
-        formatStack(
-          new RangeError(format("Invalid status code: %s", statusCode)),
-        ),
-        { code: "ERR_HTTP_INVALID_STATUS_CODE" },
-      );
-    }
+    const code = BindenResponse.#statusOf(statusCode);
     const message = typeof reason === "string" ? reason : this.statusMessage;
     if (typeof message === "string" && invalidReason.test(message)) {
       throw Object.assign(
@@ -2409,15 +2440,20 @@ export class BindenResponse<
    * with a 1xx, 204 or 304 status (which `writeHead()` applies)
    */
   #hasBody(): boolean {
-    const status = this.statusCode;
     return (
       Reflect.get(this, "_hasBody") === true &&
       (Boolean(Reflect.get(this, "_header")) ||
-        !(
-          BindenResponse.#informational(status) ||
-          status === 204 ||
-          status === 304
-        ))
+        // Converted once (see `#status()`)
+        BindenResponse.#withBody(this.#status()))
+    );
+  }
+
+  /** Whether Node.js writes the body of a response of a status: not 1xx, 204 nor 304 */
+  static #withBody(status: number): boolean {
+    return !(
+      BindenResponse.#informational(status) ||
+      status === 204 ||
+      status === 304
     );
   }
 
@@ -3419,6 +3455,22 @@ export class BindenResponse<
   }
 
   /**
+   * The status code of a send (see `#status()`): when its conversion throws,
+   * the source is released first (see `#release()`)
+   */
+  #sending(
+    data: unknown,
+    kind: IStreamLikeMethods | "readable" | "value",
+  ): number {
+    try {
+      return this.#status();
+    } catch (error: unknown) {
+      this.#release(data, kind);
+      throw error;
+    }
+  }
+
+  /**
    * `send()`, which may throw before it has changed the response. The
    * `Content-Type` of `text()`, `html()`, `json()` and `form()` (`type`) is set
    * once the data and the status are accepted: a refused call changes nothing
@@ -3463,13 +3515,17 @@ export class BindenResponse<
       return Promise.reject(
         formatStack(new TypeError(`Unknown encoding: ${described(encoding)}`)),
       );
-    } else if (BindenResponse.#informational(this.statusCode)) {
+    }
+    // Converted once, before anything decides by it (see `#status()`): one
+    // that is refused releases the source, as the refusal of a status below
+    const code = this.#sending(data, kind);
+    if (BindenResponse.#informational(code)) {
       // Not a final response: the client would wait for the final one
       this.#release(data, kind);
       return Promise.reject(
         formatStack(
           new TypeError(
-            `Status code ${this.statusCode} is informational (use writeEarlyHints())`,
+            `Status code ${code} is informational (use writeEarlyHints())`,
           ),
         ),
       );
@@ -5064,6 +5120,13 @@ export class BindenResponse<
       // Ignored, as `#send()`: its options are not read, nor its path
       // resolved
       return Promise.resolve();
+    }
+    try {
+      // Converted once, before anything decides by it (see `#status()`):
+      // one that is refused rejects before anything is read
+      this.#status();
+    } catch (error: unknown) {
+      return Promise.reject(formatStack(error as Error));
     }
     const status = this.statusCode;
     const headers = new Map(
