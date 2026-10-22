@@ -10,17 +10,20 @@
 // value in each argument position (and the nested positions that its fixture
 // names), each on fresh instances, the members of a response and of a context
 // also once the head of the response is sent, once it has ended and once it is
-// destroyed (see `states`). Every `Error` that a call throws, or rejects with,
-// and every one that a reader of what it has stored throws (see `readers`),
-// must have its stack formatted before the caller gets it (recorded by
+// destroyed, and with an object status or a writer that loses the bytes of a
+// send (see `states`). Every `Error` that a call throws, or rejects with, and
+// every one that a reader of what it has stored throws (see `readers`), must
+// have its stack formatted before the caller gets it (recorded by
 // `Error.prepareStackTrace`), an error that the test throws itself (from the
-// traps of a proxy) must be passed on as itself, a call must run no conversion
-// of a value but the documented ones, which the fixtures name, each as often
-// as documented (`String()` once, or as often as plain Node.js does, see
-// `headerInit` and `nodeCoercion`), each option, init and argument must be read
-// at most once, and each probed position must be examined by a hostile value
-// (refused, converted or read), unless its fixture says why it is not. An
-// allowance that permits more than happens is a finding too.
+// traps of a proxy) must be passed on as itself, what is documented never to
+// fail must not throw at all (see `infallible`), a call must run no
+// conversion of a value but the documented ones, which the fixtures name, each
+// as often as documented (`String()` once, or as often as plain Node.js does,
+// see `headerInit` and `nodeCoercion`, also of an object status as the head is
+// committed), each option, init and argument must be read at most once, and
+// each probed position must be examined by a hostile value (refused, converted
+// or read), unless its fixture says why it is not. An allowance that permits
+// more than happens is a finding too.
 // Prints a JSON report: `{ entries, probed, probes, findings }` (the ids of
 // the entry points of the surface, and of those that it has probed), each
 // finding as `<entry> | <probe>: <what>` with `--lines` (one per line), and
