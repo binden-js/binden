@@ -1838,14 +1838,22 @@ export class BindenResponse<
       // Node.js throws `ERR_HTTP_HEADERS_SENT` before it reads anything
       return super.writeHead(statusCode, reason as string, headers);
     }
+    // The status of the response itself (e.g. of `flushHeaders()`, whose
+    // head Node.js commits by it): converted once, and that number is stored
+    // before anything else is checked (see `#status()`), as Node.js stores
+    // it before it refuses a reason phrase, so that another attempt does not
+    // convert it again. A status given (or a number, which converts without
+    // side effects) is converted by the check alone: a refused call changes
+    // nothing
+    const own =
+      typeof statusCode !== "number" &&
+      (statusCode as unknown) === (this.#statusCode as unknown)
+        ? this.#status()
+        : statusCode;
     // Node.js would throw only once it has changed the response (its status
     // and reason phrase, and some of the headers). Read once, and checked:
     // Node.js gets exactly these (see `IHead`)
-    const [code, message, given] = this[kValidateHead](
-      statusCode,
-      reason,
-      headers,
-    );
+    const [code, message, given] = this[kValidateHead](own, reason, headers);
     const write = (
       fields: OutgoingHttpHeader[] | OutgoingHttpHeaders | undefined,
     ): this => {
@@ -2036,18 +2044,28 @@ export class BindenResponse<
   /**
    * The status code that binden decides by before the head is committed by
    * a first `write()`, an `end()` with a chunk, or a send (see `#hasBody()`,
-   * `#bodiless()`): one that is not a number (e.g. an object assigned to
-   * `statusCode`) is converted once (see `#statusOf()`), and that number is
-   * the status of the response from then on, which Node.js commits (it sets
-   * the number once it has converted it): converted as often as by plain
-   * Node.js. One that its conversion refuses (or that throws as it is
-   * converted) is left as it is, and the call throws, before anything is
-   * changed.
+   * `#bodiless()`): the integer that Node.js commits (it converts the status
+   * by `| 0`, then sets that number). One that is not a number (e.g. an
+   * object or a string assigned to `statusCode`) is converted once (see
+   * `#statusOf()`), and that number is the status of the response from then
+   * on: converted as often as by plain Node.js. One that its conversion
+   * refuses (or that throws as it is converted) is left as it is, and the
+   * call throws, before anything is changed. A number is truncated as
+   * Node.js truncates it, which leaves an integer as it is (e.g. `204.5` is a
+   * `204`, without a body nor its length): one in range is the status from
+   * then on, and one out of range is left as it is, which Node.js refuses as
+   * it commits the head, by the value given.
    */
   #status(): number {
     const status = this.#statusCode;
-    if (typeof status === "number" || this.headersSent) {
+    if (this.headersSent) {
       return status;
+    } else if (typeof status === "number") {
+      const code = status | 0;
+      if (code >= 100 && code <= 999) {
+        this.#statusCode = code;
+      }
+      return code;
     }
     const code = BindenResponse.#statusOf(status);
     this.#statusCode = code;
