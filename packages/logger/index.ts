@@ -289,43 +289,97 @@ function isObject(value: unknown): value is Record<PropertyKey, unknown> {
 }
 
 /**
- * A target of `transport` (or a step of a pipeline), copied as `pino` reads
- * it: its own enumerable properties, which it spreads, and its `target`,
- * `level` and `pipeline` (also inherited, which it reads as they are), each
- * once
+ * Whether a value has properties that `pino` reads as those of an object: an
+ * object or a function (e.g. a `customLevels` that is a function carrying its
+ * levels)
  */
-function copyTarget(item: unknown): unknown {
-  if (!isObject(item)) {
-    return item;
-  }
-  const copy: Record<PropertyKey, unknown> = { ...item };
-  for (const key of ["target", "level", "pipeline"]) {
+function hasProperties(value: unknown): value is Record<PropertyKey, unknown> {
+  return isObject(value) || typeof value === "function";
+}
+
+/** Sets a property that is not enumerable: `pino` reads it, but never spreads it */
+function hide(object: object, key: string, value: unknown): void {
+  Object.defineProperty(object, key, {
+    value,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
+ * A copy of the own enumerable properties of an object (which `pino` spreads),
+ * with the properties under `keys` that it reads as they are (also inherited,
+ * or not enumerable) when they are not among them, each read once: those of
+ * `hidden` are not enumerable in the copy, since `pino` reads them but never
+ * spreads them
+ */
+function copyOf(
+  value: Record<PropertyKey, unknown>,
+  keys: readonly string[],
+  hidden: readonly string[] = [],
+): Record<PropertyKey, unknown> {
+  const copy: Record<PropertyKey, unknown> = { ...value };
+  for (const key of [...keys, ...hidden]) {
     if (!Object.hasOwn(copy, key)) {
-      const value: unknown = Reflect.get(item, key);
-      if (typeof value !== "undefined") {
-        copy[key] = value;
+      const read: unknown = Reflect.get(value, key);
+      if (typeof read === "undefined") {
+        // Nothing to copy
+      } else if (keys.includes(key)) {
+        copy[key] = read;
+      } else {
+        hide(copy, key, read);
       }
     }
-  }
-  // A pipeline of a target, whose steps are targets
-  const { pipeline } = copy;
-  if (Array.isArray(pipeline)) {
-    copy.pipeline = [...(pipeline as unknown[])].map(copyTarget);
   }
   return copy;
 }
 
 /**
- * An object whose list of targets under a key (`targets` or `pipeline` of
- * `transport`), if it is an array, is a copy (see `copyTarget()`)
+ * A step of a pipeline of `transport`, copied as `pino` reads it: its own
+ * enumerable properties, which it spreads, and its `target` (also inherited),
+ * once. Its other inherited properties (e.g. a `level`) are ignored, as
+ * `pino` ignores them.
  */
-function withTargets(
+function copyStep(step: unknown): unknown {
+  return isObject(step) ? copyOf(step, ["target"]) : step;
+}
+
+/**
+ * A target of `transport`, copied as `pino` reads it (see `copyStep()`), with
+ * its `pipeline` (also inherited), whose steps are copied too, and, for a
+ * target with a pipeline only, its `level` (also inherited), which `pino`
+ * gives to each of its steps: each once. Unless they are its own enumerable
+ * properties, `pino` never spreads them, nor does the copy.
+ */
+function copyTarget(target: unknown): unknown {
+  if (!isObject(target)) {
+    return target;
+  }
+  const copy = copyOf(target, ["target"], ["pipeline"]);
+  const { pipeline } = copy;
+  if (Array.isArray(pipeline)) {
+    copy.pipeline = [...(pipeline as unknown[])].map(copyStep);
+  }
+  if (Boolean(pipeline) && !Object.hasOwn(copy, "level")) {
+    hide(copy, "level", Reflect.get(target, "level"));
+  }
+  return copy;
+}
+
+/**
+ * An object whose list under a key (the `targets` or the `pipeline` of
+ * `transport`), if it is an array, is a copy of its items (see `copyTarget()`
+ * and `copyStep()`)
+ */
+function withCopies(
   object: Record<PropertyKey, unknown>,
   key: string,
+  copy: (item: unknown) => unknown,
 ): Record<PropertyKey, unknown> {
   const list = object[key];
   if (Array.isArray(list)) {
-    object[key] = [...(list as unknown[])].map(copyTarget);
+    object[key] = [...(list as unknown[])].map(copy);
   }
   return object;
 }
@@ -446,14 +500,22 @@ export class Logger implements ILogger {
   /**
    * The options of `pino`, with a copy of those that it reads several times
    * (each level of `customLevels`, which the check of `level` reads too, the
-   * paths of `redact`, and the targets of `transport`), made as `pino` reads
-   * them: each is read once, so that a getter of the application runs once
+   * `hooks`, the paths of `redact`, and the targets and steps of
+   * `transport`), made as `pino` reads them: each is read once, so that a
+   * getter of the application runs once
    */
   static #copy(options: PinoLoggerOptions): PinoLoggerOptions {
     const copied: Record<string, unknown> = { ...options };
-    const { customLevels, redact, transport } = copied;
-    if (isObject(customLevels)) {
+    const { customLevels, hooks, redact, transport } = copied;
+    if (hasProperties(customLevels)) {
+      // Also a function carrying its levels: `pino` reads their keys
       copied.customLevels = { ...customLevels };
+    }
+    if (hasProperties(hooks)) {
+      // Kept by `pino`, which reads `logMethod` (also inherited) at its
+      // creation and at every change of its level, and `streamWrite` at
+      // every record
+      copied.hooks = copyOf(hooks, ["logMethod", "streamWrite"]);
     }
     if (Array.isArray(redact)) {
       copied.redact = [...(redact as unknown[])];
@@ -468,9 +530,10 @@ export class Logger implements ILogger {
     }
     if (isObject(transport)) {
       // Spread by `pino`: its own properties
-      copied.transport = withTargets(
-        withTargets({ ...transport }, "targets"),
+      copied.transport = withCopies(
+        withCopies({ ...transport }, "targets", copyTarget),
         "pipeline",
+        copyStep,
       );
     }
     return copied;

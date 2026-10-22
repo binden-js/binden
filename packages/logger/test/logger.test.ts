@@ -34,6 +34,54 @@ const levels = {
   fatal: 60,
 };
 
+/** An object (or an array) whose values are getters that count their reads */
+function countedIn<T extends object>(
+  reads: Map<string, number>,
+  name: string,
+  values: T,
+): T {
+  return Object.defineProperties(
+    Array.isArray(values) ? [] : {},
+    Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [
+        key,
+        {
+          enumerable: true,
+          get: (): unknown => {
+            const at = `${name}.${key}`;
+            reads.set(at, (reads.get(at) ?? 0) + 1);
+            return value as unknown;
+          },
+        },
+      ]),
+    ),
+  ) as T;
+}
+
+/**
+ * The messages of the records that reach the targets of the tests that post
+ * them on a channel (see `fixtures/channel.mjs`), once `last` is among them:
+ * a failure after 10 seconds without it
+ */
+function received(name: string, last: string): Promise<string[]> {
+  const channel = new BroadcastChannel(name);
+  const messages: string[] = [];
+  const { promise, resolve, reject } = Promise.withResolvers<string[]>();
+  const timer = setTimeout(() => {
+    channel.close();
+    reject(new Error(`No "${last}" on ${name}, but: ${messages.join(", ")}`));
+  }, 10_000);
+  channel.onmessage = ({ data }: MessageEvent<string>): void => {
+    messages.push(data);
+    if (data === last) {
+      clearTimeout(timer);
+      channel.close();
+      resolve(messages);
+    }
+  };
+  return promise;
+}
+
 function withEnv(name: string, value: string | null, fn: () => void): void {
   const previous = process.env[name] ?? null;
   const set = (next: string | null): void => {
@@ -254,24 +302,8 @@ describe("Logger", () => {
 
   it("reads once each nested option that `pino` reads several times: the levels of `customLevels`, the paths of `redact` and the targets of `transport`", () => {
     const reads = new Map<string, number>();
-    // An object (or an array) whose values are getters that count their reads
     const counted = <T extends object>(name: string, values: T): T =>
-      Object.defineProperties(
-        Array.isArray(values) ? [] : {},
-        Object.fromEntries(
-          Object.entries(values).map(([key, value]) => [
-            key,
-            {
-              enumerable: true,
-              get: (): unknown => {
-                const at = `${name}.${key}`;
-                reads.set(at, (reads.get(at) ?? 0) + 1);
-                return value as unknown;
-              },
-            },
-          ]),
-        ),
-      ) as T;
+      countedIn(reads, name, values);
     const sink = new Sink();
     const logger = new Logger({
       destination: sink,
@@ -302,8 +334,8 @@ describe("Logger", () => {
         pipeline: counted("pipeline", [counted("step", { target })]),
       },
     }).info("discarded");
-    // What `pino` reads as it is (also inherited): a target, its level, the
-    // pipeline of a target, and the options of `redact`
+    // What `pino` reads as it is (also inherited): a target, the pipeline of
+    // a target and its level (see below), and the options of `redact`
     new Logger({
       transport: {
         targets: [
@@ -334,6 +366,9 @@ describe("Logger", () => {
     throws(() => new Logger({ transport: { targets: [null as never] } }), {
       name: "TypeError",
     });
+    throws(() => new Logger({ transport: { pipeline: [null as never] } }), {
+      name: "TypeError",
+    });
     throws(() => new Logger({ destination: sink, redact: {} as never }), {
       message: "pino – redact must contain an array of strings",
     });
@@ -350,12 +385,157 @@ describe("Logger", () => {
       "pipeline.0": 1,
       "step.target": 1,
       "inherited.target": 1,
-      "inherited.level": 1,
       "piped.level": 1,
       "piped.pipeline": 1,
       "steps.0": 1,
       "next.target": 1,
       "options.paths": 1,
+    });
+  });
+
+  it("copies the targets and the steps of `transport` as `pino` reads them: an inherited `level` only for a target with a pipeline", async () => {
+    const reads = new Map<string, number>();
+    const counted = <T extends object>(name: string, values: T): T =>
+      countedIn(reads, name, values);
+    const target = new URL("fixtures/channel.mjs", import.meta.url).href;
+    const named = (key: string): string =>
+      `binden-logger-${process.pid}-${key}`;
+    const to = (key: string): Record<string, unknown> => ({
+      target,
+      options: { channel: named(key) },
+    });
+    const inheriting = (
+      key: string,
+      inherited: Record<string, unknown>,
+      own: Record<string, unknown>,
+    ): never =>
+      Object.assign(Object.create(counted(key, inherited)), own) as never;
+    const transports = [
+      // The inherited `level` of a target, and of a step, is ignored
+      { targets: [inheriting("target", { level: "error" }, to("target"))] },
+      { pipeline: [inheriting("step", { level: "error" }, to("step"))] },
+      // Not the one of a target with a pipeline (also inherited): its steps
+      // get it
+      {
+        targets: [
+          inheriting("piped", { level: "error" }, { pipeline: [to("piped")] }),
+        ],
+      },
+      {
+        targets: [
+          inheriting(
+            "inherited",
+            {
+              level: "error",
+              pipeline: [to("inherited")],
+            },
+            {},
+          ),
+        ],
+      },
+      // Nor is it spread into the target itself
+      {
+        targets: [
+          inheriting(
+            "both",
+            { level: "error" },
+            {
+              ...to("both"),
+              pipeline: [to("both-steps")],
+            },
+          ),
+        ],
+      },
+    ];
+    const expected = {
+      target: ["info", "error"],
+      step: ["info", "error"],
+      piped: ["error"],
+      inherited: ["error"],
+      both: ["info", "error"],
+      "both-steps": ["error"],
+    };
+    const records = Promise.all(
+      Object.keys(expected).map((key) => received(named(key), "error")),
+    );
+    for (const transport of transports) {
+      const logger = new Logger({ level: "info", transport });
+      logger.info("info");
+      logger.error("error");
+    }
+    deepEqual(await records, Object.values(expected));
+    deepEqual(Object.fromEntries(reads), {
+      "piped.level": 1,
+      "inherited.level": 1,
+      "inherited.pipeline": 1,
+      "both.level": 1,
+    });
+  });
+
+  it("reads a `customLevels` that is a function as an object: each of its levels once", () => {
+    let reads = 0;
+    const customLevels = Object.defineProperty(() => null, "custom", {
+      enumerable: true,
+      get: (): number => {
+        reads += 1;
+        return reads === 1 ? 35 : 5;
+      },
+    });
+    const sink = new Sink();
+    const logger = new Logger({
+      destination: sink,
+      level: "custom" as LevelWithSilent,
+      customLevels,
+    });
+    logger.info("below");
+    logger.warn("above");
+    equal(reads, 1);
+    deepEqual(
+      sink.lines.map(({ level, msg }) => [level, msg]),
+      [[40, "above"]],
+    );
+  });
+
+  it("copies `hooks` once: its `logMethod` and `streamWrite` (also inherited), read once each", () => {
+    const reads = new Map<string, number>();
+    const hooks = Object.defineProperties(
+      Object.create(
+        countedIn(reads, "inherited", {
+          logMethod(
+            this: PinoLogger,
+            args: unknown[],
+            method: (...given: unknown[]) => void,
+          ): void {
+            method.apply(this, [args[0], `hooked ${String(args[1])}`]);
+          },
+        }),
+      ) as object,
+      Object.getOwnPropertyDescriptors(
+        countedIn(reads, "own", {
+          streamWrite: (line: string): string =>
+            line.replace("hooked", "written"),
+        }),
+      ),
+    );
+    const sink = new Sink();
+    const logger = new Logger({
+      destination: sink,
+      level: "info",
+      hooks,
+    });
+    logger.info("one");
+    // `pino` reads `logMethod` at every change of its level
+    logger.level = "debug";
+    logger.level = "info";
+    logger.child({ id: 1 }).info("two");
+    logger.warn("three");
+    deepEqual(
+      sink.lines.map(({ msg }) => msg),
+      ["written one", "written two", "written three"],
+    );
+    deepEqual(Object.fromEntries(reads), {
+      "inherited.logMethod": 1,
+      "own.streamWrite": 1,
     });
   });
 
