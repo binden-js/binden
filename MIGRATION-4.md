@@ -363,11 +363,13 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   committed, where Node.js and binden 2.0.4 sent every line. So does any comma list, even one whose
   members agree (`2, 3`, but also `2, 2` and `2,2`, alone or as an element of an array), with
   "Content-Length is a list": Node.js sends it as it is, and cannot read it.
-- `send()` with a `1xx` status rejects with a `TypeError` (use `writeEarlyHints()`). A string sent
-  with an `encoding` is encoded once: the bytes that it decodes to are sent, with their length. A
-  `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
-  default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A
-  `Readable` that has ended is an empty body.
+- `send()` with a `1xx` status rejects with a `TypeError` (use `writeEarlyHints()`), also one
+  assigned as a string (e.g. `"103"`), which binden converts once as Node.js does and names in the
+  message ("Status code 103 is informational"): binden 2.0.4 sent it as the final response. A string
+  sent with an `encoding` is encoded once: the bytes that it decodes to are sent, with their length.
+  A `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
+  default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A `Readable`
+  that has ended is an empty body.
 - A `Readable` that has been destroyed, or that has errored without being destroyed (its
   `errored` is set, e.g. a stream without `autoDestroy`), rejects `send()` at once, with its
   `errored` (otherwise `ERR_STREAM_PREMATURE_CLOSE`). binden 2.0.4 rejected only when the error of
@@ -413,12 +415,12 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   `resume()`, and `removeListener()` or `off()`) is sent as a stream (it sent `[object Object]`),
   and a `Uint8Array` is sent as its bytes (it sent its numbers, separated by commas).
 - `text()`, `html()`, `form()` and `json()` of a response that has ended resolve without doing
-  anything, as `send()` did and does: binden 2.0.4 set their `Content-Type` first, so that
-  `text()`, `html()` and `form()` threw `ERR_HTTP_HEADERS_SENT` synchronously, and `json()`
-  rejected with it. Of a response whose head is sent but that has not ended (e.g. after a
-  `write()`), they reject with `ERR_HTTP_HEADERS_SENT`, also `text()`, `html()` and `form()`,
-  which threw it synchronously: await them (a `try` around a call that is not awaited no longer
-  catches it).
+  anything (without reading or checking their arguments: `json()` runs no `stringify`), as `send()`
+  did and does: binden 2.0.4 set their `Content-Type` first, so that `text()`, `html()` and `form()`
+  threw `ERR_HTTP_HEADERS_SENT` synchronously, and `json()` rejected with it. Of a response whose
+  head is sent but that has not ended (e.g. after a `write()`), they reject with
+  `ERR_HTTP_HEADERS_SENT`, also `text()`, `html()` and `form()`, which threw it synchronously: await
+  them (a `try` around a call that is not awaited no longer catches it).
 - `form()` sends only `URLSearchParams`, serialized by `URLSearchParams.prototype.toString()`:
   binden 2.0.4 sent `params.toString()` of whatever it was given (e.g. a string as it is, or the
   override of a subclass). Anything else now rejects with a `TypeError` ("The parameters are not

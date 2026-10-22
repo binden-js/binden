@@ -189,7 +189,9 @@ is added to every response with a body:
   it replaces, as an error reply of binden (its type, framing with `Trailer`, validators,
   digests, …), nor `Accept-Ranges`. What the application writes afterwards is discarded (the
   callbacks of its writes still run, as for written chunks, the callback of its `end()` as the one
-  of the end of the replacement, and a refused chunk or encoding still throws);
+  of the end of the replacement, and a refused chunk or encoding still throws, and binden is told
+  of each discarded write and `end()`, so that a send whose bytes are gone inside that write (e.g.
+  detached by the `filter`) is not cut for them, as they are no part of the `406`);
 - an encoded response (e.g. a precompressed file, with the `Content-Encoding` that the application
   has set) has no other version: it is sent as it is when the request accepts its coding (any
   coding without `Accept-Encoding`, none with an empty one), and replaced with `406` otherwise.
