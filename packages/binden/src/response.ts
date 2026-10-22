@@ -96,6 +96,7 @@ import {
 import { split, trimOws } from "./headers/list.js";
 import { BindenRequest } from "./request.js";
 import ContentType from "./headers/content-type.js";
+import { brandResponses } from "./brands.js";
 import { createHash } from "node:crypto";
 import { format } from "node:util";
 import { isStatus } from "./status.js";
@@ -1042,6 +1043,8 @@ export class BindenResponse<
   #handed = 0;
 
   static {
+    // A response made by the constructor (see `isResponse()`)
+    brandResponses((value) => #observers in value);
     // The status of a sealed response is not changed by the abandoned work
     // either (also by an assignment, which Node.js itself uses)
     Object.defineProperties(this.prototype, {

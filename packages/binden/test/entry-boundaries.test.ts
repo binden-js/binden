@@ -891,7 +891,7 @@ suite("The servers of binden format what their arguments throw (R27-1)", () => {
     );
   });
 
-  test("the serializer of a context tells the type of a proxy of a context (whose private fields it lacks), and formats what reading an object of the prototype of Context throws", () => {
+  test("the serializer of a context tells the type of a proxy of a context, and of an object of the prototype of Context (neither has its brand)", () => {
     const request = new BindenRequest(new Socket());
     const context = new Context({
       request,
@@ -900,26 +900,14 @@ suite("The servers of binden format what their arguments throw (R27-1)", () => {
     const trap = (): never => {
       throw new RangeError("A trap of the test");
     };
-    const [type, message, formatted] = outcome(() =>
-      serializers.context(Object.create(Context.prototype)),
-    ) as unknown[];
     deepStrictEqual(
       [
         serializers.context(new Proxy(context, { ownKeys: trap })),
         createSerializers().context(new Proxy(context, { has: trap })),
         serializers.context(context).id,
-        [
-          type,
-          String(message).startsWith("Cannot read private member"),
-          formatted,
-        ],
+        serializers.context(Object.create(Context.prototype)),
       ],
-      [
-        { type: "object" },
-        { type: "object" },
-        request.id,
-        ["TypeError", true, true],
-      ],
+      [{ type: "object" }, { type: "object" }, request.id, { type: "object" }],
     );
   });
 

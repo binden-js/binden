@@ -16,7 +16,6 @@ import { type ILayer, Stack, layersOf, markRoot } from "./stack.js";
 import {
   type ILocation,
   defaultLogger,
-  isInstance,
   isLogger,
   safe,
   snapshot,
@@ -250,6 +249,10 @@ export class Binden<
   readonly #state: (() => object) | null;
   readonly #Request: typeof BindenRequest;
   readonly #Response: typeof BindenResponse;
+  /** Whether a value is a request of the class of the application */
+  readonly #isRequest: (value: unknown) => value is BindenRequest;
+  /** Whether a value is a response of the class of the application */
+  readonly #isResponse: (value: unknown) => value is BindenResponse;
   readonly #request_id: IRequestOptions["request_id"];
   /** The works of the requests (see `IWorks`), by their exchange */
   readonly #works = new WeakMap<Exchange, IWorks>();
@@ -289,8 +292,20 @@ export class Binden<
     };
     this.#state = settings.state;
     this.#request_id = requests.request_id;
-    // The requests and the responses of this application, with its options
+    // The requests and the responses of this application, with its options,
+    // told by their private brands (see `callback()`)
+    // eslint-disable-next-line init-declarations -- set by the static block of the class
+    let isRequest!: (value: unknown) => value is BindenRequest;
+    // eslint-disable-next-line init-declarations -- set by the static block of the class
+    let isResponse!: (value: unknown) => value is BindenResponse;
     this.#Request = class extends BindenRequest {
+      readonly #application: undefined;
+
+      static {
+        isRequest = (value: unknown): value is BindenRequest =>
+          typeof value === "object" && value !== null && #application in value;
+      }
+
       // eslint-disable-next-line class-methods-use-this -- the options of the app
       protected override get options(): IRequestOptions {
         return requests;
@@ -299,11 +314,20 @@ export class Binden<
     this.#Response = class<
       Request extends http.IncomingMessage = http.IncomingMessage,
     > extends BindenResponse<Request> {
+      readonly #application: undefined;
+
+      static {
+        isResponse = (value: unknown): value is BindenResponse =>
+          typeof value === "object" && value !== null && #application in value;
+      }
+
       // eslint-disable-next-line class-methods-use-this -- the options of the app
       protected override get options(): IResponseOptions {
         return responses;
       }
     };
+    this.#isRequest = isRequest;
+    this.#isResponse = isResponse;
   }
 
   /**
@@ -380,12 +404,11 @@ export class Binden<
     });
     return (request, response): void => {
       try {
-        // Not a proxy of one (whose traps would run later, outside of any
-        // boundary): instances of the classes of the application
-        if (
-          !isInstance(request, this.#Request) ||
-          !isInstance(response, this.#Response)
-        ) {
+        // Instances of the classes of the application, told by their brands:
+        // never a proxy of one (whose traps would run later, outside of any
+        // boundary), nor an object made with `Object.create()` of their
+        // prototypes
+        if (!this.#isRequest(request) || !this.#isResponse(response)) {
           const message =
             "The request and the response are not those of the application (`serverOptions()`)";
           this.#logger.error(message);

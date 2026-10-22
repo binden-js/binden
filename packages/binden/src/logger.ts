@@ -6,9 +6,8 @@ import {
 } from "@binden/logger";
 import { formatting, objectOf } from "./formatting.js";
 import { BindenError } from "./error.js";
-import { Context } from "./context.js";
 import { constants } from "node:os";
-import { isProxy } from "node:util/types";
+import { isContext } from "./brands.js";
 import { isStatus } from "./status.js";
 import { property } from "./property.js";
 
@@ -72,30 +71,6 @@ function typeOf(value: unknown): string {
     // A proxy that refuses to tell its prototype
   }
   return typeof value;
-}
-
-/**
- * Whether a value is an instance of a class (e.g. a request of binden), read
- * without running code of the application: neither the value nor an object
- * of its prototype chain may be a proxy, whose traps are code of the
- * application (e.g. a `getPrototypeOf` that throws, or one that lies), and
- * which has none of the private fields of what it proxies. For binden only.
- *
- * @internal
- */
-export function isInstance<T>(
-  value: unknown,
-  type: { readonly prototype: T },
-): value is T {
-  const { prototype } = type;
-  let current = value;
-  while (typeof current === "object" && current !== null && !isProxy(current)) {
-    current = Object.getPrototypeOf(current);
-    if (current === prototype) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** The options of a snapshot */
@@ -347,7 +322,7 @@ export function createSerializers(options?: {
     err: error,
     body: (): string => "[Redacted]",
     context: (input: unknown): Record<string, unknown> => {
-      if (!isInstance(input, Context)) {
+      if (!isContext(input)) {
         return { type: typeOf(input) };
       }
       // What its getters throw (e.g. of a subclass) is formatted

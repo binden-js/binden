@@ -23,6 +23,7 @@ import { IncomingMessage } from "node:http";
 import Range from "./headers/range.js";
 import type { Socket } from "node:net";
 import { TLSSocket } from "node:tls";
+import { brandRequests } from "./brands.js";
 import { formatStack } from "./exchange.js";
 import { randomUUID } from "node:crypto";
 import { token } from "./headers/list.js";
@@ -290,6 +291,11 @@ export class BindenRequest extends IncomingMessage {
   #proxy?: IProxyResult;
   #range?: readonly Range[];
   #query?: ParsedUrlQuery;
+
+  static {
+    // A request made by the constructor (see `isRequest()`)
+    brandRequests((value) => #id in value);
+  }
 
   /**
    * A request of a connection, as `IncomingMessage` creates it: what reading

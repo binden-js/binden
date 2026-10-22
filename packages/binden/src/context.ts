@@ -1,14 +1,15 @@
 import { BindenError, type IBindenErrorOptions } from "./error.js";
-import {
+import type {
   BindenResponse,
-  type IClearCookie,
-  type IHeadersValue,
+  IClearCookie,
+  IHeadersValue,
 } from "./response.js";
 import { Exchange, type IExchangeReport, formatStack } from "./exchange.js";
 import type { IRedirectOptions, IRedirectStatus } from "./redirect.js";
-import { defaultLogger, isInstance, safe, snapshot } from "./logger.js";
+import { brandContexts, isRequest, isResponse } from "./brands.js";
+import { defaultLogger, safe, snapshot } from "./logger.js";
 import { described, formatting, objectOf } from "./formatting.js";
-import { BindenRequest } from "./request.js";
+import type { BindenRequest } from "./request.js";
 import type { ILogger } from "@binden/logger";
 import type { ISendFileOptions } from "./send-file.js";
 import type { IStreamLike } from "./stream-like.js";
@@ -60,15 +61,22 @@ export class Context<
   readonly #exchange: Exchange;
   #logger?: ILogger;
 
+  static {
+    // A context made by the constructor (see `isContext()`)
+    brandContexts((value) => #request in value);
+  }
+
   /**
    * A context of a request and its response: the first one of the request
    * creates what the contexts share (a `TypeError` for a response that is not
    * the one of the request, and for options that are not an object). Its
-   * request is a `BindenRequest` and its response a `BindenResponse`, never a
-   * proxy of one (whose traps would run later, e.g. once the response is
-   * closed), and its `report` is a function: anything else throws a
-   * `TypeError` that describes it. What reading the options throws (e.g. a
-   * revoked proxy) is formatted (see `formatting()`).
+   * request is a `BindenRequest` and its response a `BindenResponse`, each an
+   * instance made by its constructor (or the one of a subclass), told by its
+   * private brand: never a proxy of one (whose traps would run later, e.g.
+   * once the response is closed), an object of another realm or one made with
+   * `Object.create()` of its prototype. Its `report` is a function: anything
+   * else throws a `TypeError` that describes it. What reading the options
+   * throws (e.g. a revoked proxy) is formatted (see `formatting()`).
    */
   public constructor(options: IContextOptions) {
     // Each option is read once (e.g. by a getter)
@@ -103,13 +111,14 @@ export class Context<
 
   /**
    * Checks the request, the response and `report` of the options, by their
-   * types, without running code of the application (see `isInstance()`)
+   * brands and types, without running code of the application (see
+   * `isRequest()`)
    */
   static #check({ request, response, report }: IContextOptions): void {
     let refusal: string | null = null;
-    if (!isInstance(request, BindenRequest)) {
+    if (!isRequest(request)) {
       refusal = `\`request\` is not a BindenRequest: ${described(request)}`;
-    } else if (!isInstance(response, BindenResponse)) {
+    } else if (!isResponse(response)) {
       refusal = `\`response\` is not a BindenResponse: ${described(response)}`;
     } else if (typeof report !== "undefined" && typeof report !== "function") {
       refusal = `\`report\` is not a function: ${described(report)}`;

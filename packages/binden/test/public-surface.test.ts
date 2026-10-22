@@ -43,12 +43,7 @@ const integrating: readonly string[] = [
   "binden:Context#send()",
   "binden:Context#sendFile()",
   "binden:Context#text()",
-  // binden/src/logger.ts, context.ts and binden.ts (the brands), and
   // @binden/logger (its nested options read once)
-  "binden:Binden#callback()=>()",
-  "binden:createSerializers()=>.context()",
-  "binden:new Context()",
-  "binden:serializers.context()",
   "@binden/logger:new Logger()",
 ];
 
