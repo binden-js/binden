@@ -18,6 +18,7 @@ import {
   kSaveFraming,
   kUnlisten,
   kValidateHead,
+  logTo,
 } from "binden";
 import {
   type ICompressEncodings,
@@ -1073,7 +1074,10 @@ export class CompressedResponse {
 
   /**
    * The result of the `filter`: `null` when it fails, or does not return a
-   * boolean (a configuration error, logged)
+   * boolean (a configuration error, logged through the guarded path of
+   * binden, see `logTo()`: a method, a `child()` or a `log` getter that the
+   * application has replaced, or that throws, never runs nor fails the
+   * decision, and the response is replaced all the same)
    */
   #filter(): boolean | null {
     const context = this.#context;
@@ -1081,7 +1085,7 @@ export class CompressedResponse {
     const type = typeof raw === "string" ? ContentType.fromString(raw) : null;
     const outcome = attempt(() => this.#settings.filter(context, type));
     if (!outcome.ok) {
-      context.log.error("The `filter` of the compression has failed");
+      logTo(context, "error", "The `filter` of the compression has failed");
       return null;
     }
     const result: unknown = outcome.value;
@@ -1090,7 +1094,9 @@ export class CompressedResponse {
     }
     // E.g. a promise: its rejection is observed, never trusted
     Promise.resolve(result).catch(() => null);
-    context.log.error(
+    logTo(
+      context,
+      "error",
       "The `filter` of the compression has not returned a boolean",
     );
     return null;
