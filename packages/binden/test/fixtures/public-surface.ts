@@ -844,7 +844,10 @@ function enter(response: unknown, state: IState): (() => number) | null {
       writable: true,
       value(chunk: unknown, ...rest: unknown[]): boolean {
         if (!target.writableEnded) {
-          target.end(chunk as string, rest[0] as BufferEncoding);
+          target.end(
+            chunk as string,
+            (typeof rest[0] === "string" ? rest[0] : "utf8") as BufferEncoding,
+          );
         }
         const buffer = ArrayBuffer.isView(chunk) ? chunk.buffer : null;
         if (buffer !== null && detachable.has(buffer)) {
@@ -2250,6 +2253,9 @@ define("binden:BindenResponse#", {
     new Error("A reason"),
   ]),
   "[binden.framework]()": call(() => [one]),
+  // Of a library that has replaced the response: the write that it is called
+  // in is discarded
+  "[binden.discard_write]()": call(() => []),
   // An operation of the current work (with its methods)
   "[binden.operation]()": probed(
     {

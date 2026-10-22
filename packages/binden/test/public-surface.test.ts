@@ -21,17 +21,6 @@ interface IReport {
   readonly findings: readonly IFinding[];
 }
 
-/**
- * The entry points whose findings are being fixed (by their ids), while the
- * fixes are integrated: each must still have a finding (a fixed one is
- * removed from the list), and the list is empty once they are
- */
-const integrating: readonly string[] = [
-  // binden/src/response.ts: the internal signal of a discarded write, which
-  // has no fixture yet
-  "binden:BindenResponse#[binden.discard_write]()",
-];
-
 /** How many processes probe the surface in parallel, each a shard of it */
 const shards = 4;
 
@@ -125,15 +114,10 @@ suite("The public surface of the packages of binden", () => {
       }
       ok(probes > entries.length * 5, String(probes));
       deepStrictEqual(
-        findings
-          .filter(({ entry }) => !integrating.includes(entry))
-          .map(({ entry, probe, what }) => `${entry} | ${probe}: ${what}`),
+        findings.map(
+          ({ entry, probe, what }) => `${entry} | ${probe}: ${what}`,
+        ),
         [],
-      );
-      deepStrictEqual(
-        integrating.filter((id) => !findings.some(({ entry }) => entry === id)),
-        [],
-        "fixed: remove them from `integrating`",
       );
     },
   );
