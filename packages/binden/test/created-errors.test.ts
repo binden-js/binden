@@ -38,15 +38,21 @@ const call = String.raw`${gap}(?:\?\.${gap})?\(`;
  * returned by a call, an element of an array or a property of another name,
  * a part of an expression larger than the whole value of an assignment, e.g.
  * a conditional, a name in parentheses, a computed member, or the tag of a
- * template, and the last of a sequence that a default export gives, e.g.
- * `export default (0, TypeError)`, when an earlier one has parentheses in
- * parentheses), a class that extends an expression (e.g. a mixin), an
- * `abort()` whose reason is `undefined` only at run time (e.g. a variable),
- * and the errors that V8 or Node.js create in the methods that binden calls
- * (e.g. the `TypeError` of a wrong argument). The check of those is at run
- * time: `fixtures/created-error-retention.ts`, for the refusals of binden. A
- * creation quoted in a comment or a string may be found too: the scan errs
- * towards a finding.
+ * template), the last of a sequence that a default export gives (e.g.
+ * `export default (0, TypeError)`) in parentheses of its own (`(0,
+ * (TypeError))`), or followed by an `as` or a `!` of TypeScript (`(0,
+ * TypeError as typeof Error)`, `(0, TypeError!)`), or after an earlier one
+ * that has a `;`, a parenthesis that it does not close, braces (an object,
+ * a block or the `${}` of a template) or parentheses in parentheses (e.g.
+ * `"a;b"`, `"("`, `{}` or `f(g(1))`), a class that extends an expression
+ * (e.g. a mixin), an `abort()` whose reason is `undefined` only at run time
+ * (e.g. a variable), and the errors that V8 or Node.js create in the methods
+ * that binden calls (e.g. the `TypeError` of a wrong argument). The check of
+ * those is at run time: `fixtures/created-error-retention.ts`, for the
+ * refusals of binden. A creation quoted in a comment or a string may be
+ * found too, and the member of a sequence on another line (e.g. `.name` on
+ * the line after `export default (0, TypeError)`): the scan errs towards a
+ * finding.
  */
 const creations: readonly (readonly [RegExp, string | null])[] = [
   // A construction, with or without `new` (a built-in constructor may be
@@ -131,7 +137,8 @@ const creations: readonly (readonly [RegExp, string | null])[] = [
   // import, of any name) are not seen: as the default export, also in
   // parentheses (but a construction or a member of it, found above, and the
   // first of a sequence), or as the last of a sequence in parentheses (e.g.
-  // `export default (0, TypeError)`), or renamed to a name that does not end
+  // `export default (0, TypeError)`, but the forms of the sequences that
+  // `creations` names), or renamed to a name that does not end
   // with `Error` or `Exception` by a list of exports or imports, each rename
   // of a list (e.g. `export { TypeError as Refusal }`, `TypeError as
   // "Refusal"` or `TypeError as default`), also with comments around `as`
