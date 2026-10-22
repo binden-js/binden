@@ -10,6 +10,7 @@ import {
   described,
   formatStack,
   framingLength,
+  kDiscardWrite,
   kListen,
   kNegotiator,
   kOperation,
@@ -680,8 +681,11 @@ export class CompressedResponse {
     const callback = (typeof second === "function" ? second : third) as
       ICallback | undefined;
     if (this.#sink === "discard") {
-      // The response has been replaced: its writes are discarded, and their
-      // callback runs as for a chunk that has been written
+      // The response has been replaced: its writes are discarded, which
+      // binden is told (a send is not cut for the bytes of a discarded
+      // write, see `kDiscardWrite`), and their callback runs as for a chunk
+      // that has been written
+      response[kDiscardWrite]();
       if (callback) {
         process.nextTick(callback, null);
       }
@@ -764,9 +768,11 @@ export class CompressedResponse {
       }
     }
     if (this.#sink === "discard") {
-      // Ended already: only its callback runs, as for the end of the
+      // Ended already: its chunk is discarded, which binden is told (see
+      // `#onWrite()`), and only its callback runs, as for the end of the
       // replacement (the first `end()` of the application), or as Node.js
       // calls the one of an `end()` that follows it
+      response[kDiscardWrite]();
       if (callback && this.#ended) {
         this.#end(callback);
       } else if (callback) {

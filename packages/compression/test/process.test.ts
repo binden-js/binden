@@ -1,5 +1,5 @@
+import { deepStrictEqual, ok } from "node:assert";
 import { suite, test } from "node:test";
-import { deepStrictEqual } from "node:assert";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -72,21 +72,56 @@ suite("Process safety", () => {
     }
   });
 
-  test("the 406 that replaces a response inside the write of binden drops the bytes of the view (or of the chunks of a Readable of views), whether the `filter` has detached them or not: the send resolves, the 406 is replied, and the connection is reused (C27-1)", () => {
-    for (const mode of ["send", "chunks"]) {
+  for (const mode of ["send", "chunks"]) {
+    test(`the 406 that replaces a response inside the write of binden drops the bytes (${mode}), whether the \`filter\` has detached them or not, and reports each write (or end) that it discards: the send resolves, the 406 is replied, and the connection is reused, also when a writer of the application ends the response inside that write, or gives its chunk to end() (C27-1, C28-1)`, () => {
       for (const detach of ["keep", "detach"]) {
+        for (const ending of ["", "ending", "end"]) {
+          deepStrictEqual(
+            run("detaching-filter.ts", mode, "406", detach, ending),
+            {
+              status: 0,
+              stdout: "resolved | HTTP/1.1 406 HTTP/1.1 200 next\n",
+              stderr: "",
+            },
+            `${detach} ${ending}`,
+          );
+        }
+      }
+    });
+
+    test(`a writer of the application that ends the response inside the write of binden (${mode}), or gives its chunk to end(), once the compressor has accepted bytes that the \`filter\` has detached (or binden has, for a response sent as it is): the send rejects with the TypeError of binden, formatted, and the connection is closed, the pipelined response never read as the body (C28-1)`, () => {
+      for (const ending of ["ending", "end"]) {
         deepStrictEqual(
-          run("detaching-filter.ts", mode, "406", detach),
+          run("detaching-filter.ts", mode, "0", "detach", ending),
+          { status: 0, stdout: `${lost} | \n`, stderr: "" },
+          ending,
+        );
+        deepStrictEqual(
+          run("detaching-filter.ts", mode, "0", "keep", ending),
           {
             status: 0,
-            stdout: "resolved | HTTP/1.1 406 HTTP/1.1 200 next\n",
+            stdout: "resolved | HTTP/1.1 200 HTTP/1.1 200 next\n",
             stderr: "",
           },
-          `${mode} ${detach}`,
+          ending,
+        );
+        const { status, stdout, stderr } = run(
+          "detaching-filter.ts",
+          mode,
+          "100000",
+          "detach",
+          ending,
+        );
+        deepStrictEqual({ status, stderr }, { status: 0, stderr: "" }, ending);
+        // The end of the writer may have flushed the head (Node.js uncorks
+        // the socket), but never the pipelined response
+        ok(
+          [`${lost} | \n`, `${lost} | HTTP/1.1 200\n`].includes(String(stdout)),
+          `${ending} ${String(stdout)}`,
         );
       }
-    }
-  });
+    });
+  }
 
   test("a context whose every use throws once run() has returned: the compression reads the request once, its later uses of the response throw to their callers, and the process does not crash", () => {
     deepStrictEqual(run("late-context.ts"), {

@@ -2,12 +2,16 @@
 // of the compression, which runs inside the write of binden that decides the
 // representation (after binden has counted the bytes of a view), detaches the
 // `ArrayBuffer` that binden's `Buffer` shares, unless `keep`. Modes:
-// `<send|chunks> <threshold|406> <detach|keep>`: a view given to `send()`, or
-// an object-mode `Readable` of views; `0` compresses, `100000` sends the body
-// as it is, `406` is a request that accepts no representation (the write
-// replaces the response with an empty `406`, and so ends it). The pipelined
-// request is answered only by a connection that is still in sync. Prints the
-// outcome of the send and the status lines that the client gets.
+// `<send|chunks> <threshold|406> <detach|keep> [ending|end]`: a view given to
+// `send()`, or an object-mode `Readable` of views; `0` compresses, `100000`
+// sends the body as it is, `406` is a request that accepts no representation
+// (the write replaces the response with an empty `406`, and so ends it);
+// `ending` installs a writer of the application that ends the response
+// inside each write, once the compression has taken it (e.g. the compressor
+// has accepted its bytes), and `end` one that gives the chunk of each write
+// to `end()` instead. The pipelined request is answered only by a
+// connection that is still in sync. Prints the outcome of the send and the
+// status lines that the client gets.
 import { type AddressInfo, connect } from "node:net";
 import { Binden, type Context } from "binden";
 import { Compression } from "../../index.js";
@@ -20,7 +24,7 @@ setTimeout(() => {
   process.exit(2);
 }, 25_000).unref();
 
-const [mode = "send", decision = "0", detach = "detach"] =
+const [mode = "send", decision = "0", detach = "detach", ending = ""] =
   process.argv.slice(2);
 
 /** The errors whose stack V8 has formatted */
@@ -54,7 +58,27 @@ const app = new Binden({ logger: new Logger({ level: "silent" }) })
       await context.send("next");
       return;
     }
-    context.response.setHeader("Content-Type", "text/plain");
+    const { response } = context;
+    response.setHeader("Content-Type", "text/plain");
+    if (ending === "ending") {
+      const write = response.write.bind(response) as (
+        ...args: unknown[]
+      ) => boolean;
+      response.write = (...args: unknown[]): boolean => {
+        const accepted = write(...args);
+        response.end();
+        return accepted;
+      };
+    } else if (ending === "end") {
+      response.write = (chunk: unknown, ...args: unknown[]): boolean => {
+        response.end(chunk);
+        const callback = args.find((arg) => typeof arg === "function");
+        if (typeof callback === "function") {
+          process.nextTick(callback, null);
+        }
+        return true;
+      };
+    }
     victim = new ArrayBuffer(4096);
     new Uint8Array(victim).fill(0x61);
     const data =
@@ -64,7 +88,7 @@ const app = new Binden({ logger: new Logger({ level: "silent" }) })
             objectMode: true,
           });
     try {
-      await context.response.send(data);
+      await response.send(data);
       outcome = "resolved";
     } catch (error: unknown) {
       // Before anything reads its stack

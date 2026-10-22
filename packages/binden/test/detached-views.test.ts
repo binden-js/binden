@@ -154,40 +154,52 @@ suite(
       }
     });
 
-    test("by a writer that gives them to binden, then ends the response inside that write: framed and queued, the send still rejects with the TypeError of binden, formatted, and the connection is closed, the pipelined response never read as the body (C27-1)", () => {
-      const { status, stdout, stderr } = spawnSync(
-        process.execPath,
-        [
-          "--no-warnings",
-          "--import",
-          "tsx",
-          join(import.meta.dirname, "fixtures", "detaching-writes.ts"),
-          "ending",
-        ],
-        { encoding: "utf8", timeout: 30_000 },
-      );
-      deepStrictEqual({ status, stderr }, { status: 0, stderr: "" });
-      const { received, ...outcome } = JSON.parse(String(stdout)) as Record<
-        string,
-        unknown
-      >;
-      deepStrictEqual(outcome, {
-        formatted: true,
-        send: refusal,
-        headersSent: true,
-        destroyed: true,
-      });
-      // The end of the writer may have flushed the head (Node.js uncorks the
-      // socket), but never a body, nor the pipelined response
-      ok(
-        typeof received === "string" &&
-          !received.includes("next") &&
-          (received === "" || received.endsWith("\r\n\r\n")),
-        String(received),
-      );
+    test("by a writer that gives them to binden, then ends the response inside that write, that gives them to binden by end() instead (also of a chunk of a Readable), or that replaces the response with a 406 and drops them without reporting it: the send still rejects with the TypeError of binden, formatted, and the connection is closed, the pipelined response never read as the body (C27-1, H28-1)", () => {
+      for (const mode of [
+        "ending",
+        "end",
+        "end-chunks",
+        "unreported",
+        "unreported-chunks",
+      ]) {
+        const { status, stdout, stderr } = spawnSync(
+          process.execPath,
+          [
+            "--no-warnings",
+            "--import",
+            "tsx",
+            join(import.meta.dirname, "fixtures", "detaching-writes.ts"),
+            mode,
+          ],
+          { encoding: "utf8", timeout: 30_000 },
+        );
+        deepStrictEqual({ status, stderr }, { status: 0, stderr: "" }, mode);
+        const { received, ...outcome } = JSON.parse(String(stdout)) as Record<
+          string,
+          unknown
+        >;
+        deepStrictEqual(
+          outcome,
+          {
+            formatted: true,
+            send: refusal,
+            headersSent: true,
+            destroyed: true,
+          },
+          mode,
+        );
+        // The end of the writer may have flushed the head (Node.js uncorks
+        // the socket), but never a body, nor the pipelined response
+        ok(
+          typeof received === "string" &&
+            !received.includes("next") &&
+            (received === "" || received.endsWith("\r\n\r\n")),
+          `${mode} ${String(received)}`,
+        );
+      }
     });
 
-    test("by the head of a writer that replaces the response inside that write, which drops them and calls the write back: no part of the response, the send resolves, and the pipelined request is answered (C27-1)", () => {
+    test("by the head of a writer that replaces the response inside that write, which drops them, reports it (kDiscardWrite) and calls the write back: no part of the response, the send resolves, and the pipelined request is answered (C27-1)", () => {
       for (const mode of ["replaced", "replaced-chunks"]) {
         const { status, stdout, stderr } = spawnSync(
           process.execPath,

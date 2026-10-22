@@ -31,6 +31,7 @@ import {
   type IResponseOperation,
   kCancel,
   kCancelling,
+  kDiscardWrite,
   kFramework,
   kListen,
   kNegotiator,
@@ -1037,10 +1038,10 @@ export class BindenResponse<
    */
   #cut = false;
   /**
-   * The chunks that `write()` of binden has given to Node.js, which frames
-   * and queues them (see `#dropped()`)
+   * The writes that a library that has replaced the response has discarded
+   * (see `[kDiscardWrite]()`, and `#dropped()`)
    */
-  #handed = 0;
+  #discardedWrites = 0;
 
   static {
     // A response made by the constructor (see `isResponse()`)
@@ -2246,7 +2247,6 @@ export class BindenResponse<
       return this.#stopping(() =>
         this.#restoring(() => {
           this.#ordered(written, false);
-          this.#handed += 1;
           return super.write(...(callbacksOf(written) as [unknown]));
         }),
       );
@@ -3301,6 +3301,17 @@ export class BindenResponse<
     return this.#allows(owner) ? new Operation(owner, this.#control()) : null;
   }
 
+  /**
+   * Reports that the write (or the `end()`) that it is called in is
+   * discarded by the library that has replaced the response (see
+   * `kDiscardWrite`): a send is not cut for the bytes of that write
+   *
+   * @internal
+   */
+  public [kDiscardWrite](): void {
+    this.#discardedWrites += 1;
+  }
+
   /** An operation of the current work (which may mutate the response) */
   #operation(): Operation {
     return new Operation(owners.getStore(), this.#control());
@@ -3626,16 +3637,16 @@ export class BindenResponse<
     // (e.g. the client went away) rejects, although Node.js 24 emits `finish`
     // once the response is ended. Its length keeps it from being chunked.
     return new Promise<void>((resolve, reject) => {
-      const handed = this.#handed;
+      const discarded = this.#discardedWrites;
       this.write(body, (error?: Error | null) => {
         if (error) {
           reject(error);
         }
       });
-      if (bytesLost(body, length) && !this.#dropped(handed)) {
+      if (bytesLost(body, length) && !this.#dropped(discarded)) {
         // Detached by code of the application inside that write (see
         // `bytesLost()`): never flushed, also once that write has ended the
-        // response, unless the bytes have been dropped (see `#dropped()`)
+        // response, unless the write has been discarded (see `#dropped()`)
         this.#cutLost();
         reject(detachedView());
         return;
@@ -4573,7 +4584,7 @@ export class BindenResponse<
                   fail(BindenResponse.#mismatch(sent + size, declared), true);
                   return;
                 }
-                const handed = this.#handed;
+                const discarded = this.#discardedWrites;
                 const accepted = this.write(written, (error?: Error | null) => {
                   if (error) {
                     // Not delivered: the client went away, and the error of
@@ -4589,13 +4600,13 @@ export class BindenResponse<
                 if (
                   written !== chunk &&
                   bytesLost(written as Buffer, size) &&
-                  !this.#dropped(handed)
+                  !this.#dropped(discarded)
                 ) {
                   // Detached by code of the application inside that write
                   // (see `bytesLost()`): never flushed, and the send rejects,
                   // also once that write has ended the response (which
-                  // `fail` would leave as it is), unless the bytes have been
-                  // dropped (see `#dropped()`)
+                  // `fail` would leave as it is), unless the write has been
+                  // discarded (see `#dropped()`)
                   this.#cutLost();
                   settle({ error: detachedView(), own: true });
                   return;
@@ -4773,19 +4784,20 @@ export class BindenResponse<
   }
 
   /**
-   * Whether the bytes of a write of a send (`handed`, the count of the chunks
-   * given to Node.js before it, see `#handed`) have been dropped, rather than
-   * framed and queued: nothing has been given to Node.js since, and the
-   * response has been ended inside that write by the writer that replaces it
-   * (e.g. the `406` of `@binden/compression`, which discards the writes of
-   * the application and calls back each of them). Bytes that are gone then
-   * (see `bytesLost()`) are not part of the response, whose head frames its
-   * own empty body: no mismatch, and the send settles as the response does.
-   * The bytes that a writer has given to binden, or to a compressor, are
-   * framed and queued, also when that write has ended the response.
+   * Whether a write of a send (`discarded`, the count of the discarded writes
+   * before it, see `#discardedWrites`) has been discarded explicitly by the
+   * library that has replaced the response inside it (see
+   * `[kDiscardWrite]()`, e.g. the `406` of `@binden/compression`, which
+   * discards the writes of the application and calls back each of them).
+   * Bytes that are gone then (see `bytesLost()`) are not part of the
+   * response, whose head frames its own empty body: no mismatch, and the
+   * send settles as the response does. Nothing else drops them: the bytes
+   * that a writer has given to Node.js (by `write()`, or by `end()`), or to
+   * a compressor, are framed and queued, also when that write has ended the
+   * response.
    */
-  #dropped(handed: number): boolean {
-    return this.#handed === handed && this.writableEnded;
+  #dropped(discarded: number): boolean {
+    return this.#discardedWrites !== discarded;
   }
 
   /**

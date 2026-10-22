@@ -30,6 +30,7 @@ export {
   type IRepresentationNegotiator,
   type IResponseOperation,
   bodyHeaders,
+  kDiscardWrite,
   kListen,
   kUnlisten,
   kNegotiator,

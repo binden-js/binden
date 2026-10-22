@@ -264,6 +264,21 @@ export const kRepresentation: unique symbol = Symbol("binden.representation");
 export const kNegotiator: unique symbol = Symbol("binden.negotiator");
 
 /**
+ * The key of the method of `BindenResponse` by which a library that has
+ * replaced the response (e.g. the empty `406` of `@binden/compression`)
+ * reports that it discards the write (or the `end()`) that it is called in:
+ * `response[kDiscardWrite]()`. The bytes of that write are no part of the
+ * response, whose head frames a body of its own: a send whose bytes are gone
+ * once that write has returned (e.g. detached by code of the application) is
+ * not cut for them. Every other write of a send is checked (also one that a
+ * writer has given to Node.js by `end()`, or that a compressor has accepted),
+ * and cut when they are gone. For the packages of binden only.
+ *
+ * @internal
+ */
+export const kDiscardWrite: unique symbol = Symbol("binden.discard_write");
+
+/**
  * The representation of the body of a response, as it will be sent. For the
  * packages of binden only.
  *

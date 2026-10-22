@@ -27,10 +27,9 @@ interface IReport {
  * removed from the list), and the list is empty once they are
  */
 const integrating: readonly string[] = [
-  // binden/src/response.ts: a send whose bytes a writer has lost by
-  // end(chunk) rejects
-  "binden:BindenResponse#send()",
-  "binden:Context#send()",
+  // binden/src/response.ts: the internal signal of a discarded write, which
+  // has no fixture yet
+  "binden:BindenResponse#[binden.discard_write]()",
 ];
 
 /** How many processes probe the surface in parallel, each a shard of it */
