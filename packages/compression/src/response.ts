@@ -180,17 +180,47 @@ function encodingOf(
 }
 
 /**
+ * The arguments of the check of binden of a head (see `kValidateHead`) by
+ * which it examines the status code alone: a valid reason phrase, and a valid
+ * `Content-Length` in place of the ones set (which the commit checks)
+ */
+const statusAlone = ["", ["Content-Length", 0]] as const;
+
+/**
+ * The status code of a response whose head is not committed, as binden
+ * decides by it (see `#status()` of `BindenResponse`): the integer that
+ * Node.js commits. A number is truncated as Node.js truncates it (`| 0`,
+ * e.g. `204.5` is a `204`), which leaves an integer as it is. Any other value
+ * (e.g. an object or a string) is converted once, by the conversion of binden
+ * as Node.js converts it (see `kValidateHead`), which refuses it as Node.js
+ * refuses it, and that number is the status of the response from then on, as
+ * Node.js stores it (before it checks anything else): never compared as it
+ * is, which would convert it again.
+ */
+function statusOf(response: IResponse): number {
+  const status: unknown = response.statusCode;
+  if (typeof status === "number") {
+    return status | 0;
+  }
+  const [code] = response[kValidateHead](status, ...statusAlone);
+  response.statusCode = code;
+  return code;
+}
+
+/**
  * Whether Node.js writes the body of a response, as binden reads it (see
  * `write()` of `BindenResponse`): not to `HEAD`, nor with a 1xx, 204 or 304
- * status, whose chunks Node.js ignores (and binden does not check)
+ * status (converted once, see `statusOf()`), whose chunks Node.js ignores
+ * (and binden does not check)
  */
 function hasBody(response: IResponse): boolean {
-  const status = response.statusCode;
-  return (
-    Reflect.get(response, "_hasBody") === true &&
-    (response.headersSent ||
-      !((status >= 100 && status < 200) || status === 204 || status === 304))
-  );
+  if (Reflect.get(response, "_hasBody") !== true) {
+    return false;
+  } else if (response.headersSent) {
+    return true;
+  }
+  const status = statusOf(response);
+  return !((status >= 100 && status < 200) || status === 204 || status === 304);
 }
 
 /**
@@ -587,11 +617,21 @@ export class CompressedResponse {
       // without the compression, which reads nothing of the arguments
       return Reflect.apply(this.#writeHead, response, args) as IResponse;
     }
+    // The status of the response itself (e.g. of `flushHeaders()`, whose
+    // head Node.js commits by it): converted once and stored (see
+    // `statusOf()`), before the framing is saved and anything else is
+    // checked, as Node.js stores it before it refuses a reason phrase. A
+    // status given (or a number) is converted by the check alone
+    const [first, ...rest] = args;
+    const own =
+      typeof first !== "number" && first === response.statusCode
+        ? statusOf(response)
+        : first;
     this.#commit(() => {
       // What Node.js would refuse (e.g. a status code or a reason phrase),
       // before anything is changed: no compressor is created. Read once, as
       // Node.js gets them (see `kValidateHead`)
-      const [status, reason, given] = response[kValidateHead](...args);
+      const [status, reason, given] = response[kValidateHead](own, ...rest);
       setGiven(response, given);
       response.statusCode = status;
       this.#apply(this.#outcome(null));
@@ -839,11 +879,15 @@ export class CompressedResponse {
     if (this.#gone()) {
       return { value: send() };
     }
+    // Converted once and stored (see `statusOf()`), before the framing is
+    // saved and the reason phrase is checked, as Node.js stores it: a
+    // rollback restores that number, which a retry does not convert again
+    statusOf(response);
     let sent: { readonly value: T } | null = null;
     this.#commit(() => {
       // What Node.js would refuse (e.g. a reason phrase), before anything is
-      // changed: no compressor is created. The status is converted once, as
-      // Node.js converts it (see `kValidateHead`), and decided by
+      // changed: no compressor is created. The status is checked as Node.js
+      // checks it, by the value given (see `kValidateHead`), and decided by
       const [status] = response[kValidateHead](response.statusCode);
       response.statusCode = status;
       this.#apply(this.#outcome(size));
@@ -962,7 +1006,8 @@ export class CompressedResponse {
   #decide(length: number | null): IOutcome {
     const header = this.#accepted;
     const response = this.#response;
-    const status = response.statusCode;
+    // As Node.js commits it (see `statusOf()`)
+    const status = statusOf(response);
     if (status < 200 || status === 204 || status === 205 || length === 0) {
       // No body: whatever the request accepts
       return AS_IS;
@@ -977,7 +1022,7 @@ export class CompressedResponse {
       );
       return accepts(header, codings) ? AS_IS_VARY : NOT_ACCEPTABLE;
     }
-    const offers = this.#offers(length);
+    const offers = this.#offers(length, status);
     if (offers === null) {
       return FAILED;
     }
@@ -997,12 +1042,16 @@ export class CompressedResponse {
    * or the fixed `format`, but none for a range (RFC 9110, section 14.1.2:
    * ranges refer to the representation as it is), `no-transform`,
    * `skipCompression()`, a type that the `filter` refuses, or a body below
-   * the `threshold`
+   * the `threshold` (`status` is the status of the response, as Node.js
+   * commits it, see `statusOf()`)
    */
-  #offers(length: number | null): readonly ICompressEncodings[] | null {
+  #offers(
+    length: number | null,
+    status: number,
+  ): readonly ICompressEncodings[] | null {
     const response = this.#response;
     if (
-      response.statusCode === 206 ||
+      status === 206 ||
       response.hasHeader("Content-Range") ||
       noTransform(response.getHeader("Cache-Control")) ||
       skipped.has(response)
