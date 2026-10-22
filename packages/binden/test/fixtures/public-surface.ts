@@ -202,8 +202,11 @@ const hostileNames = [
   "child-throws",
   "child-other",
   "replaced",
+  "child-replaced",
   "log-getter",
   "log-subclass",
+  "derived-result",
+  "proxy-result",
 ] as const;
 /** The name of a hostile value */
 type IHostileName = (typeof hostileNames)[number];
@@ -527,10 +530,13 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
         conversions: none,
         thrown,
       };
-    case "replaced": {
+    case "replaced":
+    case "child-replaced": {
       // A logger of binden whose own methods (and `child()`) the application
       // has replaced, once it was made, by ones that throw (e.g. a wrapper
-      // with a bug): binden never runs them (see `misused`)
+      // with a bug, see R29-C1), given as it is, or as the child that a
+      // logger gives (e.g. as `context.log`): binden never runs them for a
+      // record of its own (see `misused`)
       const logger = bindenLogger();
       let misuses = 0;
       const misuse = (): never => {
@@ -547,12 +553,31 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
       }
       return {
         name,
-        value: logger,
+        value: name === "replaced" ? logger : loggerOf(noop, () => logger),
         conversions: none,
         thrown,
         misused: () => misuses,
       };
     }
+    case "derived-result":
+    case "proxy-result":
+      // A function (at the position of one) whose result is an object
+      // derived from its first argument, or a proxy of it, that has none of
+      // its private fields (e.g. a middleware that returns a context made
+      // from its own, which binden must not take for one)
+      return {
+        name,
+        value: (argument: unknown): unknown => {
+          if (!isObject(argument)) {
+            return argument;
+          }
+          return name === "derived-result"
+            ? (Object.create(argument) as object)
+            : new Proxy(argument, {});
+        },
+        conversions: none,
+        thrown,
+      };
     case "log-getter":
       // The context itself (at the position of one), with a `log` getter of
       // its own that throws (e.g. one that a middleware has defined)
@@ -649,6 +674,16 @@ const loggerHostiles: ReadonlySet<IHostileName> = new Set([
   "child-throws",
   "child-other",
   "replaced",
+  "child-replaced",
+]);
+/**
+ * The hostile functions whose result is hostile: probed only where the
+ * valid value is a function (e.g. a middleware, whose result binden takes
+ * for a context only when it is one)
+ */
+const resultHostiles: ReadonlySet<IHostileName> = new Set([
+  "derived-result",
+  "proxy-result",
 ]);
 /**
  * The hostile contexts: probed only where the valid value is a context (e.g.
@@ -707,6 +742,37 @@ const remembering: Record<string, unknown> = loggerOf(
     remembered.bindings = bindings;
     return remembering;
   },
+);
+
+/**
+ * The messages of the errors of the engine for a private member that binden
+ * has logged (see `watching`): binden has taken a value of the test for one
+ * of its objects (e.g. a context derived from one that a middleware returns)
+ */
+const privateFailures: string[] = [];
+/** Whether a message is one of the engine for a private member of a class */
+const privateMember =
+  /^(?:Cannot (?:read|write) private member|Receiver must be an instance of class|Object must be an instance of class)/u;
+/** Records the messages of the failures (and their causes) of a record */
+function watched(extra: unknown): void {
+  let failure: unknown = isObject(extra) ? Reflect.get(extra, "failure") : null;
+  for (let depth = 0; depth < 4 && isObject(failure); depth += 1) {
+    const message: unknown = Reflect.get(failure, "message");
+    if (typeof message === "string" && privateMember.test(message)) {
+      privateFailures.push(message);
+    }
+    failure = Reflect.get(failure, "cause");
+  }
+}
+/**
+ * The logger of the applications of the readers (with the details of their
+ * errors, see `privateFailures`): it logs nothing
+ */
+const watching: Record<string, unknown> = loggerOf(
+  (_: unknown, extra: unknown): void => {
+    watched(extra);
+  },
+  (): unknown => watching,
 );
 
 /** A destination of `pino` that keeps nothing */
@@ -1001,6 +1067,20 @@ async function handled(application: unknown): Promise<string> {
 }
 
 /**
+ * Handles one request by an application of a router (see `handled()`), which
+ * logs to `watching` (with the details of its errors): e.g. whether binden
+ * takes the result of a middleware for a context
+ */
+function routed(router: unknown): Promise<string> {
+  const application = new Binden({
+    logger: watching,
+    log_error_details: true,
+  });
+  application.use(router as IFunction);
+  return handled(application);
+}
+
+/**
  * The states of a response (also of a context) that its members are probed
  * in, besides a fresh one: its head sent, ended, destroyed, and two fresh
  * ones that the application has changed: its `statusCode` is an object
@@ -1214,6 +1294,12 @@ interface IFixtureOptions {
    * bound to a reader that uses it (see `IUntouched`)
    */
   readonly readers?: Readonly<Record<string, IReader>> | undefined;
+  /**
+   * The readers that log as the application does (e.g. a call of
+   * `context.log.error()`): a method that the application has replaced on a
+   * logger of binden (see `misused`) is its own to run there
+   */
+  readonly logs?: readonly string[] | undefined;
   /**
    * What never fails, as documented (e.g. the logger of a context): its
    * calls (`call`), or its readers (by their names), each with where it is
@@ -1748,7 +1834,12 @@ define("binden:", {
   ),
   // A function of the middlewares of a method
   "Router#middlewares": probed({ returned: call(() => ["GET"]) }, () => []),
-  "Router#on()": call(() => ["GET", middleware, middleware]),
+  // Its middlewares run by an application (see `routed()`)
+  "Router#on()": probed({ io: true, readers: { "a request": routed } }, () => [
+    "GET",
+    middleware,
+    middleware,
+  ]),
   // Of a middleware that it has (whose removal its middlewares show)
   "Router#off()": probed(
     {
@@ -1878,7 +1969,13 @@ for (const verb of [
   "put",
   "trace",
 ]) {
-  fixtures[`binden:Router#${verb}()`] = call(() => [middleware, middleware]);
+  fixtures[`binden:Router#${verb}()`] =
+    verb === "get"
+      ? probed({ io: true, readers: { "a request": routed } }, () => [
+          middleware,
+          middleware,
+        ])
+      : call(() => [middleware, middleware]);
 }
 define("binden:", {
   // Its listener of the requests of the server (given a request and a
@@ -2259,6 +2356,7 @@ define("binden:", {
         },
       },
       infallible: { log: neverFails, "log.error()": neverFails },
+      logs: ["log.error()"],
     },
     async (env) => {
       const { request, response } = await env.exchange();
@@ -4041,6 +4139,8 @@ async function probe(
   let given: IHostile | null = null;
   let examined = true;
   let failure: string | null = null;
+  /** The runs of replaced methods of a logger by readers of the application (see `logs`) */
+  let misusedByApplication = 0;
   try {
     const receiver =
       receiving === null
@@ -4151,10 +4251,14 @@ async function probe(
           // by those of a reader before it)
           const since = given?.thrown.length ?? 0;
           const convertedSince = given?.conversions() ?? 0;
+          const misusedSince = given?.misused?.() ?? 0;
           const readOutcome = await outcomeOf(
             () => read(receiver, result, values),
             ms,
           );
+          if ((fixture.logs ?? []).includes(reader)) {
+            misusedByApplication += (given?.misused?.() ?? 0) - misusedSince;
+          }
           if (isDefault) {
             const shown = signature(readOutcome, given);
             const baselineKey = `${entry.id} ${String(index)} ${reader}`;
@@ -4284,7 +4388,12 @@ async function probe(
         found.push(`${how} ${describe(error)}`);
       }
     }
-    const misuses = given?.misused?.() ?? 0;
+    for (const message of privateFailures.splice(0)) {
+      found.push(
+        `binden has taken a value of the test for one of its objects (${message})`,
+      );
+    }
+    const misuses = (given?.misused?.() ?? 0) - misusedByApplication;
     if (misuses > 0) {
       found.push(
         `runs a method that the application has replaced on a logger of binden ${String(misuses)}x (binden logs through the logger that it wraps)`,
@@ -4732,6 +4841,8 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
               (hostileName !== "late" || path.length > 1) &&
               (!objectHostiles.has(hostileName) || isObject(value)) &&
               (!loggerHostiles.has(hostileName) || isLoggerValue(value)) &&
+              (!resultHostiles.has(hostileName) ||
+                (typeof value === "function" && !isClass(value))) &&
               (!contextHostiles.has(hostileName) || isContextValue(value)) &&
               (isDefault ||
                 stateHostiles.has(hostileName) ||

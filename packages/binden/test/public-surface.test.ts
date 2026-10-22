@@ -31,9 +31,14 @@ const integrating: readonly string[] = [
   // work is revoked (and a revoked work of no owner)
   "binden:BindenResponse#[binden.pipe_failure]()",
   // binden/src/binden.ts, context.ts and logger.ts: a method that the
-  // application has replaced on a logger of binden
+  // application has replaced on a logger of binden (also on the child that
+  // its logger gives)
   "binden:new Binden()",
   "binden:new Context()",
+  // binden/src/binden.ts: a middleware whose result is derived from its
+  // context, or a proxy of it
+  "binden:Router#get()",
+  "binden:Router#on()",
 ];
 
 /** How many processes probe the surface in parallel, each a shard of it */
