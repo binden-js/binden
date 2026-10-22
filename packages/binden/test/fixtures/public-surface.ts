@@ -1067,15 +1067,44 @@ async function handled(application: unknown): Promise<string> {
 }
 
 /**
- * Handles one request by an application of a router (see `handled()`), which
- * logs to `watching` (with the details of its errors): e.g. whether binden
- * takes the result of a middleware for a context
+ * How many times binden has run a method that a middleware has replaced on
+ * `context.log` (see `routed()`), for a record of its own
+ */
+const wrapped = { misuses: 0 };
+/**
+ * A middleware that replaces the methods of `context.log` (as one that adds
+ * a field to its records) by ones that throw (e.g. a bug of that wrapper,
+ * R29-C1), which binden never runs for its own records (e.g. its access log)
+ */
+function wrapping(context: unknown): void {
+  const log = Reflect.get(context as object, "log") as object;
+  for (const method of loggerMethods) {
+    Object.defineProperty(log, method, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value(): never {
+        wrapped.misuses += 1;
+        throw new OwnError("A wrapper of the test");
+      },
+    });
+  }
+}
+
+/**
+ * Handles one request by an application of a router (see `handled()`),
+ * after a middleware that replaces the methods of `context.log` (see
+ * `wrapping()`), and with an access log, which logs to `watching` (with the
+ * details of its errors): e.g. whether binden takes the result of a
+ * middleware for a context
  */
 function routed(router: unknown): Promise<string> {
   const application = new Binden({
     logger: watching,
     log_error_details: true,
+    access_log: true,
   });
+  application.use(wrapping);
   application.use(router as IFunction);
   return handled(application);
 }
@@ -4055,6 +4084,11 @@ const readLater = new Set<string>();
  */
 const usedLater = new Set<string>();
 /**
+ * The alternative checks that have run (as `<entry> <name>`, see
+ * `alternativesOf()`): what `IUntouched.instead` needs
+ */
+const checkedInstead = new Set<string>();
+/**
  * The outcomes of the readers with the valid values (as `<entry> <call>
  * <reader>`, see `signature()`), on the default receiver
  */
@@ -4424,6 +4458,12 @@ async function probe(
         found.push(`${how} ${describe(error)}`);
       }
     }
+    if (wrapped.misuses > 0) {
+      found.push(
+        `runs a method that a middleware has replaced on context.log ${String(wrapped.misuses)}x (binden logs through the logger that it wraps)`,
+      );
+      wrapped.misuses = 0;
+    }
     for (const message of privateFailures.splice(0)) {
       found.push(
         `binden has taken a value of the test for one of its objects (${message})`,
@@ -4738,10 +4778,15 @@ function usedBy(
             "untouched, and checked as a callback instead, which it does not list (`callbacks`)",
           ];
     }
-    return Object.hasOwn(fixture.alternatives ?? {}, untouched.instead)
+    if (!Object.hasOwn(fixture.alternatives ?? {}, untouched.instead)) {
+      return [
+        `untouched, and checked by ${untouched.instead} instead, which is not one of its alternative checks (\`alternatives\`)`,
+      ];
+    }
+    return checkedInstead.has(`${entry.id} ${untouched.instead}`)
       ? []
       : [
-          `untouched, and checked by ${untouched.instead} instead, which is not one of its alternative checks (\`alternatives\`)`,
+          `untouched, and checked by its alternative check ${untouched.instead} instead, which has not run`,
         ];
   }
   const { later } = untouched;
@@ -4764,8 +4809,9 @@ function usedBy(
 
 /**
  * Runs the alternative checks of a fixture (see `IUntouched.instead`), each
- * once, in the shard that probes its entry point: what each finds, and each
- * that no position names
+ * once, in the shard that probes its entry point (recorded in
+ * `checkedInstead` once it has run): what each finds, and each that no
+ * position names
  */
 async function alternativesOf(
   entry: IEntry,
@@ -4785,6 +4831,7 @@ async function alternativesOf(
     }
     try {
       const failures = await bounded(check(), ioMs, "An alternative check");
+      checkedInstead.add(`${entry.id} ${name}`);
       found.push(
         ...failures.map((what) => ({ entry: entry.id, probe: at, what })),
       );
@@ -4939,6 +4986,7 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
       });
     }
   }
+  findings.push(...(await alternativesOf(entry, fixture)));
   for (const [position, why] of Object.entries(untouched)) {
     if (!needed.has(position)) {
       findings.push({
@@ -4953,7 +5001,6 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
       ),
     );
   }
-  findings.push(...(await alternativesOf(entry, fixture)));
   for (const position of Object.keys(fixture.callbacks ?? {})) {
     if (!calledBack.has(`${entry.id} ${position}`)) {
       findings.push({
