@@ -26,11 +26,7 @@ interface IReport {
  * fixes are integrated: each must still have a finding (a fixed one is
  * removed from the list), and the list is empty once they are
  */
-const integrating: readonly string[] = [
-  // binden/src/response.ts: the source of a failed pipe, unpiped once its
-  // work is revoked (and a revoked work of no owner)
-  "binden:BindenResponse#[binden.pipe_failure]()",
-];
+const integrating: readonly string[] = [];
 
 /** How many processes probe the surface in parallel, each a shard of it */
 const shards = 4;

@@ -1577,7 +1577,8 @@ export class BindenResponse<
    * listeners get the error of its failure (if any), then its `close`
    * listeners run once (and are removed), as their own work, as if the
    * response had been closed; the sources that it has piped and that are
-   * still piped are then unpiped. Never the listeners of another work, nor
+   * still piped are then unpiped (a failure of that cleanup, e.g. of a
+   * hostile source, is only logged). Never the listeners of another work, nor
    * those of the framework, which get the real `close`.
    */
   #deliver(owner: object, failure: [unknown] | null): void {
@@ -1601,7 +1602,16 @@ export class BindenResponse<
       this.#absorbing.delete(owner);
     }
     for (const source of this.#sources.get(owner) ?? []) {
-      unpipe(source, this);
+      // Code of the application (e.g. a getter of the source, or its
+      // `unpipe()`), on a tick of its own: a failure is only logged, and the
+      // other sources are unpiped all the same
+      try {
+        unpipe(source, this);
+      } catch (error: unknown) {
+        const message =
+          "The unpipe of a source of an abandoned work has failed";
+        this.#ownership.debug(message, error);
+      }
     }
     this.#sources.delete(owner);
     const natives = this.#natives.get(owner);
@@ -3026,7 +3036,11 @@ export class BindenResponse<
       process.nextTick(() => {
         for (const owner of works) {
           this.#revoked.set(owner, true);
-          this.#deliver(owner, failed?.owner === owner ? [failed.error] : null);
+          // Without a failure, also for a work that is `undefined`
+          this.#deliver(
+            owner,
+            failed !== null && failed.owner === owner ? [failed.error] : null,
+          );
         }
         resolve();
       });
