@@ -195,9 +195,10 @@ let paths: IPaths;
  * itself when it fails (or does not return a logger, e.g. a promise). Its
  * methods are its own, bound to it: none depends on its receiver, so that an
  * object derived from it (e.g. with `Object.create()`) or a proxy of it logs
- * through its logger. binden writes its own records, and reaches a logger of
- * binden that it wraps, by their private paths (see `record()`), never
- * through these methods, which the application may replace.
+ * through its logger. Over a logger of binden, it takes the logger of that
+ * one (see the constructor): one level deep at most. binden writes its own
+ * records by their private paths (see `record()`), never through these
+ * methods, which the application may replace.
  */
 class SafeLogger implements ILogger {
   readonly #logger: ILogger;
@@ -255,7 +256,11 @@ class SafeLogger implements ILogger {
     this.#child(bindings);
 
   public constructor(logger: ILogger) {
-    this.#logger = logger;
+    // Flat: over a logger of binden, its logger, to which it would delegate
+    // anyway, so that none is ever nested deeper than one level (whatever
+    // a `child()` of the application gives, e.g. an earlier `context.log`),
+    // and none keeps the loggers of binden made before it
+    this.#logger = SafeLogger.#isSafe(logger) ? logger.#logger : logger;
   }
 
   static {
@@ -319,17 +324,13 @@ class SafeLogger implements ILogger {
   }
 
   /**
-   * A new logger of this class: over the child that the logger gives (by
-   * the private path of a logger of binden, see `#send()`), or over the
-   * logger itself when it fails (or does not give a logger, e.g. a promise).
-   * Never one that the application holds (whose methods it may have
-   * replaced), nor this one.
+   * A new logger of this class: over the child that its logger (never one
+   * of binden, see the constructor) gives, or over that logger itself when
+   * it fails (or does not give a logger, e.g. a promise). Never one that the
+   * application holds (whose methods it may have replaced), nor this one.
    */
   #child(bindings: Record<string, unknown>): SafeLogger {
     const logger = this.#logger;
-    if (SafeLogger.#isSafe(logger)) {
-      return logger.#child(bindings);
-    }
     try {
       const child: unknown = logger.child(bindings);
       if (typeof property(child, "then") === "function") {

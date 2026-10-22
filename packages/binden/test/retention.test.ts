@@ -73,3 +73,15 @@ suite("A completed request", () => {
     });
   });
 });
+
+suite("A logger of binden", () => {
+  test("keeps none made before it: the earlier `context.log`s that a `child()` of the application gives are collected", () => {
+    // 1000 requests, whose `context.log` each is the child of the last one
+    deepStrictEqual(retained("flat-loggers.ts", "1000"), {
+      status: 0,
+      // The last `context.log`, and the logger of the application
+      stdout: "collected 2\n",
+      stderr: "",
+    });
+  });
+});

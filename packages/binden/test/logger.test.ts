@@ -601,6 +601,38 @@ suite("safe()", () => {
     ]);
   });
 
+  test("a logger of binden over another one is flat: nested 20000 times (by its constructor, or by a `child()` that gives the last child), it writes every record and never throws", () => {
+    const logged: string[] = [];
+    const base = recorder((message: string) => {
+      logged.push(message);
+    });
+    // The class of the loggers of binden, which the application reaches
+    const Safe = safe(base).constructor as new (logger: ILogger) => ILogger;
+    let nested: ILogger = base;
+    for (let index = 0; index < 20_000; index += 1) {
+      nested = new Safe(nested);
+    }
+    let last: ILogger | null = null;
+    // E.g. a cache that keeps the last `context.log`
+    const caching: ILogger = { ...base, child: (): ILogger => last ?? base };
+    for (let index = 0; index < 20_000; index += 1) {
+      last = childLogger(caching, { index });
+    }
+    for (const logger of [nested, last as unknown as ILogger]) {
+      logger.info("method");
+      record(logger, "warn", "record");
+      logger.child({ id: 1 }).error("method child");
+      record(childLogger(logger, { id: 2 }), "debug", "record child");
+      const request = new BindenRequest(new Socket());
+      const response = new BindenResponse(request);
+      new Context({ request, response, logger }).log.trace("context");
+    }
+    deepStrictEqual(logged, [
+      ...["method", "record", "method child", "record child", "context"],
+      ...["method", "record", "method child", "record child", "context"],
+    ]);
+  });
+
   test("isLogger()", () => {
     ok(isLogger(new Logger({ level: "silent" })));
     ok(isLogger(recorder(() => null)));
