@@ -40,6 +40,8 @@ import {
   createServer as createHttpServer,
 } from "node:http";
 import { isNativeError, isPromise, isProxy } from "node:util/types";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Readable } from "node:stream";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -197,6 +199,11 @@ const hostileNames = [
   "late",
   "late-use",
   "late-write",
+  "child-throws",
+  "child-other",
+  "replaced",
+  "log-getter",
+  "log-subclass",
 ] as const;
 /** The name of a hostile value */
 type IHostileName = (typeof hostileNames)[number];
@@ -219,6 +226,12 @@ interface IHostile {
    * from then on, its traps throw)
    */
   readonly arm?: (() => void) | undefined;
+  /**
+   * How many times a method that the application has replaced on a logger
+   * of binden has run (`replaced`): binden logs through the logger that it
+   * wraps, and makes its children from it, never through those methods
+   */
+  readonly misused?: (() => number) | undefined;
 }
 
 /** The traps of a proxy */
@@ -247,6 +260,65 @@ const lateWrites: ReadonlySet<string> = new Set([
 /** A function that does nothing */
 function noop(): void {
   // Nothing
+}
+
+/** The methods of a logger (`ILogger`) */
+const loggerMethods = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+  "child",
+] as const;
+
+/** Whether a value has the methods of a logger (e.g. a valid `logger`) */
+function isLoggerValue(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    !isProxy(value) &&
+    loggerMethods.every(
+      (method) => typeof Reflect.get(value, method) === "function",
+    )
+  );
+}
+
+/** Whether a value is a context of binden (e.g. the one of an exchange) */
+function isContextValue(value: unknown): value is object {
+  return (
+    isObject(value) &&
+    !isProxy(value) &&
+    value instanceof (binden.Context as IFunction)
+  );
+}
+
+/** A logger whose methods are those given (and whose `child()` is given) */
+function loggerOf(
+  method: (...values: unknown[]) => unknown,
+  child: (...values: unknown[]) => unknown,
+): Record<string, unknown> {
+  return {
+    ...Object.fromEntries(
+      loggerMethods.slice(0, -1).map((level) => [level, method]),
+    ),
+    child,
+  };
+}
+
+/**
+ * A fresh logger of binden (branded): the logger of a context of no
+ * connection, a child of a logger that logs nothing
+ */
+function bindenLogger(): object {
+  const Request = binden.BindenRequest as new (socket: Socket) => object;
+  const Response = binden.BindenResponse as new (request: object) => object;
+  const request = new Request(new Socket());
+  const quiet: Record<string, unknown> = loggerOf(noop, () => quiet);
+  const made = Reflect.construct(binden.Context as IFunction, [
+    { request, response: new Response(request), logger: quiet },
+  ]) as object;
+  return Reflect.get(made, "log") as object;
 }
 
 /**
@@ -437,6 +509,80 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
           };
         },
       };
+    case "child-throws":
+      // A logger (at the position of one) whose `child()` gives a logger
+      // whose every method throws (e.g. a bug of the application)
+      return {
+        name,
+        value: loggerOf(noop, () => loggerOf(trap, trap)),
+        conversions: none,
+        thrown,
+      };
+    case "child-other":
+      // A logger whose `child()` gives what is not a logger: an object
+      // whose every trap throws
+      return {
+        name,
+        value: loggerOf(noop, () => new Proxy({}, every)),
+        conversions: none,
+        thrown,
+      };
+    case "replaced": {
+      // A logger of binden whose own methods (and `child()`) the application
+      // has replaced, once it was made, by ones that throw (e.g. a wrapper
+      // with a bug): binden never runs them (see `misused`)
+      const logger = bindenLogger();
+      let misuses = 0;
+      const misuse = (): never => {
+        misuses += 1;
+        return trap();
+      };
+      for (const method of loggerMethods) {
+        Object.defineProperty(logger, method, {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: misuse,
+        });
+      }
+      return {
+        name,
+        value: logger,
+        conversions: none,
+        thrown,
+        misused: () => misuses,
+      };
+    }
+    case "log-getter":
+      // The context itself (at the position of one), with a `log` getter of
+      // its own that throws (e.g. one that a middleware has defined)
+      Object.defineProperty(valid, "log", {
+        configurable: true,
+        enumerable: true,
+        get: trap,
+      });
+      return { name, value: valid, conversions: none, thrown };
+    case "log-subclass": {
+      // A context of the same request, of a subclass of `Context` whose
+      // `log` getter throws
+      const Subclass = class extends (binden.Context as new (
+        options: object,
+      ) => object) {
+        // eslint-disable-next-line class-methods-use-this
+        public get log(): never {
+          return trap();
+        }
+      };
+      return {
+        name,
+        value: new Subclass({
+          request: Reflect.get(valid as object, "request") as unknown,
+          response: Reflect.get(valid as object, "response") as unknown,
+        }),
+        conversions: none,
+        thrown,
+      };
+    }
     case "counting":
     default: {
       const value = {
@@ -495,6 +641,23 @@ const objectHostiles: ReadonlySet<IHostileName> = new Set([
   "late-use",
   "late-write",
 ]);
+/**
+ * The hostile loggers: probed only where the valid value is a logger (e.g.
+ * the `logger` of `Binden`, see `isLoggerValue()`)
+ */
+const loggerHostiles: ReadonlySet<IHostileName> = new Set([
+  "child-throws",
+  "child-other",
+  "replaced",
+]);
+/**
+ * The hostile contexts: probed only where the valid value is a context (e.g.
+ * of `Compression#run()`, see `isContextValue()`)
+ */
+const contextHostiles: ReadonlySet<IHostileName> = new Set([
+  "log-getter",
+  "log-subclass",
+]);
 
 /** A logger that logs nothing (and so formats no error) */
 const silent = {
@@ -526,6 +689,25 @@ const recording = {
   },
   child: (): unknown => recording,
 };
+
+/**
+ * The last record of the logger of the application of the exchanges (its
+ * extra fields), and the bindings of its last child
+ */
+const remembered: { extra: unknown; bindings: unknown } = {
+  extra: null,
+  bindings: null,
+};
+/** The logger of the application of the exchanges (see `remembered`) */
+const remembering: Record<string, unknown> = loggerOf(
+  (_: unknown, extra: unknown): void => {
+    remembered.extra = extra;
+  },
+  (bindings: unknown): unknown => {
+    remembered.bindings = bindings;
+    return remembering;
+  },
+);
 
 /** A destination of `pino` that keeps nothing */
 const sink = { write: noop };
@@ -650,12 +832,18 @@ const waiting = new Map<
   string,
   (exchange: IExchange, release: () => void) => void
 >();
-const app = new Binden({ logger: silent });
+/**
+ * What runs a function as the work of the middleware of an exchange (e.g.
+ * a pipe of that work, see `IOwnership` of binden), by its response
+ */
+const works = new WeakMap<object, <T>(fn: () => T) => T>();
+const app = new Binden({ logger: remembering });
 app.use((context: unknown) => {
   const { request, response } = context as {
     request: IncomingMessage;
     response: object;
   };
+  works.set(response, AsyncLocalStorage.snapshot());
   const id = String(request.headers["x-probe"]);
   const { promise, resolve } = Promise.withResolvers<null>();
   waiting.get(id)?.({ context: context as object, request, response }, () => {
@@ -770,6 +958,46 @@ function environment(): IEnv {
       return created;
     },
   };
+}
+
+/**
+ * Handles one request (`GET /path` of `example.com`, its connection closed
+ * once it is replied) by an application, on a server of its own (closed
+ * then): the status line of its reply (e.g. its access log, and the logging
+ * of its contexts, use its `logger`)
+ */
+async function handled(application: unknown): Promise<string> {
+  const created = Reflect.apply(
+    Reflect.get(application as object, "createServer") as IFunction,
+    application,
+    [],
+  ) as Server;
+  try {
+    created.listen(0, HOST);
+    await bounded(once(created, "listening"), ioMs, "Its server");
+    const { port: at } = created.address() as AddressInfo;
+    const socket = new Socket();
+    let reply = "";
+    socket.setEncoding("latin1").on("data", (chunk: string) => {
+      reply += chunk;
+    });
+    // Its error closes it too
+    socket.on("error", noop);
+    const ended = once(socket, "close");
+    socket.connect(at, HOST);
+    socket.write(
+      "GET /path HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n",
+    );
+    try {
+      await bounded(ended, ioMs, "A request of the application");
+    } finally {
+      socket.destroy();
+    }
+    return reply.split("\r\n")[0] ?? "";
+  } finally {
+    created.closeAllConnections();
+    created.close();
+  }
 }
 
 /**
@@ -981,9 +1209,9 @@ interface IFixtureOptions {
    * The readers of what a valid call stores (e.g. `[kRepresentation]()` of
    * the negotiator that `[kNegotiator]()` stores), by their names: called on
    * its receiver (and given what the call has returned, e.g. what a
-   * constructor has made) once a call has succeeded. A position whose value
-   * is called later is probed by a reader that makes the call (see
-   * `untouched`)
+   * constructor has made, and the arguments of the call) once a call has
+   * succeeded. A position whose value the call keeps, for a later use, is
+   * bound to a reader that uses it (see `IUntouched`)
    */
   readonly readers?: Readonly<Record<string, IReader>> | undefined;
   /**
@@ -1010,11 +1238,20 @@ interface IFixtureOptions {
    */
   readonly io?: boolean | undefined;
   /**
-   * The positions that no hostile value is examined at (each is accepted as
-   * it is), and why: one whose reason says that its value is called later
-   * must have a reader that uses it (see `readers`)
+   * The positions that the call examines no hostile value at (each is
+   * accepted, as it is), and why (see `IUntouched`): one whose valid value
+   * is a function or an object names the reader that uses it later (e.g. a
+   * check that a mutation calls), or an alternative check
    */
-  readonly untouched?: Readonly<Record<string, string>> | undefined;
+  readonly untouched?:
+    Readonly<Record<string, IUntouched | string>> | undefined;
+  /**
+   * The alternative checks of its positions that no reader can use (see
+   * `IUntouched.instead`), by their names: each runs once the entry point is
+   * probed (in the shard that probes it), and what it returns are findings
+   */
+  readonly alternatives?:
+    Readonly<Record<string, () => Promise<string[]> | string[]>> | undefined;
   /**
    * The positions of a callback that is called later, and why a function of
    * the test that throws there is uncaught (as with Node.js)
@@ -1040,6 +1277,20 @@ interface IFixtureOptions {
    */
   readonly refuses?: readonly string[] | undefined;
 }
+
+/**
+ * Why the call examines no hostile value at a position whose valid value is
+ * a function or an object, and what uses it then: a reader (`later`, of
+ * `readers` or of the entry point), which must run with a hostile value
+ * there and use it (one of its traps or conversions runs as it reads, or it
+ * has another outcome than with the valid value), or, where no reader can,
+ * an alternative check (`instead`, of `alternatives`), which must exist and
+ * run: `callbacks` for a callback that Node.js calls later, which must be
+ * listed in `callbacks` (that checks that a function given there is called)
+ */
+type IUntouched =
+  | { readonly why: string; readonly later: string }
+  | { readonly why: string; readonly instead: string };
 
 /** The fixture of an entry point */
 interface IFixture extends IFixtureOptions {
@@ -1079,9 +1330,14 @@ const nodeCheck = "a check of the arguments of writeHead(), as Node.js does";
 /** Why a field of Node.js that binden guards examines no value */
 const nodeField =
   "a field of Node.js, stored as it is, as on a plain response (Node.js reads it as it writes the head)";
-/** Why a callback position examines no value */
-const ignoredCallback =
-  "a callback that is not a function is ignored, as by Node.js";
+/**
+ * Why a callback position examines no value: a function given there is
+ * called later, as `callbacks` checks
+ */
+const ignoredCallback: IUntouched = {
+  why: "a callback that is not a function is ignored, as by Node.js",
+  instead: "callbacks",
+};
 
 /** A function given as a middleware */
 const middleware = (): void => {
@@ -1457,14 +1713,25 @@ define("binden:", {
   ),
   "Stack#route()": call(() => ["/a/:b", middleware, middleware]),
   "Stack#mount()": call(() => ["/a", middleware, middleware]),
+  // Of a middleware that it has (whose removal its stack shows)
   "Stack#off()": probed(
     {
+      readers: { stack: (receiver) => (receiver as IStacked).stack.length },
       untouched: {
-        1: "the middleware to remove, compared by identity: any other value removes nothing",
+        1: {
+          why: "the middleware to remove, compared by identity: any other value removes nothing",
+          later: "stack",
+        },
       },
     },
-    () => [middleware],
-    () => ["/a", middleware],
+    (_, receiver) => {
+      (receiver as IStacked).use(middleware);
+      return [middleware];
+    },
+    (_, receiver) => {
+      (receiver as IStacked).use("/a", middleware);
+      return ["/a", middleware];
+    },
   ),
   "new Router()": probed(
     { deep: [[0, "guarded"]] },
@@ -1482,13 +1749,24 @@ define("binden:", {
   // A function of the middlewares of a method
   "Router#middlewares": probed({ returned: call(() => ["GET"]) }, () => []),
   "Router#on()": call(() => ["GET", middleware, middleware]),
+  // Of a middleware that it has (whose removal its middlewares show)
   "Router#off()": probed(
     {
+      readers: {
+        "middlewares()": (receiver) =>
+          (receiver as IRouted).middlewares("GET").length,
+      },
       untouched: {
-        1: "the middleware to remove, compared by identity: any other value removes nothing",
+        1: {
+          why: "the middleware to remove, compared by identity: any other value removes nothing",
+          later: "middlewares()",
+        },
       },
     },
-    () => ["GET", middleware],
+    (_, receiver) => {
+      (receiver as IRouted).on("GET", middleware);
+      return ["GET", middleware];
+    },
   ),
   "new Binden()": probed(
     {
@@ -1499,6 +1777,9 @@ define("binden:", {
         "access_log.path",
         ...requestNested,
       ]),
+      // A request that it handles (e.g. its access log, through its logger)
+      io: true,
+      readers: { "request()": (_, made) => handled(made) },
     },
     // The instance of the prototype members: one that logs nothing but the
     // errors of its listener (see `listened`)
@@ -1652,7 +1933,41 @@ define("binden:", {
   "isClosing()": probed(
     {
       untouched: {
-        0: "a predicate of any value (whether it is a server that shuts down)",
+        0: {
+          why: "a predicate of any value (whether it is a server that shuts down)",
+          instead: "a server that shuts down",
+        },
+      },
+      alternatives: {
+        // Told by identity: neither an object derived from it nor a proxy
+        // of it, and no trap runs
+        "a server that shuts down": async (): Promise<string[]> => {
+          const env = environment();
+          try {
+            const created = await env.listening();
+            await (binden.shutdown as IFunction)(created, {
+              timeout: 50,
+              cleanup_timeout: 50,
+            });
+            const given = hostile("throwing", null);
+            const told = [
+              created,
+              Object.create(created) as object,
+              new Proxy(created, {}),
+              given.value,
+            ].map((value) => (binden.isClosing as IFunction)(value));
+            return told.join() === "true,false,false,false" &&
+              given.thrown.length === 0
+              ? []
+              : [
+                  `tells ${told.join()} (traps: ${String(given.thrown.length)})`,
+                ];
+          } finally {
+            for (const cleanup of env.cleanups) {
+              await cleanup();
+            }
+          }
+        },
       },
     },
     (env) => [env.server()],
@@ -1692,7 +2007,10 @@ define("binden:", {
   "BindenRequest#body =": probed(
     {
       untouched: {
-        0: "the body, any value (e.g. of a parser), kept as it is",
+        0: {
+          why: "the body, any value (e.g. of a parser), kept as it is",
+          later: "body",
+        },
       },
     },
     () => [{ a: 1 }],
@@ -1708,15 +2026,35 @@ const BindenRequest = binden.BindenRequest as new (
 const BindenResponse = binden.BindenResponse as new (
   request: IncomingMessage,
 ) => ServerResponse;
+/** A stack, of what its fixtures use */
+interface IStacked {
+  readonly stack: readonly unknown[];
+  use(...values: unknown[]): unknown;
+}
+/** A router, of what its fixtures use */
+interface IRouted {
+  middlewares(method: string): readonly unknown[];
+  on(...values: unknown[]): unknown;
+}
+
 /** The members of the cookies of a response (a `Set` of `Cookie`) */
 const cookieMembers: Record<string, IFixture> = {
+  // Of a cookie that they have
   "delete()": probed(
     {
+      readers: { size: (receiver) => (receiver as Set<object>).size },
       untouched: {
-        0: "the cookie to delete, compared by identity (a `Set`): any other value deletes nothing",
+        0: {
+          why: "the cookie to delete, compared by identity (a `Set`): any other value deletes nothing",
+          later: "size",
+        },
       },
     },
-    () => [new Cookie({ key: "a", value: "b" })],
+    (_, receiver) => {
+      const cookie = new Cookie({ key: "a", value: "b" });
+      (receiver as Set<object>).add(cookie);
+      return [cookie];
+    },
   ),
   "clear()": call(() => []),
 };
@@ -1841,7 +2179,12 @@ const contextLogger: Record<string, IFixture> = Object.fromEntries(
   ["fatal", "error", "warn", "info", "debug", "trace"].map((level) => [
     `${level}()`,
     probed(
-      { untouched: { 0: logged, 1: logged }, infallible: { call: neverFails } },
+      {
+        // What the logger of the application has got (see `remembering`)
+        readers: { "the record": () => remembered.extra },
+        untouched: { 0: logged, 1: { why: logged, later: "the record" } },
+        infallible: { call: neverFails },
+      },
       () => ["message", { a: 1 }],
     ),
   ]),
@@ -1850,7 +2193,8 @@ const contextLogger: Record<string, IFixture> = Object.fromEntries(
 contextLogger["child()"] = probed(
   {
     members: contextLogger,
-    untouched: { 0: logged },
+    readers: { "the bindings": () => remembered.bindings },
+    untouched: { 0: { why: logged, later: "the bindings" } },
     infallible: { call: neverFails },
   },
   () => [{ a: 1 }],
@@ -1891,7 +2235,20 @@ define("binden:", {
         [0, "logger", "child"],
       ],
       untouched: {
-        "0.state": "the state of the application, any value, kept as it is",
+        "0.state": {
+          why: "the state of the application, any value, kept as it is by the first context of a request (and ignored by the others, which share it)",
+          later: "state",
+        },
+        // Wrapped as it is (a logger of binden, told by its brand, is
+        // used as it is)
+        "0.logger": {
+          why: "the logger, wrapped as it is: its calls never fail",
+          later: "log.error()",
+        },
+        "0.logger.child": {
+          why: "the logger, wrapped as it is: its calls never fail",
+          later: "log.error()",
+        },
       },
       readers: {
         // Its logger, through which every record goes
@@ -1913,10 +2270,11 @@ define("binden:", {
       const logger: unknown = Reflect.get(context, "log");
       return [{ request, response, logger }];
     },
-    // The first context of a request (which creates what its contexts share)
+    // The first context of a request (which creates what its contexts
+    // share, e.g. its state)
     () => {
       const request = new BindenRequest(new Socket());
-      return [{ request, response: new BindenResponse(request) }];
+      return [{ request, response: new BindenResponse(request), state: {} }];
     },
   ),
 });
@@ -1968,6 +2326,186 @@ const mutations: Readonly<Record<string, IReader>> = {
   "setHeader()": (receiver) =>
     (receiver as ServerResponse).setHeader("x-a", "b"),
 };
+
+/** How many times the observer of the fixture of `[kUnlisten]()` has run, by response */
+const observed = new WeakMap<object, number>();
+
+/** The sends in progress of the responses (see `pendingSend()`), by them */
+const pendingSends = new WeakMap<
+  object,
+  { readonly source: Readable; readonly settled: Promise<unknown[] | null> }
+>();
+/** Starts a send of a stream that stays in progress until its source fails */
+function pendingSend(receiver: unknown): void {
+  const source = new Readable({ read: noop });
+  const sent = (receiver as { send(body: unknown): Promise<void> }).send(
+    source,
+  );
+  pendingSends.set(receiver as object, {
+    source,
+    // In a holder: a promise never adopts what it has rejected with
+    settled: sent.then(
+      () => null,
+      (error: unknown) => [error],
+    ),
+  });
+}
+/**
+ * What a send in progress of a response has rejected with (`null` once it
+ * resolves), once its source fails (e.g. a reason that a cancellation has
+ * recorded, see `[kCancelling]()`): described (see `describe()`), never
+ * given to a promise, which would read the `then` of an object
+ */
+async function settledSend(receiver: unknown): Promise<string | null> {
+  const pending = pendingSends.get(receiver as object);
+  pending?.source.destroy();
+  const settled = await pending?.settled;
+  return Array.isArray(settled) ? describe(settled[0]) : null;
+}
+
+/** The symbol of a member of a response that binden does not export */
+function responseSymbol(description: string): symbol {
+  const found = Object.getOwnPropertySymbols(BindenResponse.prototype).find(
+    (key) => key.description === description,
+  );
+  if (typeof found === "undefined") {
+    throw new TypeError(`No symbol ${description}`);
+  }
+  return found;
+}
+const kOwnership = responseSymbol("binden.ownership");
+const kRevoke = responseSymbol("binden.revoke");
+const kListen = binden.kListen as symbol;
+
+/** The handlers of `[kOwnership]()` (see `IOwnership` of binden) */
+const ownershipFields = [
+  "fail",
+  "guards",
+  "replier",
+  "native",
+  "debug",
+  "warn",
+  "note",
+] as const;
+
+/**
+ * Handlers of `[kOwnership]()` that handle nothing, but leave a pipe of a
+ * work whose source has listener methods of its own to Node.js (`native`),
+ * or refuse it
+ */
+function ownershipOf(native: boolean): Record<string, IFunction> {
+  return {
+    fail: (): boolean => false,
+    guards: (): boolean => false,
+    replier: (): null => null,
+    native: (): boolean => native,
+    debug: noop,
+    warn: noop,
+    note: noop,
+  };
+}
+
+/** The errors that the `fail()` of the handlers of a response has been given */
+const failedWith = new WeakMap<object, unknown>();
+/** A `fail()` of handlers that records the error that it is given */
+function failing(receiver: unknown): IFunction {
+  return (_: unknown, error: unknown): boolean => {
+    failedWith.set(receiver as object, error);
+    return false;
+  };
+}
+
+/** Runs a function as the work of the request of a response (see `works`) */
+function asWork(receiver: unknown, fn: () => unknown): unknown {
+  const work = works.get(receiver as object);
+  return typeof work === "undefined" ? fn() : work(fn);
+}
+
+/**
+ * A pipe into a response, as the work of its request, of a source whose
+ * listener methods are its own (e.g. bound by OpenTelemetry), which it
+ * cannot adopt: left to Node.js, or refused (see `IOwnership.native()`)
+ */
+function unadoptablePipe(receiver: unknown): unknown {
+  const source = new Readable({ read: noop });
+  const addListener = Reflect.get(Readable.prototype, "on") as IFunction;
+  source.on = function on(...values: unknown[]): Readable {
+    return Reflect.apply(addListener, this, values) as Readable;
+  };
+  return asWork(receiver, () => source.pipe(receiver as ServerResponse));
+}
+
+/** The readers of the handlers of `[kOwnership]()`, by their names */
+const ownershipReaders: Readonly<Record<string, IReader>> = {
+  ...mutations,
+  "destroy()": (receiver) => (receiver as ServerResponse).destroy(),
+  // Of an event whose listener and observer both throw
+  "emit()": (receiver) => {
+    Reflect.apply(
+      Reflect.get(receiver as object, kListen) as IFunction,
+      receiver,
+      [
+        "custom",
+        (): never => {
+          throw new Error("An observer");
+        },
+        { once: false },
+      ],
+    );
+    (receiver as ServerResponse).on("custom", () => {
+      throw new Error("A listener");
+    });
+    try {
+      (receiver as ServerResponse).emit("custom");
+    } catch {
+      // The listener's
+    }
+  },
+  "pipe() of an unadoptable source": unadoptablePipe,
+  "pipe() of a source": (receiver) => {
+    const source = new Readable({ read: noop });
+    return asWork(receiver, () => source.pipe(receiver as ServerResponse));
+  },
+};
+/** The reader that calls each handler of `[kOwnership]()` */
+const ownershipReader: Readonly<
+  Record<(typeof ownershipFields)[number], string>
+> = {
+  fail: "pipe() of an unadoptable source",
+  guards: "pipe() of a source",
+  replier: "destroy()",
+  native: "pipe() of an unadoptable source",
+  debug: "emit()",
+  warn: "pipe() of an unadoptable source",
+  note: "pipe() of an unadoptable source",
+};
+
+/**
+ * A send of a stream that fails before its first chunk (e.g. after the
+ * representation of its body is chosen, which the response forgets): the
+ * failure that the send rejects with, its source's or one that it has
+ * formatted (e.g. of a destroyed response, see the fixture of `send()`), is
+ * not one of the reader, whose own failures are what it does not format and
+ * the errors of the test
+ */
+async function failedSend(receiver: unknown): Promise<void> {
+  const failure = new Error("A failure of the source");
+  const source = new Readable({
+    read(): void {
+      this.destroy(failure);
+    },
+  });
+  try {
+    await (receiver as { send(body: unknown): Promise<void> }).send(source);
+  } catch (error: unknown) {
+    if (
+      error !== failure &&
+      !(!isProxy(error) && isNativeError(error) && formatted.has(error))
+    ) {
+      throw error;
+    }
+  }
+}
 
 define("binden:BindenResponse#", {
   ...replies,
@@ -2197,41 +2735,83 @@ define("binden:BindenResponse#", {
   ),
   // A check, called (guarded) as the response is mutated: one that is not a
   // function (or that throws) refuses every mutation
-  "[binden.seal]()": probed({ readers: mutations }, () => [
-    (): boolean => true,
-  ]),
+  "[binden.seal]()": probed(
+    {
+      readers: mutations,
+      untouched: {
+        0: {
+          why: "a check, kept as it is, and called as the response is mutated",
+          later: "status()",
+        },
+      },
+    },
+    () => [(): boolean => true],
+  ),
   // The handlers of the framework, kept as they are, and called as it
-  // replies (e.g. `replier()`, by `destroy()`)
+  // replies: `replier()` by `destroy()`, `debug()` for an observer that
+  // fails, and the others for a pipe of the work of the request (`note()`
+  // once `native()` leaves it to Node.js)
   "[binden.ownership]()": probed(
     {
-      readers: {
-        ...mutations,
-        "destroy()": (receiver) => (receiver as ServerResponse).destroy(),
+      deep: ownershipFields.map((field) => [0, field]),
+      readers: ownershipReaders,
+      untouched: {
+        0: {
+          why: "the handlers, kept as they are",
+          later: "destroy()",
+        },
+        ...Object.fromEntries(
+          ownershipFields.map((field) => [
+            `0.${field}`,
+            {
+              why: "a handler, kept as it is, and called as the response replies",
+              later: ownershipReader[field],
+            },
+          ]),
+        ),
       },
     },
-    () => [
-      {
-        fail: (): boolean => false,
-        guards: (): boolean => false,
-        replier: (): null => null,
-        native: (): boolean => false,
-        debug: noop,
-        warn: noop,
-        note: noop,
-      },
-    ],
+    () => [ownershipOf(false)],
+    () => [ownershipOf(true)],
   ),
   "[binden.revoke]()": call(() => [[{}], null]),
+  // A failure of a pipe of a work (the work, the error and the source): the
+  // error is given to the `fail()` of the handlers, and the source kept, to
+  // be unpiped once the work is revoked
   "[binden.pipe_failure]()": probed(
     {
-      untouched: Object.fromEntries(
-        ["0", "1", "2"].map((position) => [
-          position,
-          "a failure of a pipe that the framework reports (its source, its error and its emitter), kept as it is",
-        ]),
-      ),
+      readers: {
+        "fail()": (receiver) => failedWith.get(receiver as object) ?? null,
+        "[binden.revoke]()": (receiver, _, [owner]) =>
+          Reflect.apply(
+            Reflect.get(receiver as object, kRevoke) as IFunction,
+            receiver,
+            [[owner], null],
+          ),
+      },
+      untouched: {
+        0: {
+          why: "the work, kept as it is (by identity), with its source",
+          later: "fail()",
+        },
+        1: {
+          why: "the error, given as it is to the `fail()` of the handlers",
+          later: "fail()",
+        },
+        2: {
+          why: "the source, kept as it is, and unpiped once its work is revoked",
+          later: "[binden.revoke]()",
+        },
+      },
     },
-    () => [{}, new Error("An error"), new EventEmitter()],
+    (_, receiver) => {
+      Reflect.apply(
+        Reflect.get(receiver as object, kOwnership) as IFunction,
+        receiver,
+        [{ ...ownershipOf(false), fail: failing(receiver) }],
+      );
+      return [{}, new Error("An error"), new EventEmitter()];
+    },
   ),
   // Returns what removes the observer
   "[binden.listen]()": probed(
@@ -2246,21 +2826,59 @@ define("binden:BindenResponse#", {
     },
     () => ["close", noop, { once: true }],
   ),
+  // Of an observer that it has (whose removal its event shows)
   "[binden.unlisten]()": probed(
     {
+      readers: {
+        "emit()": (receiver) => {
+          (receiver as ServerResponse).emit("custom");
+          return observed.get(receiver as object) ?? 0;
+        },
+      },
       untouched: {
         0: "the event, compared by identity: any other value removes nothing",
-        1: "the observer, compared by identity: any other value removes nothing",
+        1: {
+          why: "the observer, compared by identity: any other value removes nothing",
+          later: "emit()",
+        },
       },
     },
-    () => ["close", noop],
+    (_, receiver) => {
+      const observer = (): void => {
+        observed.set(
+          receiver as object,
+          (observed.get(receiver as object) ?? 0) + 1,
+        );
+      };
+      Reflect.apply(
+        Reflect.get(receiver as object, kListen) as IFunction,
+        receiver,
+        ["custom", observer, { once: false }],
+      );
+      return ["custom", observer];
+    },
   ),
-  "[binden.cancel]()": probed({ untouched: { 0: cancelled } }, () => [
-    new Error("A reason"),
-  ]),
-  "[binden.cancelling]()": probed({ untouched: { 0: cancelled } }, () => [
-    new Error("A reason"),
-  ]),
+  // Of a send in progress, which rejects with the reason
+  "[binden.cancel]()": probed(
+    {
+      readers: { "the send": settledSend },
+      untouched: { 0: { why: cancelled, later: "the send" } },
+    },
+    (_, receiver) => {
+      pendingSend(receiver);
+      return [new Error("A reason")];
+    },
+  ),
+  "[binden.cancelling]()": probed(
+    {
+      readers: { "the send": settledSend },
+      untouched: { 0: { why: cancelled, later: "the send" } },
+    },
+    (_, receiver) => {
+      pendingSend(receiver);
+      return [new Error("A reason")];
+    },
+  ),
   "[binden.framework]()": call(() => [one]),
   // Of a library that has replaced the response: the write that it is called
   // in is discarded
@@ -2276,7 +2894,8 @@ define("binden:BindenResponse#", {
     () => [],
   ),
   // The negotiator is read by `[binden.representation]()`, which calls its
-  // `choose()`
+  // `choose()`, and by a send whose stream fails before its first chunk,
+  // which calls its `forget()`
   "[binden.negotiator]()": probed(
     {
       deep: [
@@ -2293,6 +2912,7 @@ define("binden:BindenResponse#", {
             receiver,
             [10],
           ),
+        "send() of a failing stream": (receiver) => failedSend(receiver),
       },
     },
     () => [
@@ -2594,8 +3214,15 @@ define("@binden/multipart:", {
   "multipartInfo()": context,
 });
 
-/** A reader of what an entry point stores (see `readers`) */
-type IReader = (receiver: unknown, result: unknown) => unknown;
+/**
+ * A reader of what an entry point stores (see `readers`): given its receiver,
+ * what the call has returned, and the arguments that it was given
+ */
+type IReader = (
+  receiver: unknown,
+  result: unknown,
+  values: readonly unknown[],
+) => unknown;
 
 /** An entry point of the surface */
 interface IEntry {
@@ -2790,7 +3417,7 @@ function surface(): [IEntry[], Set<string>] {
 type IOutcome =
   | { readonly kind: "pending" }
   | { readonly kind: "rejected"; readonly error: unknown }
-  | { readonly kind: "resolved" }
+  | { readonly kind: "resolved"; readonly value: unknown }
   | { readonly kind: "returned"; readonly value: unknown }
   | IThrown;
 /** A call that has thrown */
@@ -2836,7 +3463,7 @@ async function outcomeOf(
   try {
     return await Promise.race([
       promise.then(
-        (): IOutcome => ({ kind: "resolved" }),
+        (value: unknown): IOutcome => ({ kind: "resolved", value }),
         (error: unknown): IOutcome => ({ kind: "rejected", error }),
       ),
       expired,
@@ -3281,12 +3908,49 @@ function calledOut(error: unknown, given: IHostile): boolean {
 }
 
 /**
- * The positions (as `<entry> <position>`) whose hostile value a reader has
- * used (one of its traps has run as it reads), e.g. a check that a later
- * mutation calls: what a reason of `untouched` that says that a value is
- * called later needs
+ * The readers that have run with a hostile value at a position (as `<entry>
+ * <position> <reader>`), on the default receiver: what `IUntouched.later`
+ * needs
+ */
+const readLater = new Set<string>();
+/**
+ * The readers that have used a hostile value at a position (as `<entry>
+ * <position> <reader>`): one of its traps or conversions has run as they
+ * read, or they have had another outcome than with the valid value (see
+ * `signature()`)
  */
 const usedLater = new Set<string>();
+/**
+ * The outcomes of the readers with the valid values (as `<entry> <call>
+ * <reader>`, see `signature()`), on the default receiver
+ */
+const baselineReads = new Map<string, string>();
+
+/**
+ * What an outcome of a reader shows, to compare it with the one with the
+ * valid value: its kind, the kind of its error, and what it gives (the
+ * hostile value given itself, a primitive, or the type of an object)
+ */
+function signature(outcome: IOutcome, given: IHostile | null): string {
+  switch (outcome.kind) {
+    case "thrown":
+    case "rejected":
+      return `${outcome.kind} ${kindOf(outcome.error)}`;
+    case "returned":
+    case "resolved": {
+      const { value } = outcome;
+      if (given !== null && value === given.value) {
+        return `${outcome.kind} the value given`;
+      }
+      return isObject(value)
+        ? `${outcome.kind} ${isProxy(value) ? "a proxy" : typeof value}`
+        : `${outcome.kind} ${typeof value} ${String(value)}`;
+    }
+    case "pending":
+    default:
+      return outcome.kind;
+  }
+}
 
 /**
  * What a call (`call`) or a reader that never fails (see `infallible`) has
@@ -3400,7 +4064,10 @@ async function probe(
         ms,
         () => given?.arm?.(),
       );
+      // What the call itself has examined (see `examined`), not its
+      // readers (see `IUntouched`)
       const conversions = given?.conversions() ?? 0;
+      const trapped = given?.thrown.length ?? 0;
       failure =
         outcome.kind === "thrown" || outcome.kind === "rejected"
           ? kindOf(outcome.error)
@@ -3483,9 +4150,27 @@ async function probe(
           // A reader is judged by the traps that run as it reads (e.g. not
           // by those of a reader before it)
           const since = given?.thrown.length ?? 0;
-          const readOutcome = await outcomeOf(() => read(receiver, result), ms);
-          if (isDefault && given !== null && given.thrown.length > since) {
-            usedLater.add(`${entry.id} ${position}`);
+          const convertedSince = given?.conversions() ?? 0;
+          const readOutcome = await outcomeOf(
+            () => read(receiver, result, values),
+            ms,
+          );
+          if (isDefault) {
+            const shown = signature(readOutcome, given);
+            const baselineKey = `${entry.id} ${String(index)} ${reader}`;
+            if (given === null) {
+              baselineReads.set(baselineKey, shown);
+            } else {
+              const key = `${entry.id} ${position} ${reader}`;
+              readLater.add(key);
+              if (
+                given.thrown.length > since ||
+                given.conversions() > convertedSince ||
+                shown !== baselineReads.get(baselineKey)
+              ) {
+                usedLater.add(key);
+              }
+            }
           }
           found.push(...infallibly(fixture, reader, readOutcome));
           if (readOutcome.kind === "pending") {
@@ -3517,8 +4202,8 @@ async function probe(
         examined =
           (!succeeded && failure !== expected) ||
           refused ||
-          total > 0 ||
-          given.thrown.length > 0;
+          conversions > 0 ||
+          trapped > 0;
         if (total > 0) {
           converting.add(`${entry.id} ${position}`);
         }
@@ -3599,6 +4284,12 @@ async function probe(
         found.push(`${how} ${describe(error)}`);
       }
     }
+    const misuses = given?.misused?.() ?? 0;
+    if (misuses > 0) {
+      found.push(
+        `runs a method that the application has replaced on a logger of binden ${String(misuses)}x (binden logs through the logger that it wraps)`,
+      );
+    }
   }
   return {
     findings: found.map((what) => ({ entry: entry.id, probe: at, what })),
@@ -3678,10 +4369,10 @@ async function readOnce(
     if (outcome.kind === "returned" || outcome.kind === "resolved") {
       const result = outcome.kind === "returned" ? outcome.value : null;
       for (const read of Object.values(entry.readers)) {
-        await outcomeOf(() => read(receiver, result), ms);
+        await outcomeOf(() => read(receiver, result, values), ms);
       }
       for (const read of Object.values(fixture.readers ?? {})) {
-        await outcomeOf(() => read(receiver, result), ms);
+        await outcomeOf(() => read(receiver, result, values), ms);
       }
     }
     for (const [key, count] of reads) {
@@ -3874,6 +4565,96 @@ function memberBy(
 }
 
 /**
+ * What a position that the call examines no hostile value at lacks (see
+ * `IUntouched`): a position whose valid value is a function or an object
+ * (`kept`) names the reader that uses it later, which must exist, have run
+ * with a hostile value there and used it, or an alternative check, which
+ * must exist (see `alternativesOf()`)
+ */
+function usedBy(
+  entry: IEntry,
+  fixture: IFixture,
+  position: string,
+  untouched: IUntouched | string,
+  kept: boolean,
+): string[] {
+  if (typeof untouched === "string") {
+    return kept
+      ? [
+          "untouched, and its valid value is a function or an object: it names neither the reader that uses it later (`later`) nor an alternative check (`instead`)",
+        ]
+      : [];
+  } else if ("instead" in untouched) {
+    if (untouched.instead === "callbacks") {
+      // A callback that Node.js calls later, which `callbacks` checks
+      return Object.hasOwn(fixture.callbacks ?? {}, position)
+        ? []
+        : [
+            "untouched, and checked as a callback instead, which it does not list (`callbacks`)",
+          ];
+    }
+    return Object.hasOwn(fixture.alternatives ?? {}, untouched.instead)
+      ? []
+      : [
+          `untouched, and checked by ${untouched.instead} instead, which is not one of its alternative checks (\`alternatives\`)`,
+        ];
+  }
+  const { later } = untouched;
+  const key = `${entry.id} ${position} ${later}`;
+  if (!Object.hasOwn({ ...entry.readers, ...fixture.readers }, later)) {
+    return [
+      `untouched, and used later by ${later}, which is not one of its readers (\`readers\`)`,
+    ];
+  } else if (!readLater.has(key)) {
+    return [
+      `untouched, and used later by its reader ${later}, which has not run with a hostile value there`,
+    ];
+  } else if (!usedLater.has(key)) {
+    return [
+      `untouched, and used later by its reader ${later}, which has used no hostile value given there`,
+    ];
+  }
+  return [];
+}
+
+/**
+ * Runs the alternative checks of a fixture (see `IUntouched.instead`), each
+ * once, in the shard that probes its entry point: what each finds, and each
+ * that no position names
+ */
+async function alternativesOf(
+  entry: IEntry,
+  fixture: IFixture,
+): Promise<IFinding[]> {
+  const named = new Set<string>();
+  for (const untouched of Object.values(fixture.untouched ?? {})) {
+    if (typeof untouched !== "string" && "instead" in untouched) {
+      named.add(untouched.instead);
+    }
+  }
+  const found: IFinding[] = [];
+  for (const [name, check] of Object.entries(fixture.alternatives ?? {})) {
+    const at = `alternative ${name}`;
+    if (!named.has(name)) {
+      found.push({ entry: entry.id, probe: at, what: "no position names it" });
+    }
+    try {
+      const failures = await bounded(check(), ioMs, "An alternative check");
+      found.push(
+        ...failures.map((what) => ({ entry: entry.id, probe: at, what })),
+      );
+    } catch (error: unknown) {
+      found.push({
+        entry: entry.id,
+        probe: at,
+        what: `fails: ${describe(error)}`,
+      });
+    }
+  }
+  return found;
+}
+
+/**
  * The fixtures of members that are being probed (see `members`): a fixture
  * whose members are its own (e.g. of `child()` of a logger) is probed once
  */
@@ -3890,6 +4671,12 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
   const covered = new Set<string>();
   /** Whether a position (`<call> <position>`) is examined by a hostile value */
   const examined = new Map<string, boolean>();
+  /**
+   * The positions (`<call> <position>`) whose valid value is a function or
+   * an object, which the call keeps where it examines no hostile value (see
+   * `IUntouched`)
+   */
+  const kept = new Set<string>();
   for (const receiving of entry.receivers ?? [null]) {
     const isDefault = receiving === null || receiving.name === "";
     for (const [index, made] of fixture.calls.entries()) {
@@ -3937,10 +4724,15 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
           // A holder that is read late is of a nested position, and a use
           // after the call of an object (or a function)
           const value = valueAt(valid, path);
+          if (isDefault && isObject(value)) {
+            kept.add(`${String(index)} ${position}`);
+          }
           for (const name of hostileNames.filter(
             (hostileName) =>
               (hostileName !== "late" || path.length > 1) &&
               (!objectHostiles.has(hostileName) || isObject(value)) &&
+              (!loggerHostiles.has(hostileName) || isLoggerValue(value)) &&
+              (!contextHostiles.has(hostileName) || isContextValue(value)) &&
               (isDefault ||
                 stateHostiles.has(hostileName) ||
                 (typeof value === "function" &&
@@ -3983,8 +4775,13 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
   }
   const untouched = fixture.untouched ?? {};
   const needed = new Set<string>();
+  /** The untouched positions whose valid value is kept (see `kept`) */
+  const keeps = new Set<string>();
   for (const [key, was] of examined) {
     const [index = "", position = ""] = key.split(" ");
+    if (!was && kept.has(key)) {
+      keeps.add(position);
+    }
     if (!was && Object.hasOwn(untouched, position)) {
       needed.add(position);
     } else if (!was) {
@@ -4003,17 +4800,13 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
         what: "listed as untouched, but a hostile value is examined there in every call",
       });
     }
-    if (
-      /\bcalled later\b/u.test(why) &&
-      !usedLater.has(`${entry.id} ${position}`)
-    ) {
-      findings.push({
-        entry: entry.id,
-        probe: position,
-        what: "listed as untouched and called later, but no reader uses a value given there (`readers`)",
-      });
-    }
+    findings.push(
+      ...usedBy(entry, fixture, position, why, keeps.has(position)).map(
+        (what) => ({ entry: entry.id, probe: position, what }),
+      ),
+    );
   }
+  findings.push(...(await alternativesOf(entry, fixture)));
   for (const position of Object.keys(fixture.callbacks ?? {})) {
     if (!calledBack.has(`${entry.id} ${position}`)) {
       findings.push({
