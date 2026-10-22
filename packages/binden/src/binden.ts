@@ -278,8 +278,8 @@ export class Binden<
     this.#error_handler_timeout = settings.error_handler_timeout;
     this.#timeout = settings.timeout;
     this.#auto_head = settings.auto_head;
-    // A logger of the application that a revoked proxy is (or whose traps
-    // throw) throws once `safe()` checks it, formatted (as for a `Context`)
+    // Checked by its methods (see `#settings()`), and wrapped unless it is a
+    // logger of binden, told by its brand (see `safe()`)
     this.#logger = formatting(() => safe(settings.logger ?? defaultLogger()));
     this.#details = settings.log_error_details;
     this.#routing = {
@@ -494,7 +494,7 @@ export class Binden<
       : this.#run(context, exchange, works, failure);
     handled.catch((error: unknown) => {
       // The process must not crash
-      this.#unexpected(context, error);
+      this.#unexpected(context, response, error);
     });
   }
 
@@ -559,7 +559,7 @@ export class Binden<
       } else {
         const { context } = run;
         this.#pipeFailed(context, exchange, error).catch((unexpected) => {
-          this.#unexpected(context, unexpected);
+          this.#unexpected(context, first.response, unexpected);
         });
       }
     });
@@ -597,7 +597,7 @@ export class Binden<
         const { reason } = signal as { reason: BindenAbortError };
         if (reason.reason === "deadline") {
           this.#deadline(context, exchange).catch((error: unknown) => {
-            this.#unexpected(context, error);
+            this.#unexpected(context, first.response, error);
           });
         }
       },
@@ -655,11 +655,25 @@ export class Binden<
     await exchange.reply(() => this.#errorHandler(context, exchange, error));
   }
 
-  /** An unexpected failure (every failure is handled): the connection is closed */
-  #unexpected(context: Context, error: unknown): void {
-    const message = "The request has failed";
-    context.log.error(message, this.#failure(context, error, "send"));
-    context.response[kFramework](() => context.response.destroy());
+  /**
+   * An unexpected failure (every failure is handled): the connection of the
+   * response (the one of the request, which the first context has) is
+   * closed. The last resort of a request, out of which no logging throws
+   * (e.g. a context that a middleware has returned, whose `log` throws): no
+   * rejection is left unhandled.
+   */
+  #unexpected(
+    context: Context,
+    response: BindenResponse<BindenRequest>,
+    error: unknown,
+  ): void {
+    try {
+      const message = "The request has failed";
+      context.log.error(message, this.#failure(context, error, "send"));
+    } catch {
+      // Nothing else to report it to
+    }
+    response[kFramework](() => response.destroy());
   }
 
   /**

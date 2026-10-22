@@ -188,40 +188,63 @@ function ignore(): void {
  * A logger whose calls never fail: a method (or `child()`) that throws is
  * ignored, and a rejected promise that it returns is observed. A `child()`
  * that fails (or that does not return a logger, e.g. a promise) gives the
- * logger itself.
+ * logger itself. Its methods are its own, bound to it: none depends on its
+ * receiver, so that an object derived from it (e.g. with `Object.create()`,
+ * to override one of them) or a proxy of it logs through its logger.
  */
 class SafeLogger implements ILogger {
   readonly #logger: ILogger;
 
-  public constructor(logger: ILogger) {
-    this.#logger = logger;
-  }
-
-  public fatal(message: string, extra?: Record<string, unknown>): void {
+  /** Logs at `fatal` */
+  public readonly fatal = (
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void => {
     this.#call("fatal", message, extra);
-  }
+  };
 
-  public error(message: string, extra?: Record<string, unknown>): void {
+  /** Logs at `error` */
+  public readonly error = (
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void => {
     this.#call("error", message, extra);
-  }
+  };
 
-  public warn(message: string, extra?: Record<string, unknown>): void {
+  /** Logs at `warn` */
+  public readonly warn = (
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void => {
     this.#call("warn", message, extra);
-  }
+  };
 
-  public info(message: string, extra?: Record<string, unknown>): void {
+  /** Logs at `info` */
+  public readonly info = (
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void => {
     this.#call("info", message, extra);
-  }
+  };
 
-  public debug(message: string, extra?: Record<string, unknown>): void {
+  /** Logs at `debug` */
+  public readonly debug = (
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void => {
     this.#call("debug", message, extra);
-  }
+  };
 
-  public trace(message: string, extra?: Record<string, unknown>): void {
+  /** Logs at `trace` */
+  public readonly trace = (
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void => {
     this.#call("trace", message, extra);
-  }
+  };
 
-  public child(bindings: Record<string, unknown>): ILogger {
+  /** A child of the logger (the logger itself when it fails) */
+  public readonly child = (bindings: Record<string, unknown>): ILogger => {
     try {
       const child: unknown = this.#logger.child(bindings);
       if (typeof property(child, "then") === "function") {
@@ -229,12 +252,25 @@ class SafeLogger implements ILogger {
         // observed, and the logger itself is used
         Promise.resolve(child).catch(ignore);
       } else if (isLogger(child)) {
-        return new SafeLogger(child);
+        return SafeLogger.isSafe(child) ? child : new SafeLogger(child);
       }
     } catch {
       // The logger itself
     }
     return this;
+  };
+
+  public constructor(logger: ILogger) {
+    this.#logger = logger;
+  }
+
+  /**
+   * Whether a value is a logger that this class has made, by its private
+   * brand: no trap of a proxy runs, and an object derived from one (or a
+   * proxy of one) is not
+   */
+  public static isSafe(value: unknown): value is SafeLogger {
+    return typeof value === "object" && value !== null && #logger in value;
   }
 
   #call(level: ILevel, message: string, extra?: Record<string, unknown>): void {
@@ -252,9 +288,13 @@ class SafeLogger implements ILogger {
   }
 }
 
-/** A logger whose calls never fail (see `SafeLogger`) */
+/**
+ * A logger whose calls never fail (see `SafeLogger`): one that binden has
+ * made is used as it is, anything else (also an object derived from one) is
+ * wrapped
+ */
 export function safe(logger: ILogger): ILogger {
-  return logger instanceof SafeLogger ? logger : new SafeLogger(logger);
+  return SafeLogger.isSafe(logger) ? logger : new SafeLogger(logger);
 }
 
 /**

@@ -84,8 +84,8 @@ export class Context<
     });
     this.#request = given.request;
     this.#response = given.response;
-    // A logger of the application that a revoked proxy is (or whose traps
-    // throw) throws once `safe()` checks it, formatted
+    // Wrapped unless it is a logger of binden, told by its brand (see
+    // `safe()`): no code of the logger runs
     this.#parent = formatting(() => safe(given.logger ?? defaultLogger()));
     Context.#check(given);
     this.#exchange = formatting(() =>

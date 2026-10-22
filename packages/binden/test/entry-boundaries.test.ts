@@ -366,16 +366,6 @@ suite(
           "IsArray",
           refused("Invalid value of the `X-A` header"),
         ],
-        [
-          "Context logger",
-          (value: unknown): unknown =>
-            new Context({
-              request: new BindenRequest(new Socket()),
-              response: given(null),
-              logger: given(value),
-            }),
-          "getPrototypeOf",
-        ],
       ] as const) {
         const [name, create, operation, refusal = ownError] = row;
         deepStrictEqual(
@@ -463,7 +453,7 @@ suite(
  * A logger whose proxy throws the error of the test (a new one) from one of
  * its traps only: its methods are read as usual
  */
-function oneTrap(trap: "getPrototypeOf" | "has" | "ownKeys"): object {
+function oneTrap(trap: "get" | "getPrototypeOf" | "has" | "ownKeys"): object {
   const error = new RangeError("A trap of the test");
   own = error;
   const logger = {
@@ -485,9 +475,16 @@ function oneTrap(trap: "getPrototypeOf" | "has" | "ownKeys"): object {
 suite(
   "What the checks and the copies of the options run once they are read is formatted (R28)",
   () => {
-    test("new Binden() checks its logger inside the boundary, as a Context does: a proxy whose one trap throws", () => {
+    test("new Binden() checks its logger inside the boundary (its methods, read), and neither it nor a Context runs another trap of a proxy to tell a logger of binden (its brand)", () => {
+      const context = (logger: object): unknown =>
+        new Context({
+          request: new BindenRequest(new Socket()),
+          response: given(null),
+          logger: given(logger),
+        });
       deepStrictEqual(
         [
+          outcome((): unknown => new Binden({ logger: given(oneTrap("get")) })),
           outcome(
             (): unknown =>
               new Binden({ logger: given(oneTrap("getPrototypeOf")) }),
@@ -496,16 +493,18 @@ suite(
           outcome(
             (): unknown => new Binden({ logger: given(oneTrap("ownKeys")) }),
           ),
-          outcome(
-            (): unknown =>
-              new Context({
-                request: new BindenRequest(new Socket()),
-                response: given(null),
-                logger: given(oneTrap("getPrototypeOf")),
-              }),
-          ),
+          // A Context does not read its logger: only its response is refused
+          outcome((): unknown => context(oneTrap("getPrototypeOf"))),
+          outcome((): unknown => context(revoked())),
         ],
-        [ownError, "returned", "returned", ownError],
+        [
+          ownError,
+          "returned",
+          "returned",
+          "returned",
+          refused("`response` is not a BindenResponse: null"),
+          refused("`response` is not a BindenResponse: null"),
+        ],
       );
     });
 

@@ -141,6 +141,15 @@ suite("Process safety", () => {
     });
   });
 
+  test("a logger derived from one of binden, or a proxy of one, logs a failure, and a context whose `log` throws is closed: no crash", () => {
+    deepStrictEqual(run("derived-loggers.ts"), {
+      status: 0,
+      stdout:
+        "derived 500 closed true 1\nproxy 500 closed true 0\nlying 500 closed false 0\n",
+      stderr: "",
+    });
+  });
+
   test("a logger whose `child()` throws does not crash the process", () => {
     deepStrictEqual(run("throwing-logger.ts"), {
       status: 0,

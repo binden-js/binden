@@ -405,6 +405,54 @@ suite("safe()", () => {
     deepStrictEqual(logged, ["child"]);
   });
 
+  test("an object derived from a logger of binden, or a proxy of one, is wrapped: it logs through that logger, and a method that it overrides is used", () => {
+    const logged: string[] = [];
+    const base = safe(
+      recorder((message: string) => {
+        logged.push(message);
+      }),
+    );
+    const derived = Object.assign(Object.create(base) as ILogger, {
+      warn(message: string): void {
+        logged.push(`overridden ${message}`);
+      },
+    });
+    const traps: string[] = [];
+    const handler = new Proxy(
+      {},
+      {
+        // No trap at all: each is read from the handler, and recorded
+        get(_target: object, trap: string): null {
+          traps.push(trap);
+          return null;
+        },
+      },
+    );
+    const proxy = new Proxy(base, handler);
+    const wrapped = [safe(derived), safe(proxy)];
+    // Told by its brand: no trap of the proxy has run
+    deepStrictEqual(traps, []);
+    ok(wrapped.every((logger) => logger !== derived && logger !== proxy));
+    for (const logger of wrapped) {
+      logger.error("error");
+      logger.warn("warn");
+      logger.child({ id: 1 }).info("child");
+    }
+    // Also its inherited methods, called on it
+    derived.debug("inherited");
+    derived.child({ id: 2 }).trace("inherited child");
+    deepStrictEqual(logged, [
+      "error",
+      "overridden warn",
+      "child",
+      "error",
+      "warn",
+      "child",
+      "inherited",
+      "inherited child",
+    ]);
+  });
+
   test("isLogger()", () => {
     ok(isLogger(new Logger({ level: "silent" })));
     ok(isLogger(recorder(() => null)));
