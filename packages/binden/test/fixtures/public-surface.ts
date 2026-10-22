@@ -2769,9 +2769,45 @@ define("binden:BindenResponse#", {
           untouched: Object.fromEntries(
             ["0", "1", "2"].map((position) => [
               position,
-              "binden refuses it on a Node.js without it, before reading its arguments",
+              {
+                why: "binden refuses it on a Node.js without it, before reading its arguments",
+                instead: "a refusal before its arguments",
+              },
             ]),
           ),
+          alternatives: {
+            // A `TypeError` that it formats, without running a trap of
+            // arguments whose every trap throws
+            "a refusal before its arguments": async (): Promise<string[]> => {
+              const env = environment();
+              const given = [0, 1, 2].map(() => hostile("throwing", null));
+              let thrown: unknown = null;
+              try {
+                const { response } = await env.exchange();
+                Reflect.apply(
+                  Reflect.get(response, "writeInformation") as IFunction,
+                  response,
+                  given.map(({ value }) => value),
+                );
+              } catch (error: unknown) {
+                thrown = error;
+              } finally {
+                for (const cleanup of env.cleanups.reverse()) {
+                  await cleanup();
+                }
+              }
+              const traps = given.reduce(
+                (sum, { thrown: trapped }) => sum + trapped.length,
+                0,
+              );
+              return isNativeError(thrown) &&
+                thrown.name === "TypeError" &&
+                formatted.has(thrown) &&
+                traps === 0
+                ? []
+                : [`throws ${describe(thrown)} (traps: ${String(traps)})`];
+            },
+          },
         },
     () => [103, { link: "</a>; rel=preload" }, noop],
     () => [102, noop],
