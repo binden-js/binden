@@ -252,6 +252,75 @@ describe("Logger", () => {
     }
   });
 
+  it("reads once each nested option that `pino` reads several times: the levels of `customLevels`, the paths of `redact` and the targets of `transport`", () => {
+    const reads = new Map<string, number>();
+    // An object (or an array) whose values are getters that count their reads
+    const counted = <T extends object>(name: string, values: T): T =>
+      Object.defineProperties(
+        Array.isArray(values) ? [] : {},
+        Object.fromEntries(
+          Object.entries(values).map(([key, value]) => [
+            key,
+            {
+              enumerable: true,
+              get: (): unknown => {
+                const at = `${name}.${key}`;
+                reads.set(at, (reads.get(at) ?? 0) + 1);
+                return value as unknown;
+              },
+            },
+          ]),
+        ),
+      ) as T;
+    const sink = new Sink();
+    const logger = new Logger({
+      destination: sink,
+      level: "custom",
+      customLevels: counted("customLevels", { custom: 35 }),
+      redact: counted("redact", {
+        paths: counted("paths", ["secret"]),
+        censor: "[hidden]",
+      }),
+    });
+    logger.warn("warn", { secret: "s" });
+    logger.info("info", { secret: "s" });
+    // Without a level (`silent`: nothing is written), and the paths as a list
+    new Logger({
+      destination: sink,
+      customLevels: counted("defaults", { other: 15 }),
+      redact: counted("list", ["secret"]),
+    }).error("error", { secret: "s" });
+    // A URL: also on Windows, where `pino` prefixes a path with `file://`
+    const target = new URL("fixtures/discard.mjs", import.meta.url).href;
+    new Logger({
+      transport: counted("transport", {
+        targets: counted("targets", [counted("target", { target })]),
+      }),
+    }).info("discarded");
+    new Logger({
+      transport: {
+        pipeline: counted("pipeline", [counted("step", { target })]),
+      },
+    }).info("discarded");
+    deepEqual(
+      sink.lines.map(({ level, msg, secret }) => [level, msg, secret]),
+      [[40, "warn", "[hidden]"]],
+    );
+    deepEqual(Object.fromEntries(reads), {
+      "customLevels.custom": 1,
+      "redact.paths": 1,
+      "redact.censor": 1,
+      "paths.0": 1,
+      "defaults.other": 1,
+      "list.0": 1,
+      "transport.targets": 1,
+      "targets.0": 1,
+      "target.target": 1,
+      "pipeline.0": 1,
+      "step.target": 1,
+    });
+  });
+
   it("keeps the default serializers that are not replaced", () => {
     const sink = new Sink();
     const logger = new Logger({

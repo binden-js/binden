@@ -283,6 +283,28 @@ export function createSerializers(
 /** The default serializers (without the details of the errors) */
 export const serializers: ISerializers = createSerializers();
 
+/** Whether a value is an object (not `null`), e.g. a nested option of `pino` */
+function isObject(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** A copy of a list, each item read once (an object item is copied too) */
+function copyList(list: readonly unknown[]): unknown[] {
+  return [...list].map((item) => (isObject(item) ? { ...item } : item));
+}
+
+/** An object whose list under a key, if it is an array, is a copy */
+function withList(
+  object: Record<PropertyKey, unknown>,
+  key: string,
+): Record<PropertyKey, unknown> {
+  const list = object[key];
+  if (Array.isArray(list)) {
+    object[key] = copyList(list);
+  }
+  return object;
+}
+
 // eslint-disable-next-line init-declarations -- set by the static block of `Logger`
 let createDefault: () => Logger;
 
@@ -375,9 +397,13 @@ export class Logger implements ILogger {
       typeof error_details !== "boolean"
     ) {
       throw formatStack(new TypeError("`error_details` is not a boolean"));
-    } else if (typeof options.level !== "undefined") {
-      const { customLevels = {}, useOnlyCustomLevels = false } = options;
-      Logger.#checkLevel(options.level, {
+    }
+    // Read once (see `#copy()`): the check of the level and `pino` read the
+    // copy (no level is combined with `logger`)
+    const copied = Logger.#copy(options);
+    if (typeof copied.level !== "undefined") {
+      const { customLevels = {}, useOnlyCustomLevels = false } = copied;
+      Logger.#checkLevel(copied.level, {
         ...(useOnlyCustomLevels ? {} : pino.levels.values),
         ...customLevels,
       });
@@ -387,8 +413,34 @@ export class Logger implements ILogger {
       destination,
       error_details: error_details ?? false,
       custom: custom ?? {},
-      options,
+      options: copied,
     };
+  }
+
+  /**
+   * The options of `pino`, with a copy of those that it reads several times
+   * (each level of `customLevels`, which the check of `level` reads too, the
+   * paths of `redact`, and the targets of `transport`): each is read once, so
+   * that a getter of the application runs once
+   */
+  static #copy(options: PinoLoggerOptions): PinoLoggerOptions {
+    const copied: Record<string, unknown> = { ...options };
+    const { customLevels, redact, transport } = copied;
+    if (isObject(customLevels)) {
+      copied.customLevels = { ...customLevels };
+    }
+    if (Array.isArray(redact)) {
+      copied.redact = copyList(redact);
+    } else if (isObject(redact)) {
+      copied.redact = withList({ ...redact }, "paths");
+    }
+    if (isObject(transport)) {
+      copied.transport = withList(
+        withList({ ...transport }, "targets"),
+        "pipeline",
+      );
+    }
+    return copied;
   }
 
   /** A logger that writes with an existing `pino` logger (its options apply) */
