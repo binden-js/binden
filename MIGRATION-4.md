@@ -106,8 +106,10 @@ every read of `error.json`, so that a later change of the object showed, and its
 each read.
 
 `new Context()` throws a `TypeError` for a `request` that is not a `BindenRequest`, a `response`
-that is not a `BindenResponse` (also a proxy of one) and a `report` that is not a function:
-binden 2.0.4 accepted any request (it read its `id`) and any response.
+that is not a `BindenResponse`, and a `report` that is not a function: binden 2.0.4 accepted any
+request (it read its `id`) and any response. The request and the response must each be an
+instance made by its constructor, or the one of a subclass: a proxy of one, an object of another
+realm, or one made with `Object.create()` of its prototype is refused too.
 
 Options that are neither an object nor `undefined` throw a `TypeError` ("`options` is not an
 object") in `new Binden()`, `createServer()`, `createSecureServer()`, `new Router()`, the
@@ -537,7 +539,10 @@ const decodable = (context: Context): void => {
 `createServer()` and `createSecureServer()` register the server for `shutdown()`. For a server
 created by other means, `serverOptions()` gives the request and response classes of the
 application, and `callback(server)` its request listener: a request of other classes (e.g.
-`BindenRequest` itself) is logged and its connection closed.
+`BindenRequest` itself) is logged and its connection closed. The listener tells the classes of
+the application by their private brands: a proxy of a request or a response, an object made with
+`Object.create()` of their prototypes and an instance of the classes of another application are
+refused as well.
 
 A subclass of `BindenRequest` (for a server created with `http.createServer()`) sets the request
 options by overriding the protected `options` getter with the result of
@@ -580,7 +585,8 @@ createServer({ IncomingMessage: Request });
   (without the `expose` and the `json` of a `BindenError`). The default logger is created when
   it is first used, still with the level of `BINDEN_LOG_LEVEL`.
 - `context.log` is an `ILogger` (it was the `Logger` class of `@binden/logger`): its methods
-  return `unknown`, and its calls never throw. The `logger` option takes any `ILogger`.
+  return `unknown`, and its calls never throw. The `logger` option takes any `ILogger`. A logger
+  derived from it (`Object.create(context.log)`) or a proxy of it works as a custom logger.
 
 To log more details (e.g. outside of production), pass a logger:
 
@@ -640,6 +646,14 @@ const invalid = new ValidationError("Invalid email");
   to it (`logger` used to be ignored with `destination`, and the other options with `logger`). A
   `logger` that is not a `pino` logger, and an unknown level (of the options, of `child()` or set
   to `level`), throw a `TypeError` as well.
+- `new Logger()` throws a `TypeError` ("`customLevels` has a level that is not a number: …") for
+  a level of `customLevels` that is not a number. @binden/logger 2.0.3 handed it to `pino`, which
+  took a numeric string (`"35"`), a `bigint` (`35n`) or an object with `valueOf()` as that level
+  (converting the object each time it read it), and silently accepted any other value (e.g.
+  `"abc"`, `null`, `true`). Give the levels as numbers. A path of `redact` that is not a string
+  already threw in 2.0.3 (an `Error` of `pino`, "Paths must be (non-empty) strings"): it is now a
+  `TypeError` of @binden/logger ("`redact` has a path that is not a string: …"), thrown before the
+  value is converted.
 - The `err` key, under which `pino` logs an `Error` given as the fields of a record, has the
   default `error` serializer too: the serializer of `pino` logged the message, the stack and
   every property of the error.
