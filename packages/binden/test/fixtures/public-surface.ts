@@ -22,8 +22,14 @@
 // see `headerInit` and `nodeCoercion`, also of an object status as the head is
 // committed), each option, init and argument must be read at most once, and
 // each probed position must be examined by a hostile value (refused, converted
-// or read), unless its fixture says why it is not. An allowance that permits
-// more than happens is a finding too.
+// or read) by the call, unless its fixture says why it is not: one whose valid
+// value is a function or an object that the call keeps names the reader that
+// uses it later, which must run with a hostile value there and use it, or an
+// alternative check, which must run (see `IUntouched`). A logger of binden
+// never runs a method that the application has replaced on it for a record of
+// its own (see `replaced` and `wrapping()`), and binden never takes a value of
+// the test for one of its objects (see `privateFailures`). An allowance that
+// permits more than happens is a finding too.
 // Prints a JSON report: `{ entries, probed, probes, findings }` (the ids of
 // the entry points of the surface, and of those that it has probed), each
 // finding as `<entry> | <probe>: <what>` with `--lines` (one per line), and
