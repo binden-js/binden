@@ -6,9 +6,11 @@ import {
   type Context,
   type IMiddlewareParams,
   Middleware,
+  childLogger,
   described,
   formatStack,
   formatting,
+  record,
   serializers,
 } from "binden";
 import { Duplex, Transform, Writable, pipeline } from "node:stream";
@@ -543,7 +545,7 @@ export class BodyParser<T = unknown> extends Middleware {
         log,
       );
       if (!outcome.ok) {
-        log.debug("`verify` has refused the body", {
+        record(log, "debug", "`verify` has refused the body", {
           failure: serializers.error(outcome.error),
         });
         throw outcome.error instanceof BindenError
@@ -557,7 +559,7 @@ export class BodyParser<T = unknown> extends Middleware {
       try {
         text = decoder.decode(decoded);
       } catch (error: unknown) {
-        log.debug("The body is not valid in its charset", {
+        record(log, "debug", "The body is not valid in its charset", {
           charset: decoder.encoding,
         });
         throw new BindenError(400, { cause: error });
@@ -585,22 +587,24 @@ export class BodyParser<T = unknown> extends Middleware {
    */
   #start(context: Context): IStarted | null {
     const { request, signal } = context;
-    const log = context.log.child({ middleware: BodyParser.name });
+    // Read as it is (see `run()`), and made by the private path of binden:
+    // never a `child()` (nor a method) that the application has replaced
+    const log = childLogger(context.log, { middleware: BodyParser.name });
     const { method = "GET", content_type } = request;
 
     if (BodyParser.#methods.has(method)) {
-      log.debug("A method without a body", { method });
+      record(log, "debug", "A method without a body", { method });
       return null;
     }
 
     const kind = content_type === null ? null : this.#kind(content_type, log);
     if (kind === null) {
-      log.debug("The `Content-Type` is not selected", {
+      record(log, "debug", "The `Content-Type` is not selected", {
         content_type: content_type?.type ?? null,
       });
       return null;
     } else if (claimed.has(request)) {
-      log.debug("The body has already been parsed");
+      record(log, "debug", "The body has already been parsed");
       return null;
     }
     claimed.add(request);
@@ -628,7 +632,7 @@ export class BodyParser<T = unknown> extends Middleware {
     const select = this.#type as (content_type: ContentType) => unknown;
     const outcome = attempt(() => select(content_type));
     if (!outcome.ok) {
-      log.error("The `type` function has failed", {
+      record(log, "error", "The `type` function has failed", {
         failure: serializers.error(outcome.error),
       });
       throw new BindenError(500, { cause: outcome.error });
@@ -639,7 +643,7 @@ export class BodyParser<T = unknown> extends Middleware {
     }
     // E.g. a promise, whose rejection is observed
     Promise.resolve(kind).catch(ignore);
-    log.error("The `type` function has returned an invalid kind");
+    record(log, "error", "The `type` function has returned an invalid kind");
     throw new BindenError(500);
   }
 
@@ -656,7 +660,7 @@ export class BodyParser<T = unknown> extends Middleware {
     log: ILog,
   ): { decoders: IDecoder[]; decoder: TextDecoder | null } {
     const refuse = (error: Error, message: string, extra?: object): Error => {
-      log.debug(message, { ...extra });
+      record(log, "debug", message, { ...extra });
       if (!response.headersSent) {
         response.setHeader("Connection", "close");
       }
@@ -667,11 +671,11 @@ export class BodyParser<T = unknown> extends Middleware {
     if (response.writableFinished) {
       // Node.js reads and discards what has not been read once the response
       // has finished: what is left of the body would be missing
-      log.error(DISCARDED);
+      record(log, "error", DISCARDED);
       throw new BindenError(500, { message: DISCARDED });
     } else if (request.readableDidRead || request.readableEnded) {
       // E.g. by a middleware that has read the stream itself
-      log.error("The body has already been read");
+      record(log, "error", "The body has already been read");
       throw new BindenError(500);
     } else if (request.destroyed) {
       throw refuse(abortError(null), "The request has been aborted");
@@ -779,7 +783,7 @@ export class BodyParser<T = unknown> extends Middleware {
       let settled = false;
       let failure: IFailure | null = null;
       const cleanups: (() => void)[] = [];
-      const record = (error: unknown): IFailure => {
+      const keep = (error: unknown): IFailure => {
         failure ??= { error: formatStack(error as Error) };
         return failure;
       };
@@ -789,7 +793,7 @@ export class BodyParser<T = unknown> extends Middleware {
         try {
           call();
         } catch (error: unknown) {
-          record(error);
+          keep(error);
         }
       };
       const settle = (): boolean => {
@@ -807,7 +811,7 @@ export class BodyParser<T = unknown> extends Middleware {
           return;
         }
         guarded(() => {
-          log.debug(message, { failure: serializers.error(error) });
+          record(log, "debug", message, { failure: serializers.error(error) });
         });
         // Paused (once nothing else reads it), not destroyed: the reply is sent
         guarded(() => {
@@ -829,7 +833,7 @@ export class BodyParser<T = unknown> extends Middleware {
         try {
           call();
         } catch (error: unknown) {
-          fail(record(error).error, "A call of the context has failed");
+          fail(keep(error).error, "A call of the context has failed");
         }
       };
 
@@ -909,7 +913,7 @@ export class BodyParser<T = unknown> extends Middleware {
           socket.off("close", closed);
         });
       } catch (error: unknown) {
-        fail(record(error).error, "The body cannot be read");
+        fail(keep(error).error, "The body cannot be read");
       }
     });
   }
@@ -920,19 +924,19 @@ export class BodyParser<T = unknown> extends Middleware {
    */
   async #json(text: string, signal: AbortSignal, log: ILog): Promise<unknown> {
     if (text.trim() === "") {
-      log.debug("The JSON body has only whitespace");
+      record(log, "debug", "The JSON body has only whitespace");
       throw new BindenError(400);
     }
 
     if (this.#parse === null) {
       if (this.#strict && !strictJSON.test(text)) {
-        log.debug("The JSON body is not an object or an array");
+        record(log, "debug", "The JSON body is not an object or an array");
         throw new BindenError(400);
       }
       try {
         return JSON.parse(text) as unknown;
       } catch (error: unknown) {
-        log.debug("The JSON body cannot be parsed");
+        record(log, "debug", "The JSON body cannot be parsed");
         throw new BindenError(400, { cause: error });
       }
     }
@@ -940,7 +944,7 @@ export class BodyParser<T = unknown> extends Middleware {
     const parse = this.#parse;
     const outcome = await BodyParser.#call(() => parse(text), signal, log);
     if (!outcome.ok) {
-      log.debug("`parse` has failed", {
+      record(log, "debug", "`parse` has failed", {
         failure: serializers.error(outcome.error),
       });
       throw outcome.error instanceof BindenError
@@ -949,7 +953,7 @@ export class BodyParser<T = unknown> extends Middleware {
     } else if (typeof outcome.value === "undefined") {
       // E.g. a parser of `ajv`, which tells why in its `message`
       const { message } = parse as { message?: unknown };
-      log.debug("`parse` has not parsed the body");
+      record(log, "debug", "`parse` has not parsed the body");
       throw new BindenError(400, {
         ...(typeof message === "string" ? { message } : {}),
       });
@@ -960,7 +964,7 @@ export class BodyParser<T = unknown> extends Middleware {
   /** The parameters of a form, at most `parameter_limit` of them */
   #form(text: string, log: ILog): URLSearchParams {
     if (tooManyParameters(text, this.#parameter_limit)) {
-      log.debug("The form has too many parameters", {
+      record(log, "debug", "The form has too many parameters", {
         parameter_limit: this.#parameter_limit,
       });
       throw new BindenError(413);
@@ -1005,7 +1009,7 @@ export class BodyParser<T = unknown> extends Middleware {
         );
     });
     if (outcome === null) {
-      log.debug("The request has been aborted");
+      record(log, "debug", "The request has been aborted");
       throw abortError(signal.reason);
     }
     return outcome;

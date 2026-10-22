@@ -3,8 +3,10 @@ import {
   BindenError,
   type Context,
   Middleware,
+  childLogger,
   formatStack,
   formatting,
+  record,
   serializers,
 } from "binden";
 import {
@@ -611,7 +613,7 @@ class Parser {
       }
     });
     this.#guard(() => {
-      this.#log.debug("The multipart body has been refused", logged);
+      record(this.#log, "debug", "The multipart body has been refused", logged);
     });
     this.#deferred.reject(this.#failure === null ? error : this.#failure.error);
   }
@@ -695,20 +697,22 @@ export class Multipart extends Middleware {
   #start(context: Context): Promise<null> | null {
     // Each property of the context is read once
     const { request } = context;
-    const log = context.log.child({ middleware: Multipart.name });
+    // Read as it is (see `run()`), and made by the private path of binden:
+    // never a `child()` (nor a method) that the application has replaced
+    const log = childLogger(context.log, { middleware: Multipart.name });
     const { method = "GET", headers } = request;
     const type = mediaType(headers["content-type"]);
 
     if (methods.has(method)) {
-      log.debug("The method has no body to parse", { method });
+      record(log, "debug", "The method has no body to parse", { method });
       return null;
     } else if (type !== "multipart/form-data") {
-      log.debug("The body is not `multipart/form-data`", { type });
+      record(log, "debug", "The body is not `multipart/form-data`", { type });
       return null;
     }
     const info = startParse(request);
     if (info === null) {
-      log.debug("The body has already been parsed");
+      record(log, "debug", "The body has already been parsed");
       return null;
     }
     const { response, signal } = context;
@@ -716,7 +720,7 @@ export class Multipart extends Middleware {
       // Node.js reads and discards what has not been read once the response
       // has finished: what is left of the body would be missing
       const message = "The body has been discarded once the response finished";
-      log.error(message);
+      record(log, "error", message);
       throw new BindenError(500, { message });
     }
     const exchange = { context, request, response, signal, headers, log };

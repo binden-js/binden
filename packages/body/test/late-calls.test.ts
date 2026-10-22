@@ -409,7 +409,7 @@ suite("BodyParser (late calls of a context)", () => {
     }
   });
 
-  test("a logger that throws once the body is read (e.g. as `verify` refuses it): the rejection, formatted", async () => {
+  test("a logger that throws once the body is read (e.g. as `verify` refuses it) is ignored: the rejection is the refusal", async () => {
     const errors: OwnError[] = [];
     const debug = failing(errors, "debug");
     const logger = {
@@ -439,11 +439,11 @@ suite("BodyParser (late calls of a context)", () => {
         "ab",
       );
       req.end();
-      deepStrictEqual(await within(served.settled), {
-        error: errors[0],
-        formatted: true,
-      });
-      deepStrictEqual(await status(response), 500);
+      const { error } = (await within(served.settled)) as { error: unknown };
+      // Its calls never fail (see the logging of binden): it has thrown, and
+      // the parse has gone on
+      ok(error instanceof BindenError && errors.length > 0);
+      deepStrictEqual(await status(response), 401);
     } finally {
       served.restore();
       await served.server.close();

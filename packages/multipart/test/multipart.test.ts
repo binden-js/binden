@@ -510,6 +510,65 @@ describe("Multipart", () => {
     equal(reached, false);
   });
 
+  it("a logger of the context whose methods and `child()` are replaced by ones that throw: the parse settles as without them, and none of them runs", async (t) => {
+    const logger = new RecordingLogger();
+    const calls: string[] = [];
+    const replace = (context: Context): void => {
+      for (const method of [
+        "fatal",
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "trace",
+        "child",
+      ]) {
+        Object.assign(context.log, {
+          [method]: (): never => {
+            calls.push(method);
+            throw new Error("A replaced method");
+          },
+        });
+      }
+    };
+    const { url } = await serve(
+      t,
+      [
+        replace,
+        multipart({ config: { limits: { fields: 1 } } }),
+        async (context: Context): Promise<void> => {
+          const form = context.request.body;
+          await (form instanceof FormData
+            ? context.json(await entries(form))
+            : context.send("skipped"));
+        },
+      ],
+      { logger },
+    );
+
+    const parsed = await post(url, body(part('name="a"', "1")));
+    const refused = await post(
+      url,
+      body(part('name="a"', "1"), part('name="b"', "2")),
+    );
+    const skipped = await send(url, {
+      headers: { "Content-Type": "text/plain" },
+    });
+
+    deepEqual(
+      [parsed.status, parsed.body, refused.status, skipped.status, calls],
+      [200, '[["a","1"]]', 413, 200, []],
+    );
+    // Through the private path of the logger of the context
+    ok(
+      logger.records.some(
+        ({ message, bindings }) =>
+          message === "The multipart body has been refused" &&
+          bindings.middleware === "Multipart",
+      ),
+    );
+  });
+
   it("logs with the logger of the context, as `Multipart`", async (t) => {
     const logger = new RecordingLogger();
     const { url } = await serve(

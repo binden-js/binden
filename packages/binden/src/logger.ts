@@ -124,7 +124,12 @@ export function snapshot(
   };
 }
 
-/** A level of the records of a logger (see `ILogger`) */
+/**
+ * A level of the records of a logger (see `ILogger`): a method of it that
+ * `record()` calls
+ *
+ * @internal
+ */
 export type ILogLevel = "debug" | "error" | "fatal" | "info" | "trace" | "warn";
 
 const levels: readonly ILogLevel[] = [
@@ -356,7 +361,10 @@ export function safe(logger: ILogger): ILogger {
  * logger, called as its own methods call it), never through its methods,
  * which the application may replace, and anything else (e.g. what the `log`
  * of a subclass of `Context` gives) through its method, guarded in the same
- * way (see `SafeLogger`)
+ * way (see `SafeLogger`). A `level` that is not one of `ILogLevel` drops the
+ * record. For the packages of binden only.
+ *
+ * @internal
  */
 export function record(
   logger: unknown,
@@ -364,14 +372,22 @@ export function record(
   message: string,
   extra?: Record<string, unknown>,
 ): void {
-  paths.record(logger, level, message, extra);
+  // Another level (e.g. a value of a package that is not one) drops the
+  // record: it is never converted
+  if (levels.includes(level)) {
+    paths.record(logger, level, message, extra);
+  }
 }
 
 /**
  * A child of a logger (see `SafeLogger.child()`) by the private path of a
  * logger of binden, never its `child()`, which the application may replace
- * (anything else is wrapped first): never throws, and always gives a new
- * logger of binden
+ * (anything else, e.g. what a context that only looks like one gives, is
+ * wrapped first): never throws, and always gives a new logger of binden. For
+ * the packages of binden only (e.g. the logger of a parser, a child of
+ * `context.log`), which write their records through it with `record()`.
+ *
+ * @internal
  */
 export function childLogger(
   logger: ILogger,
@@ -384,7 +400,9 @@ export function childLogger(
  * Writes a record of binden itself through the logger of a context (see
  * `record()`): what getting it throws (e.g. a `log` getter of a subclass of
  * `Context`, or of the context itself) drops the record, never out of the
- * caller
+ * caller. For the packages of binden only.
+ *
+ * @internal
  */
 export function logTo(
   context: { readonly log: unknown },
@@ -394,7 +412,7 @@ export function logTo(
 ): void {
   try {
     const { log } = context;
-    paths.record(log, level, message, extra);
+    record(log, level, message, extra);
   } catch {
     // Dropped
   }

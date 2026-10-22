@@ -2348,6 +2348,52 @@ define("binden:Context#", {
     () => [],
   ),
 });
+
+// The internal functions of binden that write the records of its packages
+define("binden:", {
+  // The guarded paths of the records of the packages (see `record()`): they
+  // never fail, whatever they are given
+  "record()": probed(
+    {
+      readers: { "the record": () => remembered.extra },
+      untouched: {
+        1: "a level, compared with the known ones (never converted): another one drops the record",
+        2: logged,
+        3: { why: logged, later: "the record" },
+      },
+      infallible: { call: neverFails },
+    },
+    () => [remembering, "info", "message", { a: 1 }],
+  ),
+  "logTo()": probed(
+    {
+      readers: { "the record": () => remembered.extra },
+      untouched: {
+        1: "a level, compared with the known ones (never converted): another one drops the record",
+        2: logged,
+        3: { why: logged, later: "the record" },
+      },
+      infallible: { call: neverFails },
+    },
+    async (env) => {
+      const { request, response } = await env.exchange();
+      const context = Reflect.construct(binden.Context as IFunction, [
+        { request, response, logger: remembering },
+      ]) as object;
+      return [context, "info", "message", { a: 1 }];
+    },
+  ),
+  "childLogger()": probed(
+    {
+      // A logger of binden, as the one of a context
+      members: contextLogger,
+      readers: { "the bindings": () => remembered.bindings },
+      untouched: { 1: { why: logged, later: "the bindings" } },
+      infallible: { call: neverFails },
+    },
+    () => [remembering, { a: 1 }],
+  ),
+});
 define("binden:", {
   "new Context()": probed(
     {

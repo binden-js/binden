@@ -78,6 +78,10 @@ export {
 export {
   type IBindenSerializers,
   type ILocation,
+  type ILogLevel,
+  childLogger,
   createSerializers,
+  logTo,
+  record,
   serializers,
 } from "./src/logger.js";

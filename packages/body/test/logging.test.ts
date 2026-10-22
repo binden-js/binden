@@ -1,4 +1,4 @@
-import { Binden, ct_json, ct_text } from "binden";
+import { Binden, type Context, ct_json, ct_text } from "binden";
 import { type IBody, Recorder, echo, listen, send } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
@@ -77,5 +77,67 @@ suite("BodyParser (logging)", () => {
       await server.close();
     }
     ok(logger.messages("error").includes("The body has already been read"));
+  });
+
+  test("a logger of the context whose methods and `child()` are replaced by ones that throw: the parse settles as without them, and none of them runs (a `log` getter that throws fails it)", async () => {
+    const calls: string[] = [];
+    const methods = ["fatal", "error", "warn", "info", "debug", "trace"];
+    const changes: Record<string, (context: Context) => void> = {
+      replaced: (context) => {
+        for (const method of [...methods, "child"]) {
+          Object.assign(context.log, {
+            [method]: (): never => {
+              calls.push(method);
+              throw new Error("A replaced method");
+            },
+          });
+        }
+      },
+      getter: (context) => {
+        Object.defineProperty(context, "log", {
+          get: (): never => {
+            calls.push("log");
+            throw new Error("No logger");
+          },
+        });
+      },
+    };
+    const outcomes: unknown[] = [];
+    for (const [name, change] of Object.entries(changes)) {
+      const logger = new Recorder();
+      const app = new Binden({ logger }).use(change, new BodyParser(), echo);
+      const server = await listen(app);
+      try {
+        const parsed = await send(server.url, '{"a":1}', {
+          "Content-Type": ct_json,
+        });
+        const refused = await send(server.url, secret, {
+          "Content-Type": ct_json,
+        });
+        const skipped = await send(server.url, "a", {
+          "Content-Type": "application/xml",
+        });
+        outcomes.push([
+          name,
+          parsed.status,
+          parsed.body,
+          refused.status,
+          skipped.status,
+          logger.messages("debug").includes("The JSON body cannot be parsed"),
+        ]);
+      } finally {
+        await server.close();
+      }
+    }
+    deepStrictEqual(outcomes, [
+      // Through the private path of the logger of the context
+      ["replaced", 200, { type: "json", value: { a: 1 } }, 400, 200, true],
+      // Read as the parse starts, as the other properties of the context:
+      // what it throws fails the parse (and the records of binden through it
+      // are dropped)
+      ["getter", 500, null, 500, 500, false],
+    ]);
+    // Only the getter, as the framework and the parser get the logger
+    ok(calls.every((call) => call === "log"));
   });
 });

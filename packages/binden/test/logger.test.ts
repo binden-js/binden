@@ -470,9 +470,14 @@ suite("safe()", () => {
     const child = parent.child({ id: 1 });
     child.error("error");
     childLogger(parent, { id: 2 }).warn("warn");
-    // Another logger is wrapped first
+    // Another logger is wrapped first, and so is a value that is not one
     const wrapped = childLogger(throwing, { id: 3 });
     wrapped.info("info");
+    const nothing = childLogger(null as unknown as ILogger, { id: 4 });
+    nothing.error("nowhere");
+    ok(safe(nothing) === nothing);
+    // A level that is not one drops the record, without converting it
+    record(throwing, "verbose" as "info", "dropped");
     // A logger of binden, told by its brand
     ok(safe(child) === child && safe(wrapped) === wrapped);
     deepStrictEqual(calls, ["error", "warn", "info"]);
