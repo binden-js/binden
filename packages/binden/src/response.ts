@@ -3563,15 +3563,8 @@ export class BindenResponse<
     // that is refused releases the source, as the refusal of a status below
     const code = this.#sending(data, kind);
     if (BindenResponse.#informational(code)) {
-      // Not a final response: the client would wait for the final one
       this.#release(data, kind);
-      return Promise.reject(
-        formatStack(
-          new TypeError(
-            `Status code ${code} is informational (use writeEarlyHints())`,
-          ),
-        ),
-      );
+      return Promise.reject(BindenResponse.#notFinal(code));
     } else if (type !== null) {
       // Accepted: the media type of `text()`, `html()`, `json()` or `form()`
       this.setHeader("Content-Type", type);
@@ -3975,6 +3968,19 @@ export class BindenResponse<
   /** An informational status (1xx): not of a final response */
   static #informational(status: number): boolean {
     return status >= 100 && status < 200;
+  }
+
+  /**
+   * The refusal of a send by an informational status (see `#informational()`),
+   * formatted (see `formatStack()`): not a final response, whose client
+   * would wait for the final one
+   */
+  static #notFinal(status: number): Error {
+    return formatStack(
+      new TypeError(
+        `Status code ${String(status)} is informational (use writeEarlyHints())`,
+      ),
+    );
   }
 
   /** A status whose responses never have a body */
@@ -5137,6 +5143,50 @@ export class BindenResponse<
   }
 
   /**
+   * What refuses a send of a file by its status (`null` when it is
+   * accepted): converted once, before anything decides by it (see
+   * `#status()`), one that its conversion refuses (or whose conversion
+   * throws), or an informational one, as `#send()` refuses it (which would
+   * refuse the file only once its headers are set)
+   */
+  #fileRefusal(): Error | null {
+    try {
+      const code = this.#status();
+      return BindenResponse.#informational(code)
+        ? BindenResponse.#notFinal(code)
+        : null;
+    } catch (error: unknown) {
+      return formatStack(error as Error);
+    }
+  }
+
+  /**
+   * A send of a file (by its key, see `#rollbacks`) has failed once it has
+   * set the headers of the file, before the head is committed (e.g. refused
+   * by a status that the application has changed while the file was opened,
+   * or by Node.js as it commits the head): the response is restored as it was
+   * before it, without the framing of a body nor the representation chosen
+   * for it (as by `[kCancel]()`), so that the reply that follows (e.g. of the
+   * error) has none of the headers of the file. Not once its cancellation is
+   * recorded (`[kCancel]()` restores it), nor by a work that may no longer
+   * mutate the response (`owner`).
+   */
+  #unwind(key: object, owner: object | undefined): void {
+    const rollback = this.#rollbacks.get(key);
+    if (
+      typeof rollback === "function" &&
+      !this.headersSent &&
+      !this.#cancellations.has(key) &&
+      this.#allows(owner)
+    ) {
+      this.#rollbacks.delete(key);
+      rollback();
+      this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
+      this.#forget();
+    }
+  }
+
+  /**
    * Send a file: a filesystem path (or a `file:` URL), trusted without `root`;
    * with `root`, a relative path that must stay inside it (see
    * `ISendFileOptions`). Its metadata and its content are read from one file
@@ -5165,12 +5215,10 @@ export class BindenResponse<
       // resolved
       return Promise.resolve();
     }
-    try {
-      // Converted once, before anything decides by it (see `#status()`):
-      // one that is refused rejects before anything is read
-      this.#status();
-    } catch (error: unknown) {
-      return Promise.reject(formatStack(error as Error));
+    // Before anything is read, nor set
+    const refusal = this.#fileRefusal();
+    if (refusal !== null) {
+      return Promise.reject(refusal);
     }
     const status = this.statusCode;
     const headers = new Map(
@@ -5225,6 +5273,10 @@ export class BindenResponse<
         (length) => this.#endNotModified(length),
         // Cancelled, or its send would be ignored (see `#send()`)
         () => settled || this.writableEnded || !this.#allows(owner),
+        // It has failed once it has set the headers of the file
+        () => {
+          this.#unwind(key, owner);
+        },
       ).then(
         () => {
           settle(null);

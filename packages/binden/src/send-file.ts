@@ -572,6 +572,9 @@ function release(stream: Readable): void {
  * at once: it is checked after every step that is awaited, and nothing is
  * awaited between its last check and the send of the stream of the file, which
  * is destroyed (closing the file) when that send settles without reading it.
+ * Once the headers of the file are set, a failure (e.g. a send that refuses
+ * the status, or a head that Node.js refuses) calls `unwind()` before it
+ * rejects, which restores the response as it was before the file.
  */
 export async function sendFileTo(
   response: BindenResponse,
@@ -579,6 +582,7 @@ export async function sendFileTo(
   options: ISendFileOptions | undefined,
   notModified: (length: number) => Promise<void>,
   stopped: () => boolean,
+  unwind: () => void,
 ): Promise<void> {
   // The status that the application has set (e.g. `404` for a page of an
   // error): the file is its body
@@ -594,6 +598,8 @@ export async function sendFileTo(
   const handle = await openFile(location);
   // Closed by the stream of its content, once created, or else here
   let streamed = false;
+  // Whether the headers of the file may have been set (see `unwind()`)
+  let set = false;
   try {
     if (stopped()) {
       // Opened late: nothing is sent
@@ -622,6 +628,7 @@ export async function sendFileTo(
         )
       : null;
 
+    set = true;
     setHeaders(response, parsed, location.name, lm, stats);
 
     // The representation, before the preconditions (RFC 9110, section
@@ -722,6 +729,11 @@ export async function sendFileTo(
     await response.send(stream).finally(() => {
       release(stream);
     });
+  } catch (error: unknown) {
+    if (set) {
+      unwind();
+    }
+    throw error;
   } finally {
     if (!streamed) {
       await handle.close();

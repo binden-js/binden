@@ -207,14 +207,9 @@ suite("A head that Node.js refuses", () => {
         [],
       ],
       "/stream": ["ERR_INVALID_CHAR", 200, false, {}, []],
-      "/file": [
-        "ERR_INVALID_CHAR",
-        200,
-        false,
-        // Without the framing of the send that has failed
-        { "accept-ranges": "bytes", etag: '"f"' },
-        [],
-      ],
+      // Without the headers of the file nor the framing of its send: a
+      // sendFile() that fails once it has set them restores the response
+      "/file": ["ERR_INVALID_CHAR", 200, false, {}, []],
       // Refused before the decision: no compressor
       "/status": ["ERR_HTTP_INVALID_STATUS_CODE", 1000, false, {}, []],
       // Created, then destroyed
