@@ -101,6 +101,9 @@ not compressed.
 [When a response is compressed](#when-a-response-is-compressed)). It must return a
 boolean: anything else (a promise as well) is a configuration error, which is logged (`error`) and
 replaces the response with an empty `500 Internal Server Error`, as does a filter that throws.
+That record is written by binden's own path for its records: a method or `child()` of
+`context.log` that the application has replaced, or that throws (also its `log` getter), never
+runs, and the response is replaced all the same.
 
 ```typescript
 import { Binden, type ContentType, type Context } from "binden";
