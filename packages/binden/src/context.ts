@@ -7,7 +7,7 @@ import type {
 import { Exchange, type IExchangeReport, formatStack } from "./exchange.js";
 import type { IRedirectOptions, IRedirectStatus } from "./redirect.js";
 import { brandContexts, isRequest, isResponse } from "./brands.js";
-import { defaultLogger, safe, snapshot } from "./logger.js";
+import { childLogger, defaultLogger, logTo, safe, snapshot } from "./logger.js";
 import { described, formatting, objectOf } from "./formatting.js";
 import type { BindenRequest } from "./request.js";
 import type { ILogger } from "@binden/logger";
@@ -103,7 +103,7 @@ export class Context<
           given.report ??
           ((message, error): void => {
             const logged = { location: "cleanup", details: false } as const;
-            this.log.error(message, { failure: snapshot(error, logged) });
+            logTo(this, "error", message, { failure: snapshot(error, logged) });
           }),
       }),
     );
@@ -130,12 +130,16 @@ export class Context<
 
   /**
    * A child of the logger with the `trace_id` of the context, created when it
-   * is first used. Its calls never fail (e.g. a custom logger that throws, or
-   * whose `child()` throws, is ignored, and its rejected promises observed):
-   * logging never prevents the request from being handled.
+   * is first used: a new logger of binden. Its calls never fail (e.g. a
+   * custom logger that throws, or whose `child()` throws, is ignored, and its
+   * rejected promises observed): logging never prevents the request from
+   * being handled. The framework writes its own records by its private path,
+   * never through the methods that the application may replace on it.
    */
   public get log(): ILogger {
-    this.#logger ??= this.#parent.child({ trace_id: this.id });
+    // By the private path of its parent (see `childLogger()`): never a
+    // `child()` that the application has replaced on it
+    this.#logger ??= childLogger(this.#parent, { trace_id: this.id });
     return this.#logger;
   }
 
@@ -339,14 +343,14 @@ export class Context<
    */
   async #reply(send: () => Promise<void>, late = false): Promise<void> {
     if (!this.#exchange.may_reply) {
-      this.log.debug("A late reply has been ignored");
+      logTo(this, "debug", "A late reply has been ignored");
       if (late) {
         await send();
       }
       return;
     } else if (this.response.started) {
       // E.g. a second `send()`: the response is not sent again
-      this.log.warn("The response has already been started");
+      logTo(this, "warn", "The response has already been started");
     }
     await send();
     this.done = true;

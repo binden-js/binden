@@ -141,11 +141,26 @@ suite("Process safety", () => {
     });
   });
 
-  test("a logger derived from one of binden, or a proxy of one, logs a failure, and a context whose `log` throws is closed: no crash", () => {
+  test("a logger derived from one of binden, or a proxy of one, logs a failure, and a context whose `log` throws gets its reply: no crash", () => {
     deepStrictEqual(run("derived-loggers.ts"), {
       status: 0,
       stdout:
-        "derived 500 closed true 1\nproxy 500 closed true 0\nlying 500 closed false 0\n",
+        "derived 500 503 true 1\nproxy 500 503 true 0\nlying 500 503 false 0\n",
+      stderr: "",
+    });
+  });
+
+  test("the records of binden go through the private paths of its loggers, and what getting the logger or a field throws drops the record only: every reply arrives, no crash", () => {
+    deepStrictEqual(run("guarded-records.ts"), {
+      status: 0,
+      stdout:
+        "replaced 200 500 503 200 4 true\n" +
+        "getter 200 500 503 200 0 false\n" +
+        "subclass 200 500 503 200 4 false\n" +
+        "id 200 500 503 200 4 false\n" +
+        "throwing-child 200 500 503 200 4 true\n" +
+        "replaced-binden 200 500 503 200 4 true\n" +
+        "replaced-application 200 500 503 200 4 true\n",
       stderr: "",
     });
   });

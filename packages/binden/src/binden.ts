@@ -15,8 +15,12 @@ import {
 import { type ILayer, Stack, layersOf, markRoot } from "./stack.js";
 import {
   type ILocation,
+  type ILogLevel,
+  childLogger,
   defaultLogger,
   isLogger,
+  logTo,
+  record,
   safe,
   snapshot,
 } from "./logger.js";
@@ -49,6 +53,7 @@ import type { ILogger } from "@binden/logger";
 import { Router } from "./router.js";
 import http from "node:http";
 import https from "node:https";
+import { isContext } from "./brands.js";
 import { validateDelay } from "./delay.js";
 
 /**
@@ -394,7 +399,7 @@ export class Binden<
   ): (request: http.IncomingMessage, response: http.ServerResponse) => void {
     formatting(() => {
       register(server, (message, error) => {
-        this.#logger.error(message, {
+        record(this.#logger, "error", message, {
           failure: snapshot(error, {
             location: "shutdown",
             details: this.#details,
@@ -411,7 +416,7 @@ export class Binden<
         if (!this.#isRequest(request) || !this.#isResponse(response)) {
           const message =
             "The request and the response are not those of the application (`serverOptions()`)";
-          this.#logger.error(message);
+          record(this.#logger, "error", message);
           request.socket.destroy();
           return;
         }
@@ -438,7 +443,7 @@ export class Binden<
       state,
       logger: this.#logger,
       report: (message, error): void => {
-        context.log.error(message, this.#failure(context, error, "cleanup"));
+        this.#logFailure(context, "error", message, error, "cleanup");
       },
     });
     const exchange = Exchange.for(request, response);
@@ -473,7 +478,7 @@ export class Binden<
         } else {
           // E.g. a listener of `end` that it has added to its source
           const message = "A pipe of an abandoned work has failed";
-          context.log.debug(message, this.#failure(context, error, "send"));
+          this.#logFailure(context, "debug", message, error, "send");
         }
         return true;
       },
@@ -485,13 +490,13 @@ export class Binden<
       },
       native: (owner): boolean => owner === works.stack,
       debug: (message, error): void => {
-        context.log.debug(message, this.#failure(context, error, "send"));
+        this.#logFailure(context, "debug", message, error, "send");
       },
       warn: (message, reason): void => {
-        context.log.warn(message, { reason });
+        logTo(context, "warn", message, { reason });
       },
       note: (message, reason): void => {
-        context.log.debug(message, { reason });
+        logTo(context, "debug", message, { reason });
       },
       released: Binden.#lateReport(
         this.#logger,
@@ -539,7 +544,8 @@ export class Binden<
     message: string,
   ): (error: unknown, logged?: string) => void {
     return (error, logged = message): void => {
-      logger.child({ trace_id: id }).debug(logged, {
+      // Through the private paths of the logger (see `record()`)
+      record(childLogger(logger, { trace_id: id }), "debug", logged, {
         failure: snapshot(error, { location: "send", request_id: id, details }),
       });
     };
@@ -569,8 +575,7 @@ export class Binden<
         // Its outcome is decided already: only its own work is abandoned
         exchange.revoke({ owner: works.stack, error });
         const message = "A pipe of the stack has failed once it had failed";
-        const { context } = run;
-        context.log.debug(message, this.#failure(context, error, "send"));
+        this.#logFailure(run.context, "debug", message, error, "send");
         return;
       }
       works.handled = true;
@@ -662,13 +667,13 @@ export class Binden<
     ) {
       const message =
         "A pipe into the response has failed once its reply was complete. It is sent after the responses before it";
-      context.log.error(message, this.#failure(context, error, "send"));
+      this.#logFailure(context, "error", message, error, "send");
       return;
     } else if (response.headersSent || response.destroyed) {
       const message = response.headersSent
         ? "A pipe into the response has failed once its headers were sent. Destroying the socket"
         : "A pipe into the response has failed once it was destroyed";
-      context.log.error(message, this.#failure(context, error, "send"));
+      this.#logFailure(context, "error", message, error, "send");
       response[kFramework](() => response.destroy());
       return;
     }
@@ -682,20 +687,16 @@ export class Binden<
    * An unexpected failure (every failure is handled): the connection of the
    * response (the one of the request, which the first context has) is
    * closed. The last resort of a request, out of which no logging throws
-   * (e.g. a context that a middleware has returned, whose `log` throws): no
-   * rejection is left unhandled.
+   * (e.g. a context that a middleware has returned, whose `log` throws, see
+   * `#logFailure()`): no rejection is left unhandled.
    */
   #unexpected(
     context: Context,
     response: BindenResponse<BindenRequest>,
     error: unknown,
   ): void {
-    try {
-      const message = "The request has failed";
-      context.log.error(message, this.#failure(context, error, "send"));
-    } catch {
-      // Nothing else to report it to
-    }
+    const message = "The request has failed";
+    this.#logFailure(context, "error", message, error, "send");
     response[kFramework](() => response.destroy());
   }
 
@@ -922,7 +923,7 @@ export class Binden<
     const { response } = context;
     if (!response.writableFinished) {
       const message = "The request has been aborted. Destroying the socket";
-      context.log.debug(message, { reason: reason.reason });
+      logTo(context, "debug", message, { reason: reason.reason });
       response[kFramework](() => response.destroy());
     }
   }
@@ -958,11 +959,11 @@ export class Binden<
         // Waits for the response before it (see above)
         const message =
           "The deadline has passed once the response was complete. It is sent after the responses before it";
-        context.log.debug(message);
+        logTo(context, "debug", message);
         return;
       }
       const message = "The deadline has passed. Destroying the socket";
-      context.log.debug(message);
+      logTo(context, "debug", message);
       response[kFramework](() => response.destroy());
     }
   }
@@ -972,11 +973,11 @@ export class Binden<
    * have been told (see `kRevoke`), e.g. a pipe that one of them has left to
    * Node.js may still write: nothing replaces their reply
    */
-  static #closed({ log, response }: Context): boolean {
-    if (response.destroyed) {
+  static #closed(context: Context): boolean {
+    if (context.response.destroyed) {
       const message =
         "The response has been destroyed: nothing replaces the reply";
-      log.debug(message);
+      logTo(context, "debug", message);
       return true;
     }
     return false;
@@ -1001,7 +1002,7 @@ export class Binden<
   /** A middleware has set `done`: a response that nothing has started is sent empty */
   static async #complete(context: Context): Promise<void> {
     if (!context.response.started) {
-      context.log.warn("`done` without a response");
+      logTo(context, "warn", "`done` without a response");
       await context.response.send();
     }
   }
@@ -1024,6 +1025,34 @@ export class Binden<
   }
 
   /**
+   * Logs what the framework logs of an error (see `#failure()`) through the
+   * logger of a context, by its private path (see `record()`): what getting
+   * it (e.g. a `log` getter of a subclass, or of the context itself) or the
+   * fields of the record throws (e.g. an `id` getter) drops the record, and
+   * the request goes on
+   */
+  #logFailure(
+    context: Context,
+    level: ILogLevel,
+    message: string,
+    error: unknown,
+    location: ILocation,
+    status?: number,
+  ): void {
+    try {
+      const { log } = context;
+      record(
+        log,
+        level,
+        message,
+        this.#failure(context, error, location, status),
+      );
+    } catch {
+      // Dropped
+    }
+  }
+
+  /**
    * Error handler: the provided `error_handler` (awaited within
    * `error_handler_timeout`), then the default reply if needed
    */
@@ -1037,7 +1066,7 @@ export class Binden<
     works.handled = true;
     if (this.#error_handler) {
       const message = "Passing error to the provided `error_handler`";
-      context.log.trace(message, this.#failure(context, error, "middleware"));
+      this.#logFailure(context, "trace", message, error, "middleware");
 
       // Its run has its own token (see `Exchange.reply()`): a pipe of it that
       // fails (see `IOwnership.fail()`) fails it
@@ -1057,7 +1086,7 @@ export class Binden<
           // Settled: only its own work is abandoned
           exchange.revoke({ owner: token, error: failure });
           const late = "A pipe of the provided `error_handler` has failed late";
-          context.log.debug(late, this.#failure(context, failure, "send"));
+          this.#logFailure(context, "debug", late, failure, "send");
         }
       });
       const outcome = await this.#bounded(
@@ -1075,10 +1104,7 @@ export class Binden<
         // now on (its reply, failure or time out) changes nothing
         const abandoned =
           "The provided `error_handler` has been abandoned at the deadline";
-        context.log.debug(
-          abandoned,
-          this.#failure(context, error, "error_handler"),
-        );
+        this.#logFailure(context, "debug", abandoned, error, "error_handler");
         return;
       } else if (outcome !== null) {
         // The handler has failed, or has not settled in time: it may no
@@ -1100,14 +1126,11 @@ export class Binden<
         response[kCancelling](reason);
         if (outcome === EXPIRED) {
           const late = "The provided `error_handler` has not settled in time";
-          context.log.error(
-            late,
-            this.#failure(context, error, "error_handler"),
-          );
+          this.#logFailure(context, "error", late, error, "error_handler");
         } else {
           const failed = "The provided `error_handler` has failed";
-          const extra = this.#failure(context, outcome.error, "error_handler");
-          context.log.error(failed, extra);
+          const { error: failure } = outcome;
+          this.#logFailure(context, "error", failed, failure, "error_handler");
         }
         // It sees its response closed first (see `kRevoke`)
         await exchange.delivered;
@@ -1138,19 +1161,13 @@ export class Binden<
         if (!Binden.#closed(context)) {
           const unfinished =
             "The provided `error_handler` has not ended its reply. Destroying the socket";
-          context.log.warn(
-            unfinished,
-            this.#failure(context, error, "error_handler"),
-          );
+          this.#logFailure(context, "warn", unfinished, error, "error_handler");
           response[kFramework](() => response.destroy());
         }
         return;
       }
       const ignored = "The provided `error_handler` has not replied";
-      context.log.debug(
-        ignored,
-        this.#failure(context, error, "error_handler"),
-      );
+      this.#logFailure(context, "debug", ignored, error, "error_handler");
     }
     await this.#defaultErrorHandler(context, error);
   }
@@ -1177,10 +1194,7 @@ export class Binden<
     };
     const late = (failure: unknown): void => {
       const message = "The provided `error_handler` has failed late";
-      context.log.debug(
-        message,
-        this.#failure(context, failure, "error_handler"),
-      );
+      this.#logFailure(context, "debug", message, failure, "error_handler");
     };
     const settled = (async (): Promise<void> => {
       await handler(context, error);
@@ -1265,7 +1279,7 @@ export class Binden<
       await context.response.send();
     } catch (error: unknown) {
       const message = "The error reply has not been sent";
-      context.log.debug(message, this.#failure(context, error, "send"));
+      this.#logFailure(context, "debug", message, error, "send");
       Binden.#unsent(context);
     }
   }
@@ -1295,23 +1309,25 @@ export class Binden<
       Number.isInteger(raw) && Number(raw) >= 400 && Number(raw) <= 599
         ? Number(raw)
         : DefaultErrorCode;
-    const extra = this.#failure(context, error, "middleware", status);
     const level = status >= 500 ? "error" : "debug";
+    const failed = (message: string): void => {
+      this.#logFailure(context, level, message, error, "middleware", status);
+    };
     if (response.writableEnded) {
       // Sent (or being sent): destroying the socket would cut it
       const ended = "The request has failed once its response was ended";
-      context.log[level](ended, extra);
+      failed(ended);
       return;
     } else if (response.started) {
       // Part of the body may be sent (or compressed): ending the response would
       // make a truncated body look complete
       const started =
         "The request has failed once its response was started. Destroying the socket";
-      context.log[level](started, extra);
+      failed(started);
       response[kFramework](() => response.destroy());
       return;
     }
-    context.log[level]("The request has failed", extra);
+    failed("The request has failed");
 
     // The framing and representation of the body that is not sent. Only
     // when set: Node.js remembers the removal of a header that is not, and
@@ -1345,11 +1361,25 @@ export class Binden<
           const body = JSON.stringify(json);
           return response.setHeader("Content-Type", ct_json).send(body);
         } catch {
-          context.log.warn("`JSON.stringify` failed", extra);
+          this.#logFailure(
+            context,
+            "warn",
+            "`JSON.stringify` failed",
+            error,
+            "middleware",
+            status,
+          );
           return response.send();
         }
       } else if (typeof message !== "string" || !message) {
-        context.log.debug("`message` is not a valid string", extra);
+        this.#logFailure(
+          context,
+          "debug",
+          "`message` is not a valid string",
+          error,
+          "middleware",
+          status,
+        );
         return response.send();
       }
       // Never the type of the body that it replaces (e.g. `text/html`)
@@ -1363,7 +1393,7 @@ export class Binden<
     } catch (failure: unknown) {
       // E.g. the client went away
       const message = "The error reply has not been sent";
-      context.log.debug(message, this.#failure(context, failure, "send"));
+      this.#logFailure(context, "debug", message, failure, "send");
       Binden.#unsent(context);
     }
   }
@@ -1376,7 +1406,7 @@ export class Binden<
     const { name } = middleware.constructor;
 
     if (middleware instanceof Middleware && middleware.disabled) {
-      context.log.debug("Middleware is disabled", { middleware: name });
+      logTo(context, "debug", "Middleware is disabled", { middleware: name });
       return context;
     }
 
@@ -1389,7 +1419,9 @@ export class Binden<
         typeof property(result, "then") === "function"
           ? await this.#race(result, context, exchange)
           : result;
-      if (!(next instanceof Context)) {
+      // A context made by its constructor (or the one of a subclass), told
+      // by its brand: never an object derived from one, nor a proxy of one
+      if (!isContext(next)) {
         return context;
       } else if (
         next.request !== context.request ||
@@ -1406,10 +1438,15 @@ export class Binden<
       if (error === ABORTED) {
         throw error;
       } else if (middleware instanceof Middleware && middleware.ignore_errors) {
-        context.log.debug("Middleware ignores errors", {
-          middleware: name,
-          ...this.#failure(context, error, "middleware"),
-        });
+        try {
+          const { log } = context;
+          record(log, "debug", "Middleware ignores errors", {
+            middleware: name,
+            ...this.#failure(context, error, "middleware"),
+          });
+        } catch {
+          // Dropped (see `#logFailure()`)
+        }
         return context;
       }
 
@@ -1432,10 +1469,7 @@ export class Binden<
         if (exchange.has_halted) {
           const message =
             "A middleware has failed after the request was aborted";
-          context.log.debug(
-            message,
-            this.#failure(context, error, "middleware"),
-          );
+          this.#logFailure(context, "debug", message, error, "middleware");
         }
         return { ok: false, error } as const;
       },
@@ -1655,17 +1689,25 @@ export class Binden<
 
     response[kListen]("close", () => {
       const duration = performance.now() - start;
-      context.log[level]("The request has completed", {
-        method: request.method,
-        route: exchange.route ?? UNMATCHED,
-        // A request of a server always has its request-target
-        ...(path === "path" ? { path: pathOf(request.url as string) } : {}),
-        status: response.headersSent ? response.statusCode : null,
-        duration_ms: Math.round(duration * 1000) / 1000,
-        body_bytes: bytes,
-        id: context.id,
-        aborted: exchange.signal.aborted,
-      });
+      // By the private path of the logger (see `record()`): what getting it
+      // or a field throws (e.g. a getter of the application) drops the
+      // record, never out of the listener
+      try {
+        const { log } = context;
+        record(log, level, "The request has completed", {
+          method: request.method,
+          route: exchange.route ?? UNMATCHED,
+          // A request of a server always has its request-target
+          ...(path === "path" ? { path: pathOf(request.url as string) } : {}),
+          status: response.headersSent ? response.statusCode : null,
+          duration_ms: Math.round(duration * 1000) / 1000,
+          body_bytes: bytes,
+          id: context.id,
+          aborted: exchange.signal.aborted,
+        });
+      } catch {
+        // Dropped
+      }
     });
   }
 

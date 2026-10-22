@@ -124,9 +124,10 @@ export function snapshot(
   };
 }
 
-type ILevel = "debug" | "error" | "fatal" | "info" | "trace" | "warn";
+/** A level of the records of a logger (see `ILogger`) */
+export type ILogLevel = "debug" | "error" | "fatal" | "info" | "trace" | "warn";
 
-const levels: readonly ILevel[] = [
+const levels: readonly ILogLevel[] = [
   "fatal",
   "error",
   "warn",
@@ -160,12 +161,38 @@ function ignore(): void {
 }
 
 /**
+ * The private paths of the loggers of binden (see `SafeLogger`), set by the
+ * static block of the class: functions of this module, never properties of
+ * the class, which the application reaches (the `constructor` of a logger)
+ * and may replace
+ */
+interface IPaths {
+  /** Whether a value is a logger of binden, by its private brand */
+  isSafe(value: unknown): value is ILogger;
+  /** Writes a record through a logger (see `record()`) */
+  record(
+    logger: unknown,
+    level: ILogLevel,
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void;
+  /** A child of a logger of binden (see `childLogger()`) */
+  child(logger: ILogger, bindings: Record<string, unknown>): ILogger;
+}
+
+// eslint-disable-next-line init-declarations -- set by the static block of `SafeLogger`
+let paths: IPaths;
+
+/**
  * A logger whose calls never fail: a method (or `child()`) that throws is
- * ignored, and a rejected promise that it returns is observed. A `child()`
- * that fails (or that does not return a logger, e.g. a promise) gives the
- * logger itself. Its methods are its own, bound to it: none depends on its
- * receiver, so that an object derived from it (e.g. with `Object.create()`,
- * to override one of them) or a proxy of it logs through its logger.
+ * ignored, and a rejected promise that it returns is observed. Its `child()`
+ * always gives a new one: over a child that is a logger, or over the logger
+ * itself when it fails (or does not return a logger, e.g. a promise). Its
+ * methods are its own, bound to it: none depends on its receiver, so that an
+ * object derived from it (e.g. with `Object.create()`) or a proxy of it logs
+ * through its logger. binden writes its own records, and reaches a logger of
+ * binden that it wraps, by their private paths (see `record()`), never
+ * through these methods, which the application may replace.
  */
 class SafeLogger implements ILogger {
   readonly #logger: ILogger;
@@ -219,24 +246,24 @@ class SafeLogger implements ILogger {
   };
 
   /** A child of the logger (the logger itself when it fails) */
-  public readonly child = (bindings: Record<string, unknown>): ILogger => {
-    try {
-      const child: unknown = this.#logger.child(bindings);
-      if (typeof property(child, "then") === "function") {
-        // Not a logger (e.g. of an `async` function): its rejection is
-        // observed, and the logger itself is used
-        Promise.resolve(child).catch(ignore);
-      } else if (isLogger(child)) {
-        return SafeLogger.isSafe(child) ? child : new SafeLogger(child);
-      }
-    } catch {
-      // The logger itself
-    }
-    return this;
-  };
+  public readonly child = (bindings: Record<string, unknown>): ILogger =>
+    this.#child(bindings);
 
   public constructor(logger: ILogger) {
     this.#logger = logger;
+  }
+
+  static {
+    paths = {
+      isSafe: (value): value is SafeLogger => SafeLogger.#isSafe(value),
+      record: (logger, level, message, extra): void => {
+        SafeLogger.#send(logger, level, message, extra);
+      },
+      child: (logger, bindings): ILogger =>
+        (SafeLogger.#isSafe(logger) ? logger : new SafeLogger(logger)).#child(
+          bindings,
+        ),
+    };
   }
 
   /**
@@ -244,22 +271,73 @@ class SafeLogger implements ILogger {
    * brand: no trap of a proxy runs, and an object derived from one (or a
    * proxy of one) is not
    */
-  public static isSafe(value: unknown): value is SafeLogger {
+  static #isSafe(value: unknown): value is SafeLogger {
     return typeof value === "object" && value !== null && #logger in value;
   }
 
-  #call(level: ILevel, message: string, extra?: Record<string, unknown>): void {
+  /**
+   * Writes a record through a logger: a logger of binden by its private path
+   * (see `#call()`), never by its methods, which the application may have
+   * replaced, and anything else by its method, whose failure (also what
+   * reading it throws) is ignored, and whose rejected promise is observed
+   */
+  static #send(
+    logger: unknown,
+    level: ILogLevel,
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void {
+    if (SafeLogger.#isSafe(logger)) {
+      logger.#call(level, message, extra);
+      return;
+    }
     try {
+      const target = logger as ILogger;
       const result: unknown =
         typeof extra === "undefined"
-          ? this.#logger[level](message)
-          : this.#logger[level](message, extra);
+          ? target[level](message)
+          : target[level](message, extra);
       if (typeof property(result, "then") === "function") {
         Promise.resolve(result).catch(ignore);
       }
     } catch {
       // Nothing else to report it to
     }
+  }
+
+  #call(
+    level: ILogLevel,
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void {
+    SafeLogger.#send(this.#logger, level, message, extra);
+  }
+
+  /**
+   * A new logger of this class: over the child that the logger gives (by
+   * the private path of a logger of binden, see `#send()`), or over the
+   * logger itself when it fails (or does not give a logger, e.g. a promise).
+   * Never one that the application holds (whose methods it may have
+   * replaced), nor this one.
+   */
+  #child(bindings: Record<string, unknown>): SafeLogger {
+    const logger = this.#logger;
+    if (SafeLogger.#isSafe(logger)) {
+      return logger.#child(bindings);
+    }
+    try {
+      const child: unknown = logger.child(bindings);
+      if (typeof property(child, "then") === "function") {
+        // Not a logger (e.g. of an `async` function): its rejection is
+        // observed, and the logger itself is used
+        Promise.resolve(child).catch(ignore);
+      } else if (SafeLogger.#isSafe(child) || isLogger(child)) {
+        return new SafeLogger(child);
+      }
+    } catch {
+      // The logger itself
+    }
+    return new SafeLogger(logger);
   }
 }
 
@@ -269,7 +347,57 @@ class SafeLogger implements ILogger {
  * wrapped
  */
 export function safe(logger: ILogger): ILogger {
-  return SafeLogger.isSafe(logger) ? logger : new SafeLogger(logger);
+  return paths.isSafe(logger) ? logger : new SafeLogger(logger);
+}
+
+/**
+ * Writes a record of binden itself through a logger (e.g. `context.log`),
+ * never throwing: a logger of binden by its private path (the method of its
+ * logger, called as its own methods call it), never through its methods,
+ * which the application may replace, and anything else (e.g. what the `log`
+ * of a subclass of `Context` gives) through its method, guarded in the same
+ * way (see `SafeLogger`)
+ */
+export function record(
+  logger: unknown,
+  level: ILogLevel,
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
+  paths.record(logger, level, message, extra);
+}
+
+/**
+ * A child of a logger (see `SafeLogger.child()`) by the private path of a
+ * logger of binden, never its `child()`, which the application may replace
+ * (anything else is wrapped first): never throws, and always gives a new
+ * logger of binden
+ */
+export function childLogger(
+  logger: ILogger,
+  bindings: Record<string, unknown>,
+): ILogger {
+  return paths.child(logger, bindings);
+}
+
+/**
+ * Writes a record of binden itself through the logger of a context (see
+ * `record()`): what getting it throws (e.g. a `log` getter of a subclass of
+ * `Context`, or of the context itself) drops the record, never out of the
+ * caller
+ */
+export function logTo(
+  context: { readonly log: unknown },
+  level: ILogLevel,
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
+  try {
+    const { log } = context;
+    paths.record(log, level, message, extra);
+  } catch {
+    // Dropped
+  }
 }
 
 /**

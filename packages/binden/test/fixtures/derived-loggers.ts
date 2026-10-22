@@ -4,8 +4,9 @@
 // and its overridden method is used (by the refusal of `callback()`); one
 // whose `getPrototypeOf` trap answers the prototype of binden's loggers while
 // its methods throw is ignored; and a context of a middleware whose `log`
-// throws once its deadline has passed has its connection closed. The process
-// never crashes.
+// throws once its deadline has passed still gets the reply of the deadline:
+// the records of the framework through it are dropped. The process never
+// crashes.
 import { type AddressInfo, Socket } from "node:net";
 import {
   Binden,
@@ -84,8 +85,8 @@ const loggers: Record<string, ILogger> = {
 };
 
 /**
- * A context whose `log` throws once its deadline has passed: the reply of the
- * deadline fails, and the last resort of the request closes its connection
+ * A context whose `log` throws once its deadline has passed: what the
+ * framework logs through it is dropped, and the deadline replies (`503`)
  */
 class Unlogged extends Context {
   public override get log(): ILogger {

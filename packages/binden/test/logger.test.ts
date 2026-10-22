@@ -7,8 +7,11 @@ import {
 } from "../index.js";
 import { type ILogger, Logger } from "@binden/logger";
 import {
+  childLogger,
   createSerializers,
   isLogger,
+  logTo,
+  record,
   safe,
   serializers,
   snapshot,
@@ -383,7 +386,7 @@ suite("safe()", () => {
     ok(safe(rejecting) === rejecting);
   });
 
-  test("a `child()` that fails gives the logger itself", () => {
+  test("a `child()` that fails gives a new logger of binden over the logger itself", () => {
     const logged: string[] = [];
     const base = recorder((message: string) => {
       logged.push(message);
@@ -394,15 +397,19 @@ suite("safe()", () => {
         throw new Error("No child");
       },
     });
-    ok(throwing.child({ id: 1 }) === throwing);
     const invalid = safe({
       ...base,
       child: (): ILogger => ({}) as ILogger,
     });
-    ok(invalid.child({ id: 1 }) === invalid);
+    for (const logger of [throwing, invalid]) {
+      const child = logger.child({ id: 1 });
+      // Never the logger itself, whose methods the application may replace
+      ok(child !== logger && safe(child) === child);
+      child.info("itself");
+    }
     const valid = safe(base).child({ id: 1 });
     valid.info("child");
-    deepStrictEqual(logged, ["child"]);
+    deepStrictEqual(logged, ["itself", "itself", "child"]);
   });
 
   test("an object derived from a logger of binden, or a proxy of one, is wrapped: it logs through that logger, and a method that it overrides is used", () => {
@@ -450,6 +457,142 @@ suite("safe()", () => {
       "child",
       "inherited",
       "inherited child",
+    ]);
+  });
+
+  test("a `child()` that gives a logger that throws gives a logger of binden over it, whose calls never fail", () => {
+    const calls: string[] = [];
+    const throwing = recorder((message: string): never => {
+      calls.push(message);
+      throw new Error("A failing child");
+    });
+    const parent = safe({ ...recorder(() => null), child: () => throwing });
+    const child = parent.child({ id: 1 });
+    child.error("error");
+    childLogger(parent, { id: 2 }).warn("warn");
+    // Another logger is wrapped first
+    const wrapped = childLogger(throwing, { id: 3 });
+    wrapped.info("info");
+    // A logger of binden, told by its brand
+    ok(safe(child) === child && safe(wrapped) === wrapped);
+    deepStrictEqual(calls, ["error", "warn", "info"]);
+  });
+
+  test("binden writes its own records by the private paths of its loggers: the methods (and `child()`) replaced on one are never used, and the class has no property to replace", () => {
+    const calls: unknown[][] = [];
+    const base = safe(
+      recorder((...args: unknown[]) => {
+        calls.push(args);
+      }),
+    );
+    const log = base.child({ id: 1 });
+    const thrower = (): never => {
+      throw new Error("A replaced method");
+    };
+    for (const method of [
+      "fatal",
+      "error",
+      "warn",
+      "info",
+      "debug",
+      "trace",
+      "child",
+    ]) {
+      Object.assign(log, { [method]: thrower });
+    }
+    record(log, "info", "info");
+    record(log, "error", "error", { a: 1 });
+    const child = childLogger(log, { id: 2 });
+    ok(safe(child) === child);
+    record(child, "debug", "child");
+    // A new logger of binden over a logger of binden that a `child()` gives:
+    // also its own methods reach it by its private path
+    const over = safe({ ...recorder(thrower), child: () => log }).child({});
+    ok(over !== log && safe(over) === over);
+    over.warn("over");
+    record(over, "trace", "recorded over");
+    // Its child: by the private path of the logger of binden under it
+    over.child({ id: 3 }).info("over child");
+    record(childLogger(over, { id: 4 }), "fatal", "recorded over child");
+    // The application wraps them, and calls its own methods
+    throws(() => {
+      log.info("replaced");
+    });
+    deepStrictEqual(calls, [
+      ["info"],
+      ["error", { a: 1 }],
+      ["child"],
+      ["over"],
+      ["recorded over"],
+      ["over child"],
+      ["recorded over child"],
+    ]);
+    deepStrictEqual(Object.getOwnPropertyNames(log.constructor).sort(), [
+      "length",
+      "name",
+      "prototype",
+    ]);
+  });
+
+  test("record() and logTo() never throw: another logger is called guarded, and what getting the logger of a context throws drops the record", async () => {
+    const logged: string[] = [];
+    const base = safe(
+      recorder((message: string) => {
+        logged.push(message);
+      }),
+    );
+    const thrower = (): never => {
+      throw new Error("A failing logger");
+    };
+    record(null, "info", "nothing");
+    record(recorder(thrower), "info", "thrown");
+    let observed = false;
+    record(
+      recorder(() => ({
+        then(_resolve: unknown, reject: (error: Error) => void): void {
+          observed = true;
+          reject(new Error("A rejecting logger"));
+        },
+      })),
+      "warn",
+      "rejected",
+    );
+    // An object derived from a logger of binden: through its own methods
+    const derived = Object.assign(Object.create(base) as ILogger, {
+      warn(message: string): void {
+        logged.push(`overridden ${message}`);
+      },
+    });
+    record(derived, "warn", "derived");
+    record(derived, "debug", "inherited");
+    logTo(
+      {
+        get log(): ILogger {
+          return thrower();
+        },
+      },
+      "info",
+      "dropped",
+    );
+    class Unlogged extends Context {
+      // eslint-disable-next-line class-methods-use-this -- a getter that fails
+      public override get log(): ILogger {
+        return thrower();
+      }
+    }
+    const request = new BindenRequest(new Socket());
+    const response = new BindenResponse(request);
+    logTo(new Unlogged({ request, response }), "error", "dropped");
+    const context = new Context({ request, response, logger: base });
+    logTo(context, "error", "through the context", { a: 1 });
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    ok(observed);
+    deepStrictEqual(logged, [
+      "overridden derived",
+      "inherited",
+      "through the context",
     ]);
   });
 
