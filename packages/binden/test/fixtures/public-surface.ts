@@ -805,12 +805,16 @@ function statusObject(): readonly [object, () => number] {
   ];
 }
 
-/** The views of the test whose bytes the writer of `detaching` detaches */
-const detachable = new WeakSet<object>();
+/**
+ * The memory of the views of the test, which the writer of `detaching`
+ * detaches (also under a view of binden that shares it, e.g. the `Buffer` of
+ * a send of a view)
+ */
+const detachable = new WeakSet<ArrayBufferLike>();
 /** A view of the test (`text`), whose bytes the writer of `detaching` detaches */
 function viewOf(): Uint8Array {
   const view = new Uint8Array([116, 101, 120, 116]);
-  detachable.add(view);
+  detachable.add(view.buffer);
   return view;
 }
 
@@ -839,9 +843,9 @@ function enter(response: unknown, state: IState): (() => number) | null {
         if (!target.writableEnded) {
           target.end(chunk as string, rest[0] as BufferEncoding);
         }
-        if (isObject(chunk) && detachable.has(chunk)) {
-          const { buffer } = chunk as Uint8Array;
-          structuredClone(buffer, { transfer: [buffer] });
+        const buffer = ArrayBuffer.isView(chunk) ? chunk.buffer : null;
+        if (buffer !== null && detachable.has(buffer)) {
+          structuredClone(buffer, { transfer: [buffer as ArrayBuffer] });
         }
         const callback = rest.find((value) => typeof value === "function");
         if (typeof callback === "function") {
