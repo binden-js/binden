@@ -302,10 +302,41 @@ describe("Logger", () => {
         pipeline: counted("pipeline", [counted("step", { target })]),
       },
     }).info("discarded");
+    // What `pino` reads as it is (also inherited): a target, its level, the
+    // pipeline of a target, and the options of `redact`
+    new Logger({
+      transport: {
+        targets: [
+          Object.create(
+            counted("inherited", { target, level: "info" }),
+          ) as never,
+          counted("piped", {
+            level: "warn",
+            pipeline: counted("steps", [counted("next", { target })]),
+          }),
+        ],
+      },
+    }).info("discarded");
+    new Logger({
+      destination: sink,
+      level: "info",
+      redact: Object.create(counted("options", { paths: ["secret"] })) as never,
+    }).info("inherited", { secret: "s" });
     deepEqual(
       sink.lines.map(({ level, msg, secret }) => [level, msg, secret]),
-      [[40, "warn", "[hidden]"]],
+      [
+        [40, "warn", "[hidden]"],
+        [30, "inherited", "[Redacted]"],
+      ],
     );
+    // What `pino` refuses itself: a target that is not an object, and the
+    // options of `redact` without a list of paths
+    throws(() => new Logger({ transport: { targets: [null as never] } }), {
+      name: "TypeError",
+    });
+    throws(() => new Logger({ destination: sink, redact: {} as never }), {
+      message: "pino – redact must contain an array of strings",
+    });
     deepEqual(Object.fromEntries(reads), {
       "customLevels.custom": 1,
       "redact.paths": 1,
@@ -318,6 +349,13 @@ describe("Logger", () => {
       "target.target": 1,
       "pipeline.0": 1,
       "step.target": 1,
+      "inherited.target": 1,
+      "inherited.level": 1,
+      "piped.level": 1,
+      "piped.pipeline": 1,
+      "steps.0": 1,
+      "next.target": 1,
+      "options.paths": 1,
     });
   });
 

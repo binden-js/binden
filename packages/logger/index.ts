@@ -288,19 +288,44 @@ function isObject(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** A copy of a list, each item read once (an object item is copied too) */
-function copyList(list: readonly unknown[]): unknown[] {
-  return [...list].map((item) => (isObject(item) ? { ...item } : item));
+/**
+ * A target of `transport` (or a step of a pipeline), copied as `pino` reads
+ * it: its own enumerable properties, which it spreads, and its `target`,
+ * `level` and `pipeline` (also inherited, which it reads as they are), each
+ * once
+ */
+function copyTarget(item: unknown): unknown {
+  if (!isObject(item)) {
+    return item;
+  }
+  const copy: Record<PropertyKey, unknown> = { ...item };
+  for (const key of ["target", "level", "pipeline"]) {
+    if (!Object.hasOwn(copy, key)) {
+      const value: unknown = Reflect.get(item, key);
+      if (typeof value !== "undefined") {
+        copy[key] = value;
+      }
+    }
+  }
+  // A pipeline of a target, whose steps are targets
+  const { pipeline } = copy;
+  if (Array.isArray(pipeline)) {
+    copy.pipeline = [...(pipeline as unknown[])].map(copyTarget);
+  }
+  return copy;
 }
 
-/** An object whose list under a key, if it is an array, is a copy */
-function withList(
+/**
+ * An object whose list of targets under a key (`targets` or `pipeline` of
+ * `transport`), if it is an array, is a copy (see `copyTarget()`)
+ */
+function withTargets(
   object: Record<PropertyKey, unknown>,
   key: string,
 ): Record<PropertyKey, unknown> {
   const list = object[key];
   if (Array.isArray(list)) {
-    object[key] = copyList(list);
+    object[key] = [...(list as unknown[])].map(copyTarget);
   }
   return object;
 }
@@ -421,8 +446,8 @@ export class Logger implements ILogger {
   /**
    * The options of `pino`, with a copy of those that it reads several times
    * (each level of `customLevels`, which the check of `level` reads too, the
-   * paths of `redact`, and the targets of `transport`): each is read once, so
-   * that a getter of the application runs once
+   * paths of `redact`, and the targets of `transport`), made as `pino` reads
+   * them: each is read once, so that a getter of the application runs once
    */
   static #copy(options: PinoLoggerOptions): PinoLoggerOptions {
     const copied: Record<string, unknown> = { ...options };
@@ -431,13 +456,20 @@ export class Logger implements ILogger {
       copied.customLevels = { ...customLevels };
     }
     if (Array.isArray(redact)) {
-      copied.redact = copyList(redact);
+      copied.redact = [...(redact as unknown[])];
     } else if (isObject(redact)) {
-      copied.redact = withList({ ...redact }, "paths");
+      // What `pino` reads of it (also inherited), as it reads them
+      const { paths, censor, remove } = redact;
+      copied.redact = {
+        paths: Array.isArray(paths) ? [...(paths as unknown[])] : paths,
+        censor,
+        remove,
+      };
     }
     if (isObject(transport)) {
-      copied.transport = withList(
-        withList({ ...transport }, "targets"),
+      // Spread by `pino`: its own properties
+      copied.transport = withTargets(
+        withTargets({ ...transport }, "targets"),
         "pipeline",
       );
     }
