@@ -278,14 +278,15 @@ without `done`) refuses the body with a `500 Internal Server Error` (logged at `
 with an empty body.
 
 `run()` reads each property of its context once, before anything is awaited (the request, the
-response, the signal and the logger). What a later use of them throws stops the parse as any other
-failure does: the request is unpiped, the decoders destroyed, the listeners removed, and the
-connection closed after the reply. Examples are a context that only looks like one, such as a proxy
-whose response's `setHeader()` throws as a chunked body goes over the limit, or whose signal's
+response, the signal and the logger). What a later use of them throws (but a call of the logger,
+which never fails, see the Logging of binden) stops the parse as any other failure does: the
+request is unpiped, the decoders destroyed, the listeners removed, and the connection closed after
+the reply. Examples are a context that only looks like one, such as a proxy whose response's
+`setHeader()` throws as a chunked body goes over the limit, or whose signal's
 `removeEventListener()` throws once the body is read. That error is the rejection of `run()`: the
 first such error, as it is, formatted. It never crashes the process nor leaves `run()` pending, and
-what the parse throws once something has been awaited (e.g. a logger, or the setter of
-`request.body`) is formatted too.
+what the parse throws once something has been awaited (e.g. the setter of `request.body`) is
+formatted too.
 
 ## Errors
 
