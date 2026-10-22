@@ -21,8 +21,9 @@
 // at most once, and each probed position must be examined by a hostile value
 // (refused, converted or read), unless its fixture says why it is not. An
 // allowance that permits more than happens is a finding too.
-// Prints a JSON report: `{ entries, probes, findings }`, each finding as
-// `<entry> | <probe>: <what>` with `--lines` (one per line), and
+// Prints a JSON report: `{ entries, probed, probes, findings }` (the ids of
+// the entry points of the surface, and of those that it has probed), each
+// finding as `<entry> | <probe>: <what>` with `--lines` (one per line), and
 // `--only=<text>` probes only the entries whose id contains it, and
 // `--shard=<index>/<count>` one of `count` shards of them (every `count`-th
 // one, from the `index`-th, counted from 0), which processes of their own
@@ -187,9 +188,12 @@ const hostileNames = [
   "prototype-trap",
   "keys-trap",
   "has-trap",
+  "derived",
+  "transparent",
   "counting",
   "late",
   "late-use",
+  "late-write",
 ] as const;
 /** The name of a hostile value */
 type IHostileName = (typeof hostileNames)[number];
@@ -229,6 +233,13 @@ const trapNames = [
   "set",
   "setPrototypeOf",
 ] as const;
+
+/** The traps that write (see `late-write`) */
+const lateWrites: ReadonlySet<string> = new Set([
+  "defineProperty",
+  "deleteProperty",
+  "set",
+]);
 
 /** A function that does nothing */
 function noop(): void {
@@ -321,16 +332,39 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
       return one({ ownKeys: trap });
     case "has-trap":
       return one({ has: trap });
-    case "late-use": {
+    case "derived":
+      // An object whose prototype is the valid value (e.g. to override one
+      // of its methods): it has none of the private fields of the valid
+      // value, and a check of its prototype chain takes it for one
+      return {
+        name,
+        value: Object.create(isObject(valid) ? valid : {}) as object,
+        conversions: none,
+        thrown,
+      };
+    case "transparent":
+      // A proxy of the valid value without any trap: it has none of the
+      // private fields of the valid value either
+      return {
+        name,
+        value: new Proxy(isObject(valid) ? valid : {}, {}),
+        conversions: none,
+        thrown,
+      };
+    case "late-use":
+    case "late-write": {
       // The valid value, used as it is (its methods bound to it, so that its
       // private fields are read, and the objects that it gives used in the
       // same way, e.g. the response of a context), until the call has
-      // returned: a later use (e.g. after an `await`) throws
+      // returned: a later use (e.g. after an `await`) throws, or for
+      // `late-write` a later write only (e.g. the setter of `request.body`
+      // once a body is read), as it goes on reading
+      const writes = name === "late-write";
       let armed = false;
       const proxies = new WeakMap<object, object>();
       const handler: ProxyHandler<object> = {
         get(target: object, key: PropertyKey): unknown {
-          if (armed) {
+          if (armed && !writes) {
             return trap();
           }
           const value: unknown = Reflect.get(target, key, target);
@@ -352,14 +386,22 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
       };
       const forwarded = (key: (typeof trapNames)[number]): IFunction =>
         function forward(...values: unknown[]): unknown {
-          if (armed) {
+          if (armed && (!writes || lateWrites.has(key))) {
             return trap();
           }
-          return Reflect.apply(
-            Reflect.get(Reflect, key) as IFunction,
-            Reflect,
-            values,
-          );
+          // A setter of the valid value sets its private fields
+          return key === "set" && writes
+            ? Reflect.set(
+                values[0] as object,
+                values[1] as PropertyKey,
+                values[2],
+                values[0],
+              )
+            : Reflect.apply(
+                Reflect.get(Reflect, key) as IFunction,
+                Reflect,
+                values,
+              );
         };
       for (const key of trapNames) {
         Reflect.set(handler, key, forwarded(key));
@@ -419,7 +461,8 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
  * proxy that V8 refuses, an error of the application, a conversion, an
  * absent value and a later use), so that a path that the state takes is
  * probed, at a fraction of the cost of every value (every baseline is probed
- * in every state)
+ * in every state), and at a position whose valid value is a function, the
+ * functions too (see `functionHostiles`)
  */
 const stateHostiles: ReadonlySet<IHostileName> = new Set([
   "symbol",
@@ -428,6 +471,26 @@ const stateHostiles: ReadonlySet<IHostileName> = new Set([
   "throwing",
   "counting",
   "late-use",
+]);
+/**
+ * The hostile functions, also probed in the other states at a position whose
+ * valid value is a function (e.g. the `stringify` of `json()` once the
+ * response has ended): a revoked one, one whose traps throw, and a class
+ */
+const functionHostiles: ReadonlySet<IHostileName> = new Set([
+  "revoked-function",
+  "throwing-function",
+  "class",
+]);
+/**
+ * The hostile values that are made of an object or a function (of the valid
+ * value of their position): probed only where the valid value is one
+ */
+const objectHostiles: ReadonlySet<IHostileName> = new Set([
+  "derived",
+  "transparent",
+  "late-use",
+  "late-write",
 ]);
 
 /** A logger that logs nothing (and so formats no error) */
@@ -503,23 +566,34 @@ interface IEnv {
 }
 
 /**
- * The body of the request of an exchange: none (a `GET`), or the body of a
+ * The body of the request of an exchange: none (a `GET`), the body of a
  * `POST` over the limits of the parsers of the fixtures (`text`, chunked, of
- * 10 bytes, and `multipart`, a file of 8 bytes)
+ * 10 bytes, and `multipart`, a file of 8 bytes), or within them, which they
+ * parse (`small-text`, chunked, of 2 bytes, and `small-multipart`, a file of
+ * 1 byte)
  */
-type IBody = "multipart" | "none" | "text";
+type IBody = "multipart" | "none" | "small-multipart" | "small-text" | "text";
 
 /** The head (and the body) of the request of an exchange */
 function requestOf(body: IBody, id: string, at: number): string {
-  const form = [
-    "--B",
-    'Content-Disposition: form-data; name="f"; filename="a.txt"',
-    "Content-Type: text/plain",
-    "",
-    "abcdefgh",
-    "--B--",
-    "",
-  ].join("\r\n");
+  const form = (content: string): string =>
+    [
+      "--B",
+      'Content-Disposition: form-data; name="f"; filename="a.txt"',
+      "Content-Type: text/plain",
+      "",
+      content,
+      "--B--",
+      "",
+    ].join("\r\n");
+  const multipart = (content: string): readonly [string, string[], string] => [
+    "POST",
+    [
+      "Content-Type: multipart/form-data; boundary=B",
+      `Content-Length: ${String(form(content).length)}`,
+    ],
+    form(content),
+  ];
   const requests: Readonly<
     Record<IBody, readonly [string, readonly string[], string]>
   > = {
@@ -529,14 +603,13 @@ function requestOf(body: IBody, id: string, at: number): string {
       ["Content-Type: text/plain", "Transfer-Encoding: chunked"],
       "2\r\nab\r\n8\r\nabcdefgh\r\n0\r\n\r\n",
     ],
-    multipart: [
+    "small-text": [
       "POST",
-      [
-        "Content-Type: multipart/form-data; boundary=B",
-        `Content-Length: ${String(form.length)}`,
-      ],
-      form,
+      ["Content-Type: text/plain", "Transfer-Encoding: chunked"],
+      "2\r\nab\r\n0\r\n\r\n",
     ],
+    multipart: multipart("abcdefgh"),
+    "small-multipart": multipart("a"),
   };
   const [method, fields, content] = requests[body];
   return [
@@ -698,14 +771,54 @@ function environment(): IEnv {
 
 /**
  * The states of a response (also of a context) that its members are probed
- * in, besides a fresh one: its head sent, ended, destroyed
+ * in, besides a fresh one: its head sent, ended, destroyed, and two fresh
+ * ones that the application has changed: its `statusCode` is an object
+ * (`coerced`, see `statusObject()`), and its `write()` is replaced by one that
+ * ends it with the chunk, then detaches the bytes of a view of the test
+ * (`detaching`, see `viewOf()`), as a writer of a library (e.g. the one of
+ * @binden/compression) may hand them on
  */
-const states = ["sent", "ended", "destroyed"] as const;
+const states = ["sent", "ended", "destroyed", "coerced", "detaching"] as const;
 /** The state of a response */
 type IState = "fresh" | (typeof states)[number];
+/**
+ * The states whose receivers are probed by the baselines only: what they
+ * check is the call itself (how often it converts the status, and whether a
+ * send whose bytes are lost rejects, see `loses`)
+ */
+const baselineStates: ReadonlySet<IState> = new Set(["coerced", "detaching"]);
 
-/** Puts a fresh response in a state */
-function enter(response: unknown, state: IState): void {
+/**
+ * An object that converts to the status 200 (by any hint), and how many times
+ * it has been converted
+ */
+function statusObject(): readonly [object, () => number] {
+  let conversions = 0;
+  return [
+    {
+      [Symbol.toPrimitive](): number {
+        conversions += 1;
+        return 200;
+      },
+    },
+    (): number => conversions,
+  ];
+}
+
+/** The views of the test whose bytes the writer of `detaching` detaches */
+const detachable = new WeakSet<object>();
+/** A view of the test (`text`), whose bytes the writer of `detaching` detaches */
+function viewOf(): Uint8Array {
+  const view = new Uint8Array([116, 101, 120, 116]);
+  detachable.add(view);
+  return view;
+}
+
+/**
+ * Puts a fresh response in a state: how many times its `statusCode` has been
+ * converted since, for `coerced`
+ */
+function enter(response: unknown, state: IState): (() => number) | null {
   const target = response as ServerResponse;
   if (state === "sent") {
     target.writeHead(200);
@@ -714,8 +827,38 @@ function enter(response: unknown, state: IState): void {
     target.end();
   } else if (state === "destroyed") {
     target.destroy();
+  } else if (state === "coerced") {
+    const [status, conversions] = statusObject();
+    target.statusCode = status as unknown as number;
+    return conversions;
+  } else if (state === "detaching") {
+    Object.defineProperty(target, "write", {
+      configurable: true,
+      writable: true,
+      value(chunk: unknown, ...rest: unknown[]): boolean {
+        if (!target.writableEnded) {
+          target.end(chunk as string, rest[0] as BufferEncoding);
+        }
+        if (isObject(chunk) && detachable.has(chunk)) {
+          const { buffer } = chunk as Uint8Array;
+          structuredClone(buffer, { transfer: [buffer] });
+        }
+        const callback = rest.find((value) => typeof value === "function");
+        if (typeof callback === "function") {
+          Reflect.apply(callback, null, []);
+        }
+        return true;
+      },
+    });
   }
+  return null;
 }
+
+/**
+ * The conversions of the `statusCode` of the receivers in the `coerced`
+ * state, by the receivers
+ */
+const statusConversions = new WeakMap<object, () => number>();
 
 /** A plain response of Node.js (of no connection), in a state */
 function plainResponse(state: IState): ServerResponse {
@@ -740,24 +883,31 @@ function fresh(make: (env: IEnv) => unknown): IReceiver {
 
 /**
  * The receivers of the members of a response (or of an object that has one,
- * whose response `of()` gives): a fresh one, and one in each state
+ * whose response `of()` gives): a fresh one, and one in each state (but
+ * `detaching` for a writer that a package installs, which it would replace)
  */
 function stated(
   make: (env: IEnv) => unknown,
   of: (made: unknown) => unknown,
+  detaching = true,
 ): readonly IReceiver[] {
   return [
     fresh(make),
-    ...states.map((state): IReceiver => ({
-      name: state,
-      state,
-      async make(env: IEnv): Promise<unknown> {
-        const made = await make(env);
-        enter(of(made), state);
-        await turn();
-        return made;
-      },
-    })),
+    ...states
+      .filter((state) => detaching || state !== "detaching")
+      .map((state): IReceiver => ({
+        name: state,
+        state,
+        async make(env: IEnv): Promise<unknown> {
+          const made = await make(env);
+          const conversions = enter(of(made), state);
+          if (conversions !== null) {
+            statusConversions.set(made as object, conversions);
+          }
+          await turn();
+          return made;
+        },
+      })),
   ];
 }
 
@@ -820,10 +970,25 @@ interface IFixtureOptions {
   /**
    * The readers of what a valid call stores (e.g. `[kRepresentation]()` of
    * the negotiator that `[kNegotiator]()` stores), by their names: called on
-   * its receiver once a call has succeeded
+   * its receiver (and given what the call has returned, e.g. what a
+   * constructor has made) once a call has succeeded. A position whose value
+   * is called later is probed by a reader that makes the call (see
+   * `untouched`)
    */
-  readonly readers?:
-    Readonly<Record<string, (receiver: unknown) => unknown>> | undefined;
+  readonly readers?: Readonly<Record<string, IReader>> | undefined;
+  /**
+   * What never fails, as documented (e.g. the logger of a context): its
+   * calls (`call`), or its readers (by their names), each with where it is
+   * documented. One that throws or rejects (even what a value of the test
+   * throws) is a finding.
+   */
+  readonly infallible?: Readonly<Record<string, string>> | undefined;
+  /**
+   * The indexes of its calls that send a view of the test (see `viewOf()`):
+   * in the `detaching` state, the writer of the application loses its bytes,
+   * and the call must reject (and cut the response)
+   */
+  readonly loses?: readonly number[] | undefined;
   /**
    * Whether its baselines throw by design (e.g. `context.throw()`), or the
    * indexes of those that do: a formatted error
@@ -836,7 +1001,8 @@ interface IFixtureOptions {
   readonly io?: boolean | undefined;
   /**
    * The positions that no hostile value is examined at (each is accepted as
-   * it is), and why
+   * it is), and why: one whose reason says that its value is called later
+   * must have a reader that uses it (see `readers`)
    */
   readonly untouched?: Readonly<Record<string, string>> | undefined;
   /**
@@ -1360,21 +1526,37 @@ function applicationOf(listener: unknown): {
   return origins.get(listener as object) as ReturnType<typeof applicationOf>;
 }
 
+/**
+ * Where it is documented that a serializer never fails: a value of another
+ * kind is reduced to its type
+ */
+const reduced = {
+  call: "README, Logging and Serializers: a value of another kind is reduced to its type",
+};
 /** The serializers of @binden/logger (its `serializers`, and of `createSerializers()`) */
 const loggerSerializing: Record<string, IFixture> = {
-  "err()": call(() => [new Error("An error")]),
-  "error()": call(() => [new Error("An error")]),
-  "request()": call(async (env) => [(await env.exchange()).request]),
-  "response()": call(async (env) => [(await env.exchange()).response]),
+  "err()": probed({ infallible: reduced }, () => [new Error("An error")]),
+  "error()": probed({ infallible: reduced }, () => [new Error("An error")]),
+  "request()": probed({ infallible: reduced }, async (env) => [
+    (await env.exchange()).request,
+  ]),
+  "response()": probed({ infallible: reduced }, async (env) => [
+    (await env.exchange()).response,
+  ]),
 };
 /** The serializers of binden (its `serializers`, and of `createSerializers()`) */
 const serializing: Record<string, IFixture> = {
   ...loggerSerializing,
   "body()": probed(
-    { untouched: { 0: "redacts any body: it never reads it" } },
+    {
+      untouched: { 0: "redacts any body: it never reads it" },
+      infallible: reduced,
+    },
     () => ["body"],
   ),
-  "context()": call(async (env) => [(await env.exchange()).context]),
+  "context()": probed({ infallible: reduced }, async (env) => [
+    (await env.exchange()).context,
+  ]),
 };
 /** The fixtures of the members of `serializers` */
 function serializersOf(
@@ -1501,6 +1683,12 @@ define("binden:", {
 });
 
 const Cookie = binden.Cookie as new (init: object) => object;
+const BindenRequest = binden.BindenRequest as new (
+  socket: Socket,
+) => IncomingMessage;
+const BindenResponse = binden.BindenResponse as new (
+  request: IncomingMessage,
+) => ServerResponse;
 /** The members of the cookies of a response (a `Set` of `Cookie`) */
 const cookieMembers: Record<string, IFixture> = {
   "delete()": probed(
@@ -1560,9 +1748,10 @@ const replies: Record<string, IFixture> = {
     () => ["x-a", "b"],
   ),
   "send()": probed(
-    { io: true },
+    { io: true, loses: [2] },
     () => [],
     () => ["text"],
+    () => [viewOf()],
   ),
   "json()": probed(
     {
@@ -1626,19 +1815,25 @@ const replies: Record<string, IFixture> = {
 /** Why an argument of the logger of a context examines no value */
 const logged =
   "given as it is to the logger of the application: a call of the logger of a context never fails (README, Context)";
+/** Where it is documented that the logger of a context never fails */
+const neverFails = "README, Context and Logging: its calls never fail";
 /** The methods of the logger of a context (whose calls never fail) */
 const contextLogger: Record<string, IFixture> = Object.fromEntries(
   ["fatal", "error", "warn", "info", "debug", "trace"].map((level) => [
     `${level}()`,
-    probed({ untouched: { 0: logged, 1: logged } }, () => [
-      "message",
-      { a: 1 },
-    ]),
+    probed(
+      { untouched: { 0: logged, 1: logged }, infallible: { call: neverFails } },
+      () => ["message", { a: 1 }],
+    ),
   ]),
 );
 // A child is a logger of the same kind
 contextLogger["child()"] = probed(
-  { members: contextLogger, untouched: { 0: logged } },
+  {
+    members: contextLogger,
+    untouched: { 0: logged },
+    infallible: { call: neverFails },
+  },
   () => [{ a: 1 }],
 );
 
@@ -1659,22 +1854,50 @@ define("binden:Context#", {
     () => [418],
     () => [418, errorOptions()],
   ),
-  log: probed({ members: contextLogger }, () => []),
+  log: probed(
+    { members: contextLogger, infallible: { call: neverFails } },
+    () => [],
+  ),
 });
 define("binden:", {
   "new Context()": probed(
     {
-      deep: ["request", "response", "logger", "state", "report"].map((key) => [
-        0,
-        key,
-      ]),
+      deep: [
+        ...["request", "response", "logger", "state", "report"].map((key) => [
+          0,
+          key,
+        ]),
+        // A method of a logger of binden (that an object derived from it
+        // overrides, see `replaced()`)
+        [0, "logger", "child"],
+      ],
       untouched: {
         "0.state": "the state of the application, any value, kept as it is",
       },
+      readers: {
+        // Its logger, through which every record goes
+        "log.error()": (_, made) => {
+          (made as { log: { error(message: string): void } }).log.error(
+            "message",
+          );
+        },
+      },
+      infallible: { log: neverFails, "log.error()": neverFails },
     },
     async (env) => {
       const { request, response } = await env.exchange();
       return [{ request, response, logger: silent, state: {}, report: noop }];
+    },
+    // Given the logger of a context (of binden, e.g. to derive one from it)
+    async (env) => {
+      const { request, response, context } = await env.exchange();
+      const logger: unknown = Reflect.get(context, "log");
+      return [{ request, response, logger }];
+    },
+    // The first context of a request (which creates what its contexts share)
+    () => {
+      const request = new BindenRequest(new Socket());
+      return [{ request, response: new BindenResponse(request) }];
     },
   ),
 });
@@ -1712,6 +1935,20 @@ const writeInformation =
 /** What Node.js does with a reason of `writeHead()` that is not a string */
 const reasonUntouched =
   "a reason that is not a string is taken as the headers, as Node.js does, which ignores headers that are not an object";
+/**
+ * The readers of what a check of a response stores that mutate it later
+ * (e.g. after `[kSeal]()`): its status and a header
+ */
+const mutations: Readonly<Record<string, IReader>> = {
+  "status()": (receiver) =>
+    Reflect.apply(
+      Reflect.get(receiver as object, "status") as IFunction,
+      receiver,
+      [201],
+    ),
+  "setHeader()": (receiver) =>
+    (receiver as ServerResponse).setHeader("x-a", "b"),
+};
 
 define("binden:BindenResponse#", {
   ...replies,
@@ -1739,10 +1976,11 @@ define("binden:BindenResponse#", {
     () => [{ "x-a": "b", "x-b": ["c", "d"] }],
   ),
   "send()": probed(
-    { io: true },
+    { io: true, loses: [3] },
     () => [],
     () => ["text"],
     () => ["74657874", "hex"],
+    () => [viewOf()],
   ),
   "writeHead()": probed(
     {
@@ -1938,18 +2176,18 @@ define("binden:BindenResponse#", {
     },
     () => [200, "OK", { "x-a": "b" }],
   ),
-  "[binden.seal]()": probed(
-    {
-      untouched: {
-        0: "a check, called (guarded) as the response is mutated: one that is not a function (or that throws) refuses every mutation",
-      },
-    },
-    () => [(): boolean => true],
-  ),
+  // A check, called (guarded) as the response is mutated: one that is not a
+  // function (or that throws) refuses every mutation
+  "[binden.seal]()": probed({ readers: mutations }, () => [
+    (): boolean => true,
+  ]),
+  // The handlers of the framework, kept as they are, and called as it
+  // replies (e.g. `replier()`, by `destroy()`)
   "[binden.ownership]()": probed(
     {
-      untouched: {
-        0: "the handlers of the framework, kept as they are, and called (guarded) as it replies",
+      readers: {
+        ...mutations,
+        "destroy()": (receiver) => (receiver as ServerResponse).destroy(),
       },
     },
     () => [
@@ -2015,9 +2253,14 @@ define("binden:BindenResponse#", {
     },
     () => [],
   ),
-  // The negotiator is read by `[binden.representation]()`
+  // The negotiator is read by `[binden.representation]()`, which calls its
+  // `choose()`
   "[binden.negotiator]()": probed(
     {
+      deep: [
+        [0, "choose"],
+        [0, "forget"],
+      ],
       readers: {
         "[binden.representation]()": (receiver) =>
           Reflect.apply(
@@ -2047,6 +2290,17 @@ define("binden:BindenResponse#", {
   ),
 });
 
+/** Options of `pino` that hold others (and a custom level) */
+function pinoOptions(): Record<string, unknown> {
+  return {
+    level: "custom",
+    customLevels: { custom: 25 },
+    formatters: { level: (label: string): object => ({ label }) },
+    redact: { paths: ["secret"], censor: "x" },
+    base: { a: 1 },
+  };
+}
+
 // @binden/logger
 define("@binden/logger:", {
   "new Logger()": probed(
@@ -2055,14 +2309,27 @@ define("@binden/logger:", {
         [0, "destination"],
         [0, "level"],
         [0, "error_details"],
-        // An option of `pino`
+        // Options of `pino`, also nested ones (which @binden/logger checks,
+        // e.g. the custom levels of its level, or gives to `pino`)
         [0, "name"],
+        ...[
+          "customLevels",
+          "customLevels.custom",
+          "formatters",
+          "formatters.level",
+          "redact",
+          "redact.paths",
+          "redact.paths.0",
+          "base",
+          "base.a",
+        ].map((path) => [0, ...path.split(".")]),
       ],
     },
     // At the lowest level: every method reads its arguments
     () => [
       { destination: sink, level: "trace", error_details: true, name: "name" },
     ],
+    () => [{ destination: sink, ...pinoOptions() }],
   ),
   "Logger.fromPino()": call(() => [pino({ level: "trace" }, sink)]),
   "Logger.getLevel()": call(
@@ -2101,14 +2368,17 @@ for (const level of ["fatal", "error", "warn", "info", "debug", "trace"]) {
 const context = call(async (env) => [(await env.exchange()).context]);
 /**
  * The same, for a parser (that reads the body), also of a request whose body
- * is over its limits
+ * is over its limits (`over`), and of one whose body it parses (`within`):
+ * the uses of the context once the body is read (e.g. the setter of
+ * `request.body`) are probed too
  */
-function parsing(body: IBody): IFixture {
+function parsing(over: IBody, within: IBody): IFixture {
   return probed(
     // The body over the limits is refused
     { io: true, throws: [1] },
     async (env) => [(await env.exchange()).context],
-    async (env) => [(await env.exchange(body)).context],
+    async (env) => [(await env.exchange(over)).context],
+    async (env) => [(await env.exchange(within)).context],
   );
 }
 const ContentType = binden.ContentType as new (init: object) => object;
@@ -2192,7 +2462,7 @@ define("@binden/body:", {
     () => [bodyOptions()],
     () => [{ ...bodyOptions(), type: (): string => "text" }],
   ),
-  "BodyParser#run()": parsing("text"),
+  "BodyParser#run()": parsing("text", "small-text"),
 });
 define("@binden/compression:", {
   "new Compression()": probed(
@@ -2273,7 +2543,7 @@ define("@binden/multipart:", {
       ...multipart.calls,
     ],
   },
-  "Multipart#run()": parsing("multipart"),
+  "Multipart#run()": parsing("multipart", "small-multipart"),
   // The name and the options are read by the constructor of `File` of
   // Node.js, which converts its name, `type` and `lastModified`
   "new MultipartFile()": probed(
@@ -2586,10 +2856,21 @@ function valueAt(
   return value;
 }
 
+/** Whether a value is a plain object (of `Object.prototype`, or of none) */
+function isPlain(value: unknown): value is object {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    [Object.prototype, null].includes(Object.getPrototypeOf(value) as object)
+  );
+}
+
 /**
  * Replaces the value at a path of the arguments (copying what holds it) by
  * a hostile value (or places it, see `place`): `null` when the path does
- * not exist
+ * not exist. What holds it is an array, a plain object, or an instance (e.g.
+ * a logger of binden), which is copied as an object derived from it (see
+ * `derived`) whose own property shadows the one that it inherits.
  */
 function replaced(
   values: readonly unknown[],
@@ -2605,20 +2886,28 @@ function replaced(
       ? !Number.isInteger(Number(head)) || Number(head) >= holder.length
       : typeof holder !== "object" ||
         holder === null ||
-        !Object.hasOwn(holder, head);
+        (isPlain(holder) ? !Object.hasOwn(holder, head) : !(head in holder));
     if (missing) {
       throw new RangeError("missing");
     }
     const object: object = Array.isArray(holder)
       ? [...(holder as unknown[])]
-      : { ...(holder as object) };
+      : isPlain(holder)
+        ? { ...holder }
+        : (Object.create(holder as object) as object);
     const inner: unknown = Reflect.get(object, head);
+    const own = (value: unknown): PropertyDescriptor => ({
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value,
+    });
     if (tail.length > 0) {
-      Reflect.set(object, head, copy(inner, tail));
+      Object.defineProperty(object, head, own(copy(inner, tail)));
     } else if (typeof given?.place === "function") {
       Object.defineProperty(object, head, given.place(inner));
     } else {
-      Reflect.set(object, head, given?.value);
+      Object.defineProperty(object, head, own(given?.value));
     }
     return object;
   };
@@ -2969,6 +3258,77 @@ function calledOut(error: unknown, given: IHostile): boolean {
   );
 }
 
+/**
+ * The positions (as `<entry> <position>`) whose hostile value a reader has
+ * used (one of its traps has run as it reads), e.g. a check that a later
+ * mutation calls: what a reason of `untouched` that says that a value is
+ * called later needs
+ */
+const usedLater = new Set<string>();
+
+/**
+ * What a call (`call`) or a reader that never fails (see `infallible`) has
+ * done wrong: thrown or rejected
+ */
+function infallibly(
+  fixture: IFixture,
+  what: string,
+  outcome: IOutcome,
+): string[] {
+  const documented = fixture.infallible?.[what];
+  if (
+    typeof documented === "undefined" ||
+    (outcome.kind !== "thrown" && outcome.kind !== "rejected")
+  ) {
+    return [];
+  }
+  return [
+    `${what === "call" ? "the call" : `its reader ${what}`} fails (${describe(outcome.error)}), but never does (${documented})`,
+  ];
+}
+
+/**
+ * How often a call converts the `statusCode` of its receiver, an object (see
+ * `coerced`), as it commits the head: as often as the same call on plain
+ * Node.js (see `node`), and at most once without it (as Node.js converts it
+ * once, as it commits the head)
+ */
+async function statusCounts(
+  fixture: IFixture,
+  conversions: number,
+  values: () => Promise<readonly unknown[]>,
+  env: IEnv,
+  ms: number,
+): Promise<string[]> {
+  const { node } = fixture;
+  if (typeof node === "undefined") {
+    return conversions > 1
+      ? [
+          `converts an object statusCode ${String(conversions)}x, Node.js once at most`,
+        ]
+      : [];
+  }
+  const [status, byNode] = statusObject();
+  const again = await values();
+  await outcomeOf(
+    () =>
+      node(again, {
+        env,
+        response(): ServerResponse {
+          const response = plainResponse("fresh");
+          response.statusCode = status as unknown as number;
+          return response;
+        },
+      }),
+    ms,
+  );
+  return conversions === byNode()
+    ? []
+    : [
+        `converts an object statusCode ${String(conversions)}x, plain Node.js ${String(byNode())}x`,
+      ];
+}
+
 /** Runs a probe on a fresh environment, and cleans it up */
 async function probe(
   entry: IEntry,
@@ -3056,18 +3416,48 @@ async function probe(
           outcome,
           ms,
         ),
+        ...infallibly(fixture, "call", outcome),
       );
-      if (outcome.kind === "returned" || outcome.kind === "resolved") {
+      const succeeded =
+        outcome.kind === "returned" || outcome.kind === "resolved";
+      if (
+        state === "detaching" &&
+        path === null &&
+        succeeded &&
+        (fixture.loses ?? []).includes(index)
+      ) {
+        found.push(
+          "resolves, although a writer of the application has lost its bytes (`loses`)",
+        );
+      }
+      const statusConverted =
+        path === null ? statusConversions.get(receiver as object) : null;
+      if (typeof statusConverted === "function") {
+        found.push(
+          ...(await statusCounts(
+            fixture,
+            statusConverted(),
+            () => bounded(made(env, receiver), makeMs, "Its arguments"),
+            env,
+            ms,
+          )),
+        );
+      }
+      if (succeeded) {
         const result = outcome.kind === "returned" ? outcome.value : null;
-        const readers: Record<string, IReader> = { ...entry.readers };
-        for (const [reader, read] of Object.entries(fixture.readers ?? {})) {
-          readers[reader] = (target): unknown => read(target);
-        }
+        const readers: Record<string, IReader> = {
+          ...entry.readers,
+          ...fixture.readers,
+        };
         for (const [reader, read] of Object.entries(readers)) {
           // A reader is judged by the traps that run as it reads (e.g. not
           // by those of a reader before it)
           const since = given?.thrown.length ?? 0;
           const readOutcome = await outcomeOf(() => read(receiver, result), ms);
+          if (isDefault && given !== null && given.thrown.length > since) {
+            usedLater.add(`${entry.id} ${position}`);
+          }
+          found.push(...infallibly(fixture, reader, readOutcome));
           if (readOutcome.kind === "pending") {
             found.push(
               `its reader ${reader} is still pending after ${String(ms)} ms`,
@@ -3092,8 +3482,6 @@ async function probe(
       if (given !== null) {
         const total = given.conversions();
         const allowed = fixture.converts?.[position];
-        const succeeded =
-          outcome.kind === "returned" || outcome.kind === "resolved";
         // A call that throws by design examines a value that makes it
         // throw something else
         examined =
@@ -3263,7 +3651,7 @@ async function readOnce(
         await outcomeOf(() => read(receiver, result), ms);
       }
       for (const read of Object.values(fixture.readers ?? {})) {
-        await outcomeOf(() => read(receiver), ms);
+        await outcomeOf(() => read(receiver, result), ms);
       }
     }
     for (const [key, count] of reads) {
@@ -3293,7 +3681,16 @@ process.chdir(import.meta.dirname);
 const [all, classes] = surface();
 const findings: IFinding[] = [];
 let probes = 0;
+/**
+ * The ids of the entry points that the surface has (also those that the
+ * entry points return or install, as they are found)
+ */
 const ids = new Set(all.map(({ id }) => id));
+/**
+ * The ids of the entry points that this shard has probed (or found without a
+ * baseline), in their order: each one of `ids` by one shard
+ */
+const visited: string[] = [];
 /** The checks of the fixtures themselves, which the first shard makes */
 const checked: IFinding[] = [];
 for (const id of Object.keys(fixtures)) {
@@ -3405,7 +3802,9 @@ async function installedBy(
         : Reflect.get(this, key);
     },
     receivers:
-      own.states === true ? stated(holder, (made) => made) : [fresh(holder)],
+      own.states === true
+        ? stated(holder, (made) => made, false)
+        : [fresh(holder)],
     readers: {},
   };
 }
@@ -3456,6 +3855,7 @@ const probing = new Set<object>();
  * (see `returned`, `installed` and `members`)
  */
 async function run(entry: IEntry, fixture: IFixture): Promise<void> {
+  visited.push(entry.id);
   /** The positions probed, as the keys of `converts` name them */
   const covered = new Set<string>();
   /** Whether a position (`<call> <position>`) is examined by a hostile value */
@@ -3473,7 +3873,11 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
         null,
       );
       findings.push(...failures);
-      if ((failures.length === 0 || !isDefault) && entry.kind !== "get") {
+      if (
+        (failures.length === 0 || !isDefault) &&
+        entry.kind !== "get" &&
+        !baselineStates.has(receiving?.state ?? "fresh")
+      ) {
         const env = environment();
         let baseline: readonly unknown[] | null = null;
         try {
@@ -3506,8 +3910,11 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
           for (const name of hostileNames.filter(
             (hostileName) =>
               (hostileName !== "late" || path.length > 1) &&
-              (hostileName !== "late-use" || isObject(value)) &&
-              (isDefault || stateHostiles.has(hostileName)),
+              (!objectHostiles.has(hostileName) || isObject(value)) &&
+              (isDefault ||
+                stateHostiles.has(hostileName) ||
+                (typeof value === "function" &&
+                  functionHostiles.has(hostileName))),
           )) {
             probes += 1;
             const outcomeOfHostile = await probe(
@@ -3520,7 +3927,12 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
               failure,
             );
             findings.push(...outcomeOfHostile.findings);
-            if (isDefault && name !== "late" && name !== "late-use") {
+            if (
+              isDefault &&
+              name !== "late" &&
+              name !== "late-use" &&
+              name !== "late-write"
+            ) {
               const key = `${String(index)} ${position}`;
               examined.set(
                 key,
@@ -3553,12 +3965,22 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
       });
     }
   }
-  for (const position of Object.keys(untouched)) {
+  for (const [position, why] of Object.entries(untouched)) {
     if (!needed.has(position)) {
       findings.push({
         entry: entry.id,
         probe: position,
         what: "listed as untouched, but a hostile value is examined there in every call",
+      });
+    }
+    if (
+      /\bcalled later\b/u.test(why) &&
+      !usedLater.has(`${entry.id} ${position}`)
+    ) {
+      findings.push({
+        entry: entry.id,
+        probe: position,
+        what: "listed as untouched and called later, but no reader uses a value given there (`readers`)",
       });
     }
   }
@@ -3671,6 +4093,7 @@ for (const entry of all
       call(() => []),
     );
   } else {
+    visited.push(entry.id);
     findings.push({ entry: entry.id, probe: "-", what: "no baseline" });
   }
 }
@@ -3687,7 +4110,7 @@ process.stdout.write(
         ),
         `${String(all.length)} entries, ${String(probes)} probes, ${String(findings.length)} findings`,
       ].join("\n")}\n`
-    : `${JSON.stringify({ entries: [...ids], probes, findings })}\n`,
+    : `${JSON.stringify({ entries: [...ids], probed: visited, probes, findings })}\n`,
   () => {
     process.exit(0);
   },
