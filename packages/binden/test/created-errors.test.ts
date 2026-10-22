@@ -38,7 +38,9 @@ const call = String.raw`${gap}(?:\?\.${gap})?\(`;
  * returned by a call, an element of an array or a property of another name,
  * a part of an expression larger than the whole value of an assignment, e.g.
  * a conditional, a name in parentheses, a computed member, or the tag of a
- * template), a class that extends an expression (e.g. a mixin), an
+ * template, and the last of a sequence that a default export gives, e.g.
+ * `export default (0, TypeError)`, when an earlier one has parentheses in
+ * parentheses), a class that extends an expression (e.g. a mixin), an
  * `abort()` whose reason is `undefined` only at run time (e.g. a variable),
  * and the errors that V8 or Node.js create in the methods that binden calls
  * (e.g. the `TypeError` of a wrong argument). The check of those is at run
@@ -127,20 +129,29 @@ const creations: readonly (readonly [RegExp, string | null])[] = [
   ],
   // Or exported without its name, whose constructions (e.g. by a default
   // import, of any name) are not seen: as the default export, also in
-  // parentheses (but a construction or a member of it, found above), or
-  // renamed to a name that does not end with `Error` or `Exception` by a list
-  // of exports or imports, each rename of a list (e.g. `export { TypeError as
-  // Refusal }`, `TypeError as "Refusal"` or `TypeError as default`)
+  // parentheses (but a construction or a member of it, found above, and the
+  // first of a sequence), or as the last of a sequence in parentheses (e.g.
+  // `export default (0, TypeError)`), or renamed to a name that does not end
+  // with `Error` or `Exception` by a list of exports or imports, each rename
+  // of a list (e.g. `export { TypeError as Refusal }`, `TypeError as
+  // "Refusal"` or `TypeError as default`), also with comments around `as`
   [
     new RegExp(
-      String.raw`\bexport\s+default(?:${gap}\()*${gap}${qualifiers}(?<name>${errorName})(?![\w$])(?!${gap}(?:\??\.|\[|\())`,
+      String.raw`\bexport\s+default(?:${gap}\()*${gap}${qualifiers}(?<name>${errorName})(?![\w$])(?!${gap}(?:\??\.|\[|\(|,))`,
       "gu",
     ),
     null,
   ],
   [
     new RegExp(
-      String.raw`(?<=\{[^{}]*)(?<![\w$.])(?<name>${errorName})\s+as\s+(?!(?:[\w$]*|"[^"]*|'[^']*)(?:Error|Exception)["']?(?![\w$]))(?:[\w$]+|"[^"]*"|'[^']*')(?=[^{}]*\})`,
+      String.raw`\bexport\s+default(?:${gap}\()+(?:(?:[^;(){}]|\([^;(){}]*\))*?,)+${gap}${qualifiers}(?<name>${errorName})(?![\w$])${gap}\)`,
+      "gu",
+    ),
+    null,
+  ],
+  [
+    new RegExp(
+      String.raw`(?<=\{[^{}]*)(?<![\w$.])(?<name>${errorName})(?![\w$])${gap}as(?![\w$])${gap}(?!(?:[\w$]*|"[^"]*|'[^']*)(?:Error|Exception)["']?(?![\w$]))(?:[\w$]+|"[^"]*"|'[^']*')(?=[^{}]*\})`,
       "gu",
     ),
     null,
@@ -356,6 +367,13 @@ suite("The errors that the packages of binden create", () => {
       'export { TypeError as "Refusal", RangeError as default };',
       "export default (TypeError);",
       "export default ( /* why */ globalThis.RangeError );",
+      // With comments around `as`, and the last of a sequence
+      "export { TypeError /* why */ as Refusal };",
+      "import { RangeError as // why",
+      '  Other } from "x";',
+      "export default (0, TypeError);",
+      "export default ((0, /* why */ globalThis.RangeError));",
+      "export default (void 0, f(1), URIError);",
       // None creates an error
       "reportError(error);",
       "const failed = error instanceof TypeError;",
@@ -378,6 +396,10 @@ suite("The errors that the packages of binden create", () => {
       'export { Refused, type IRefusal } from "./refusal.js";',
       'export default formatStack(new TypeError("formatted"));',
       "export default TypeError.name;",
+      "export default (TypeError, 0);",
+      "export default (0, TypeError.name);",
+      "export { TypeError /* as Refusal */ };",
+      "export { TypeError as /* why */ OwnError };",
     ].join("\n");
     deepStrictEqual(unformatted("source.ts", source), [
       "source.ts:1 TypeError",
@@ -429,6 +451,11 @@ suite("The errors that the packages of binden create", () => {
       "source.ts:66 RangeError",
       "source.ts:67 TypeError",
       "source.ts:68 RangeError",
+      "source.ts:69 TypeError",
+      "source.ts:70 RangeError",
+      "source.ts:72 TypeError",
+      "source.ts:73 RangeError",
+      "source.ts:74 URIError",
     ]);
   });
 });
