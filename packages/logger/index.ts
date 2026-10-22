@@ -339,10 +339,11 @@ function copyOf(
  * A step of a pipeline of `transport`, copied as `pino` reads it: its own
  * enumerable properties, which it spreads, and its `target` (also inherited),
  * once. Its other inherited properties (e.g. a `level`) are ignored, as
- * `pino` ignores them.
+ * `pino` ignores them. A function is copied as an object (`pino` reads its
+ * properties as those of one).
  */
 function copyStep(step: unknown): unknown {
-  return isObject(step) ? copyOf(step, ["target"]) : step;
+  return hasProperties(step) ? copyOf(step, ["target"]) : step;
 }
 
 /**
@@ -350,10 +351,11 @@ function copyStep(step: unknown): unknown {
  * its `pipeline` (also inherited), whose steps are copied too, and, for a
  * target with a pipeline only, its `level` (also inherited), which `pino`
  * gives to each of its steps: each once. Unless they are its own enumerable
- * properties, `pino` never spreads them, nor does the copy.
+ * properties, `pino` never spreads them, nor does the copy. A function is
+ * copied as an object, as a step is.
  */
 function copyTarget(target: unknown): unknown {
-  if (!isObject(target)) {
+  if (!hasProperties(target)) {
     return target;
   }
   const copy = copyOf(target, ["target"], ["pipeline"]);
@@ -382,6 +384,36 @@ function withCopies(
     object[key] = [...(list as unknown[])].map(copy);
   }
   return object;
+}
+
+/**
+ * `transport`, copied as `pino` reads it: its own enumerable properties,
+ * which it spreads (with copies of its `targets` and its `pipeline`, see
+ * `copyTarget()` and `copyStep()`), and what it reads as it is to refuse a
+ * stream and a `level` formatter with `targets`: its `writable`, its
+ * `_writableState` and its `targets` (also inherited, or not enumerable),
+ * each once, which the copy has as its own, not enumerable (`pino` never
+ * spreads them), and its prototype (by which it refuses a `SonicBoom`),
+ * through which `pino` then reads nothing else. A function is copied as an
+ * object.
+ */
+function copyTransport(
+  transport: Record<PropertyKey, unknown>,
+): Record<PropertyKey, unknown> {
+  const copy = withCopies(
+    withCopies({ ...transport }, "targets", copyTarget),
+    "pipeline",
+    copyStep,
+  );
+  for (const key of ["writable", "_writableState", "targets"]) {
+    if (!Object.hasOwn(copy, key)) {
+      hide(copy, key, Reflect.get(transport, key));
+    }
+  }
+  return Object.setPrototypeOf(
+    copy,
+    Object.getPrototypeOf(transport) as object | null,
+  ) as Record<PropertyKey, unknown>;
 }
 
 // eslint-disable-next-line init-declarations -- set by the static block of `Logger`
@@ -528,13 +560,8 @@ export class Logger implements ILogger {
         remove,
       };
     }
-    if (isObject(transport)) {
-      // Spread by `pino`: its own properties
-      copied.transport = withCopies(
-        withCopies({ ...transport }, "targets", copyTarget),
-        "pipeline",
-        copyStep,
-      );
+    if (hasProperties(transport)) {
+      copied.transport = copyTransport(transport);
     }
     return copied;
   }

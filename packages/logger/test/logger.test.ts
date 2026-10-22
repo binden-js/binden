@@ -7,6 +7,7 @@ import log, {
   serializers,
 } from "../index.js";
 import pino, { type LevelWithSilent, type Logger as PinoLogger } from "pino";
+import { Writable } from "node:stream";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -469,6 +470,106 @@ describe("Logger", () => {
       "inherited.level": 1,
       "inherited.pipeline": 1,
       "both.level": 1,
+    });
+  });
+
+  it("copies a target or a step of `transport` that is a function as an object (and a `transport` that is one): its `target` read once", async () => {
+    const reads = new Map<string, number>();
+    const target = new URL("fixtures/channel.mjs", import.meta.url).href;
+    const named = (key: string): string =>
+      `binden-logger-${process.pid}-callable-${key}`;
+    const callable = (key: string): (() => null) =>
+      Object.defineProperties(() => null, {
+        target: {
+          enumerable: true,
+          get: (): string => {
+            reads.set(key, (reads.get(key) ?? 0) + 1);
+            return target;
+          },
+        },
+        options: { enumerable: true, value: { channel: named(key) } },
+      });
+    const records = Promise.all(
+      ["target", "step", "nested"].map((key) => received(named(key), "info")),
+    );
+    for (const transport of [
+      { targets: [callable("target")] },
+      { pipeline: [callable("step")] },
+      Object.assign(() => null, { targets: [callable("nested")] }),
+    ]) {
+      new Logger({ level: "info", transport: transport as never }).info("info");
+    }
+    deepEqual(await records, [["info"], ["info"], ["info"]]);
+    deepEqual(Object.fromEntries(reads), { target: 1, step: 1, nested: 1 });
+  });
+
+  it("refuses a stream given as `transport` as `pino` does: what it reads to tell one (also inherited, or not enumerable) and the prototype are those of `transport`, read once each", () => {
+    const target = new URL("fixtures/discard.mjs", import.meta.url).href;
+    const stream =
+      "option.transport do not allow stream, please pass to option directly. e.g. pino(transport)";
+    // E.g. a `SonicBoom` that does not write (`stdout`, synchronously)
+    const sonic = Object.getPrototypeOf(
+      pino.destination({ dest: 1, sync: true }),
+    ) as object;
+    for (const transport of [
+      new Writable(),
+      Object.create(new Writable()) as object,
+      Object.assign(Object.create({ writable: true }) as object, { target }),
+      Object.defineProperty({ target }, "writable", { value: true }),
+      Object.assign(Object.create({ _writableState: {} }) as object, {
+        target,
+      }),
+      Object.assign(Object.create(sonic) as object, { target }),
+      Object.setPrototypeOf(
+        Object.assign(() => null, { target }),
+        {
+          writable: true,
+        },
+      ) as object,
+    ]) {
+      throws(() => new Logger({ transport: transport as never }), {
+        message: stream,
+      });
+    }
+    // Not a stream (a `writable` that is not true), and its own properties
+    new Logger({
+      transport: Object.assign(Object.create({ writable: 0 }) as object, {
+        target,
+      }) as never,
+    }).info("discarded");
+    // The `targets` that `pino` reads to refuse a `level` formatter (it
+    // spreads only its own)
+    for (const transport of [
+      Object.assign(Object.create({ targets: [{ target }] }) as object, {
+        target,
+      }),
+      Object.defineProperty({ target }, "targets", { value: [{ target }] }),
+    ]) {
+      throws(
+        () =>
+          new Logger({
+            transport: transport as never,
+            formatters: { level: (label: string): object => ({ label }) },
+          }),
+        {
+          message:
+            "option.transport.targets do not allow custom level formatters",
+        },
+      );
+    }
+    const reads = new Map<string, number>();
+    const prototype = countedIn(reads, "prototype", {
+      writable: false,
+      _writableState: null,
+      targets: null,
+    });
+    new Logger({
+      transport: Object.setPrototypeOf({ target }, prototype) as never,
+    }).info("discarded");
+    deepEqual(Object.fromEntries(reads), {
+      "prototype.writable": 1,
+      "prototype._writableState": 1,
+      "prototype.targets": 1,
     });
   });
 
