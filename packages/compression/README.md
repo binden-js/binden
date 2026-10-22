@@ -141,6 +141,13 @@ So what the decision reads (the status, `Content-Type`, `Content-Encoding`, `Con
 request may no longer change its response (e.g. abandoned at its deadline), `skipCompression()`
 and the `run()` of a compression are ignored, as its other changes are.
 
+The compression decides by the status as binden does: the integer that Node.js commits (`| 0`, e.g.
+`204.5` is a `204`), converted once (an object or a string assigned to `statusCode` is converted by
+binden, and is that number from then on), never compared as it is. So a `write()` or an `end()` in
+an unknown encoding of a `204` or a `304`, also of an object or a string status, ignores its chunk,
+as plain Node.js and binden alone do, and a retry after a reason phrase that Node.js refuses does not
+convert the status again.
+
 A response without a body is sent as it is, whatever the request accepts: a `1xx`, `204` or `205`
 status, or an empty body (`Content-Length: 0`, e.g. of a `304` that stands for an empty `200`). Any
 other response depends on the `Accept-Encoding` of the request (`Vary: Accept-Encoding`, see

@@ -370,14 +370,19 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   "Content-Length is a list": Node.js sends it as it is, and cannot read it.
 - `send()` and `sendFile()` with a `1xx` status reject with a `TypeError` (use
   `writeEarlyHints()`), also one assigned as a string (e.g. `"103"`), which binden converts once as
-  Node.js does and names in the message ("Status code 103 is informational"), before they set a
-  header (`sendFile()` none of its file): binden 2.0.4 sent it as the final response (`sendFile()`
-  with the `Content-Length` of its file), so that the client took the next response of the
-  connection for the reply. A string sent with an `encoding` is encoded once: the bytes that it
+  Node.js does and names in the message ("Status code 103 is informational"), before they set
+  anything (`sendFile()` before it reads its options or opens its file): binden 2.0.4 sent it as
+  the final response (`sendFile()` as `103 Early Hints` with the `Content-Length` of its file), so
+  that the client took the next response of the connection for the reply. A string sent with an `encoding` is encoded once: the bytes that it
   decodes to are sent, with their length.
   A `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
   default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A `Readable`
   that has ended is an empty body.
+- A `sendFile()` that fails before the head is committed, once it has set the headers of the file
+  (e.g. a head that Node.js refuses), restores the response as it was before it, so that the reply
+  that follows (e.g. of the error) gets none of the headers of the file: binden 2.0.4 left its
+  `Last-Modified`, `Accept-Ranges` and `Content-Length` to that reply, so that the client read
+  the start of the next response of the connection as the rest of a shorter body.
 - A `Readable` that has been destroyed, or that has errored without being destroyed (its
   `errored` is set, e.g. a stream without `autoDestroy`), rejects `send()` at once, with its
   `errored` (otherwise `ERR_STREAM_PREMATURE_CLOSE`). binden 2.0.4 rejected only when the error of
