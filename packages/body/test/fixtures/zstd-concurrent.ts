@@ -4,13 +4,15 @@
 //   windows   256 frames of 1 byte that each declare a window of 8 MiB and their
 //             size (the least charge each: 256 decoders)
 //   rle       256 frames of an RLE block of 1 byte (256 decoders)
-// Prints the statuses of the replies, the CPU time per request (in ms), the
-// garbage collections meanwhile, and how much the peak memory of the process
-// grows (in MiB).
+// Prints the statuses of the replies, the zlib handles (the decoders of
+// Node.js) created for them, the CPU time per request (in ms), the garbage
+// collections meanwhile, and how much the peak memory of the process grows
+// (in MiB).
 import { Binden, type Context } from "binden";
 import type { AddressInfo } from "node:net";
 import { BodyParser } from "../../index.js";
 import { PerformanceObserver } from "node:perf_hooks";
+import { createHook } from "node:async_hooks";
 import { once } from "node:events";
 import { request } from "node:http";
 
@@ -77,10 +79,20 @@ const observer = new PerformanceObserver((list) => {
   gcs += list.getEntries().length;
 });
 observer.observe({ entryTypes: ["gc"] });
+// What the load of the machine does not change: the decoders created
+let zlib = 0;
+const hook = createHook({
+  init(_id: number, type: string): void {
+    if (type === "ZLIB") {
+      zlib += 1;
+    }
+  },
+}).enable();
 const before = process.resourceUsage().maxRSS;
 const cpu = process.cpuUsage();
 const statuses = await Promise.all(Array.from({ length: 20 }, post));
 const { user, system } = process.cpuUsage(cpu);
+hook.disable();
 const growth = Math.round((process.resourceUsage().maxRSS - before) / 1024);
 // The entries of the last collections are delivered asynchronously
 await new Promise((resolve) => {
@@ -91,6 +103,7 @@ server.close();
 process.stdout.write(
   `${JSON.stringify({
     statuses: [...new Set(statuses)],
+    zlib,
     cpu: Math.round((user + system) / 1000 / 20),
     gcs,
     growth,

@@ -1055,14 +1055,14 @@ suite("BodyParser (empty zstd frames)", () => {
     );
   });
 
-  test("20 concurrent requests of the most costly bodies take little time and memory", () => {
-    for (const [kind, cpu] of [
+  test("20 concurrent requests of the most costly bodies create a decoder only for a frame that is not empty, and take little time and memory", () => {
+    for (const [kind, decoders, cpu] of [
       // 1024 empty frames of a window of 8 MiB each (no decoder)
-      ["empty", 20],
+      ["empty", 0, 200],
       // 256 decoders of a window of 8 MiB each, that declare 1 byte
-      ["windows", 150],
+      ["windows", 20 * 256, 750],
       // 256 decoders of an RLE block of 1 byte
-      ["rle", 150],
+      ["rle", 20 * 256, 750],
     ] as const) {
       const { status, stdout, stderr } = spawnSync(
         process.execPath,
@@ -1077,9 +1077,14 @@ suite("BodyParser (empty zstd frames)", () => {
       deepStrictEqual([status, stderr], [0, ""], kind);
       const outcome = JSON.parse(stdout) as Record<string, unknown>;
       deepStrictEqual(outcome.statuses, [200], kind);
+      // The structure of the work, whatever the load of the machine: a
+      // decoder for each frame that is not empty, none for an empty one
+      deepStrictEqual(outcome.zlib, decoders, kind);
       // About 3 ms (empty) and 18 ms (decoders) of CPU per request, 3 and 12
       // collections, and 2 and 100 to 220 MiB on a laptop (with a decoder
-      // per frame, empty frames took 260 ms and 800 collections)
+      // per frame, empty frames took 260 ms and 800 collections). The CPU
+      // time is only a loose bound, far above these: the load of the machine
+      // and the coverage multiply it
       ok(Number(outcome.cpu) < cpu, `${kind}: ${String(outcome.cpu)} ms`);
       ok(Number(outcome.gcs) < 200, `${kind}: ${String(outcome.gcs)} GCs`);
       const memory = kind === "empty" ? 64 : 512;
