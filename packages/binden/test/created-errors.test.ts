@@ -40,11 +40,14 @@ const call = String.raw`${gap}(?:\?\.${gap})?\(`;
  * a conditional, a name in parentheses, a computed member, or the tag of a
  * template), the last of a sequence that a default export gives (e.g.
  * `export default (0, TypeError)`) in parentheses of its own (`(0,
- * (TypeError))`), or followed by an `as` or a `!` of TypeScript (`(0,
- * TypeError as typeof Error)`, `(0, TypeError!)`), or after an earlier one
- * that has a `;`, a parenthesis that it does not close, braces (an object,
- * a block or the `${}` of a template) or parentheses in parentheses (e.g.
- * `"a;b"`, `"("`, `{}` or `f(g(1))`), a class that extends an expression
+ * (TypeError))`), in a nested sequence (`(0, (0, TypeError))`), with any
+ * syntax of TypeScript around it (an `as`, a `!`, a `satisfies` or a type
+ * assertion, e.g. `(0, TypeError as typeof Error)`, `(0, TypeError!)` or
+ * `(0, <ErrorConstructor>TypeError)`), or after an earlier one that has a
+ * `;`, a parenthesis in a string (`")"` or `"("`), braces (an object, a
+ * block or the `${}` of a template) or parentheses nested in parentheses of
+ * its own (e.g. `"a;b"`, `{}` or `f(g(1))`, while one level of them, e.g.
+ * `f(1)` or `[(1)]`, is found), a class that extends an expression
  * (e.g. a mixin), an `abort()` whose reason is `undefined` only at run time
  * (e.g. a variable), and the errors that V8 or Node.js create in the methods
  * that binden calls (e.g. the `TypeError` of a wrong argument). The check of
