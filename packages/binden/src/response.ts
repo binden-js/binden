@@ -3020,12 +3020,18 @@ export class BindenResponse<
    * connection).
    */
   #informs(): boolean {
-    const { httpVersionMajor = 1, httpVersionMinor = 1 } = this.req as {
-      httpVersionMajor?: number;
-      httpVersionMinor?: number;
-    };
-    const old =
-      httpVersionMajor < 1 || (httpVersionMajor === 1 && httpVersionMinor < 1);
+    // Of the request that the response has been made for, which may be the
+    // application's own (e.g. a proxy whose getters throw): what reading it
+    // throws is formatted (see `formatting()`)
+    const old = formatting(() => {
+      const { httpVersionMajor = 1, httpVersionMinor = 1 } = this.req as {
+        httpVersionMajor?: number;
+        httpVersionMinor?: number;
+      };
+      return (
+        httpVersionMajor < 1 || (httpVersionMajor === 1 && httpVersionMinor < 1)
+      );
+    });
     if (old || !this.#allows()) {
       return false;
     } else if (this.headersSent) {

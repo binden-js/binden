@@ -25,11 +25,7 @@ interface IReport {
  * The findings being fixed (`<entry> | <probe>` prefixes), until their fixes
  * are integrated: each must still have a finding
  */
-const integrating: readonly string[] = [
-  // The HTTP version of a request that fails as it is read, formatted
-  "binden:new BindenResponse() | 0 late-use: its reader write",
-  "binden:Binden#serverOptions()=>.ServerResponse() | 0 late-use: its reader write",
-];
+const integrating: readonly string[] = [];
 
 /** How many processes probe the surface in parallel, each a shard of it */
 const shards = 4;

@@ -300,6 +300,45 @@ suite("The methods that binden defines over those of Node.js", () => {
     }
   });
 
+  test("format what reading the request of the response throws through writeContinue(), writeProcessing(), writeEarlyHints() and writeInformation(), which is passed on as it is", async () => {
+    const calls: Record<string, (response: BindenResponse) => unknown> = {
+      writeContinue: (response) => {
+        response.writeContinue();
+      },
+      writeProcessing: (response) => {
+        response.writeProcessing();
+      },
+      writeEarlyHints: (response) => {
+        response.writeEarlyHints({ link: "</a>; rel=preload" });
+      },
+      writeInformation: (response) => {
+        response.writeInformation(103);
+      },
+    };
+    for (const [name, call] of Object.entries(calls)) {
+      // A fresh error each time: V8 formats a stack once
+      const own = new OwnError("own");
+      let armed = false;
+      // Whose getters throw once the response has been made
+      const request = new Proxy(new IncomingMessage(new Socket()), {
+        get(target, key): unknown {
+          if (armed) {
+            throw own;
+          }
+          const value: unknown = Reflect.get(target, key, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const response = new BindenResponse(request);
+      armed = true;
+      deepStrictEqual(
+        await outcome(() => call(response)),
+        { thrown: own, formatted: true },
+        name,
+      );
+    }
+  });
+
   test("format what an override of a subclass throws through flushHeaders() and writeHeader()", async () => {
     let own = new OwnError("own");
     class Subclass extends BindenResponse {
