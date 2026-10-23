@@ -230,35 +230,31 @@ suite(
        * Refuses the reply of a work (of `/status`, `/reason` or `/trailer`),
        * which then replies `err` itself
        */
-      const refusing = new Map<string, (response: ServerResponse) => unknown>([
-        [
-          "status",
-          (response): void => {
+      /** The refusals of the test, by the path of their request */
+      const refusedBy = ["status", "reason", "trailer"] as const;
+      const refuse = (response: ServerResponse, refused: string): void => {
+        // A refusal of the test chosen by its name: no function is looked up
+        // by a name from the path
+        switch (refused) {
+          case "status":
             response.statusCode = 1000;
-          },
-        ],
-        [
-          "reason",
-          (response): void => {
+            break;
+          case "reason":
             response.statusMessage = "bad\nx";
-          },
-        ],
-        [
-          "trailer",
-          (response): void => {
+            break;
+          case "trailer":
             response.setHeader("Trailer", "X-T");
-          },
-        ],
-      ]);
+            break;
+          default:
+            throw new Error(`No refusal of the test: ${refused}`);
+        }
+      };
       const replied = async (
         response: ServerResponse,
         refused: string,
         reply: () => unknown,
       ): Promise<void> => {
-        // Only the refusals of the test, never a member found by the path
-        const refuse = refusing.get(refused);
-        ok(refuse, refused);
-        refuse(response);
+        refuse(response, refused);
         // Also a synchronous throw
         await Promise.resolve()
           .then(reply)
@@ -306,7 +302,7 @@ suite(
           )
         ).received.replaceAll(/Date: [^\r]*\r\n/gu, "");
       try {
-        for (const refused of Object.keys(refusing)) {
+        for (const refused of refusedBy) {
           // Plain Node.js chunks a body that has a `Trailer`, which a value
           // send frames by its length: then as a refused reason phrase
           const expected = await received(
