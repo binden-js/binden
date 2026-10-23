@@ -44,8 +44,9 @@ const call = String.raw`${gap}(?:\?\.${gap})?\(`;
  * syntax of TypeScript around it (an `as`, a `!`, a `satisfies` or a type
  * assertion, e.g. `(0, TypeError as typeof Error)`, `(0, TypeError!)` or
  * `(0, <ErrorConstructor>TypeError)`), or after an earlier one that has a
- * `;`, a parenthesis in a string (`")"` or `"("`), braces (an object, a
- * block or the `${}` of a template) or parentheses nested in parentheses of
+ * `;`, a parenthesis in a literal (a string, a template or a regular
+ * expression, e.g. `")"`, `"("` or `/\)/`), braces (an object, a block or
+ * the `${}` of a template) or parentheses nested in parentheses of
  * its own (e.g. `"a;b"`, `{}` or `f(g(1))`, while one level of them, e.g.
  * `f(1)` or `[(1)]`, is found), a class that extends an expression
  * (e.g. a mixin), an `abort()` whose reason is `undefined` only at run time
