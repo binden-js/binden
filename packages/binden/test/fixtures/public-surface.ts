@@ -34,9 +34,10 @@
 // the entry points of the surface, and of those that it has probed), each
 // finding as `<entry> | <probe>: <what>` with `--lines` (one per line), and
 // `--only=<text>` probes only the entries whose id contains it, and
-// `--shard=<index>/<count>` one of `count` shards of them (every `count`-th
-// one, from the `index`-th, counted from 0), which processes of their own
+// `--shard=<index>/<count>` one of `count` shards of them (of about the same
+// measured cost, see `costs`, counted from 0), which processes of their own
 // probe in parallel: the first shard also checks the fixtures themselves.
+// `--timeout=<ms>` is how long it may run before it stops itself.
 import { type AddressInfo, Server as NetServer, Socket } from "node:net";
 import { EventEmitter, once } from "node:events";
 import {
@@ -49,13 +50,30 @@ import { isNativeError, isPromise, isProxy } from "node:util/types";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Readable } from "node:stream";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
+import { setFlagsFromString } from "node:v8";
 import { tmpdir } from "node:os";
 
+const args = process.argv.slice(2);
+/**
+ * How long the fixture may run before it stops itself (`--timeout=<ms>`):
+ * its test derives it from the bound at which it kills the process, which
+ * stays above it, so that a run that is too slow says so
+ */
+const timeoutMs = Number(
+  args
+    .find((arg) => arg.startsWith("--timeout="))
+    ?.slice("--timeout=".length) ?? 100_000,
+);
 const timer = setTimeout(() => {
-  process.stderr.write("Timed out\n");
+  process.stderr.write(`Timed out after ${String(timeoutMs)} ms\n`);
   process.exit(2);
-}, 100_000);
+}, timeoutMs);
 timer.unref();
+
+// A full garbage collection, which tells what a call keeps (see `retainedBy()`)
+setFlagsFromString("--expose-gc");
+const collect = runInNewContext("gc") as () => void;
 
 const HOST = "127.0.0.1";
 
@@ -70,6 +88,13 @@ const ioMs = 5000;
 const makeMs = 10_000;
 /** How long the cleanup of a probe may take */
 const cleanMs = 5000;
+/**
+ * How many full garbage collections tell what a call keeps (see
+ * `retainedBy()`), each `keptMs` after the previous one: what it has started
+ * (e.g. the flush of a send) has settled by then, also on a loaded machine
+ */
+const keptRounds = 4;
+const keptMs = 25;
 
 /** The errors whose stack V8 has formatted (once it is first read) */
 const formatted = new WeakSet<object>();
@@ -85,7 +110,6 @@ Reflect.set(
   },
 );
 
-const args = process.argv.slice(2);
 // A plain substring, not a regular expression built from an argument
 const only =
   args.find((arg) => arg.startsWith("--only="))?.slice("--only=".length) ?? "";
@@ -791,6 +815,16 @@ function turn(): Promise<void> {
   });
 }
 
+/** Waits for a turn of the event loop, and `ms` more */
+async function delay(ms: number): Promise<void> {
+  await turn();
+  if (ms > 0) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
+}
+
 /** Waits for a promise, for `ms` at most: an `Error` that says what expired */
 async function bounded<T>(
   promise: Promise<T> | T,
@@ -826,10 +860,16 @@ interface IEnv {
  * The body of the request of an exchange: none (a `GET`), the body of a
  * `POST` over the limits of the parsers of the fixtures (`text`, chunked, of
  * 10 bytes, and `multipart`, a file of 8 bytes), or within them, which they
- * parse (`small-text`, chunked, of 2 bytes, and `small-multipart`, a file of
- * 1 byte)
+ * parse (`small-text`, chunked, of 2 bytes, `small-json`, of 3 bytes, and
+ * `small-multipart`, a file of 1 byte)
  */
-type IBody = "multipart" | "none" | "small-multipart" | "small-text" | "text";
+type IBody =
+  | "multipart"
+  | "none"
+  | "small-json"
+  | "small-multipart"
+  | "small-text"
+  | "text";
 
 /** The head (and the body) of the request of an exchange */
 function requestOf(body: IBody, id: string, at: number): string {
@@ -864,6 +904,11 @@ function requestOf(body: IBody, id: string, at: number): string {
       "POST",
       ["Content-Type: text/plain", "Transfer-Encoding: chunked"],
       "2\r\nab\r\n0\r\n\r\n",
+    ],
+    "small-json": [
+      "POST",
+      ["Content-Type: application/json", "Content-Length: 3"],
+      "[1]",
     ],
     multipart: multipart("abcdefgh"),
     "small-multipart": multipart("a"),
@@ -1033,12 +1078,16 @@ function environment(): IEnv {
 }
 
 /**
- * Handles one request (`GET /path` of `example.com`, its connection closed
- * once it is replied) by an application, on a server of its own (closed
- * then): the status line of its reply (e.g. its access log, and the logging
- * of its contexts, use its `logger`)
+ * Handles one request (`GET /path` of `example.com` by default, its
+ * connection closed once it is replied) by an application, on a server of
+ * its own (closed then): the status line of its reply (e.g. its access log,
+ * and the logging of its contexts, use its `logger`)
  */
-async function handled(application: unknown): Promise<string> {
+async function handled(
+  application: unknown,
+  method = "GET",
+  path = "/path",
+): Promise<string> {
   const created = Reflect.apply(
     Reflect.get(application as object, "createServer") as IFunction,
     application,
@@ -1058,7 +1107,7 @@ async function handled(application: unknown): Promise<string> {
     const ended = once(socket, "close");
     socket.connect(at, HOST);
     socket.write(
-      "GET /path HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n",
+      `${method} ${path} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n`,
     );
     try {
       await bounded(ended, ioMs, "A request of the application");
@@ -1097,22 +1146,206 @@ function wrapping(context: unknown): void {
   }
 }
 
-/**
- * Handles one request by an application of a router (see `handled()`),
- * after a middleware that replaces the methods of `context.log` (see
- * `wrapping()`), and with an access log, which logs to `watching` (with the
- * details of its errors): e.g. whether binden takes the result of a
- * middleware for a context
- */
-function routed(router: unknown): Promise<string> {
+/** An application of the readers (see `routed()`) */
+function wrappedApplication(): {
+  use(...items: unknown[]): unknown;
+  mount(path: string, ...items: unknown[]): unknown;
+} {
   const application = new Binden({
     logger: watching,
     log_error_details: true,
     access_log: true,
   });
   application.use(wrapping);
-  application.use(router as IFunction);
-  return handled(application);
+  return application as unknown as ReturnType<typeof wrappedApplication>;
+}
+
+/**
+ * Handles one request (of a method, `GET` by default) by an application of a
+ * router (see `handled()`), after a middleware that replaces the methods of
+ * `context.log` (see `wrapping()`), and with an access log, which logs to
+ * `watching` (with the details of its errors): e.g. whether binden takes the
+ * result of a middleware for a context
+ */
+function routed(router: unknown, method = "GET"): Promise<string> {
+  const application = wrappedApplication();
+  application.use(router);
+  return handled(application, method);
+}
+
+/**
+ * Handles one request of a path by an application that has mounted a stack
+ * (see `routed()`), whose items run for it
+ */
+function stacked(stack: unknown, path: string): Promise<string> {
+  const application = wrappedApplication();
+  application.mount("/", stack);
+  return handled(application, "GET", path);
+}
+
+/**
+ * Gives the listener of `callback()` of an application a request and a
+ * response of another kind (plain ones of Node.js): it logs them through the
+ * logger of the application (see `otherKind`), by its own path, and closes
+ * the connection
+ */
+function foreignRequest(application: unknown): unknown {
+  const created = createHttpServer();
+  try {
+    const listener = Reflect.apply(
+      Reflect.get(application as object, "callback") as IFunction,
+      application,
+      [created],
+    ) as IFunction;
+    const request = new IncomingMessage(new Socket());
+    return listener(request, new ServerResponse(request));
+  } finally {
+    created.close();
+  }
+}
+
+/**
+ * Registers a cleanup that fails on a context whose `log` a middleware has
+ * wrapped (see `wrapping()`), then closes its response (by its `close`, for
+ * a response of no connection): the report of its request (of the context
+ * that has made it, e.g. by default one that logs by the own path of binden)
+ * is given the failure
+ */
+function failedCleanup(context: unknown): void {
+  wrapping(context);
+  Reflect.apply(
+    Reflect.get(context as object, "onCleanup") as IFunction,
+    context,
+    [
+      (): never => {
+        throw new Error("A cleanup");
+      },
+    ],
+  );
+  const response = Reflect.get(context as object, "response") as ServerResponse;
+  response.destroy();
+  if (response.socket === null) {
+    response.emit("close");
+  }
+}
+
+/**
+ * A reply of a context whose `log` a middleware has wrapped (see
+ * `wrapping()`) once its deadline has passed: binden ignores it, and logs
+ * that by its own path
+ */
+async function lateReply(context: unknown): Promise<unknown> {
+  wrapping(context);
+  const target = context as {
+    readonly signal: AbortSignal;
+    setTimeout(ms: number): void;
+    send(body: string): Promise<void>;
+  };
+  target.setTimeout(1);
+  if (!target.signal.aborted) {
+    await once(target.signal, "abort");
+  }
+  return target.send("late");
+}
+
+/**
+ * Runs a function on a fresh exchange (see `IEnv.exchange()`) of a body,
+ * then cleans it up: what the function gives
+ */
+async function exchanged<T>(
+  body: IBody,
+  fn: (exchange: IExchange) => Promise<T>,
+): Promise<T> {
+  const env = environment();
+  try {
+    return await fn(await env.exchange(body));
+  } finally {
+    for (const cleanup of env.cleanups.reverse()) {
+      await cleanup();
+    }
+  }
+}
+
+/**
+ * Runs a parser (its `run()`) on the context of a fresh exchange of a body
+ * that it parses: the type of what the body has become (`request.body`), or
+ * what `run()` rejects with
+ */
+function parsedBy(parser: unknown, body: IBody): Promise<string> {
+  return exchanged(body, async ({ context, request }) => {
+    await Reflect.apply(
+      Reflect.get(parser as object, "run") as IFunction,
+      parser,
+      [context],
+    );
+    return typeof Reflect.get(request, "body");
+  });
+}
+
+/**
+ * Runs a compression (its `run()`) on the context of a fresh exchange (whose
+ * request accepts `gzip`, or the coding given), and sends a body: the status
+ * of the response (a filter that fails replaces it by a `500`)
+ */
+function compressedBy(
+  compression: unknown,
+  coding: string | null = null,
+): Promise<number> {
+  return exchanged("none", async ({ context, request, response }) => {
+    if (coding !== null) {
+      (request as IncomingMessage).headers["accept-encoding"] = coding;
+    }
+    await Reflect.apply(
+      Reflect.get(compression as object, "run") as IFunction,
+      compression,
+      [context],
+    );
+    await (response as { send(body: string): Promise<void> }).send("text");
+    return (response as ServerResponse).statusCode;
+  });
+}
+
+/**
+ * Ends the response of a context, and waits until it is closed: the
+ * cleanups of its request have run then
+ */
+async function endedResponse(context: unknown): Promise<void> {
+  const response = Reflect.get(context as object, "response") as ServerResponse;
+  if (!response.closed) {
+    const ended = once(response, "close");
+    response.end();
+    await ended;
+    await turn();
+  }
+}
+
+/**
+ * Destroys a response, and waits until it is closed (its observers have run
+ * then, see `[kListen]()`), before any of them
+ */
+async function closedBy(response: unknown): Promise<void> {
+  const target = response as ServerResponse;
+  if (!target.closed) {
+    const { promise, resolve } = Promise.withResolvers<null>();
+    target.prependOnceListener("close", () => {
+      resolve(null);
+    });
+    target.destroy();
+    await promise;
+  }
+}
+
+/**
+ * A reader that emits an event on its receiver (an emitter) at the next turn
+ * of the event loop: its listeners run then, outside of any call (see
+ * `callbacks`)
+ */
+function laterEvent(event: string): IReader {
+  return (receiver) => {
+    setImmediate(() => {
+      (receiver as EventEmitter).emit(event);
+    });
+  };
 }
 
 /**
@@ -1332,9 +1565,18 @@ interface IFixtureOptions {
   /**
    * The readers that log as the application does (e.g. a call of
    * `context.log.error()`): a method that the application has replaced on a
-   * logger of binden (see `misused`) is its own to run there
+   * logger of binden (see `misused`) is its own to run there. Each must run
+   * one (an allowance that nothing uses is a finding).
    */
   readonly logs?: readonly string[] | undefined;
+  /**
+   * The readers that run a function of the test (e.g. an option that a
+   * parser calls) whose failure they document as a `BindenError` of it (its
+   * `cause`, e.g. the `500` of @binden/body), never as itself: one that
+   * throws or rejects with the error of the test is a finding, and one with
+   * a formatted `BindenError` whose cause it is passes it on
+   */
+  readonly wraps?: readonly string[] | undefined;
   /**
    * What never fails, as documented (e.g. the logger of a context): its
    * calls (`call`), or its readers (by their names), each with where it is
@@ -1366,6 +1608,14 @@ interface IFixtureOptions {
    */
   readonly untouched?:
     Readonly<Record<string, IUntouched | string>> | undefined;
+  /**
+   * The positions that the call examines (it refuses some hostile values
+   * there), but whose valid value, a function or an object, it keeps while
+   * it accepts others (see `retainedBy()`), and what uses it then (see
+   * `IKept`): e.g. an option that a parser calls as it parses a body. A
+   * position listed that no call keeps is a finding.
+   */
+  readonly kept?: Readonly<Record<string, IKept>> | undefined;
   /**
    * The alternative checks of its positions that no reader can use (see
    * `IUntouched.instead`), by their names: each runs once the entry point is
@@ -1407,11 +1657,27 @@ interface IFixtureOptions {
  * has another outcome than with the valid value), or, where no reader can,
  * an alternative check (`instead`, of `alternatives`), which must exist and
  * run: `callbacks` for a callback that Node.js calls later, which must be
- * listed in `callbacks` (that checks that a function given there is called)
+ * listed in `callbacks` (that checks that a function given there is called),
+ * and `unread` for a value that is kept (e.g. by a closure of the call), but
+ * never read once the call has returned (the traps of `late-use` never run
+ * there, as its readers run)
  */
 type IUntouched =
   | { readonly why: string; readonly later: string }
   | { readonly why: string; readonly instead: string };
+
+/**
+ * Why a call keeps the valid value (a function or an object) of a position
+ * that it examines, and what uses it then (see `kept`), as for `IUntouched`:
+ * at a position of a function used `later`, its reader must also tell each
+ * hostile function whose result is hostile (see `resultHostiles`) that the
+ * call accepts there from the valid one (a hostile result is checked), or
+ * `ignores` names it, with why (e.g. its result is ignored)
+ */
+type IKept = IUntouched & {
+  readonly ignores?:
+    Readonly<Partial<Record<IHostileName, string>>> | undefined;
+};
 
 /** The fixture of an entry point */
 interface IFixture extends IFixtureOptions {
@@ -1464,6 +1730,31 @@ const ignoredCallback: IUntouched = {
 const middleware = (): void => {
   // Nothing
 };
+/**
+ * Why the hostile functions whose result is hostile (see `resultHostiles`)
+ * are not told from the valid one at a position whose result is ignored
+ */
+function ignoredBy(
+  option: string,
+  where: string,
+): Partial<Record<IHostileName, string>> {
+  const why = `the result of \`${option}\` is ignored (${where})`;
+  return { "derived-result": why, "proxy-result": why };
+}
+/** Why a hostile function whose result is hostile is ignored as a middleware */
+const ignoredResult =
+  "a result that is not a context of the request is ignored, as the one of the valid middleware, which returns none (see `privateFailures`)";
+/**
+ * Why a stack keeps a middleware, and the reader that runs it (for a request
+ * that it matches)
+ */
+function keptMiddleware(later: string): IKept {
+  return {
+    why: "a middleware, kept, and run for a request that it matches",
+    later,
+    ignores: { "derived-result": ignoredResult, "proxy-result": ignoredResult },
+  };
+}
 /** A function that returns `1` */
 const one = (): number => 1;
 
@@ -1565,7 +1856,7 @@ function bindenOptions(): Record<string, unknown> {
     error_handler: noop,
     error_handler_timeout: 1000,
     timeout: 1000,
-    logger: silent,
+    logger: remembering,
     log_error_details: false,
     routing: { case_sensitive: false, strict: false },
     access_log: { level: "info", path: "path" },
@@ -1822,18 +2113,58 @@ define("binden:", {
         [0, "disabled"],
         [0, "ignore_errors"],
       ],
+      io: true,
+      readers: {
+        // Disabled, and run by an application (see `routed()`): binden logs
+        // that it skips it by its own path
+        "a disabled run": (_, made) => {
+          Reflect.set(made as object, "disabled", true);
+          return routed(made);
+        },
+      },
     },
     () => [],
     () => [{ disabled: false, ignore_errors: false }],
   ),
   "new Stack()": call(() => []),
-  "Stack#use()": call(
+  // Its middlewares run for a request of a path that they match (see
+  // `stacked()`)
+  "Stack#use()": probed(
+    {
+      io: true,
+      readers: { "a request": (receiver) => stacked(receiver, "/a") },
+      kept: {
+        0: keptMiddleware("a request"),
+        1: keptMiddleware("a request"),
+        2: keptMiddleware("a request"),
+      },
+    },
     () => [middleware],
     () => ["/a", middleware, middleware],
     () => [/^\/a/u, middleware],
   ),
-  "Stack#route()": call(() => ["/a/:b", middleware, middleware]),
-  "Stack#mount()": call(() => ["/a", middleware, middleware]),
+  "Stack#route()": probed(
+    {
+      io: true,
+      readers: { "a request": (receiver) => stacked(receiver, "/a/b") },
+      kept: {
+        1: keptMiddleware("a request"),
+        2: keptMiddleware("a request"),
+      },
+    },
+    () => ["/a/:b", middleware, middleware],
+  ),
+  "Stack#mount()": probed(
+    {
+      io: true,
+      readers: { "a request": (receiver) => stacked(receiver, "/a/b") },
+      kept: {
+        1: keptMiddleware("a request"),
+        2: keptMiddleware("a request"),
+      },
+    },
+    () => ["/a", middleware, middleware],
+  ),
   // Of a middleware that it has (whose removal its stack shows)
   "Stack#off()": probed(
     {
@@ -1870,11 +2201,17 @@ define("binden:", {
   // A function of the middlewares of a method
   "Router#middlewares": probed({ returned: call(() => ["GET"]) }, () => []),
   // Its middlewares run by an application (see `routed()`)
-  "Router#on()": probed({ io: true, readers: { "a request": routed } }, () => [
-    "GET",
-    middleware,
-    middleware,
-  ]),
+  "Router#on()": probed(
+    {
+      io: true,
+      readers: { "a request": (receiver) => routed(receiver) },
+      kept: {
+        1: keptMiddleware("a request"),
+        2: keptMiddleware("a request"),
+      },
+    },
+    () => ["GET", middleware, middleware],
+  ),
   // Of a middleware that it has (whose removal its middlewares show)
   "Router#off()": probed(
     {
@@ -1903,9 +2240,58 @@ define("binden:", {
         "access_log.path",
         ...requestNested,
       ]),
-      // A request that it handles (e.g. its access log, through its logger)
+      // A request that it handles (e.g. its access log, through its logger,
+      // see `remembered`, and the 404 of its error handler), and one of
+      // another kind given to the listener of `callback()`
       io: true,
-      readers: { "request()": (_, made) => handled(made) },
+      readers: {
+        "request()": (_, made) => handled(made),
+        "the access log": async (_, made) => {
+          remembered.extra = null;
+          await handled(made);
+          return remembered.extra;
+        },
+        "a foreign request": (_, made) => foreignRequest(made),
+      },
+      kept: {
+        0: {
+          why: "the options, read once, but the functions and the logger that they hold",
+          later: "request()",
+        },
+        "0.error_handler": {
+          why: "the error handler, kept, and called for a request that fails (e.g. a 404)",
+          later: "request()",
+          ignores: ignoredBy("error_handler", "README, Errors"),
+        },
+        "0.state": {
+          why: "what makes the state of a request, kept, and called for each request",
+          later: "request()",
+        },
+        "0.allowed_hosts": {
+          why: "the hosts allowed, kept, and checked for each request",
+          later: "request()",
+        },
+        "0.logger": {
+          why: "the logger, kept, and used for the records of each request",
+          later: "the access log",
+        },
+        "0.access_log": {
+          why: "the options of the access log, read once",
+          instead: "unread",
+        },
+        "0.routing": {
+          why: "the options of the routing, read once",
+          instead: "unread",
+        },
+        "0.request_id": {
+          why: "the options of the request id, read once",
+          instead: "unread",
+        },
+        "0.query": {
+          why: "the options of the query, read once",
+          instead: "unread",
+        },
+      },
     },
     // The instance of the prototype members: one that logs nothing but the
     // errors of its listener (see `listened`)
@@ -1982,6 +2368,18 @@ const serializing: Record<string, IFixture> = {
     (await env.exchange()).context,
   ]),
 };
+/**
+ * What `createSerializers()` adds to its calls: its options are read once
+ * (also once its serializer of an error has run)
+ */
+const serialized: IFixtureOptions = {
+  deep: [[0, "error_details"]],
+  readers: {
+    "error()": (_, made) =>
+      (made as { error(error: unknown): unknown }).error(new Error("An error")),
+  },
+  kept: { 0: { why: "the options, each read once", instead: "unread" } },
+};
 /** The fixtures of the members of `serializers` */
 function serializersOf(
   defined: Record<string, IFixture>,
@@ -2004,13 +2402,20 @@ for (const verb of [
   "put",
   "trace",
 ]) {
-  fixtures[`binden:Router#${verb}()`] =
-    verb === "get"
-      ? probed({ io: true, readers: { "a request": routed } }, () => [
-          middleware,
-          middleware,
-        ])
-      : call(() => [middleware, middleware]);
+  // Its middlewares run for a request of its method (see `routed()`)
+  fixtures[`binden:Router#${verb}()`] = probed(
+    {
+      io: true,
+      readers: {
+        "a request": (receiver) => routed(receiver, verb.toUpperCase()),
+      },
+      kept: {
+        0: keptMiddleware("a request"),
+        1: keptMiddleware("a request"),
+      },
+    },
+    () => [middleware, middleware],
+  );
 }
 define("binden:", {
   // Its listener of the requests of the server (given a request and a
@@ -2047,10 +2452,9 @@ define("binden:", {
 
 // The functions of binden
 define("binden:", {
-  "createSerializers()": probed(
-    { deep: [[0, "error_details"]], members: serializing },
-    () => [{ error_details: true }],
-  ),
+  "createSerializers()": probed({ ...serialized, members: serializing }, () => [
+    { error_details: true },
+  ]),
   "described()": probed(
     {
       untouched: {
@@ -2342,8 +2746,25 @@ define("binden:Context#", {
     },
     () => [true],
   ),
-  "setTimeout()": call(() => [1000]),
-  "onCleanup()": call(() => [noop]),
+  // A reply once the deadline has passed is late
+  "setTimeout()": probed({ readers: { "a late reply": lateReply } }, () => [
+    1000,
+  ]),
+  // Its cleanup runs once the response is closed
+  "onCleanup()": probed(
+    {
+      io: true,
+      readers: { "an ended response": endedResponse },
+      kept: {
+        0: {
+          why: "the cleanup, kept, and run once the response is closed",
+          later: "an ended response",
+          ignores: ignoredBy("cleanup", "README, Context: it is awaited"),
+        },
+      },
+    },
+    () => [noop],
+  ),
   "throw()": probed(
     { throws: true, deep: errorPaths, untouched: errorUntouched },
     () => [418],
@@ -2423,9 +2844,10 @@ define("binden:", {
           why: "the logger, wrapped as it is: its calls never fail",
           later: "log.error()",
         },
+        // Its `child()` makes the logger of the context (see `log`)
         "0.logger.child": {
           why: "the logger, wrapped as it is: its calls never fail",
-          later: "log.error()",
+          later: "log",
         },
       },
       readers: {
@@ -2435,9 +2857,81 @@ define("binden:", {
             "message",
           );
         },
+        // A cleanup that fails: the report of the request (of a context that
+        // the application has made, its own, or by default one that logs)
+        "a failing cleanup": (_, made) => {
+          failedCleanup(made);
+        },
       },
       infallible: { log: neverFails, "log.error()": neverFails },
-      logs: ["log.error()"],
+      alternatives: {
+        // A proxy of valid options, which records what is read once the
+        // context is made, as its logger, its state and its report are used
+        "options read once": (): string[] => {
+          const request = new BindenRequest(new Socket());
+          const reads: string[] = [];
+          let made = false;
+          const record = (what: string, key: PropertyKey): void => {
+            if (made) {
+              reads.push(`${what} ${String(key)}`);
+            }
+          };
+          const options = new Proxy(
+            {
+              request,
+              response: new BindenResponse(request),
+              logger: silent,
+              state: {},
+            },
+            {
+              get(target, key, receiver): unknown {
+                record("get", key);
+                return Reflect.get(target, key, receiver) as unknown;
+              },
+              has(target, key): boolean {
+                record("has", key);
+                return Reflect.has(target, key);
+              },
+              ownKeys(target): (string | symbol)[] {
+                record("ownKeys", "");
+                return Reflect.ownKeys(target);
+              },
+              getOwnPropertyDescriptor(
+                target,
+                key,
+              ): PropertyDescriptor | undefined {
+                record("getOwnPropertyDescriptor", key);
+                return Reflect.getOwnPropertyDescriptor(target, key);
+              },
+            },
+          );
+          const context = Reflect.construct(binden.Context as IFunction, [
+            options,
+          ]) as object;
+          made = true;
+          (context as { log: { error(message: string): void } }).log.error(
+            "message",
+          );
+          if (!isObject(Reflect.get(context, "state"))) {
+            reads.push("(no state)");
+          }
+          failedCleanup(context);
+          return reads.length === 0
+            ? []
+            : [`reads its options once it is made: ${reads.join(", ")}`];
+        },
+      },
+      kept: {
+        // Kept by the report that the constructor makes (of the first
+        // context of a request): every value that would tell a later read
+        // is refused (a proxy of its request or of its response)
+        0: { why: "the options, each read once", instead: "options read once" },
+        "0.report": {
+          why: "the report of the request, kept by its first context, and called once a cleanup fails",
+          later: "a failing cleanup",
+          ignores: ignoredBy("report", "README, Context"),
+        },
+      },
     },
     async (env) => {
       const { request, response } = await env.exchange();
@@ -2450,23 +2944,40 @@ define("binden:", {
       return [{ request, response, logger }];
     },
     // The first context of a request (which creates what its contexts
-    // share, e.g. its state)
+    // share, e.g. its state), by default with a report that logs
     () => {
       const request = new BindenRequest(new Socket());
       return [{ request, response: new BindenResponse(request), state: {} }];
     },
+    // The first context of a request, with a report of its own
+    () => {
+      const request = new BindenRequest(new Socket());
+      return [{ request, response: new BindenResponse(request), report: noop }];
+    },
   ),
 });
+
+/** Why a listener is kept, and what checks it */
+const keptListener: IKept = {
+  why: "a listener, which Node.js keeps (as for a plain response), and calls as it is",
+  instead: "callbacks",
+};
 
 /**
  * A fixture of a listener method (whose event name Node.js converts, as for
  * the method of a plain response)
  */
 function listening(name: string): IFixture {
-  return probed({ converts: { 0: nodeCoercion }, node: plainly(name) }, () => [
-    "custom",
-    noop,
-  ]);
+  return probed(
+    {
+      converts: { 0: nodeCoercion },
+      node: plainly(name),
+      readers: { "a later event": laterEvent("custom") },
+      kept: { 1: keptListener },
+      callbacks: { 1: "the listener, which Node.js calls as it is" },
+    },
+    () => ["custom", noop],
+  );
 }
 /** The callbacks of `write()` and `end()` (by position) */
 const written = {
@@ -2789,7 +3300,17 @@ define("binden:BindenResponse#", {
     () => [new Headers({ "x-a": "b" })],
     () => [new Map([["x-a", "b"]])],
   ),
-  "setTimeout()": call(() => [1000, noop]),
+  // Its callback listens for the timeout of the response
+  "setTimeout()": probed(
+    {
+      readers: { "a later timeout": laterEvent("timeout") },
+      kept: { 1: keptListener },
+      callbacks: {
+        1: "the listener of the timeout, which Node.js calls as it is",
+      },
+    },
+    () => [1000, noop],
+  ),
   "removeHeader()": call(() => ["x-a"]),
   "addTrailers()": probed(
     {
@@ -3038,6 +3559,16 @@ define("binden:BindenResponse#", {
         0: "the event, compared by identity with those that the framework observes",
         "2.once": "read by Boolean(), which runs no code of the application",
       },
+      // Its observer runs as the response closes
+      readers: { "a close": closedBy },
+      io: true,
+      kept: {
+        1: {
+          why: "the observer, kept, and called as it is",
+          instead: "callbacks",
+        },
+        2: { why: "the options of the observer, read once", instead: "unread" },
+      },
     },
     () => ["close", noop, { once: true }],
   ),
@@ -3129,6 +3660,18 @@ define("binden:BindenResponse#", {
           ),
         "send() of a failing stream": (receiver) => failedSend(receiver),
       },
+      kept: {
+        0: { why: "the negotiator, its methods read once", instead: "unread" },
+        "0.choose": {
+          why: "a method of the negotiator, kept, and called as the representation of a body is chosen",
+          later: "[binden.representation]()",
+        },
+        "0.forget": {
+          why: "a method of the negotiator, kept, and called once a stream fails before its first chunk",
+          later: "send() of a failing stream",
+          ignores: ignoredBy("forget()", "it is called for its effect"),
+        },
+      },
     },
     () => [
       {
@@ -3147,6 +3690,26 @@ define("binden:BindenResponse#", {
   ),
 });
 
+/**
+ * The destination of the options of a logger (without running code of the
+ * application): `null` without one (pino writes to the standard output
+ * then), and `sink` for a proxy of the valid options or a getter (which gives
+ * the valid one)
+ */
+function destinationOf(options: unknown): unknown {
+  let holder: unknown = options;
+  while (isObject(holder) && !isProxy(holder)) {
+    const descriptor = Reflect.getOwnPropertyDescriptor(holder, "destination");
+    if (typeof descriptor !== "undefined") {
+      return typeof descriptor.get === "function"
+        ? sink
+        : ((descriptor.value as unknown) ?? null);
+    }
+    holder = Object.getPrototypeOf(holder);
+  }
+  return isProxy(holder) ? sink : null;
+}
+
 /** Options of `pino` that hold others (and a custom level) */
 function pinoOptions(): Record<string, unknown> {
   return {
@@ -3162,6 +3725,54 @@ function pinoOptions(): Record<string, unknown> {
 define("@binden/logger:", {
   "new Logger()": probed(
     {
+      // What its records use: its destination, the formatter of its level
+      // and its custom levels (also of a child)
+      readers: {
+        "a record": (_, made, [options]) => {
+          if (destinationOf(options) === null) {
+            // pino would write to the standard output
+            return null;
+          }
+          const logger = made as {
+            info(message: string, extra: object): void;
+            isLevelEnabled(level: string): boolean;
+            child(bindings: object): { info(message: string): void };
+          };
+          logger.info("message", { a: 1, secret: "b" });
+          logger.child({ b: 1 }).info("message");
+          return logger.isLevelEnabled("custom");
+        },
+      },
+      kept: {
+        // Of a destination, which pino writes each record to
+        0: {
+          why: "the options, read once, but the destination that they hold",
+          later: "a record",
+        },
+        "0.destination": {
+          why: "the destination, kept by pino, which writes each record to it",
+          later: "a record",
+        },
+        "0.formatters": { why: "the formatters, read once", instead: "unread" },
+        // Called once for each level, as the logger is made
+        "0.formatters.level": {
+          why: "the formatter of the level, read once",
+          instead: "unread",
+        },
+        "0.customLevels": {
+          why: "the custom levels, read once",
+          instead: "unread",
+        },
+        "0.redact": { why: "the redaction, read once", instead: "unread" },
+        "0.redact.paths": {
+          why: "the paths of the redaction, read once",
+          instead: "unread",
+        },
+        "0.base": {
+          why: "the base of the records, read once",
+          instead: "unread",
+        },
+      },
       deep: [
         [0, "destination"],
         [0, "level"],
@@ -3209,7 +3820,7 @@ define("@binden/logger:", {
     () => [{ a: 1 }, { level: "debug" }],
   ),
   "createSerializers()": probed(
-    { deep: [[0, "error_details"]], members: loggerSerializing },
+    { ...serialized, members: loggerSerializing },
     () => [{ error_details: true }],
   ),
   ...serializersOf(loggerSerializing),
@@ -3243,10 +3854,10 @@ const ContentType = binden.ContentType as new (init: object) => object;
 /** Every option of `BodyParser` */
 function bodyOptions(): Record<string, unknown> {
   return {
-    parse: (input: string): unknown => input,
+    parse: (input: string): unknown => JSON.parse(input),
     limit: 1000,
     encoded_limit: 2000,
-    type: ["text/plain"],
+    type: ["application/json", "text/plain"],
     raw: false,
     strict: true,
     parameter_limit: 10,
@@ -3297,6 +3908,22 @@ const multipart = probed(
       "storage.dir",
       "storage.on_file",
     ]),
+    // A body of a file that it parses (whose part its `file_filter` accepts,
+    // and its `on_file` gets)
+    io: true,
+    readers: { "a file part": (_, made) => parsedBy(made, "small-multipart") },
+    wraps: ["a file part"],
+    kept: {
+      "0.file_filter": {
+        why: "the filter of the files, kept, and called for each file part",
+        later: "a file part",
+      },
+      "0.storage.on_file": {
+        why: "the handler of the files, kept, and called for each file part",
+        later: "a file part",
+        ignores: ignoredBy("on_file", "README of @binden/multipart, Storage"),
+      },
+    },
   },
   () => [],
   () => [multipartOptions()],
@@ -3312,7 +3939,29 @@ function compressing(options: IFixtureOptions, ...calls: ICall[]): IFixture {
 // @binden/body, @binden/compression and @binden/multipart
 define("@binden/body:", {
   "new BodyParser()": probed(
-    { deep: keysAt(0, bodyOptions(), ["type.0"]) },
+    {
+      deep: keysAt(0, bodyOptions(), ["type.0"]),
+      // A JSON body that it parses (by its `parse`, of a type that its
+      // `type` selects, once its `verify` has checked it)
+      io: true,
+      readers: { "a parsed body": (_, made) => parsedBy(made, "small-json") },
+      wraps: ["a parsed body"],
+      kept: {
+        "0.parse": {
+          why: "the parser of the JSON bodies, kept, and called as one is parsed",
+          later: "a parsed body",
+        },
+        "0.type": {
+          why: "what selects the kind of a body, kept, and called as one is parsed",
+          later: "a parsed body",
+        },
+        "0.verify": {
+          why: "the check of a body, kept, and called as one is parsed",
+          later: "a parsed body",
+          ignores: ignoredBy("verify", "README of @binden/body, Verification"),
+        },
+      },
+    },
     // The instance of the prototype members: one of small limits
     () => [{ limit: 4, encoded_limit: 4 }],
     () => [],
@@ -3333,6 +3982,24 @@ define("@binden/compression:", {
         "brotli.params",
         "zstd.params",
       ]),
+      // A response that it compresses (by `gzip`, or `zstd`), whose type its
+      // `filter` decides: a filter that fails replaces it, and never fails
+      // the send
+      io: true,
+      readers: {
+        "a compressed response": (_, made) => compressedBy(made),
+        "a zstd response": (_, made) => compressedBy(made, "zstd"),
+      },
+      infallible: {
+        "a compressed response":
+          "README of @binden/compression, filter: a filter that fails replaces the response by a 500",
+      },
+      kept: {
+        "0.filter": {
+          why: "the filter, kept, and called as the representation of a response is chosen",
+          later: "a compressed response",
+        },
+      },
     },
     // The instance of the prototype members: one that codes any body
     () => [{ threshold: 0 }],
@@ -3739,7 +4406,7 @@ function isPlain(value: unknown): value is object {
 function replaced(
   values: readonly unknown[],
   path: readonly (number | string)[],
-  given: IHostile | null,
+  given: Pick<IHostile, "place" | "value"> | null,
 ): unknown[] | null {
   const copy = (
     holder: unknown,
@@ -4098,6 +4765,8 @@ interface IProbed {
   readonly examined: boolean;
   /** The kind of the error that it throws (or rejects with), if any */
   readonly failure: string | null;
+  /** Whether the call has accepted its hostile value (it has succeeded) */
+  readonly accepted: boolean;
 }
 
 /** The kind of an error (its class), without running code of the application */
@@ -4105,6 +4774,18 @@ function kindOf(error: unknown): string {
   return !isProxy(error) && isNativeError(error)
     ? error.constructor.name
     : `(${typeof error})`;
+}
+
+/**
+ * Whether an error is a `BindenError` (formatted, see `judged()`) of an error
+ * of the test, its `cause` (see `wraps`)
+ */
+function wrapsOwn(error: unknown, given: IHostile): boolean {
+  return (
+    !isProxy(error) &&
+    error instanceof (binden.BindenError as IFunction) &&
+    given.thrown.includes(Reflect.get(error, "cause") as OwnError)
+  );
 }
 
 /** Whether a late failure is the call of a function of the test (see `callbacks`) */
@@ -4136,6 +4817,24 @@ const readLater = new Set<string>();
  */
 const usedLater = new Set<string>();
 /**
+ * The same, by the hostile value used (as `<entry> <position> <reader>
+ * <hostile>`): what `IKept.ignores` needs
+ */
+const usedLaterBy = new Set<string>();
+/**
+ * The positions (as `<entry> <position>`) where readers have run with the
+ * `late-use` hostile, and those where one of its traps has run once the
+ * call had returned (read later): what `instead: "unread"` needs
+ */
+const unreadRun = new Set<string>();
+const readLate = new Set<string>();
+/**
+ * The readers of `logs` that have run a method that the application has
+ * replaced on a logger of binden (as `<entry> <reader>`): each one listed
+ * must have
+ */
+const loggedBy = new Set<string>();
+/**
  * The alternative checks that have run (as `<entry> <name>`, see
  * `alternativesOf()`): what `IUntouched.instead` needs
  */
@@ -4149,7 +4848,7 @@ const baselineReads = new Map<string, string>();
 /**
  * What an outcome of a reader shows, to compare it with the one with the
  * valid value: its kind, the kind of its error, and what it gives (the
- * hostile value given itself, a primitive, or the type of an object)
+ * hostile object given itself, a primitive, or the type of an object)
  */
 function signature(outcome: IOutcome, given: IHostile | null): string {
   switch (outcome.kind) {
@@ -4159,7 +4858,9 @@ function signature(outcome: IOutcome, given: IHostile | null): string {
     case "returned":
     case "resolved": {
       const { value } = outcome;
-      if (given !== null && value === given.value) {
+      // Only an object is told by its identity: a reader that gives a
+      // primitive (e.g. `undefined`) gives it whatever it is given
+      if (given !== null && isObject(given.value) && value === given.value) {
         return `${outcome.kind} the value given`;
       }
       return isObject(value)
@@ -4261,6 +4962,7 @@ async function probe(
   let given: IHostile | null = null;
   let examined = true;
   let failure: string | null = null;
+  let accepted = false;
   /** The runs of replaced methods of a logger by readers of the application (see `logs`) */
   let misusedByApplication = 0;
   try {
@@ -4379,7 +5081,11 @@ async function probe(
             ms,
           );
           if ((fixture.logs ?? []).includes(reader)) {
-            misusedByApplication += (given?.misused?.() ?? 0) - misusedSince;
+            const runs = (given?.misused?.() ?? 0) - misusedSince;
+            misusedByApplication += runs;
+            if (runs > 0) {
+              loggedBy.add(`${entry.id} ${reader}`);
+            }
           }
           if (isDefault) {
             const shown = signature(readOutcome, given);
@@ -4395,6 +5101,7 @@ async function probe(
                 shown !== baselineReads.get(baselineKey)
               ) {
                 usedLater.add(key);
+                usedLaterBy.add(`${key} ${given.name}`);
               }
             }
           }
@@ -4407,11 +5114,26 @@ async function probe(
             readOutcome.kind === "thrown" ||
             readOutcome.kind === "rejected"
           ) {
+            const how = `its reader ${reader} ${readOutcome.kind === "thrown" ? "throws" : "rejects with"}`;
+            const { error } = readOutcome;
+            const wraps =
+              given !== null && (fixture.wraps ?? []).includes(reader);
+            if (
+              wraps &&
+              !isProxy(error) &&
+              given?.thrown.includes(error as OwnError) === true
+            ) {
+              found.push(
+                `${how} the error of the test, not a BindenError of it (\`wraps\`)`,
+              );
+            }
             found.push(
               ...judged(
-                `its reader ${reader} ${readOutcome.kind === "thrown" ? "throws" : "rejects with"}`,
-                readOutcome.error,
-                given,
+                how,
+                error,
+                given !== null && wraps && wrapsOwn(error, given)
+                  ? null
+                  : given,
                 false,
                 false,
                 since,
@@ -4419,7 +5141,17 @@ async function probe(
             );
           }
         }
+        if (isDefault && given?.name === "late-use") {
+          const key = `${entry.id} ${position}`;
+          if (Object.keys(readers).length > 0) {
+            unreadRun.add(key);
+          }
+          if (given.thrown.length > 0) {
+            readLate.add(key);
+          }
+        }
       }
+      accepted = succeeded && !refused;
       if (given !== null) {
         const total = given.conversions();
         const allowed = fixture.converts?.[position];
@@ -4532,6 +5264,7 @@ async function probe(
     findings: found.map((what) => ({ entry: entry.id, probe: at, what })),
     examined,
     failure,
+    accepted,
   };
 }
 
@@ -4814,46 +5547,60 @@ function usedBy(
   position: string,
   untouched: IUntouched | string,
   kept: boolean,
+  as = "untouched",
 ): string[] {
   if (typeof untouched === "string") {
     return kept
       ? [
-          "untouched, and its valid value is a function or an object: it names neither the reader that uses it later (`later`) nor an alternative check (`instead`)",
+          `${as}, and its valid value is a function or an object: it names neither the reader that uses it later (\`later\`) nor an alternative check (\`instead\`)`,
         ]
       : [];
   } else if ("instead" in untouched) {
-    if (untouched.instead === "callbacks") {
+    if (untouched.instead === "unread") {
+      // Kept (e.g. by a closure), never read once the call has returned
+      const key = `${entry.id} ${position}`;
+      if (!unreadRun.has(key)) {
+        return [
+          `${as}, and never read later (\`unread\`), but no reader has run with a value there that tells a later read (late-use)`,
+        ];
+      }
+      return readLate.has(key)
+        ? [
+            `${as}, and never read later (\`unread\`), but read once the call has returned (a trap of late-use has run)`,
+          ]
+        : [];
+    } else if (untouched.instead === "callbacks") {
       // A callback that Node.js calls later, which `callbacks` checks
       return Object.hasOwn(fixture.callbacks ?? {}, position)
         ? []
         : [
-            "untouched, and checked as a callback instead, which it does not list (`callbacks`)",
+            `${as}, and checked as a callback instead, which it does not list (\`callbacks\`)`,
           ];
     }
     if (!Object.hasOwn(fixture.alternatives ?? {}, untouched.instead)) {
       return [
-        `untouched, and checked by ${untouched.instead} instead, which is not one of its alternative checks (\`alternatives\`)`,
+        `${as}, and checked by ${untouched.instead} instead, which is not one of its alternative checks (\`alternatives\`)`,
       ];
     }
     return checkedInstead.has(`${entry.id} ${untouched.instead}`)
       ? []
       : [
-          `untouched, and checked by its alternative check ${untouched.instead} instead, which has not run`,
+          `${as}, and checked by its alternative check ${untouched.instead} instead, which has not run`,
         ];
   }
   const { later } = untouched;
   const key = `${entry.id} ${position} ${later}`;
   if (!Object.hasOwn({ ...entry.readers, ...fixture.readers }, later)) {
     return [
-      `untouched, and used later by ${later}, which is not one of its readers (\`readers\`)`,
+      `${as}, and used later by ${later}, which is not one of its readers (\`readers\`)`,
     ];
   } else if (!readLater.has(key)) {
     return [
-      `untouched, and used later by its reader ${later}, which has not run with a hostile value there`,
+      `${as}, and used later by its reader ${later}, which has not run with a hostile value there`,
     ];
   } else if (!usedLater.has(key)) {
     return [
-      `untouched, and used later by its reader ${later}, which has used no hostile value given there`,
+      `${as}, and used later by its reader ${later}, which has used no hostile value given there`,
     ];
   }
   return [];
@@ -4870,7 +5617,10 @@ async function alternativesOf(
   fixture: IFixture,
 ): Promise<IFinding[]> {
   const named = new Set<string>();
-  for (const untouched of Object.values(fixture.untouched ?? {})) {
+  for (const untouched of [
+    ...Object.values(fixture.untouched ?? {}),
+    ...Object.values(fixture.kept ?? {}),
+  ]) {
     if (typeof untouched !== "string" && "instead" in untouched) {
       named.add(untouched.instead);
     }
@@ -4899,6 +5649,214 @@ async function alternativesOf(
 }
 
 /**
+ * A fresh value that stands for a function, a plain object or an array that
+ * every valid call shares (e.g. `noop`, or `silent`), so that its retention
+ * tells what the call keeps (see `retainedBy()`): a function that calls it,
+ * or a shallow copy. `null` for anything else (e.g. a class, or a proxy),
+ * whose retention is not told.
+ */
+function standIn(value: object): object | null {
+  if (isProxy(value)) {
+    return null;
+  } else if (typeof value === "function") {
+    if (isClass(value)) {
+      return null;
+    }
+    const fn = value as IFunction;
+    return function standing(this: unknown, ...values: unknown[]): unknown {
+      return Reflect.apply(fn, this, values);
+    };
+  } else if (Array.isArray(value)) {
+    return [...(value as unknown[])];
+  }
+  return isPlain(value) ? { ...value } : null;
+}
+
+/**
+ * Makes the arguments of a valid call of an entry point, each value of a
+ * position (a function or an object) fresh (see `standIn()`), and runs the
+ * call: weak references to the values whose retention it tells (by their
+ * positions, none once the call has failed), and what the call has returned
+ * (which lives on as the receiver does)
+ */
+async function keptCall(
+  entry: IEntry,
+  fixture: IFixture,
+  env: IEnv,
+  receiver: unknown,
+  index: number,
+): Promise<
+  readonly [readonly (readonly [string, WeakRef<object>])[], unknown]
+> {
+  const made = fixture.calls[index];
+  const original = await bounded(made(env, receiver), makeMs, "Its arguments");
+  // A value given by both is shared (e.g. one of the module)
+  const again = await bounded(made(env, receiver), makeMs, "Its arguments");
+  let values: unknown[] = [...original];
+  const told: (readonly (number | string)[])[] = [];
+  // Of the application: a function, or a plain object or an array (never
+  // an instance, e.g. a context, which the environment of the call keeps),
+  // the nested positions first, whose holders are copied (see `replaced()`)
+  const paths = positions(fixture, original)
+    .filter((path) => {
+      const value = valueAt(original, path);
+      return (
+        !isProxy(value) &&
+        ((typeof value === "function" && !isClass(value)) ||
+          Array.isArray(value) ||
+          isPlain(value))
+      );
+    })
+    .sort((a, b) => b.length - a.length);
+  for (const path of paths) {
+    const value = valueAt(original, path) as object;
+    // What holds it is copied as it is (never an instance, whose copy would
+    // be an object derived from it)
+    const current = values;
+    const holders = path
+      .slice(1)
+      .map((_, length) => valueAt(current, path.slice(0, length + 1)));
+    if (holders.every((holder) => Array.isArray(holder) || isPlain(holder))) {
+      if (value === valueAt(again, path)) {
+        const standing = standIn(value);
+        const copy =
+          standing === null
+            ? null
+            : replaced(values, path, { value: standing });
+        if (copy !== null) {
+          values = copy;
+          told.push(path);
+        }
+      } else {
+        told.push(path);
+      }
+    }
+  }
+  const weak = told.map(
+    (path) =>
+      [path.join("."), new WeakRef(valueAt(values, path) as object)] as const,
+  );
+  const ms = fixture.io === true ? ioMs : pendingMs;
+  const outcome = await outcomeOf(() => called(entry, receiver, values), ms);
+  return outcome.kind === "returned" || outcome.kind === "resolved"
+    ? [weak, outcome.kind === "returned" ? outcome.value : null]
+    : [[], null];
+}
+
+/**
+ * The positions (as `<call> <position>`) of the valid calls of an entry
+ * point, on its default receiver, whose valid value, a function or an
+ * object, the call keeps: a weak reference to it survives every full garbage
+ * collection of a while once the call has settled (see `keptRounds`), while
+ * its receiver and what it has returned live on, before the environments of
+ * the calls are cleaned up (e.g. before a response closes)
+ */
+async function retainedBy(
+  entry: IEntry,
+  fixture: IFixture,
+  indexes: ReadonlySet<number>,
+): Promise<ReadonlySet<string>> {
+  const receiving = entry.receivers?.[0] ?? null;
+  const envs: IEnv[] = [];
+  const kept: unknown[] = [];
+  const refs: (readonly [string, WeakRef<object>])[] = [];
+  const found: string[] = [];
+  try {
+    for (const index of indexes) {
+      const env = environment();
+      envs.push(env);
+      try {
+        const receiver =
+          receiving === null
+            ? null
+            : await bounded(receiving.make(env), makeMs, "Its receiver");
+        const [weak, result] = await keptCall(
+          entry,
+          fixture,
+          env,
+          receiver,
+          index,
+        );
+        kept.push(receiver, result);
+        refs.push(
+          ...weak.map(
+            ([position, ref]) => [`${String(index)} ${position}`, ref] as const,
+          ),
+        );
+      } catch (error: unknown) {
+        found.push(`the fixture fails: ${describe(error)}`);
+      }
+    }
+    // Kept is what stays reachable once what the call has started has
+    // settled (e.g. the flush of a send, also on a loaded machine): what is
+    // reachable at every collection of a while
+    let alive = refs;
+    for (let round = 0; round < keptRounds && alive.length > 0; round += 1) {
+      await delay(round === 0 ? 0 : keptMs);
+      collect();
+      alive = alive.filter(([, ref]) => typeof ref.deref() !== "undefined");
+    }
+    return new Set(alive.map(([key]) => key));
+  } finally {
+    kept.length = 0;
+    for (const env of envs) {
+      found.push(...(await clean(env)));
+    }
+    for (const { how, error } of late.splice(0)) {
+      found.push(`${how} ${describe(error)}`);
+    }
+    findings.push(
+      ...found.map((what) => ({ entry: entry.id, probe: "kept", what })),
+    );
+  }
+}
+
+/**
+ * What a position that a call examines, but whose valid value it keeps,
+ * lacks (see `kept`): a reader (or an alternative check) that uses it, and
+ * at a position of a function used `later`, the use of each hostile function
+ * whose result is hostile that the call has accepted there (see `IKept`)
+ */
+function keptBy(
+  entry: IEntry,
+  fixture: IFixture,
+  position: string,
+  binding: IKept,
+  acceptedThere: ReadonlySet<IHostileName>,
+  isFunction: boolean,
+): string[] {
+  const found = usedBy(entry, fixture, position, binding, true, "kept");
+  const { ignores = {} } = binding;
+  const later = "later" in binding ? binding.later : null;
+  const results =
+    isFunction && later !== null
+      ? [...acceptedThere].filter((name) => resultHostiles.has(name))
+      : [];
+  for (const name of results) {
+    const used = usedLaterBy.has(
+      `${entry.id} ${position} ${String(later)} ${name}`,
+    );
+    if (!used && !Object.hasOwn(ignores, name)) {
+      found.push(
+        `kept, and used later by its reader ${String(later)}, which has not told the hostile ${name} given there from the valid value (a hostile result is checked; \`ignores\` says why it is not)`,
+      );
+    } else if (used && Object.hasOwn(ignores, name)) {
+      found.push(
+        `kept, and ignores the hostile ${name}, which its reader ${String(later)} uses`,
+      );
+    }
+  }
+  for (const name of Object.keys(ignores)) {
+    if (!results.includes(name as IHostileName)) {
+      found.push(
+        `kept, and ignores the hostile ${name}, which the call does not accept there as a function used later`,
+      );
+    }
+  }
+  return found;
+}
+
+/**
  * The fixtures of members that are being probed (see `members`): a fixture
  * whose members are its own (e.g. of `child()` of a logger) is probed once
  */
@@ -4921,6 +5879,17 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
    * `IUntouched`)
    */
   const kept = new Set<string>();
+  /**
+   * The hostile values that the call has accepted, on the default receiver,
+   * at a position whose valid value is a function or an object that it
+   * examines (not `untouched`), by the position, whether that valid value is
+   * a function, and the calls that have them (whose retention is told, see
+   * `retainedBy()`)
+   */
+  const acceptedAt = new Map<string, Set<IHostileName>>();
+  const functions = new Set<string>();
+  const keeping = new Set<number>();
+  const { untouched = {} } = fixture;
   for (const receiving of entry.receivers ?? [null]) {
     const isDefault = receiving === null || receiving.name === "";
     for (const [index, made] of fixture.calls.entries()) {
@@ -4997,6 +5966,19 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
             findings.push(...outcomeOfHostile.findings);
             if (
               isDefault &&
+              outcomeOfHostile.accepted &&
+              isObject(value) &&
+              !Object.hasOwn(untouched, position)
+            ) {
+              const names = acceptedAt.get(position) ?? new Set();
+              acceptedAt.set(position, names.add(name));
+              if (typeof value === "function" && !isClass(value)) {
+                functions.add(position);
+              }
+              keeping.add(index);
+            }
+            if (
+              isDefault &&
               name !== "late" &&
               name !== "late-use" &&
               name !== "late-write"
@@ -5019,7 +6001,6 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
       }
     }
   }
-  const untouched = fixture.untouched ?? {};
   const needed = new Set<string>();
   /** The untouched positions whose valid value is kept (see `kept`) */
   const keeps = new Set<string>();
@@ -5052,6 +6033,51 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
         (what) => ({ entry: entry.id, probe: position, what }),
       ),
     );
+  }
+  // What the call keeps of the positions where it accepts a hostile value
+  const retained =
+    keeping.size > 0
+      ? await retainedBy(entry, fixture, keeping)
+      : new Set<string>();
+  const keptAt = new Set(
+    [...retained]
+      .map((key) => key.slice(key.indexOf(" ") + 1))
+      .filter((position) => acceptedAt.has(position)),
+  );
+  for (const position of keptAt) {
+    if (!Object.hasOwn(fixture.kept ?? {}, position)) {
+      findings.push({
+        entry: entry.id,
+        probe: position,
+        what: `keeps its valid value, a function or an object, and accepts hostile values there (${[...(acceptedAt.get(position) ?? [])].join(", ")}): it names neither the reader that uses it later (\`kept\`, \`later\`) nor an alternative check (\`instead\`)`,
+      });
+    }
+  }
+  for (const [position, binding] of Object.entries(fixture.kept ?? {})) {
+    findings.push(
+      ...(keptAt.has(position)
+        ? keptBy(
+            entry,
+            fixture,
+            position,
+            binding,
+            acceptedAt.get(position) ?? new Set(),
+            functions.has(position),
+          )
+        : [
+            "listed as kept, but no valid call keeps its value while it accepts a hostile value there",
+          ]
+      ).map((what) => ({ entry: entry.id, probe: position, what })),
+    );
+  }
+  for (const reader of fixture.logs ?? []) {
+    if (!loggedBy.has(`${entry.id} ${reader}`)) {
+      findings.push({
+        entry: entry.id,
+        probe: reader,
+        what: "listed as a reader that logs as the application does (`logs`), but it has run no method that the application has replaced on a logger of binden",
+      });
+    }
   }
   for (const position of Object.keys(fixture.callbacks ?? {})) {
     if (!calledBack.has(`${entry.id} ${position}`)) {
@@ -5150,9 +6176,88 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
   }
 }
 
-for (const entry of all
-  .filter(({ id }) => id.includes(only))
-  .filter((_, index) => index % shards === shard)) {
+/**
+ * The measured costs of the heaviest entry points, in ms (a run of each, with
+ * what it returns, installs and has as members, on the reference machine,
+ * moderately loaded): the shards are balanced by them (see `shardsOf()`),
+ * and any other entry point costs `lightCost`
+ */
+const costs: Readonly<Record<string, number>> = {
+  "@binden/compression:Compression#run()": 580,
+  "binden:new Binden()": 340,
+  "binden:BindenResponse#[binden.ownership]()": 320,
+  "@binden/multipart:new Multipart()": 300,
+  "binden:Context#sendFile()": 300,
+  "binden:BindenResponse#sendFile()": 270,
+  "binden:BindenResponse#writeInformation()": 270,
+  "@binden/compression:new Compression()": 240,
+  "@binden/multipart:default()": 200,
+  "binden:Context#throw()": 170,
+  "binden:BindenResponse#send()": 170,
+  "@binden/body:new BodyParser()": 160,
+  "binden:BindenResponse#writeHead()": 160,
+  "binden:new Context()": 130,
+  "@binden/logger:createSerializers()": 130,
+  "binden:Context#json()": 120,
+  "binden:Context#redirect()": 120,
+  "binden:BindenResponse#addTrailers()": 110,
+  "binden:BindenResponse#clearCookie()": 110,
+  "binden:BindenResponse#writeHeader()": 110,
+  "binden:BindenResponse#end()": 110,
+  "binden:Context#clearCookie()": 110,
+  "binden:BindenResponse#write()": 100,
+  "binden:BindenResponse#json()": 100,
+  "binden:Context#log": 100,
+  "binden:BindenResponse#set()": 90,
+  "binden:BindenResponse#redirect()": 80,
+  "binden:BindenResponse#[binden.pipe_failure]()": 70,
+  "binden:BindenResponse#appendHeader()": 70,
+  "binden:BindenResponse#writeEarlyHints()": 70,
+  "binden:BindenResponse#[binden.negotiator]()": 60,
+  "binden:createSerializers()": 60,
+  "binden:BindenResponse#setHeaders()": 60,
+  "binden:Binden#createSecureServer()": 60,
+  "binden:BindenResponse#destroy()": 60,
+  "@binden/body:BodyParser#run()": 60,
+  "binden:BindenResponse#[binden.listen]()": 60,
+  "binden:Context#send()": 50,
+  "binden:BindenResponse#[binden.validate_head]()": 50,
+  "binden:Stack#use()": 40,
+  "binden:BindenResponse#setTimeout()": 40,
+  "binden:BindenResponse#once()": 40,
+  "@binden/multipart:Multipart#run()": 40,
+};
+const lightCost = 10;
+for (const id of Object.keys(costs)) {
+  if (shard === 0 && !ids.has(id)) {
+    findings.push({
+      entry: id,
+      probe: "-",
+      what: "a cost of an entry point that names nothing (`costs`)",
+    });
+  }
+}
+
+/**
+ * The shard of each entry point (by its id): the costliest first (see
+ * `costs`), each to the shard of the least cost so far (the first of them),
+ * as every shard computes it
+ */
+function shardsOf(selected: readonly IEntry[]): ReadonlyMap<string, number> {
+  const cost = ({ id }: IEntry): number => costs[id] ?? lightCost;
+  const loads = Array.from({ length: shards }, () => 0);
+  const found = new Map<string, number>();
+  for (const entry of [...selected].sort((a, b) => cost(b) - cost(a))) {
+    const least = loads.indexOf(Math.min(...loads));
+    found.set(entry.id, least);
+    loads[least] = (loads[least] ?? 0) + cost(entry);
+  }
+  return found;
+}
+
+const selected = all.filter(({ id }) => id.includes(only));
+const assigned = shardsOf(selected);
+for (const entry of selected.filter(({ id }) => assigned.get(id) === shard)) {
   if (Object.hasOwn(fixtures, entry.id)) {
     await run(entry, fixtures[entry.id]);
   } else if (entry.kind === "get") {
