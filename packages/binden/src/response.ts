@@ -3747,13 +3747,14 @@ export class BindenResponse<
    * body (a `Content-Length` or a `Transfer-Encoding` set before the send,
    * whose body it was), nor the representation chosen for it (see
    * `#forget()`), so that the reply that follows (e.g. of the error) frames
-   * its own body. Not by a work that may no longer mutate the response.
+   * its own body. The work that sends may mutate the response throughout:
+   * the send is ignored otherwise, and nothing revokes it within the call.
    */
   #unsent<T>(state: IFramingState | null, commit: () => T): T {
     try {
       return commit();
     } catch (error: unknown) {
-      if (state !== null && !this.headersSent && this.#allows()) {
+      if (state !== null && !this.headersSent) {
         this[kRestoreFraming](state);
         this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
         this.#forget();

@@ -4,6 +4,7 @@ import {
   BindenResponse,
   type Context,
   type IResponseOptions,
+  kNegotiator,
   validateResponseOptions,
 } from "../index.js";
 import { IncomingMessage, type ServerResponse, createServer } from "node:http";
@@ -164,6 +165,63 @@ suite(
           ],
           header,
         );
+      }
+    });
+
+    test("the representation chosen for its body is forgotten: the reply that follows gets its own", async () => {
+      let chosen = 0;
+      let forgotten = 0;
+      const response = detached("GET", {}, true);
+      response[kNegotiator]({
+        choose: () => {
+          chosen += 1;
+          return { coding: null, status: null };
+        },
+        forget: () => {
+          forgotten += 1;
+        },
+      });
+      response.statusMessage = "bad\nx";
+      await rejects(within(response.send("hello")), {
+        code: "ERR_INVALID_CHAR",
+      });
+      deepStrictEqual([chosen, forgotten], [1, 1]);
+    });
+
+    test("once the head is committed (e.g. Node.js throws afterwards, as it corks the socket), the response is left as it is: the send rejects with that error", async () => {
+      const { promise: outcome, resolve } = Promise.withResolvers<unknown[]>();
+      const app = new Binden().use(async (context: Context) => {
+        const { response } = context;
+        (response.socket as Socket).cork = (): void => {
+          throw Object.assign(new Error("After the head"), {
+            code: "E_AFTER_HEAD",
+          });
+        };
+        const error = await response.send("hello").then(
+          () => null,
+          (thrown: unknown) => thrown,
+        );
+        resolve([
+          (error as { code?: unknown } | null)?.code,
+          response.headersSent,
+          response.getHeader("Content-Length"),
+          response.getHeader("Content-Type"),
+        ]);
+      });
+      const listening = await listen(app);
+      try {
+        await converse(
+          listening.port,
+          "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        deepStrictEqual(await within(outcome), [
+          "E_AFTER_HEAD",
+          true,
+          5,
+          "text/plain",
+        ]);
+      } finally {
+        await listening.close();
       }
     });
 
