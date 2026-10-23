@@ -21,12 +21,6 @@ interface IReport {
   readonly findings: readonly IFinding[];
 }
 
-/**
- * The findings being fixed (`<entry> | <probe>` prefixes), until their fixes
- * are integrated: each must still have a finding
- */
-const integrating: readonly string[] = [];
-
 /** How many processes probe the surface in parallel, each a shard of it */
 const shards = 4;
 /** How long a shard may run before it is killed */
@@ -129,21 +123,11 @@ suite("The public surface of the packages of binden", () => {
         );
       }
       ok(probes > entries.length * 5, String(probes));
-      const lines = findings.map(
-        ({ entry, probe, what }) => `${entry} | ${probe}: ${what}`,
-      );
       deepStrictEqual(
-        lines.filter(
-          (line) => !integrating.some((prefix) => line.startsWith(prefix)),
+        findings.map(
+          ({ entry, probe, what }) => `${entry} | ${probe}: ${what}`,
         ),
         [],
-      );
-      deepStrictEqual(
-        integrating.filter(
-          (prefix) => !lines.some((line) => line.startsWith(prefix)),
-        ),
-        [],
-        "fixed: remove them from `integrating`",
       );
     },
   );
