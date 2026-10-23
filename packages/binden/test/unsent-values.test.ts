@@ -230,23 +230,35 @@ suite(
        * Refuses the reply of a work (of `/status`, `/reason` or `/trailer`),
        * which then replies `err` itself
        */
-      const refusing: Record<string, (response: ServerResponse) => unknown> = {
-        status: (response) => {
-          response.statusCode = 1000;
-        },
-        reason: (response) => {
-          response.statusMessage = "bad\nx";
-        },
-        trailer: (response) => {
-          response.setHeader("Trailer", "X-T");
-        },
-      };
+      const refusing = new Map<string, (response: ServerResponse) => unknown>([
+        [
+          "status",
+          (response): void => {
+            response.statusCode = 1000;
+          },
+        ],
+        [
+          "reason",
+          (response): void => {
+            response.statusMessage = "bad\nx";
+          },
+        ],
+        [
+          "trailer",
+          (response): void => {
+            response.setHeader("Trailer", "X-T");
+          },
+        ],
+      ]);
       const replied = async (
         response: ServerResponse,
         refused: string,
         reply: () => unknown,
       ): Promise<void> => {
-        refusing[refused](response);
+        // Only the refusals of the test, never a member found by the path
+        const refuse = refusing.get(refused);
+        ok(refuse, refused);
+        refuse(response);
         // Also a synchronous throw
         await Promise.resolve()
           .then(reply)
