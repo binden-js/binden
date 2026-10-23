@@ -277,6 +277,135 @@ suite(
       }
     });
 
+    test("every call that commits the head by it (also an end() without a chunk, and any write of a response to HEAD) stores the integer, also of a string or a fractional number, as plain Node.js (C30-3, H30-1)", async () => {
+      const calls: Record<string, (response: ServerResponse) => unknown> = {
+        write: (response) => response.write("abc"),
+        end: (response) => response.end(),
+        empty: (response) => response.end(""),
+        callback: (response) =>
+          response.end(() => {
+            // Never called by a refused head
+          }),
+        null: (response) => response.end(null),
+        chunk: (response) => response.end("abc"),
+        flushHeaders: (response) => {
+          response.flushHeaders();
+        },
+        writeHead: (response) => response.writeHead(response.statusCode),
+      };
+      const statuses: Record<string, () => unknown> = {
+        string: () => "201",
+        fractional: () => 201.5,
+      };
+      const outcomes = new Map<string, unknown[]>();
+      const handled = await servers((response, path) => {
+        const [name = "", call = "", kind = ""] = path.slice(1).split("-");
+        const status = counting(201);
+        response.statusCode = (
+          kind in statuses ? statuses[kind]() : status.value
+        ) as never;
+        response.statusMessage = "bad\r\nx: y";
+        const run = calls[call] as IHandler;
+        const first = thrownBy(() => run(response, ""));
+        const stored: unknown = response.statusCode;
+        response.statusMessage = "Created";
+        const retry = thrownBy(() => run(response, ""));
+        outcomes.set(name, [first, stored, retry, status.conversions()]);
+        if (!response.writableEnded) {
+          response.end();
+        }
+      });
+      try {
+        for (const [server, url] of Object.entries(handled.urls)) {
+          for (const method of ["GET", "HEAD"]) {
+            for (const call of Object.keys(calls)) {
+              for (const kind of ["object", "string", "fractional"]) {
+                const name = `${server}|${method}|${call}|${kind}`;
+                const path = `/${encodeURIComponent(name)}-${call}-${kind}`;
+                deepStrictEqual(
+                  await statusLines(
+                    url,
+                    `${method} ${path} HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n`,
+                  ),
+                  ["http/1.1 201 created"],
+                  name,
+                );
+                deepStrictEqual(
+                  outcomes.get(encodeURIComponent(name)),
+                  ["ERR_INVALID_CHAR", 201, null, kind === "object" ? 1 : 0],
+                  name,
+                );
+              }
+            }
+          }
+        }
+      } finally {
+        await handled.close();
+      }
+    });
+
+    test("a number out of range once truncated is refused by the value given before the encoding of a chunk is checked, as plain Node.js (H30-3)", async () => {
+      const outcomes = new Map<string, unknown[]>();
+      const handled = await servers((response, path) => {
+        const [, call = "", status = ""] = path.slice(1).split("_");
+        response.statusCode = Number(status);
+        let thrown: unknown = null;
+        try {
+          if (call === "write") {
+            response.write("abc", "bogus" as never);
+          } else {
+            response.end("abc", "bogus" as never);
+          }
+        } catch (error: unknown) {
+          const { code, message } = error as {
+            code?: unknown;
+            message: string;
+          };
+          thrown = [code, message];
+        }
+        outcomes.set(path, [thrown, response.statusCode, response.headersSent]);
+        response.statusCode = 500;
+        response.end();
+      });
+      try {
+        for (const call of ["write", "end"]) {
+          for (const status of [
+            "1000",
+            "1000.5",
+            "99.9",
+            "-204",
+            "4294967395",
+            "NaN",
+          ]) {
+            const name = `${call}_${status}`;
+            for (const server of ["plain", "binden", "gzip"] as const) {
+              // Compressed, or replaced with `406`
+              for (const coding of ["gzip", "identity;q=0, *;q=0"]) {
+                const path = `/${server}_${name}_${coding.length}`;
+                deepStrictEqual(
+                  await statusLines(
+                    handled.urls[server],
+                    closing(path, coding),
+                  ),
+                  ["http/1.1 500 internal server error"],
+                  path,
+                );
+                const plain = outcomes.get(`/plain_${name}_${coding.length}`);
+                deepStrictEqual(outcomes.get(path), plain, path);
+                deepStrictEqual(
+                  (plain?.[0] as unknown[] | undefined)?.[0],
+                  "ERR_HTTP_INVALID_STATUS_CODE",
+                  path,
+                );
+              }
+            }
+          }
+        }
+      } finally {
+        await handled.close();
+      }
+    });
+
     test("a statusCode that is a number but not an integer is the integer that Node.js commits: framed as that integer, and the pipelined request that follows is answered", async () => {
       const replies: Record<string, (response: BindenResponse) => unknown> = {
         send: async (response) => response.send("hello"),

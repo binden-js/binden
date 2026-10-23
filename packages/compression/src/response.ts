@@ -189,21 +189,24 @@ const statusAlone = ["", ["Content-Length", 0]] as const;
 
 /**
  * The status code of a response whose head is not committed, as binden
- * decides by it (see `#status()` of `BindenResponse`): the integer that
- * Node.js commits. A number is truncated as Node.js truncates it (`| 0`,
- * e.g. `204.5` is a `204`), which leaves an integer as it is. Any other value
- * (e.g. an object or a string) is converted once, by the conversion of binden
- * as Node.js converts it (see `kValidateHead`), which refuses it as Node.js
- * refuses it, and that number is the status of the response from then on, as
- * Node.js stores it (before it checks anything else): never compared as it
- * is, which would convert it again.
+ * commits it (see `#converted()` of `BindenResponse`): the integer that
+ * Node.js commits, stored as the status of the response from then on, as
+ * Node.js stores it (before it checks anything else, e.g. the encoding of a
+ * chunk, or the reason phrase), and before the framing is saved (see
+ * `#commit()`): never compared as it is, which would convert it again, and a
+ * rollback restores that number. A number is truncated as Node.js truncates
+ * it (`| 0`, e.g. `204.5` is a `204`), which leaves an integer as it is. Any
+ * other value (e.g. an object or a string), and a number out of range once
+ * truncated (e.g. `1000`), is converted once by the conversion of binden as
+ * Node.js converts it (see `kValidateHead`), which refuses it as Node.js
+ * refuses it (`ERR_HTTP_INVALID_STATUS_CODE`, by the value given).
  */
 function statusOf(response: IResponse): number {
   const status: unknown = response.statusCode;
-  if (typeof status === "number") {
-    return status | 0;
+  let code = typeof status === "number" ? status | 0 : 0;
+  if (typeof status !== "number" || code < 100 || code > 999) {
+    [code] = response[kValidateHead](status, ...statusAlone);
   }
-  const [code] = response[kValidateHead](status, ...statusAlone);
   response.statusCode = code;
   return code;
 }
@@ -622,12 +625,9 @@ export class CompressedResponse {
     // head Node.js commits by it): converted once and stored (see
     // `statusOf()`), before the framing is saved and anything else is
     // checked, as Node.js stores it before it refuses a reason phrase. A
-    // status given (or a number) is converted by the check alone
+    // status given is converted by the check alone
     const [first, ...rest] = args;
-    const own =
-      typeof first !== "number" && first === response.statusCode
-        ? statusOf(response)
-        : first;
+    const own = first === response.statusCode ? statusOf(response) : first;
     this.#commit(() => {
       // What Node.js would refuse (e.g. a status code or a reason phrase),
       // before anything is changed: no compressor is created. Read once, as

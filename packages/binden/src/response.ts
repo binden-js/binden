@@ -1848,18 +1848,17 @@ export class BindenResponse<
       // Node.js throws `ERR_HTTP_HEADERS_SENT` before it reads anything
       return super.writeHead(statusCode, reason as string, headers);
     }
-    // The status of the response itself (e.g. of `flushHeaders()`, whose
-    // head Node.js commits by it): converted once, and that number is stored
-    // before anything else is checked (see `#status()`), as Node.js stores
-    // it before it refuses a reason phrase, so that another attempt does not
-    // convert it again. A status given (or a number, which converts without
-    // side effects) is converted by the check alone: a refused call changes
+    // The status of the response itself (e.g. of a first `write()`, whose
+    // head Node.js commits by it): converted once, and the integer that
+    // Node.js commits is stored before anything else is checked (see
+    // `#converted()`), so that another attempt does not convert it again. A
+    // status given is converted by the check alone: a refused call changes
     // nothing
-    const own =
-      typeof statusCode !== "number" &&
-      (statusCode as unknown) === (this.#statusCode as unknown)
-        ? this.#status()
-        : statusCode;
+    let own = statusCode;
+    if ((statusCode as unknown) === (this.#statusCode as unknown)) {
+      this.#converted();
+      own = this.#statusCode;
+    }
     // Node.js would throw only once it has changed the response (its status
     // and reason phrase, and some of the headers). Read once, and checked:
     // Node.js gets exactly these (see `IHead`)
@@ -2053,8 +2052,8 @@ export class BindenResponse<
 
   /**
    * The status code that binden decides by before the head is committed by
-   * a first `write()`, an `end()` with a chunk, or a send (see `#hasBody()`,
-   * `#bodiless()`): the integer that Node.js commits (it converts the status
+   * a send (see `#bodiless()`), or by a write (see `#hasBody()`, once
+   * `#converted()`): the integer that Node.js commits (it converts the status
    * by `| 0`, then sets that number). One that is not a number (e.g. an
    * object or a string assigned to `statusCode`) is converted once (see
    * `#statusOf()`), and that number is the status of the response from then
@@ -2063,8 +2062,8 @@ export class BindenResponse<
    * call throws, before anything is changed. A number is truncated as
    * Node.js truncates it, which leaves an integer as it is (e.g. `204.5` is a
    * `204`, without a body nor its length): one in range is the status from
-   * then on, and one out of range is left as it is, which Node.js refuses as
-   * it commits the head, by the value given.
+   * then on, and one out of range is left as it is, which the commit of the
+   * head refuses, by the value given (see `#converted()`).
    */
   #status(): number {
     const status = this.#statusCode;
@@ -2080,6 +2079,26 @@ export class BindenResponse<
     const code = BindenResponse.#statusOf(status);
     this.#statusCode = code;
     return code;
+  }
+
+  /**
+   * Converts the status of the response once for a call that commits the
+   * head by it (a first `write()`, also of a response without a body, e.g. to
+   * `HEAD`, an `end()` with or without a chunk, and `writeHead()` of that
+   * status, by which Node.js commits `flushHeaders()`): the integer that
+   * Node.js commits is stored before anything else is checked (e.g. the
+   * encoding of a chunk, or the reason phrase) and before the framing is
+   * saved (see `#restoring()`, and `[kSaveFraming]()` of a library), as
+   * Node.js stores it before it refuses a reason phrase. A refused attempt
+   * then restores that number, which another attempt does not convert again
+   * (e.g. `204.5`, an object or a string are then `204`). A status that
+   * Node.js refuses (one out of range once truncated, e.g. `1000`, or whose
+   * conversion throws) throws as Node.js throws it
+   * (`ERR_HTTP_INVALID_STATUS_CODE`, by the value given, see `#statusOf()`),
+   * and is left as it is.
+   */
+  #converted(): void {
+    this.#statusCode = BindenResponse.#statusOf(this.#statusCode);
   }
 
   /** `[kValidateHead]()`, which may throw an error that is not formatted */
@@ -2267,6 +2286,11 @@ export class BindenResponse<
         // Refused by Node.js before anything else (e.g. `null`), whatever the
         // state of the response
         return super.write(...(args as [unknown]));
+      } else if (!this.headersSent && !this.destroyed) {
+        // Node.js commits the head by it (see `#converted()`): not once the
+        // response is destroyed (which an end that has not committed it has
+        // also finished)
+        this.#converted();
       }
       const written = this.#normalized(args, false);
       this.#beyond(written);
@@ -2507,7 +2531,19 @@ export class BindenResponse<
         BindenResponse.#ignore(args);
         return this;
       }
-      this.#chunkOfEnd(args[0]);
+      const [first] = args;
+      this.#chunkOfEnd(first);
+      if (
+        !this.headersSent &&
+        // Also once the response is destroyed, unless the end has a chunk
+        // (not a callback): Node.js ignores it then, and finishes the
+        // response without its head
+        Reflect.get(this, "finished") !== true &&
+        (typeof first === "function" || !truthy(first) || !this.destroyed)
+      ) {
+        // Node.js commits the head by it (see `#converted()`)
+        this.#converted();
+      }
       const ended = this.#normalized(args, true);
       // Node.js frames the body of its chunk before it commits the head (see
       // `#restoring()`)
