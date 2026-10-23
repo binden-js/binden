@@ -384,6 +384,10 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   A `HEAD` response without a body gets `Content-Length: 0`, as for `GET`, and `send("")` gets the
   default `Content-Type` and the dynamic `ETag` of an empty body, as an empty `Buffer`. A `Readable`
   that has ended is an empty body.
+- A value `send()` (also `text()`, `html()`, `json()`, `form()`) whose head Node.js refuses (e.g. a
+  status out of range or an invalid `statusMessage`) leaves the response as it was before it:
+  binden 2.0.4 kept the `Content-Type` that it had set (`plain/text`) for the reply that followed.
+  Set the type of that reply yourself.
 - A `sendFile()` that fails before the head is committed, once it has set the headers of the file
   (e.g. a head that Node.js refuses), restores the response as it was before it, so that the reply
   that follows (e.g. of the error) gets none of the headers of the file, and it opens the file
