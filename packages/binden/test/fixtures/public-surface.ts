@@ -33,8 +33,8 @@
 // whose result is hostile from the valid one (see `IKept`). The values whose
 // retention is told are the application's own, by ownership, not by class: a
 // fresh value of the fixture (also an instance, a `Headers`, a `Map`, a view
-// or a `URL`), or a stand-in of one that every valid call shares (see
-// `standIn()`). Not told, and so not kept by the call, are only: what the
+// or a `URL`), or a stand-in of a function, a plain object or an array that
+// every valid call shares (see `standIn()`). Not told, and so not kept by the call, are only: what the
 // call returns itself (the caller's, e.g. the error of `formatStack()`), the
 // valid value that `late` gives the call (once, from its holder), and, each
 // named by its entry point and position, with why and the reader or the
@@ -371,10 +371,15 @@ function bindenLogger(): object {
 }
 
 /**
- * A fresh hostile value, made from the valid value of its position (e.g. the
- * proxies of it whose one trap throws, and `late`)
+ * The valid values that the hostile values made of them stand for (a proxy,
+ * an object derived from one, or a context of a subclass of the same
+ * exchange, see `hostile()`): a reader finds the exchange of a hostile value
+ * by them, without running its traps (see `replied()`)
  */
-function hostile(name: IHostileName, valid: unknown): IHostile {
+const standsFor = new WeakMap<object, object>();
+
+/** A fresh hostile value (see `hostile()`) */
+function madeHostile(name: IHostileName, valid: unknown): IHostile {
   const thrown: OwnError[] = [];
   let conversions = 0;
   const none = (): number => 0;
@@ -676,6 +681,18 @@ function hostile(name: IHostileName, valid: unknown): IHostile {
 }
 
 /**
+ * A fresh hostile value, made from the valid value of its position (e.g. the
+ * proxies of it whose one trap throws, and `late`)
+ */
+function hostile(name: IHostileName, valid: unknown): IHostile {
+  const made = madeHostile(name, valid);
+  if (isObject(made.value) && isObject(valid) && made.value !== valid) {
+    standsFor.set(made.value, valid);
+  }
+  return made;
+}
+
+/**
  * The hostile values of the probes of a receiver in another state than the
  * default one (see `states`): one of each kind (a refusal of its type, a
  * proxy that V8 refuses, an error of the application, a conversion, an
@@ -867,6 +884,13 @@ interface IEnv {
   exchange(body?: IBody): Promise<IExchange>;
   /** A fresh HTTP server, not listening */
   server(): Server;
+  /**
+   * A fresh HTTP server, not listening, that the environment does not hold:
+   * its cleanup closes it through a weak reference (a listening server is
+   * held by its handle), so that what a call keeps of it is told (see
+   * `retainedBy()`)
+   */
+  ownServer(): Server;
   /** A fresh HTTP server, listening */
   listening(): Promise<Server>;
   readonly cleanups: (() => unknown)[];
@@ -980,6 +1004,11 @@ const waiting = new Map<
  */
 const failingWork = new WeakMap<object, (error: unknown) => Promise<string>>();
 /**
+ * The responses of the exchanges, by their contexts, requests and responses
+ * (see `replied()`)
+ */
+const exchangeResponses = new WeakMap<object, object>();
+/**
  * What runs a function as the work of the middleware of an exchange (e.g.
  * a pipe of that work, see `IOwnership` of binden), by its response
  */
@@ -1062,7 +1091,7 @@ function environment(): IEnv {
       });
       // What its client gets: the head of the reply (see `failingWork`)
       let received = "";
-      const { promise: replied, resolve: answered } =
+      const { promise: headOf, resolve: answered } =
         Promise.withResolvers<string>();
       socket.setEncoding("latin1").on("data", (chunk: string) => {
         received += chunk;
@@ -1081,8 +1110,15 @@ function environment(): IEnv {
         waiting.delete(id);
         failingWork.set(exchange.response, (error) => {
           fail(error);
-          return replied;
+          return headOf;
         });
+        for (const value of [
+          exchange.context,
+          exchange.request,
+          exchange.response,
+        ]) {
+          exchangeResponses.set(value, exchange.response);
+        }
         const response = exchange.response as EventEmitter & {
           readonly closed: boolean;
           destroy(): void;
@@ -1112,6 +1148,12 @@ function environment(): IEnv {
     server(): Server {
       const created = createHttpServer();
       cleanups.push(() => created.close());
+      return created;
+    },
+    ownServer(): Server {
+      const created = createHttpServer();
+      const ref = new WeakRef(created);
+      cleanups.push(() => ref.deref()?.close());
       return created;
     },
     async listening(): Promise<Server> {
@@ -1728,9 +1770,12 @@ interface IFixtureOptions {
  * an alternative check (`instead`, of `alternatives`), which must exist and
  * run: `callbacks` for a callback that Node.js calls later, which must be
  * listed in `callbacks` (that checks that a function given there is called),
- * and `unread` for a value that is kept (e.g. by a closure of the call), but
+ * `unread` for a value that is kept (e.g. by a closure of the call), but
  * never read once the call has returned (the traps of `late-use` never run
- * there, as its readers run)
+ * there, as its readers run), and `settled` for one that a call that does
+ * I/O reads until it settles, but never once it has settled (no trap of
+ * `late-use` runs as its readers run, e.g. as the exchange of a context
+ * replies, see `replied()`)
  */
 type IUntouched =
   | { readonly why: string; readonly later: string }
@@ -2164,15 +2209,40 @@ const errorUntouched = {
 };
 
 /**
+ * The socket of a request, which Node.js keeps (as `request.socket`), and
+ * whose address binden reads (`ip`)
+ */
+const keptSocket: IKept = {
+  why: "the socket, kept by Node.js as `request.socket` (as for a plain request), whose address binden reads",
+  later: "ip",
+};
+
+/**
  * The constructor of a response, given the options of Node.js (as by
- * `node:http`), which it keeps as they are
+ * `node:http`), which it keeps as they are, and its request, which Node.js
+ * keeps (as `response.req`), and whose HTTP version binden reads before it
+ * sends `100 Continue` or `102 Processing`
  */
 const responseConstructor = probed(
   {
     deep: [[1, "highWaterMark"]],
+    readers: {
+      "writeContinue()": (_, made) => {
+        (made as ServerResponse).writeContinue();
+      },
+      "writeProcessing()": (_, made) => {
+        (made as ServerResponse).writeProcessing();
+      },
+    },
     untouched: {
       "1.highWaterMark":
         "an option of Node.js, which Node.js keeps as it is (as for a plain response)",
+    },
+    kept: {
+      0: {
+        why: "the request, kept by Node.js as `response.req` (as for a plain response), whose HTTP version binden reads as it informs",
+        later: "writeContinue()",
+      },
     },
   },
   () => [new IncomingMessage(new Socket()), { highWaterMark: 1024 }],
@@ -2391,7 +2461,15 @@ define("binden:", {
     {
       // The classes of the application, of its requests and responses
       members: {
-        "IncomingMessage()": call(() => [new Socket()]),
+        "IncomingMessage()": probed(
+          {
+            readers: {
+              ip: (_, made): unknown => Reflect.get(made as object, "ip"),
+            },
+            kept: { 0: keptSocket },
+          },
+          () => [new Socket()],
+        ),
         "ServerResponse()": responseConstructor,
       },
     },
@@ -2422,14 +2500,32 @@ function applicationOf(listener: unknown): {
 const reduced = {
   call: "README, Logging and Serializers: a value of another kind is reduced to its type",
 };
+/**
+ * What a serializer of a value of an exchange adds to its calls: the record
+ * that it gives is read as pino writes it (`JSON.stringify()`), once the call
+ * has returned, and the value (which the server of its exchange holds) is
+ * read by the call alone, never by its record
+ */
+function recordOf(what: string): IFixtureOptions {
+  return {
+    infallible: reduced,
+    readers: { "the record": (_, record) => JSON.stringify(record) },
+    held: {
+      0: {
+        why: `${what} of an exchange, which its server holds as it handles it: the serializer gives a record of it, and keeps none of it`,
+        instead: "unread",
+      },
+    },
+  };
+}
 /** The serializers of @binden/logger (its `serializers`, and of `createSerializers()`) */
 const loggerSerializing: Record<string, IFixture> = {
   "err()": probed({ infallible: reduced }, () => [new Error("An error")]),
   "error()": probed({ infallible: reduced }, () => [new Error("An error")]),
-  "request()": probed({ infallible: reduced }, async (env) => [
+  "request()": probed(recordOf("the request"), async (env) => [
     (await env.exchange()).request,
   ]),
-  "response()": probed({ infallible: reduced }, async (env) => [
+  "response()": probed(recordOf("the response"), async (env) => [
     (await env.exchange()).response,
   ]),
 };
@@ -2443,7 +2539,7 @@ const serializing: Record<string, IFixture> = {
     },
     () => ["body"],
   ),
-  "context()": probed({ infallible: reduced }, async (env) => [
+  "context()": probed(recordOf("the context"), async (env) => [
     (await env.exchange()).context,
   ]),
 };
@@ -2496,6 +2592,19 @@ for (const verb of [
     () => [middleware, middleware],
   );
 }
+/**
+ * A reader of `callback()`: its listener handles a request of the application
+ * (of no connection, as by its `returned` fixture)
+ */
+function requested(receiver: unknown, listener: unknown): unknown {
+  const { IncomingMessage: Request, ServerResponse: Response } = (
+    receiver as ReturnType<typeof applicationOf>
+  ).serverOptions();
+  const request = new Request(new Socket());
+  request.method = "GET";
+  request.url = "/";
+  return (listener as IFunction)(request, new Response(request));
+}
 define("binden:", {
   // Its listener of the requests of the server (given a request and a
   // response of the classes of the application, so that it handles them),
@@ -2524,8 +2633,16 @@ define("binden:", {
           return [request, new Response(request)];
         },
       ),
+      readers: { "a request": requested },
+      kept: {
+        0: {
+          why: "the server, kept by the listener that it returns (and registered for `shutdown()`), which never reads it as it handles a request",
+          instead: "unread",
+        },
+      },
     },
-    (env) => [env.server()],
+    // Of the application: what the call keeps of it is told
+    (env) => [env.ownServer()],
   ),
 });
 
@@ -2592,6 +2709,16 @@ define("binden:", {
       io: true,
       // Of a server that has shut down
       installed: { "0.listen": listen((env) => env.server()) },
+      readers: {
+        "isClosing()": (_, __, [given]) =>
+          (binden.isClosing as IFunction)(given),
+      },
+      held: {
+        0: {
+          why: "a listening server, which its handle holds until it is closed: read until it has shut down, never once it has",
+          instead: "settled",
+        },
+      },
       deep: [
         [1, "timeout"],
         [1, "cleanup_timeout"],
@@ -2614,7 +2741,9 @@ define("binden:", {
 
 // The request, the response and the context
 define("binden:", {
-  "new BindenRequest()": call(() => [new Socket()]),
+  "new BindenRequest()": probed({ kept: { 0: keptSocket } }, () => [
+    new Socket(),
+  ]),
   "BindenRequest#accepts()": call(() => ["text/html", "application/json"]),
   "BindenRequest#acceptsCharsets()": call(() => ["utf-8", "latin1"]),
   "BindenRequest#acceptsEncodings()": call(() => ["gzip", "br"]),
@@ -2652,6 +2781,44 @@ interface IRouted {
   on(...values: unknown[]): unknown;
 }
 
+/**
+ * Fails the work of the middleware of the exchange of a response (see
+ * `failingWork`), so that binden replies by its default error reply: the head
+ * that its client gets (`""` for none), or `null` for a response of no
+ * exchange
+ */
+async function errorReplyOf(response: unknown): Promise<string | null> {
+  const fail = isObject(response) ? failingWork.get(response) : null;
+  if (typeof fail !== "function") {
+    return null;
+  }
+  return bounded(
+    fail(new Error("A failure of the test")),
+    ioMs,
+    "The error reply",
+  );
+}
+
+/**
+ * A reader of a call given a context, a request or a response of an exchange
+ * (or a hostile value that stands for one, see `standsFor`): the status line
+ * of the default error reply of that exchange (see `errorReplyOf()`), which
+ * runs what the call has left on it (e.g. the writers of a compression), or
+ * `null` for a value of no exchange
+ */
+async function replied(
+  _: unknown,
+  __: unknown,
+  values: readonly unknown[],
+): Promise<string | null> {
+  const [given] = values;
+  const valid = isObject(given) ? (standsFor.get(given) ?? given) : null;
+  const head = await errorReplyOf(
+    valid === null ? null : exchangeResponses.get(valid),
+  );
+  return head === null ? null : (head.split("\r\n")[0] ?? "");
+}
+
 /** The valid cookies of the fixtures (see `committed()`) */
 const validCookies = new WeakSet<object>();
 /** A valid cookie (see `validCookies`) */
@@ -2674,16 +2841,12 @@ async function committed(
   _: unknown,
   values: readonly unknown[],
 ): Promise<string> {
-  const response = isObject(receiver) ? origins.get(receiver) : null;
-  const fail = isObject(response) ? failingWork.get(response) : null;
-  if (typeof fail !== "function") {
+  const head = await errorReplyOf(
+    isObject(receiver) ? origins.get(receiver) : null,
+  );
+  if (head === null) {
     throw new TypeError("The cookies of no exchange");
   }
-  const head = await bounded(
-    fail(new Error("A failure of the test")),
-    ioMs,
-    "The error reply",
-  );
   const [line = ""] = head.split("\r\n");
   const [given] = values;
   const valid =
@@ -3479,7 +3642,16 @@ define("binden:BindenResponse#", {
     () => [{ "x-a": "b" }],
     () => [[["x-a", "b"]]],
   ),
-  "destroy()": call(
+  "destroy()": probed(
+    {
+      readers: { errored: (receiver) => (receiver as ServerResponse).errored },
+      kept: {
+        0: {
+          why: "the error, kept by Node.js as `response.errored` (as for a plain response), and given to the socket that the response destroys",
+          later: "errored",
+        },
+      },
+    },
     () => [],
     () => [new Error("An error")],
   ),
@@ -4007,8 +4179,18 @@ for (const level of ["fatal", "error", "warn", "info", "debug", "trace"]) {
   ]);
 }
 
-/** A context of a fresh exchange, as the only argument */
-const context = call(async (env) => [(await env.exchange()).context]);
+/**
+ * Why a call does not tell what it keeps of the context of an exchange (or
+ * its response), which the server of the exchange holds as it handles it,
+ * and how it is checked instead: it is never read once the call has settled,
+ * also as the exchange replies (see `replied()`)
+ */
+function heldContext(how: string): IUntouched {
+  return {
+    why: `the context of an exchange, which its server holds as it handles it: ${how}, never once it has settled`,
+    instead: "settled",
+  };
+}
 /**
  * The same, for a parser (that reads the body), also of a request whose body
  * is over its limits (`over`), and of one whose body it parses (`within`):
@@ -4019,7 +4201,13 @@ function parsing(over: IBody, within: IBody): IFixture {
   return probed(
     // The body over the limits is refused, and what getting the logger of
     // the context throws drops the records of the parse only (README)
-    { io: true, throws: [1], dropsLog: true },
+    {
+      io: true,
+      throws: [1],
+      dropsLog: true,
+      readers: { "the reply": replied },
+      held: { 0: heldContext("the parser reads it until the body is parsed") },
+    },
     async (env) => [(await env.exchange()).context],
     async (env) => [(await env.exchange(over)).context],
     async (env) => [(await env.exchange(within)).context],
@@ -4225,6 +4413,13 @@ define("@binden/compression:", {
         "0.response.flush": compressing({}, () => []),
         "0.response.writableEnded": compressing({}, () => []),
       },
+      readers: { "the reply": replied },
+      held: {
+        0: {
+          why: "the context of an exchange, which its server holds as it handles it: its writers read it as the response replies",
+          later: "the reply",
+        },
+      },
     },
     async (env) => [(await env.exchange()).context],
   ),
@@ -4232,7 +4427,18 @@ define("@binden/compression:", {
     () => [null],
     () => [new ContentType({ type: "text/plain" })],
   ),
-  "skipCompression()": call(async (env) => [(await env.exchange()).response]),
+  "skipCompression()": probed(
+    {
+      readers: { "the reply": replied },
+      held: {
+        0: {
+          why: "the response of an exchange, which its server holds as it handles it: marked to be sent as it is, never read once the call has returned",
+          instead: "settled",
+        },
+      },
+    },
+    async (env) => [(await env.exchange()).response],
+  ),
 });
 define("@binden/multipart:", {
   "new Multipart()": {
@@ -4269,7 +4475,13 @@ define("@binden/multipart:", {
     ],
   ),
   "default()": multipart,
-  "multipartInfo()": context,
+  "multipartInfo()": probed(
+    {
+      readers: { "the reply": replied },
+      held: { 0: heldContext("its request is read by the call") },
+    },
+    async (env) => [(await env.exchange()).context],
+  ),
 });
 
 /**
@@ -5027,6 +5239,13 @@ const usedLaterBy = new Set<string>();
 const unreadRun = new Set<string>();
 const readLate = new Set<string>();
 /**
+ * The same, for `instead: "settled"`: the positions where readers have run
+ * with `late-use` once the call has settled, and those where one of its
+ * traps has run as they read
+ */
+const settledRun = new Set<string>();
+const readSettled = new Set<string>();
+/**
  * The readers of `logs` that have run a method that the application has
  * replaced on a logger of binden (as `<entry> <reader>`): each one listed
  * must have
@@ -5351,9 +5570,13 @@ async function probe(
           const key = `${entry.id} ${position}`;
           if (Object.keys(readers).length > 0) {
             unreadRun.add(key);
+            settledRun.add(key);
           }
           if (given.thrown.length > 0) {
             readLate.add(key);
+          }
+          if (given.thrown.length > trapped) {
+            readSettled.add(key);
           }
         }
       }
@@ -5792,6 +6015,19 @@ function usedBy(
             `${as}, and never read later (\`unread\`), but read once the call has returned (a trap of late-use has run)`,
           ]
         : [];
+    } else if (untouched.instead === "settled") {
+      // Read until the call has settled, never once it has
+      const key = `${entry.id} ${position}`;
+      if (!settledRun.has(key)) {
+        return [
+          `${as}, and never read once the call has settled (\`settled\`), but no reader has run with a value there that tells a later read (late-use)`,
+        ];
+      }
+      return readSettled.has(key)
+        ? [
+            `${as}, and never read once the call has settled (\`settled\`), but read as its readers run (a trap of late-use has run)`,
+          ]
+        : [];
     } else if (untouched.instead === "callbacks") {
       // A callback that Node.js calls later, which `callbacks` checks
       return Object.hasOwn(fixture.callbacks ?? {}, position)
@@ -5873,15 +6109,12 @@ async function alternativesOf(
 }
 
 /**
- * A fresh value that stands for a value that every valid call shares (e.g.
- * `noop`, `silent`, or a view of the module), so that its retention tells
- * what the call keeps (see `retainedBy()`): a function that calls it, a
- * shallow copy of a plain object or of an array, or a copy of a value of the
- * language or of Node.js of the same class and contents (a `Map`, a `Set`, a
- * `Headers`, a `URL`, a `URLSearchParams`, or a view and its bytes). `null`
- * for anything else (e.g. a class, a proxy, or an instance of the
- * application, which nothing copies as it is), whose retention is not told
- * (see `held`).
+ * A fresh value that stands for a function, a plain object or an array that
+ * every valid call shares (e.g. `noop`, or `silent`), so that its retention
+ * tells what the call keeps (see `retainedBy()`): a function that calls it,
+ * or a shallow copy. `null` for anything else (e.g. a class, a proxy, or an
+ * instance that every call shares), whose retention is not told: a position
+ * of one where the call accepts a hostile value is named in `held`.
  */
 function standIn(value: object): object | null {
   if (isProxy(value)) {
@@ -5896,25 +6129,6 @@ function standIn(value: object): object | null {
     };
   } else if (Array.isArray(value)) {
     return [...(value as unknown[])];
-  } else if (Buffer.isBuffer(value)) {
-    return Buffer.from(value);
-  } else if (ArrayBuffer.isView(value)) {
-    const View = value.constructor as new (bytes: ArrayBufferLike) => object;
-    return new View(
-      value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength),
-    );
-  }
-  const prototype: unknown = Object.getPrototypeOf(value);
-  if (prototype === Map.prototype) {
-    return new Map(value as Map<unknown, unknown>);
-  } else if (prototype === Set.prototype) {
-    return new Set(value as Set<unknown>);
-  } else if (prototype === Headers.prototype) {
-    return new Headers(value as Headers);
-  } else if (prototype === URL.prototype) {
-    return new URL((value as URL).href);
-  } else if (prototype === URLSearchParams.prototype) {
-    return new URLSearchParams(value as URLSearchParams);
   }
   return isPlain(value) ? { ...value } : null;
 }

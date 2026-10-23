@@ -26,30 +26,9 @@ interface IReport {
  * are integrated: each must still have a finding
  */
 const integrating: readonly string[] = [
-  // Values that the fixtures bind next: kept by Node.js
-  "binden:new BindenRequest() | 0:",
-  "binden:new BindenResponse() | 0:",
-  "binden:BindenResponse#destroy() | 0:",
-  "binden:Binden#serverOptions()=>.IncomingMessage() | 0:",
-  "binden:Binden#serverOptions()=>.ServerResponse() | 0:",
-  // Values that the environment holds
-  "binden:Binden#callback() | 0:",
-  "binden:shutdown() | 0:",
-  "binden:serializers.request() | 0:",
-  "binden:serializers.response() | 0:",
-  "binden:serializers.context() | 0:",
-  "binden:createSerializers()=>.request() | 0:",
-  "binden:createSerializers()=>.response() | 0:",
-  "binden:createSerializers()=>.context() | 0:",
-  "@binden/logger:serializers.request() | 0:",
-  "@binden/logger:serializers.response() | 0:",
-  "@binden/logger:createSerializers()=>.request() | 0:",
-  "@binden/logger:createSerializers()=>.response() | 0:",
-  "@binden/body:BodyParser#run() | 0:",
-  "@binden/compression:Compression#run() | 0:",
-  "@binden/compression:skipCompression() | 0:",
-  "@binden/multipart:Multipart#run() | 0:",
-  "@binden/multipart:multipartInfo() | 0:",
+  // The HTTP version of a request that fails as it is read, formatted
+  "binden:new BindenResponse() | 0 late-use: its reader write",
+  "binden:Binden#serverOptions()=>.ServerResponse() | 0 late-use: its reader write",
 ];
 
 /** How many processes probe the surface in parallel, each a shard of it */
