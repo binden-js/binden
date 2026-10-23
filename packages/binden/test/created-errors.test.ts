@@ -55,7 +55,10 @@ const call = String.raw`${gap}(?:\?\.${gap})?\(`;
  * those is at run time: `fixtures/created-error-retention.ts`, for the
  * refusals of binden. A creation quoted in a comment or a string may be
  * found too, and the member of a sequence on another line (e.g. `.name` on
- * the line after `export default (0, TypeError)`): the scan errs towards a
+ * the line after `export default (0, TypeError)`), and a constructor type
+ * of TypeScript whose parameters have parentheses of their own (e.g. `new
+ * (callback: () => void) => unknown`, while `new (...args: never[]) =>
+ * unknown` is not taken for a class expression): the scan errs towards a
  * finding.
  */
 const creations: readonly (readonly [RegExp, string | null])[] = [
@@ -78,8 +81,10 @@ const creations: readonly (readonly [RegExp, string | null])[] = [
     null,
   ],
   // Of a class expression (e.g. `new (class extends Error {})()` or
-  // `new class extends Error {}()`)
-  [/\bnew\s*\(/gu, "class expression"],
+  // `new class extends Error {}()`), but a constructor type of TypeScript
+  // (e.g. `abstract new (...args: never[]) => unknown`), whose parameters
+  // have no parentheses of their own
+  [/\bnew\s*\((?![^()]*\)\s*=>)/gu, "class expression"],
   [/\bnew\s+class\b/gu, "class expression"],
   // A class of an error whose name does not end with `Error` or `Exception`
   // (but a class expression constructed at once, found above)
@@ -411,6 +416,10 @@ suite("The errors that the packages of binden create", () => {
       "export default (0, TypeError.name);",
       "export { TypeError /* as Refusal */ };",
       "export { TypeError as /* why */ OwnError };",
+      "type IConstructor = abstract new (...args: never[]) => unknown;",
+      "const made: new () => object = Object;",
+      // A constructor type whose parameters have parentheses of their own
+      "type ICallback = new (callback: () => void) => unknown;",
     ].join("\n");
     deepStrictEqual(unformatted("source.ts", source), [
       "source.ts:1 TypeError",
@@ -467,6 +476,7 @@ suite("The errors that the packages of binden create", () => {
       "source.ts:72 TypeError",
       "source.ts:73 RangeError",
       "source.ts:74 URIError",
+      "source.ts:102 class expression",
     ]);
   });
 });
