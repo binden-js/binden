@@ -78,10 +78,11 @@ compressor (one is created to check them), and `zstd` (by `format` or `encodings
 Node.js whose `node:zlib` does not have it. Options that are not an object (or `undefined`) throw
 "`options` is not an object: …", and what reading them throws (e.g. a revoked proxy) is formatted,
 as by every entry point of binden. The options are read once (also each element of `encodings`, by
-its index, and `brotli.params`). The decision reads the `Accept-Encoding`, the method and the HTTP
-version of the request once, as the compression is installed. `writeHead()` of a compressed
-response reads and converts its status and its headers as binden does (once, as Node.js gets
-them): a `bigint` status throws as with Node.js and binden (`Cannot mix BigInt and other types`).
+its index, `brotli.params` and `zstd.params`, which the compressors get as copies). The decision
+reads the `Accept-Encoding`, the method and the HTTP version of the request once, as the
+compression is installed. `writeHead()` of a compressed response reads and converts its status and
+its headers as binden does (once, as Node.js gets them): a `bigint` status throws as with Node.js
+and binden (`Cannot mix BigInt and other types`).
 The headers given in pairs set a name by its first value and append the others, as Node.js does,
 each value checked once.
 

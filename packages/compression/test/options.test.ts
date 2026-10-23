@@ -243,4 +243,53 @@ suite("Options", () => {
       },
     ]);
   });
+
+  test("the params of `zstd` are read once, and copied: a compressed response never reads them", async () => {
+    const { ZSTD_c_compressionLevel } = zlib.constants;
+    const body = text(2048);
+    // What reads the params of the application, by its traps
+    const reads: string[] = [];
+    const params = new Proxy<Record<number, number>>(
+      { [ZSTD_c_compressionLevel]: 3 },
+      {
+        ownKeys(target: object): (string | symbol)[] {
+          reads.push("ownKeys");
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(
+          target: object,
+          key: string | symbol,
+        ): PropertyDescriptor | undefined {
+          reads.push(`descriptor ${String(key)}`);
+          return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+        get(target: object, key: string | symbol): unknown {
+          reads.push(`get ${String(key)}`);
+          return Reflect.get(target, key) as unknown;
+        },
+      },
+    );
+    served = await serve(
+      {},
+      new Compression({ format: "zstd", zstd: { params } }),
+      (context: Context) => context.text(body),
+    );
+    deepStrictEqual(reads, [
+      "ownKeys",
+      `descriptor ${String(ZSTD_c_compressionLevel)}`,
+      `get ${String(ZSTD_c_compressionLevel)}`,
+    ]);
+    reads.length = 0;
+    const given = await optionsOf("createZstdCompress", async () => {
+      const response = await fetchRaw((served as IServed).url, {
+        headers: { "Accept-Encoding": "zstd" },
+      });
+      deepStrictEqual(response.headers["content-encoding"], "zstd");
+      deepStrictEqual(response.body, body);
+    });
+    deepStrictEqual(
+      [reads, given],
+      [[], [{ params: { [ZSTD_c_compressionLevel]: 3 } }]],
+    );
+  });
 });

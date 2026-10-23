@@ -225,8 +225,11 @@ export class Compression extends Middleware {
       );
     }
 
-    // Each read once: `params` of `brotli` is copied with its own defaults
+    // Each read once: `params` of `brotli` is copied with its own defaults,
+    // and the one of `zstd` as it is (`node:zlib` reads it for every
+    // compressor, which must not read the object of the application)
     const { params, ...others } = brotli;
+    const { params: zstdParams, ...zstdOthers } = zstd;
     const compressors: ICompressorOptions = Object.freeze({
       br: {
         ...others,
@@ -237,7 +240,7 @@ export class Compression extends Middleware {
       },
       deflate: { ...deflate },
       gzip: { ...gzip },
-      zstd: { ...zstd },
+      zstd: { ...zstdOthers, params: { ...zstdParams } },
     });
     // Invalid options of a compressor throw now, rather than with a request
     for (const coding of used) {

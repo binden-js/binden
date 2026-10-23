@@ -25,11 +25,7 @@ interface IReport {
  * The findings being fixed (`<entry> | <probe>` prefixes), until their fixes
  * are integrated: each must still have a finding
  */
-const integrating: readonly string[] = [
-  // compression/index.ts: `zstd.params` is kept as it is, and read by
-  // `node:zlib` for each response (R31, the kept values)
-  "@binden/compression:new Compression() | 0.zstd.params",
-];
+const integrating: readonly string[] = [];
 
 /** How many processes probe the surface in parallel, each a shard of it */
 const shards = 4;
