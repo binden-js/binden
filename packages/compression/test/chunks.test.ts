@@ -327,6 +327,52 @@ suite("A chunk that Node.js refuses", () => {
     deepStrictEqual(outcomes[0], outcomes[1]);
   });
 
+  test("by `end()` of a response destroyed before its head, ended as it is or not: as without a compression (H31-1)", async () => {
+    // The chunks that `end()` of Node.js refuses (a falsy one is none)
+    const chunks = refused.filter(([, chunk]) => chunk !== null);
+    const outcomes = new Map<string, unknown[]>();
+    for (const compressed of [true, false]) {
+      for (const ended of [true, false]) {
+        for (const [name, chunk] of chunks) {
+          const key = `${String(ended)} ${name}`;
+          const { promise: closed, resolve } = Promise.withResolvers<null>();
+          const url = await start(
+            {},
+            ...(compressed ? [new Compression({ format: "gzip" })] : []),
+            (context: Context) => {
+              const { response } = context;
+              context.done = true;
+              response.once("close", () => {
+                resolve(null);
+              });
+              response.type("text/plain").destroy();
+              if (ended) {
+                response.end(body);
+              }
+              outcomes.set(`${String(compressed)} ${key}`, [
+                ...refusal(response, () => response.end(chunk)).slice(0, 2),
+                response.writableEnded,
+              ]);
+            },
+          );
+          await fetchRaw(url, { headers: gzip }).catch(() => null);
+          await within(closed);
+        }
+      }
+    }
+    for (const ended of [true, false]) {
+      for (const [name, chunk] of chunks) {
+        const key = `${String(ended)} ${name}`;
+        // A response that has ended ignores it, as Node.js does
+        const expected = ended
+          ? ["not thrown", true]
+          : [...native((response) => response.end(chunk)).slice(0, 2), false];
+        deepStrictEqual(outcomes.get(`false ${key}`), expected, key);
+        deepStrictEqual(outcomes.get(`true ${key}`), expected, key);
+      }
+    }
+  });
+
   test("by `end()` is its error, before any decision; a falsy chunk is none", async () => {
     const chunks: [string, unknown][] = [
       ["an object", {}],

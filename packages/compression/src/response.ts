@@ -790,7 +790,9 @@ export class CompressedResponse {
     }
     const sink = this.#current();
     if (
-      sink === "as_is" &&
+      // Also a response destroyed before the decision, which is left as it
+      // is (see `#gone()`), e.g. once the application has ended it so
+      (sink === "as_is" || (sink === "pending" && this.#gone())) &&
       (chunk === null || isChunk(chunk) || response.writableEnded)
     ) {
       return Reflect.apply(this.#end, response, normalize(args)) as IResponse;
