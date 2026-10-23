@@ -338,24 +338,32 @@ export function dechunk(raw: Buffer): { body: Buffer; complete: boolean } {
 }
 
 /**
- * Sends a request on a connection that is not read for `pause` milliseconds
- * (a slow client, or none when `0`), then reads everything until the server
- * closes it: the head of the response, and its body
+ * Sends a request on a connection that is not read until `pause` (a slow
+ * client): for that many milliseconds (none when `0`), or until that promise
+ * has settled (within 10 s, e.g. once the server has passed a deadline),
+ * then reads everything until the server closes it: the head of the
+ * response, and its body. Its listeners are added before it pauses: a paused
+ * connection still ends and closes when the server closes it before it has
+ * sent anything (e.g. once a deadline has passed on a loaded machine).
  */
 export async function exchange(
   url: string,
-  pause = 0,
+  pause: Promise<unknown> | number = 0,
 ): Promise<{ head: string; body: Buffer }> {
   const socket = connect(Number(new URL(url).port), "127.0.0.1");
   await once(socket, "connect");
   socket.write(
     "GET / HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n",
   );
+  // Explicitly paused: a listener of `data` does not resume it
   socket.pause();
-  await sleep(pause);
   const chunks: Buffer[] = [];
   socket.on("data", (chunk: Buffer) => chunks.push(chunk));
   const closed = once(socket, "close");
+  // An error of the connection fails the exchange once it is awaited below,
+  // never as a rejection that nothing observes meanwhile
+  closed.catch(() => null);
+  await (typeof pause === "number" ? sleep(pause) : within(pause));
   socket.resume();
   await within(closed);
   const received = Buffer.concat(chunks);

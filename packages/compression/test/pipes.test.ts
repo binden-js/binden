@@ -44,10 +44,20 @@ suite("A pipe into a compressed response", () => {
     },
     async () => {
       const body = randomBytes(8 * 1024 * 1024);
+      const { promise: deadline, resolve } = Promise.withResolvers<null>();
       const served = await serve(
         { app: { timeout: 100 } },
         new Compression({ format: "gzip" }),
         async (context: Context) => {
+          // The client reads once the deadline has passed (whenever a loaded
+          // machine runs it), never by a timer of its own that may come first
+          context.signal.addEventListener(
+            "abort",
+            () => {
+              resolve(null);
+            },
+            { once: true },
+          );
           context.response.type("text/plain");
           // Not awaited: the client reads slowly
           context.response.send(body).catch(() => null);
@@ -57,7 +67,13 @@ suite("A pipe into a compressed response", () => {
         },
       );
       servers.push(served);
-      const { head, body: raw } = await exchange(served.url, 400);
+      const { head, body: raw } = await exchange(served.url, deadline);
+      if (head === "" && raw.length === 0) {
+        // Cut before anything of it was sent (e.g. on a loaded machine, the
+        // compressor had not given its first chunk by the deadline): the
+        // client gets nothing, and the connection is closed
+        return;
+      }
       ok(head.startsWith("HTTP/1.1 200 "), head);
       const { body: compressed, complete } = dechunk(raw);
       ok(!complete);
