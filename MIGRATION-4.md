@@ -386,8 +386,15 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   that has ended is an empty body.
 - A value `send()` (also `text()`, `html()`, `json()`, `form()`) whose head Node.js refuses (e.g. a
   status out of range or an invalid `statusMessage`) leaves the response as it was before it:
-  binden 2.0.4 kept the `Content-Type` that it had set (`plain/text`) for the reply that followed.
-  Set the type of that reply yourself.
+  binden 2.0.4 kept the `Content-Type` that it had set (e.g. `plain/text` of `send()` and `text()`,
+  `application/json` of `json()`) for the reply that followed. Set the type of that reply yourself.
+  It also removes a `Content-Length` or a `Transfer-Encoding` that the application had set before
+  it (whose body it was), so that the reply that follows frames its own body: `send()` and the
+  default error reply by their own `Content-Length`, a reply of `write()` and `end()` chunked once
+  a `Content-Length` is removed, and once a `Transfer-Encoding` is removed by its length (a single
+  `end(chunk)`) or by the close of the connection. binden 2.0.4 kept them for that reply: a
+  `Content-Length: 5` set before was sent with the 3 bytes of an `end("err")` that followed (the
+  client waited for the rest of the body), and a `Transfer-Encoding: chunked` kept it chunked.
 - A `sendFile()` that fails before the head is committed, once it has set the headers of the file
   (e.g. a head that Node.js refuses), restores the response as it was before it, so that the reply
   that follows (e.g. of the error) gets none of the headers of the file, and it opens the file
@@ -692,8 +699,8 @@ const invalid = new ValidationError("Invalid email");
 - `new Logger()` reads each option once, as `pino` reads it, and gives `pino` that copy: also
   `hooks`, each hook once, so that a hook set on that object once the logger is created is not
   used, where @binden/logger 2.0.3 gave `pino` the object itself, which used a `streamWrite` set
-  later for each record, and (with its `pino` 9) a `logMethod` set later for every child created
-  afterwards, e.g. each `context.log` of binden 2.0.4. Set the hooks before the logger is created.
+  later for each record, and (with its `pino` 9) a `logMethod` set later for each child that the
+  application made afterwards (e.g. one per request). Set the hooks before the logger is created.
 - The `err` key, under which `pino` logs an `Error` given as the fields of a record, has the
   default `error` serializer too: the serializer of `pino` logged the message, the stack and
   every property of the error.
@@ -757,9 +764,11 @@ application a `500`.
   and answered the next request on it.
 - A logger of the context that throws (its methods, its `child()`, or a `log` getter, e.g. of a
   subclass of `Context`) no longer rejects `run()`: the records of the parse are dropped, and the
-  parse goes on, where 2.0.1 rejected with its error. The records go through a logger of binden
-  made by its private path, so that a `child()` replaced on `context.log` no longer makes it: wrap
-  the logger given to the application instead.
+  parse goes on, where 2.0.1 rejected with its error (with an error of its methods where it
+  logged: a skipped request, an unsupported coding or a body that does not parse; on a decoding
+  failure that error was uncaught, and the request was never answered). The records go through a
+  logger of binden made by its private path, so that a `child()` replaced on `context.log` no
+  longer makes it: wrap the logger given to the application instead.
 
 ```typescript
 import { BindenError } from "binden";
