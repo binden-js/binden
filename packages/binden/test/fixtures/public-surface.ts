@@ -27,9 +27,21 @@
 // uses it later, which must run with a hostile value there and use it, or an
 // alternative check, which must run (see `IUntouched`), and so does each one
 // where the call accepts a hostile value, but keeps its valid value, a
-// function or an object (told by its retention, see `retainedBy()` and
-// `kept`), whose reader must also tell each hostile function whose result is
-// hostile from the valid one (see `IKept`). A logger of binden
+// function or an object of any class (told by its retention, see
+// `retainedBy()` and `kept`: e.g. a `Cookie` that `cookies.add()` keeps until
+// the commit reads it), whose reader must also tell each hostile function
+// whose result is hostile from the valid one (see `IKept`). The values whose
+// retention is told are the application's own, by ownership, not by class: a
+// fresh value of the fixture (also an instance, a `Headers`, a `Map`, a view
+// or a `URL`), or a stand-in of one that every valid call shares (see
+// `standIn()`). Not told, and so not kept by the call, are only: what the
+// call returns itself (the caller's, e.g. the error of `formatStack()`), the
+// valid value that `late` gives the call (once, from its holder), and, each
+// named by its entry point and position, with why and the reader or the
+// alternative check that uses it instead (see `held`), a value that the
+// environment of the call holds (it survives without the call, e.g. a context
+// of an exchange, which its server keeps) or that every valid call shares
+// without a stand-in. A logger of binden
 // never runs a method that the application has replaced on it for a record of
 // its own (see `replaced` and `wrapping()`), and binden never takes a value of
 // the test for one of its objects (see `privateFailures`). An allowance that
@@ -948,11 +960,25 @@ const Binden = binden.Binden as new (options: object) => {
   createServer(): Server;
   use(fn: IFunction): unknown;
 };
-/** The middleware of the exchanges waiting for their probe, by their id */
+/**
+ * The middleware of the exchanges waiting for their probe, by their id: it
+ * is given what releases the work of the exchange, and what fails it
+ */
 const waiting = new Map<
   string,
-  (exchange: IExchange, release: () => void) => void
+  (
+    exchange: IExchange,
+    release: () => void,
+    fail: (error: unknown) => void,
+  ) => void
 >();
+/**
+ * What fails the work of the middleware of an exchange with an error, by its
+ * response, so that binden replies with its default error reply: the status
+ * line and the head that its client gets (`""` for none, once its connection
+ * has closed)
+ */
+const failingWork = new WeakMap<object, (error: unknown) => Promise<string>>();
 /**
  * What runs a function as the work of the middleware of an exchange (e.g.
  * a pipe of that work, see `IOwnership` of binden), by its response
@@ -966,10 +992,14 @@ app.use((context: unknown) => {
   };
   works.set(response, AsyncLocalStorage.snapshot());
   const id = String(request.headers["x-probe"]);
-  const { promise, resolve } = Promise.withResolvers<null>();
-  waiting.get(id)?.({ context: context as object, request, response }, () => {
-    resolve(null);
-  });
+  const { promise, resolve, reject } = Promise.withResolvers<null>();
+  waiting.get(id)?.(
+    { context: context as object, request, response },
+    () => {
+      resolve(null);
+    },
+    reject,
+  );
   return promise;
 });
 const server = app.createServer();
@@ -1030,13 +1060,29 @@ function environment(): IEnv {
       socket.on("error", (error) => {
         failed(`has failed (${describe(error)})`);
       });
+      // What its client gets: the head of the reply (see `failingWork`)
+      let received = "";
+      const { promise: replied, resolve: answered } =
+        Promise.withResolvers<string>();
+      socket.setEncoding("latin1").on("data", (chunk: string) => {
+        received += chunk;
+        const end = received.indexOf("\r\n\r\n");
+        if (end !== -1) {
+          answered(received.slice(0, end));
+        }
+      });
       socket.on("close", () => {
+        answered("");
         failed("has closed before its request");
       });
       cleanups.push(() => closed(socket));
-      waiting.set(id, (exchange, release) => {
+      waiting.set(id, (exchange, release, fail) => {
         arrived = true;
         waiting.delete(id);
+        failingWork.set(exchange.response, (error) => {
+          fail(error);
+          return replied;
+        });
         const response = exchange.response as EventEmitter & {
           readonly closed: boolean;
           destroy(): void;
@@ -1630,6 +1676,17 @@ interface IFixtureOptions {
    */
   readonly kept?: Readonly<Record<string, IKept>> | undefined;
   /**
+   * The positions where the call accepts a hostile value, but whose valid
+   * value is not the application's own fresh value, so that what the call
+   * keeps of it is not told (see `retainedBy()`), each named, with why, and
+   * the reader that uses it later or an alternative check (see `IUntouched`),
+   * which must run: one that the environment of the call holds (e.g. a
+   * context of an exchange, which its server keeps), or that every valid call
+   * shares without a stand-in (see `standIn()`). A position listed whose
+   * retention is told is a finding.
+   */
+  readonly held?: Readonly<Record<string, IUntouched>> | undefined;
+  /**
    * The alternative checks of its positions that no reader can use (see
    * `IUntouched.instead`), by their names: each runs once the entry point is
    * probed (in the shard that probes it), and what it returns are findings
@@ -1726,6 +1783,15 @@ const fileCoercion = "a coercion of the constructor of File of Node.js";
  * (see `node`)
  */
 const nodeCheck = "a check of the arguments of writeHead(), as Node.js does";
+
+/**
+ * A documented conversion of a cookie that `response.cookies.add()` keeps
+ * (README, BindenResponse): its `toString()`, which gives the value of its
+ * `Set-Cookie`, read once as the head is committed, by a reader (see
+ * `committed()`), never by the call
+ */
+const cookieValue =
+  "the toString() of a cookie, read once as the head is committed";
 
 /** Why a field of Node.js that binden guards examines no value */
 const nodeField =
@@ -2586,6 +2652,59 @@ interface IRouted {
   on(...values: unknown[]): unknown;
 }
 
+/** The valid cookies of the fixtures (see `committed()`) */
+const validCookies = new WeakSet<object>();
+/** A valid cookie (see `validCookies`) */
+function validCookie(): object {
+  const cookie = new Cookie({ key: "a", value: "b" });
+  validCookies.add(cookie);
+  return cookie;
+}
+
+/**
+ * A reader of the cookies of the response of an exchange (see `origins`):
+ * fails the work of its middleware, so that binden commits the head by its
+ * default error reply (see `failingWork`), whose status line it gives. Its
+ * client must get that `500`, with the `Set-Cookie` of a valid cookie given
+ * (see `validCookies`): a cookie that fails as it is committed (e.g. its
+ * `toString()` throws) is dropped from it, never the reply itself.
+ */
+async function committed(
+  receiver: unknown,
+  _: unknown,
+  values: readonly unknown[],
+): Promise<string> {
+  const response = isObject(receiver) ? origins.get(receiver) : null;
+  const fail = isObject(response) ? failingWork.get(response) : null;
+  if (typeof fail !== "function") {
+    throw new TypeError("The cookies of no exchange");
+  }
+  const head = await bounded(
+    fail(new Error("A failure of the test")),
+    ioMs,
+    "The error reply",
+  );
+  const [line = ""] = head.split("\r\n");
+  const [given] = values;
+  const valid =
+    isObject(given) && validCookies.has(given)
+      ? (given as { toString(): string })
+      : null;
+  const failure = line.startsWith("HTTP/1.1 500 ")
+    ? valid !== null &&
+      !head.split("\r\n").includes(`Set-Cookie: ${valid.toString()}`)
+      ? "The error reply has dropped a valid cookie"
+      : null
+    : `Its client has got no error reply (${line === "" ? "its connection has closed" : line})`;
+  if (failure !== null) {
+    // Formatted, as an error of the reader itself (see `infallible`)
+    const error = new Error(failure);
+    Reflect.get(error, "stack");
+    throw error;
+  }
+  return line;
+}
+
 /** The members of the cookies of a response (a `Set` of `Cookie`) */
 const cookieMembers: Record<string, IFixture> = {
   // Of a cookie that they have
@@ -2607,10 +2726,26 @@ const cookieMembers: Record<string, IFixture> = {
   ),
   "clear()": call(() => []),
 };
-// It returns the cookies
-cookieMembers["add()"] = probed({ members: cookieMembers }, () => [
-  new Cookie({ key: "a", value: "b" }),
-]);
+// It returns the cookies, and keeps a cookie (any object) until the head is
+// committed
+cookieMembers["add()"] = probed(
+  {
+    members: cookieMembers,
+    readers: { "the commit": committed },
+    converts: { 0: cookieValue },
+    infallible: {
+      "the commit":
+        "README, BindenResponse and Errors: a cookie that fails as the head is committed is dropped from the default error reply, which is sent",
+    },
+    kept: {
+      0: {
+        why: "the cookie, kept until the head is committed, which reads its `toString()`",
+        later: "the commit",
+      },
+    },
+  },
+  () => [validCookie()],
+);
 const cookies = probed({ members: cookieMembers }, () => []);
 
 /** The fixtures of the methods that the response and the context share */
@@ -3814,7 +3949,32 @@ define("@binden/logger:", {
     ],
     () => [{ destination: sink, ...pinoOptions() }],
   ),
-  "Logger.fromPino()": call(() => [pino({ level: "trace" }, sink)]),
+  "Logger.fromPino()": probed(
+    {
+      readers: {
+        "a record": (_, made, [given]) => {
+          if (typeof given === "undefined") {
+            // A logger of its own, which would write to the standard output
+            return null;
+          }
+          const logger = made as {
+            info(message: string, extra: object): void;
+            child(bindings: object): { info(message: string): void };
+          };
+          logger.info("message", { a: 1 });
+          logger.child({ b: 1 }).info("message");
+          return null;
+        },
+      },
+      kept: {
+        0: {
+          why: "the logger of pino, kept as it is, which writes each record",
+          later: "a record",
+        },
+      },
+    },
+    () => [pino({ level: "trace" }, sink)],
+  ),
   "Logger.getLevel()": call(
     () => [],
     () => ["LOG_LEVEL"],
@@ -5218,7 +5378,18 @@ async function probe(
             );
           }
         } else {
-          if (total > conversions) {
+          if (allowed === cookieValue) {
+            if (conversions > 0) {
+              found.push(
+                `converted ${String(conversions)}x by the call, documented as the head is committed`,
+              );
+            }
+            if (total - conversions > 1) {
+              found.push(
+                `converted ${String(total - conversions)}x by its readers, documented once`,
+              );
+            }
+          } else if (total > conversions) {
             found.push(
               `converted ${String(total - conversions)}x by its readers`,
             );
@@ -5574,7 +5745,13 @@ function memberBy(
         : Reflect.apply(member, this, values);
     },
     receivers: [
-      fresh(async (env) => (await first(entry, fixture, env)).result),
+      fresh(async (env) => {
+        const { receiver, result } = await first(entry, fixture, env);
+        if (isObject(result)) {
+          origins.set(result, receiver);
+        }
+        return result;
+      }),
     ],
     readers: {},
   };
@@ -5666,6 +5843,7 @@ async function alternativesOf(
   for (const untouched of [
     ...Object.values(fixture.untouched ?? {}),
     ...Object.values(fixture.kept ?? {}),
+    ...Object.values(fixture.held ?? {}),
   ]) {
     if (typeof untouched !== "string" && "instead" in untouched) {
       named.add(untouched.instead);
@@ -5695,11 +5873,15 @@ async function alternativesOf(
 }
 
 /**
- * A fresh value that stands for a function, a plain object or an array that
- * every valid call shares (e.g. `noop`, or `silent`), so that its retention
- * tells what the call keeps (see `retainedBy()`): a function that calls it,
- * or a shallow copy. `null` for anything else (e.g. a class, or a proxy),
- * whose retention is not told.
+ * A fresh value that stands for a value that every valid call shares (e.g.
+ * `noop`, `silent`, or a view of the module), so that its retention tells
+ * what the call keeps (see `retainedBy()`): a function that calls it, a
+ * shallow copy of a plain object or of an array, or a copy of a value of the
+ * language or of Node.js of the same class and contents (a `Map`, a `Set`, a
+ * `Headers`, a `URL`, a `URLSearchParams`, or a view and its bytes). `null`
+ * for anything else (e.g. a class, a proxy, or an instance of the
+ * application, which nothing copies as it is), whose retention is not told
+ * (see `held`).
  */
 function standIn(value: object): object | null {
   if (isProxy(value)) {
@@ -5714,16 +5896,63 @@ function standIn(value: object): object | null {
     };
   } else if (Array.isArray(value)) {
     return [...(value as unknown[])];
+  } else if (Buffer.isBuffer(value)) {
+    return Buffer.from(value);
+  } else if (ArrayBuffer.isView(value)) {
+    const View = value.constructor as new (bytes: ArrayBufferLike) => object;
+    return new View(
+      value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength),
+    );
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype === Map.prototype) {
+    return new Map(value as Map<unknown, unknown>);
+  } else if (prototype === Set.prototype) {
+    return new Set(value as Set<unknown>);
+  } else if (prototype === Headers.prototype) {
+    return new Headers(value as Headers);
+  } else if (prototype === URL.prototype) {
+    return new URL((value as URL).href);
+  } else if (prototype === URLSearchParams.prototype) {
+    return new URLSearchParams(value as URLSearchParams);
   }
   return isPlain(value) ? { ...value } : null;
 }
 
 /**
+ * What a call of an entry point keeps of the values of its positions, and
+ * whose retention is not told (see `keptCall()`), by their positions
+ */
+interface IKeptCall {
+  /**
+   * Weak references to the values given to the call whose retention it
+   * tells (none once the call has failed)
+   */
+  readonly told: readonly (readonly [string, WeakRef<object>])[];
+  /**
+   * Weak references to the same values of a valid call that is never made,
+   * fresh ones (see `retainedBy()`): one that survives is held by the
+   * environment of the call, not given by the application
+   */
+  readonly owners: readonly (readonly [string, WeakRef<object>])[];
+  /** The positions whose shared value has no stand-in (see `standIn()`) */
+  readonly shared: readonly string[];
+  /** What the call has returned (which lives on as the receiver does) */
+  readonly result: unknown;
+}
+
+/**
  * Makes the arguments of a valid call of an entry point, each value of a
- * position (a function or an object) fresh (see `standIn()`), and runs the
- * call: weak references to the values whose retention it tells (by their
- * positions, none once the call has failed), and what the call has returned
- * (which lives on as the receiver does)
+ * position (a function or an object, of any class) fresh: a value that the
+ * fixture makes for each call is fresh as it is, and one that every call
+ * shares is replaced by a stand-in (see `standIn()`), the nested positions
+ * first, whose holders (plain objects and arrays) are copied, then a holder
+ * from the copy that has their stand-ins (see `replaced()`). Runs the call:
+ * what it keeps (see `IKeptCall`), and the values of a valid call that is
+ * never made, whose retention tells their owner: a value that the
+ * environment of the call holds (e.g. a context of an exchange, which its
+ * server keeps) survives without the call, a fresh value of the application
+ * (e.g. a `Cookie`, a `Headers` or a view) does not.
  */
 async function keptCall(
   entry: IEntry,
@@ -5731,82 +5960,123 @@ async function keptCall(
   env: IEnv,
   receiver: unknown,
   index: number,
-): Promise<
-  readonly [readonly (readonly [string, WeakRef<object>])[], unknown]
-> {
+): Promise<IKeptCall> {
   const made = fixture.calls[index];
   const original = await bounded(made(env, receiver), makeMs, "Its arguments");
   // A value given by both is shared (e.g. one of the module)
   const again = await bounded(made(env, receiver), makeMs, "Its arguments");
+  // Never given to the call: what the environment holds of it survives
+  const control = await bounded(made(env, receiver), makeMs, "Its arguments");
   let values: unknown[] = [...original];
   const told: (readonly (number | string)[])[] = [];
-  // Of the application: a function, or a plain object or an array (never
-  // an instance, e.g. a context, which the environment of the call keeps),
-  // the nested positions first, whose holders are copied (see `replaced()`)
+  /** The paths of the values that the fixture makes for each call */
+  const each: (readonly (number | string)[])[] = [];
+  const shared: string[] = [];
   const paths = positions(fixture, original)
-    .filter((path) => {
-      const value = valueAt(original, path);
-      return (
-        !isProxy(value) &&
-        ((typeof value === "function" && !isClass(value)) ||
-          Array.isArray(value) ||
-          isPlain(value))
-      );
-    })
+    .filter((path) => isObject(valueAt(original, path)))
     .sort((a, b) => b.length - a.length);
   for (const path of paths) {
-    const value = valueAt(original, path) as object;
-    // What holds it is copied as it is (never an instance, whose copy would
-    // be an object derived from it)
-    const current = values;
-    const holders = path
-      .slice(1)
-      .map((_, length) => valueAt(current, path.slice(0, length + 1)));
-    if (holders.every((holder) => Array.isArray(holder) || isPlain(holder))) {
-      if (value === valueAt(again, path)) {
-        const standing = standIn(value);
-        const copy =
-          standing === null
-            ? null
-            : replaced(values, path, { value: standing });
-        if (copy !== null) {
-          values = copy;
-          told.push(path);
-        }
+    if (valueAt(original, path) === valueAt(again, path)) {
+      // What holds it is copied as it is (never an instance, whose copy
+      // would be an object derived from it), and so is a holder whose
+      // nested positions have stand-ins: from that copy
+      const current = values;
+      const holders = path
+        .slice(1)
+        .map((_, length) => valueAt(current, path.slice(0, length + 1)));
+      const standing = holders.every(
+        (holder) => Array.isArray(holder) || isPlain(holder),
+      )
+        ? standIn(valueAt(values, path) as object)
+        : null;
+      const copy =
+        standing === null ? null : replaced(values, path, { value: standing });
+      if (copy === null) {
+        shared.push(path.join("."));
       } else {
+        values = copy;
         told.push(path);
       }
+    } else {
+      told.push(path);
+      each.push(path);
     }
   }
-  const weak = told.map(
-    (path) =>
-      [path.join("."), new WeakRef(valueAt(values, path) as object)] as const,
-  );
+  const owners = each
+    .filter((path) => isObject(valueAt(control, path)))
+    .map(
+      (path) =>
+        [
+          path.join("."),
+          new WeakRef(valueAt(control, path) as object),
+        ] as const,
+    );
   const ms = fixture.io === true ? ioMs : pendingMs;
   const outcome = await outcomeOf(() => called(entry, receiver, values), ms);
-  return outcome.kind === "returned" || outcome.kind === "resolved"
-    ? [weak, outcome.kind === "returned" ? outcome.value : null]
-    : [[], null];
+  if (outcome.kind !== "returned" && outcome.kind !== "resolved") {
+    return { told: [], owners: [], shared: [], result: null };
+  }
+  const result = outcome.kind === "returned" ? outcome.value : null;
+  return {
+    // What the call returns itself (e.g. the error of `formatStack()`) is
+    // the caller's, as its receiver is: not kept by the call
+    told: told
+      .filter((path) => valueAt(values, path) !== result)
+      .map(
+        (path) =>
+          [
+            path.join("."),
+            new WeakRef(valueAt(values, path) as object),
+          ] as const,
+      ),
+    owners,
+    shared,
+    result,
+  };
 }
 
 /**
- * The positions (as `<call> <position>`) of the valid calls of an entry
- * point, on its default receiver, whose valid value, a function or an
- * object, the call keeps: a weak reference to it survives every full garbage
- * collection of a while once the call has settled (see `keptRounds`), while
- * its receiver and what it has returned live on, before the environments of
- * the calls are cleaned up (e.g. before a response closes)
+ * What the valid calls of an entry point keep (see `retainedBy()`), by their
+ * positions (as `<call> <position>`)
+ */
+interface IRetained {
+  /** The positions whose valid value the call keeps */
+  readonly kept: ReadonlySet<string>;
+  /**
+   * The positions whose retention is not told: their valid value is held by
+   * the environment of the call (it survives without the call), or shared
+   * by every valid call without a stand-in (see `standIn()`)
+   */
+  readonly untold: ReadonlySet<string>;
+}
+
+/**
+ * What the valid calls of an entry point keep, on its default receiver, of
+ * the valid values of their positions (functions and objects): a weak
+ * reference to a value given survives every full garbage collection of a
+ * while once the call has settled (see `keptRounds`), while its receiver and
+ * what it has returned live on, before the environments of the calls are
+ * cleaned up (e.g. before a response closes). A position whose value is
+ * owned by the environment (see `keptCall()`), or shared without a stand-in,
+ * is untold, whatever the class of its value.
  */
 async function retainedBy(
   entry: IEntry,
   fixture: IFixture,
   indexes: ReadonlySet<number>,
-): Promise<ReadonlySet<string>> {
+): Promise<IRetained> {
   const receiving = entry.receivers?.[0] ?? null;
   const envs: IEnv[] = [];
   const kept: unknown[] = [];
-  const refs: (readonly [string, WeakRef<object>])[] = [];
+  const untold = new Set<string>();
   const found: string[] = [];
+  /** A weak reference of a call, by `<call> <position>` */
+  type IRef = readonly [string, WeakRef<object>];
+  const at =
+    (index: number): ((ref: IRef) => IRef) =>
+    ([position, ref]) => [`${String(index)} ${position}`, ref];
+  const refs: IRef[] = [];
+  const owners: IRef[] = [];
   try {
     for (const index of indexes) {
       const env = environment();
@@ -5816,19 +6086,13 @@ async function retainedBy(
           receiving === null
             ? null
             : await bounded(receiving.make(env), makeMs, "Its receiver");
-        const [weak, result] = await keptCall(
-          entry,
-          fixture,
-          env,
-          receiver,
-          index,
-        );
-        kept.push(receiver, result);
-        refs.push(
-          ...weak.map(
-            ([position, ref]) => [`${String(index)} ${position}`, ref] as const,
-          ),
-        );
+        const keeps = await keptCall(entry, fixture, env, receiver, index);
+        kept.push(receiver, keeps.result);
+        refs.push(...keeps.told.map(at(index)));
+        owners.push(...keeps.owners.map(at(index)));
+        for (const position of keeps.shared) {
+          untold.add(`${String(index)} ${position}`);
+        }
       } catch (error: unknown) {
         found.push(`the fixture fails: ${describe(error)}`);
       }
@@ -5837,12 +6101,26 @@ async function retainedBy(
     // settled (e.g. the flush of a send, also on a loaded machine): what is
     // reachable at every collection of a while
     let alive = refs;
-    for (let round = 0; round < keptRounds && alive.length > 0; round += 1) {
+    let held = owners;
+    for (
+      let round = 0;
+      round < keptRounds && alive.length + held.length > 0;
+      round += 1
+    ) {
       await delay(round === 0 ? 0 : keptMs);
       collect();
       alive = alive.filter(([, ref]) => typeof ref.deref() !== "undefined");
+      held = held.filter(([, ref]) => typeof ref.deref() !== "undefined");
     }
-    return new Set(alive.map(([key]) => key));
+    for (const [key] of held) {
+      untold.add(key);
+    }
+    return {
+      kept: new Set(
+        alive.map(([key]) => key).filter((key) => !untold.has(key)),
+      ),
+      untold,
+    };
   } finally {
     kept.length = 0;
     for (const env of envs) {
@@ -5930,7 +6208,9 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
    * at a position whose valid value is a function or an object that it
    * examines (not `untouched`), by the position, whether that valid value is
    * a function, and the calls that have them (whose retention is told, see
-   * `retainedBy()`)
+   * `retainedBy()`): never `late`, which gives the call its valid value (once,
+   * from its holder), so that what it keeps there is that value, not a
+   * hostile one
    */
   const acceptedAt = new Map<string, Set<IHostileName>>();
   const functions = new Set<string>();
@@ -6013,6 +6293,7 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
             if (
               isDefault &&
               outcomeOfHostile.accepted &&
+              name !== "late" &&
               isObject(value) &&
               !Object.hasOwn(untouched, position)
             ) {
@@ -6084,12 +6365,37 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
   const retained =
     keeping.size > 0
       ? await retainedBy(entry, fixture, keeping)
-      : new Set<string>();
-  const keptAt = new Set(
-    [...retained]
-      .map((key) => key.slice(key.indexOf(" ") + 1))
-      .filter((position) => acceptedAt.has(position)),
+      : { kept: new Set<string>(), untold: new Set<string>() };
+  const accepted = (keys: ReadonlySet<string>): Set<string> =>
+    new Set(
+      [...keys]
+        .map((key) => key.slice(key.indexOf(" ") + 1))
+        .filter((position) => acceptedAt.has(position)),
+    );
+  const keptAt = accepted(retained.kept);
+  // Where no call tells it (see `held`)
+  const untoldAt = new Set(
+    [...accepted(retained.untold)].filter((position) => !keptAt.has(position)),
   );
+  for (const position of untoldAt) {
+    if (!Object.hasOwn(fixture.held ?? {}, position)) {
+      findings.push({
+        entry: entry.id,
+        probe: position,
+        what: `accepts hostile values there (${[...(acceptedAt.get(position) ?? [])].join(", ")}), but its valid value is held by the environment of the call, or shared by its valid calls without a stand-in, so that what the call keeps of it is not told: it names neither the reader that uses it later (\`held\`, \`later\`) nor an alternative check (\`instead\`)`,
+      });
+    }
+  }
+  for (const [position, binding] of Object.entries(fixture.held ?? {})) {
+    findings.push(
+      ...(untoldAt.has(position)
+        ? usedBy(entry, fixture, position, binding, true, "held")
+        : [
+            "listed as held, but what the call keeps of it is told (or it accepts no hostile value there)",
+          ]
+      ).map((what) => ({ entry: entry.id, probe: position, what })),
+    );
+  }
   for (const position of keptAt) {
     if (!Object.hasOwn(fixture.kept ?? {}, position)) {
       findings.push({
