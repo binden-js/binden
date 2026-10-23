@@ -278,7 +278,8 @@ without `done`) refuses the body with a `500 Internal Server Error` (logged at `
 with an empty body.
 
 `run()` reads each property of its context once, before anything is awaited (the request, the
-response, the signal and the logger). What a later use of them throws (but a call of the logger,
+response, the signal and the logger). What getting the logger throws (e.g. a `log` getter of a
+subclass of `Context`) drops the records of the parse only, and the parse goes on. What a later use of them throws (but a call of the logger,
 which never fails, see the Logging of binden) stops the parse as any other failure does: the
 request is unpiped, the decoders destroyed, the listeners removed, and the connection closed after
 the reply. Examples are a context that only looks like one, such as a proxy whose response's
@@ -302,7 +303,7 @@ formatted too.
 | A `BindenError` of `parse` or `verify`                                                                                                                             | that error                     |
 | Any other failure of `parse` or `verify`, a `type` function that fails, a body that something else has read                                                        | `500 Internal Server Error`    |
 | A parser that starts once the response has finished                                                                                                                | `500 Internal Server Error`    |
-| A use of the context that throws once the parse has started                                                                                                        | that error, formatted (`500`)  |
+| A use of the context (but its logger) that throws once the parse has started                                                                                       | that error, formatted (`500`)  |
 
 The parser never logs the body itself: its logs have the reason of the refusal, and the type,
 known `code` and status of an error.

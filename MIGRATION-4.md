@@ -751,6 +751,11 @@ application a `500`.
   (the default error reply, or an `error_handler` of the application, also one that echoes the
   request with `send(context.request)`). binden 2.0.4 with @binden/body 2.0.1 kept the connection,
   and answered the next request on it.
+- A logger of the context that throws (its methods, its `child()`, or a `log` getter, e.g. of a
+  subclass of `Context`) no longer rejects `run()`: the records of the parse are dropped, and the
+  parse goes on, where 2.0.1 rejected with its error. The records go through a logger of binden
+  made by its private path, so that a `child()` replaced on `context.log` no longer makes it: wrap
+  the logger given to the application instead.
 
 ```typescript
 import { BindenError } from "binden";
@@ -809,6 +814,12 @@ const values = new BodyParser({ strict: false, limit: 1024 * 1024 });
   connection after the reply, whoever replies (the default error reply, or an `error_handler` of
   the application, also one that echoes the request with `send(context.request)`). binden 2.0.4
   with @binden/multipart 2.0.3 kept the connection, and answered the next request on it.
+- A logger of the context that throws (its methods, or a `log` getter, e.g. of a subclass of
+  `Context`) no longer rejects `run()`: the records of the parse are dropped, and the parse goes
+  on, where 2.0.3 rejected with its error (with an error of its methods, for a request that it
+  skipped, e.g. of another media type). The records go through a logger of binden made by its
+  private path, so that a method replaced on `context.log` no longer sees them: wrap the logger
+  given to the application instead.
 - The parameters of the parts (e.g. the names of the files) are decoded as UTF-8 (busboy decodes
   them as Latin-1 by default): set `config.defParamCharset` to `"latin1"` to keep the former names.
 - A file name is cleaned: its control characters are removed, it is cut to 255 bytes, and an empty
