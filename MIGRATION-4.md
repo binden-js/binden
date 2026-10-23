@@ -289,11 +289,17 @@ behaviours of Node.js:
 - `Binden` is a `Stack`: `app.stack` lists the layers of `use()`, `route()` and `mount()`, whose
   path is a string, a RegExp, `null`, `{ route }` or `{ mount }`. A string path of `use()` still
   matches exactly; the new `route()` and `mount()` take [patterns with parameters](https://github.com/binden-js/binden/tree/main/packages/binden#stack-and-routing).
-- A middleware whose result is an object derived from its context (e.g. `Object.create(context)`)
-  or a proxy of it no longer fails the request: binden 2.0.4 took it for a context, and replied
-  `500` (a `TypeError` of V8 for a private member). binden tells a context by its private brand:
-  that result is ignored, as any other value that is not a context, and the next middlewares get
-  the current context. Return the context itself (or a new `Context`) to replace it.
+- binden tells a context by its private brand: a result of a middleware that is not one, also an
+  object derived from its context (e.g. `Object.create(context)`) or a proxy of it, is ignored, as
+  any other value, and the next middlewares get the current context. binden 2.0.4 took such a
+  result for a context: an object derived from it, or a proxy without traps
+  (`new Proxy(context, {})`), failed the request (`500`, a `TypeError` of V8 for a private
+  member), while a proxy whose traps forward to the context itself (e.g. a `get` that reads the
+  context, as @binden/compression 3.0.0 returned to replace its `response`) replaced the context:
+  the next middlewares got the proxy. binden ignores that proxy silently. To change what the next
+  middlewares get, change the context or its response itself (e.g. replace methods of
+  `context.response`, as @binden/compression 4 does, or set properties of `context.state`), or
+  return a `Context` (e.g. of a subclass) of the same request and response.
 - `use()` throws a `TypeError` without a middleware or router, or when its first argument is
   neither one nor a path (a string or a RegExp): `use(stack)` and `use(undefined)` were silently
   ignored. A stack is added with `mount()`.
@@ -380,9 +386,11 @@ await context.sendFile("<path to file>", { etag: false, content_type: false });
   that has ended is an empty body.
 - A `sendFile()` that fails before the head is committed, once it has set the headers of the file
   (e.g. a head that Node.js refuses), restores the response as it was before it, so that the reply
-  that follows (e.g. of the error) gets none of the headers of the file: binden 2.0.4 left its
-  `Last-Modified`, `Accept-Ranges` and `Content-Length` to that reply, so that the client read
-  the start of the next response of the connection as the rest of a shorter body.
+  that follows (e.g. of the error) gets none of the headers of the file, and it opens the file
+  before it sets them. binden 2.0.4 set them first: a file that `stat()` read but that it could not
+  open (e.g. one of mode `000`) left its `Last-Modified`, `Accept-Ranges` and `Content-Length` to
+  the reply of that failure (`EACCES`), so that the client read the start of the next response of
+  the connection as the body that the reply did not have.
 - A `Readable` that has been destroyed, or that has errored without being destroyed (its
   `errored` is set, e.g. a stream without `autoDestroy`), rejects `send()` at once, with its
   `errored` (otherwise `ERR_STREAM_PREMATURE_CLOSE`). binden 2.0.4 rejected only when the error of
@@ -680,7 +688,8 @@ const invalid = new ValidationError("Invalid email");
 - `new Logger()` reads each option once, as `pino` reads it, and gives `pino` that copy: also
   `hooks`, each hook once, so that a hook set on that object once the logger is created is not
   used, where @binden/logger 2.0.3 gave `pino` the object itself, which used a `streamWrite` set
-  later for each record. Set the hooks before the logger is created.
+  later for each record, and (with its `pino` 9) a `logMethod` set later for every child created
+  afterwards, e.g. each `context.log` of binden 2.0.4. Set the hooks before the logger is created.
 - The `err` key, under which `pino` logs an `Error` given as the fields of a record, has the
   default `error` serializer too: the serializer of `pino` logged the message, the stack and
   every property of the error.
