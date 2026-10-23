@@ -1,0 +1,6 @@
+import { Agent, setGlobalDispatcher } from "undici";
+
+// Every request gets a fresh connection, which the client closes after the response:
+// some tests depend on it (e.g. a response that is complete once the client has its
+// body closes early), and a pooled keep-alive socket would outlive its test.
+setGlobalDispatcher(new Agent({ pipelining: 0 }));

@@ -1,4 +1,4 @@
 {
-  "*.{js,cjs,mjs,ts,json,md,yaml,yml,html,css}": "prettier -w",
-  "*.ts": "eslint --fix"
+  "*.{js,mjs,ts}": ["eslint --fix", "prettier -w"],
+  "!(*.{js,mjs,ts})": "prettier -w --ignore-unknown"
 }

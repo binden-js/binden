@@ -1,1 +1,148 @@
-{ "extends": "@binden/semantic-release-config" }
+{
+  "branches": ["main"],
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits",
+        "releaseRules": [
+          {
+            "breaking": true,
+            "release": "major"
+          },
+          {
+            "type": "feat",
+            "release": "minor"
+          },
+          {
+            "type": "fix",
+            "release": "patch"
+          },
+          {
+            "type": "perf",
+            "release": "patch"
+          },
+          {
+            "type": "revert",
+            "release": "patch"
+          },
+          {
+            "type": "build",
+            "release": "patch"
+          },
+          {
+            "type": "initial",
+            "release": "minor"
+          },
+          {
+            "type": "dependencies",
+            "release": "patch"
+          },
+          {
+            "type": "peerDependencies",
+            "release": "patch"
+          }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits",
+        "presetConfig": {
+          "types": [
+            {
+              "type": "feat",
+              "section": "Features",
+              "hidden": false
+            },
+            {
+              "type": "fix",
+              "section": "Bug Fixes",
+              "hidden": false
+            },
+            {
+              "type": "perf",
+              "section": "Performance Improvements",
+              "hidden": false
+            },
+            {
+              "type": "revert",
+              "section": "Reverts",
+              "hidden": false
+            },
+            {
+              "type": "build",
+              "section": "Build System",
+              "hidden": false
+            },
+            {
+              "type": "initial",
+              "section": "Initial",
+              "hidden": false
+            },
+            {
+              "type": "dependencies",
+              "section": "Dependencies",
+              "hidden": false
+            },
+            {
+              "type": "peerdependencies",
+              "section": "Peer dependencies",
+              "hidden": false
+            },
+            {
+              "type": "devDependencies",
+              "section": "Dev dependencies",
+              "hidden": true
+            },
+            {
+              "type": "metadata",
+              "section": "Metadata",
+              "hidden": true
+            },
+            {
+              "type": "docs",
+              "section": "Documentation",
+              "hidden": true
+            },
+            {
+              "type": "style",
+              "section": "Styles",
+              "hidden": true
+            },
+            {
+              "type": "chore",
+              "section": "Miscellaneous Chores",
+              "hidden": true
+            },
+            {
+              "type": "refactor",
+              "section": "Code Refactoring",
+              "hidden": true
+            },
+            {
+              "type": "test",
+              "section": "Tests",
+              "hidden": true
+            },
+            {
+              "type": "ci",
+              "section": "Continuous Integration",
+              "hidden": true
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": "node scripts/release.mjs verify ${nextRelease.version}",
+        "prepareCmd": "node scripts/release.mjs version ${nextRelease.version} && node scripts/release.mjs publish \"$RELEASE_DIR\" --dry-run",
+        "publishCmd": "node scripts/release.mjs publish \"$RELEASE_DIR\""
+      }
+    ],
+    "@semantic-release/github"
+  ]
+}

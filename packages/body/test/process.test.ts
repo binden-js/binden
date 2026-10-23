@@ -1,0 +1,37 @@
+import { suite, test } from "node:test";
+import { deepStrictEqual } from "node:assert";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+
+/**
+ * Runs a fixture (`test/fixtures`) in a process of its own: a crash (e.g. an
+ * unhandled rejection) is its exit code and output, not a failure of the test
+ * runner
+ */
+function run(fixture: string): Record<string, unknown> {
+  const { status, stdout, stderr } = spawnSync(
+    process.execPath,
+    ["--import", "tsx", join(import.meta.dirname, "fixtures", fixture)],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  return { status, stdout, stderr };
+}
+
+suite("BodyParser (process safety)", () => {
+  test("late rejections of `verify`, `parse` and `type` do not crash the process", () => {
+    deepStrictEqual(run("late-rejections.ts"), {
+      status: 0,
+      stdout: "503 503 503 500\n",
+      stderr: "",
+    });
+  });
+
+  test("what a context that only looks like one throws later is the rejection, never a crash", () => {
+    deepStrictEqual(run("late-context.ts"), {
+      status: 0,
+      stdout:
+        "200 200 | setHeader of the context | removeEventListener of the context\n",
+      stderr: "",
+    });
+  });
+});
