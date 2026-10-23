@@ -169,6 +169,81 @@ suite(
       }
     });
 
+    test("a chunk in an unknown encoding of a destroyed response, or of one that has ended (also compressed, or replaced with 406), is ignored as by plain Node.js and binden alone: its status is neither converted nor stored (H31-1)", async () => {
+      const calls: Record<string, (response: ServerResponse) => unknown> = {
+        write: (response) => response.write("abc", "bogus" as never),
+        end: (response) => response.end("abc", "bogus" as never),
+      };
+      const prestates: Record<string, (response: ServerResponse) => unknown> = {
+        destroyed: (response) => response.destroy(),
+        // Ended without its head
+        finished: (response) => response.destroy().end("x"),
+        ended: (response) => response.end("x"),
+      };
+      const statuses: Record<string, (status: object) => unknown> = {
+        object: (status) => status,
+        range: () => 1000,
+        fractional: () => 204.5,
+      };
+      const outcomes = new Map<string, unknown[]>();
+      const handled = await servers((response, path) => {
+        const [, call = "", prestate = "", kind = ""] = path
+          .slice(1)
+          .split("-");
+        // Plain Node.js emits an `error` event for a write after the end
+        response.on("error", () => null);
+        const status = counting(201);
+        (prestates[prestate] as IHandler)(response, "");
+        const given = statuses[kind](status.value);
+        response.statusCode = given as never;
+        const thrown = thrownBy(() => (calls[call] as IHandler)(response, ""));
+        outcomes.set(path, [
+          thrown,
+          status.conversions(),
+          response.statusCode === given,
+        ]);
+      });
+      try {
+        for (const call of Object.keys(calls)) {
+          for (const prestate of Object.keys(prestates)) {
+            for (const kind of Object.keys(statuses)) {
+              for (const coding of ["gzip", "identity;q=0, *;q=0"]) {
+                const name = `${call}-${prestate}-${kind}-${String(coding.length)}`;
+                for (const [server, url] of Object.entries(handled.urls)) {
+                  const lines = await statusLines(
+                    url,
+                    closing(`/${server}-${name}`, coding),
+                  );
+                  if (server === "gzip") {
+                    // Nothing is sent of a destroyed response; the end of
+                    // one that has ended is its reply (compressed, or
+                    // replaced)
+                    deepStrictEqual(
+                      lines,
+                      prestate === "ended"
+                        ? [
+                            coding === "gzip"
+                              ? "http/1.1 200 ok"
+                              : "http/1.1 406 not acceptable",
+                          ]
+                        : [],
+                      name,
+                    );
+                  }
+                }
+                const plain = outcomes.get(`/plain-${name}`);
+                deepStrictEqual(plain, [null, 0, true], name);
+                deepStrictEqual(outcomes.get(`/binden-${name}`), plain, name);
+                deepStrictEqual(outcomes.get(`/gzip-${name}`), plain, name);
+              }
+            }
+          }
+        }
+      } finally {
+        await handled.close();
+      }
+    });
+
     test("the encoding is refused before the reason phrase or a Content-Length that the commit refuses, as by binden alone", async () => {
       const outcomes = new Map<string, unknown[]>();
       const handled = await servers((response, path) => {

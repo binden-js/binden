@@ -676,11 +676,22 @@ export class CompressedResponse {
    * The encoding of a chunk that the compression decides by, compresses or
    * discards, checked as binden checks it (see `encodingOf()`), before
    * anything is decided: one that binden refuses throws its error, unless
-   * the response has no body (e.g. to `HEAD`), as without a compression
+   * Node.js ignores the chunk, as without a compression (see `#writes()` of
+   * `BindenResponse`): the response is destroyed (also once it has ended
+   * as it is), or the application has ended it (compressed, or replaced),
+   * whose status is then neither converted nor stored, or it has no body
+   * (e.g. to `HEAD`). A replaced response that the application has not ended
+   * checks it as one that has not ended (see `#onEnd()`).
    */
   #encoding(chunk: Uint8Array | string, encoding: unknown): BufferEncoding {
+    const response = this.#response;
     const checked = encodingOf(chunk, encoding);
-    if (checked === null && hasBody(this.#response)) {
+    if (
+      checked === null &&
+      !response.destroyed &&
+      !this.#ended &&
+      hasBody(response)
+    ) {
       throw unknownEncoding(encoding);
     }
     // As Node.js reads one that it ignores
