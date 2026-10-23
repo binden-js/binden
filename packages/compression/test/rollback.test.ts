@@ -500,11 +500,15 @@ suite("A refused head leaves nothing of the attempt", () => {
           "next",
           [
             "ERR_HTTP_TRAILER_INVALID",
-            {
-              trailer: "X-T",
-              "content-type": "text/plain; charset=utf-8",
-              "content-length": 4,
-            },
+            // A refused send of a value leaves the response as it was
+            // before it (H30-2), a refused write as it was before the write
+            path === "/small"
+              ? { trailer: "X-T" }
+              : {
+                  trailer: "X-T",
+                  "content-type": "text/plain; charset=utf-8",
+                  "content-length": 4,
+                },
           ],
         ],
         path,

@@ -11,13 +11,10 @@ import { afterEach, suite, test } from "node:test";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { Compression } from "../index.js";
 import { Readable } from "node:stream";
-import { createHash } from "node:crypto";
 import zlib from "node:zlib";
 
 const body = text(4096);
 const length = { "content-length": 4096 };
-// The dynamic `ETag` of the body
-const etag = `"${createHash("sha256").update(body).digest("base64url")}"`;
 
 /** The headers that a decision changes (as the error handler gets them) */
 const decided = [
@@ -198,14 +195,10 @@ suite("A head that Node.js refuses", () => {
       "/end": ["ERR_INVALID_CHAR", 200, false, {}, []],
       "/write": ["ERR_INVALID_CHAR", 200, false, {}, []],
       "/flush": ["ERR_INVALID_CHAR", 200, false, {}, []],
-      "/send": ["ERR_INVALID_CHAR", 200, false, { ...length, etag }, []],
-      "/send-406": [
-        "ERR_INVALID_CHAR",
-        406,
-        false,
-        { "content-length": 0, etag },
-        [],
-      ],
+      // As before the send (H30-2): without its length, its dynamic `ETag`,
+      // nor the `406` that has replaced its body
+      "/send": ["ERR_INVALID_CHAR", 200, false, {}, []],
+      "/send-406": ["ERR_INVALID_CHAR", 200, false, {}, []],
       "/stream": ["ERR_INVALID_CHAR", 200, false, {}, []],
       // Without the headers of the file nor the framing of its send: a
       // sendFile() that fails once it has set them restores the response

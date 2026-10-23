@@ -3601,7 +3601,12 @@ export class BindenResponse<
     if (BindenResponse.#informational(code)) {
       this.#release(data, kind);
       return Promise.reject(BindenResponse.#notFinal(code));
-    } else if (type !== null) {
+    }
+    // What a value restores when Node.js refuses the head that it commits
+    // (see `#unsent()`)
+    const before =
+      kind === "value" && !this.headersSent ? this[kSaveFraming]() : null;
+    if (type !== null) {
       // Accepted: the media type of `text()`, `html()`, `json()` or `form()`
       this.setHeader("Content-Type", type);
     }
@@ -3645,7 +3650,7 @@ export class BindenResponse<
         // Of the body of `GET` (e.g. of `sendFile()`), which is not sent
         this.#remove(...contentDigests);
       }
-      return this.#end();
+      return this.#unsent(before, () => this.#end());
     }
 
     // Encoded once: the bytes give the length and the `ETag`, and are sent
@@ -3666,7 +3671,7 @@ export class BindenResponse<
 
     const status = this.#conditional(body);
     if (status === 304) {
-      return this.#endNotModified(body.length);
+      return this.#unsent(before, () => this.#endNotModified(body.length));
     } else if (status !== null) {
       // Empty, also for `HEAD` (which would keep the length of a body), and
       // without the coding, the digests (e.g. of a precompressed body) nor
@@ -3680,7 +3685,7 @@ export class BindenResponse<
         ...representationDigests,
       );
       this.#frame(0);
-      return this.#end();
+      return this.#unsent(before, () => this.#end());
     }
 
     // Counted once: the bytes that the head declares (see `bytesLost()`)
@@ -3691,7 +3696,7 @@ export class BindenResponse<
       // The headers of the body (as for `GET`), but not the body itself, nor
       // the digest of its content (only of its representation)
       this.#remove(...contentDigests);
-      return this.#end();
+      return this.#unsent(before, () => this.#end());
     }
 
     // The body is written rather than passed to `end()`: a write that fails
@@ -3699,11 +3704,13 @@ export class BindenResponse<
     // once the response is ended. Its length keeps it from being chunked.
     return new Promise<void>((resolve, reject) => {
       const discarded = this.#discardedWrites;
-      this.write(body, (error?: Error | null) => {
-        if (error) {
-          reject(error);
-        }
-      });
+      this.#unsent(before, () =>
+        this.write(body, (error?: Error | null) => {
+          if (error) {
+            reject(error);
+          }
+        }),
+      );
       if (bytesLost(body, length) && !this.#dropped(discarded)) {
         // Detached by code of the application inside that write (see
         // `bytesLost()`): never flushed, also once that write has ended the
@@ -3725,6 +3732,34 @@ export class BindenResponse<
   #end(): Promise<void> {
     this.end();
     return this.#finished(() => false);
+  }
+
+  /**
+   * Runs the commit of a value send (its `write()` or its `end()`): when
+   * Node.js refuses its head (e.g. a status out of range, a reason phrase, or
+   * a `Trailer` of a body that is not chunked), which stays uncommitted, the
+   * response is restored as it was before the send (`state`, see
+   * `[kSaveFraming]()`): its status and reason phrase, its headers (without
+   * the `Content-Type`, the `ETag` and the `Content-Length` that the send has
+   * set, nor the status of a `304`, `406` or `412` that has replaced its
+   * body), and the framing fields of Node.js. Then, as for a failed send of a
+   * stream or a file (see `#unframe()`, `#unwind()`), it has no framing of a
+   * body (a `Content-Length` or a `Transfer-Encoding` set before the send,
+   * whose body it was), nor the representation chosen for it (see
+   * `#forget()`), so that the reply that follows (e.g. of the error) frames
+   * its own body. Not by a work that may no longer mutate the response.
+   */
+  #unsent<T>(state: IFramingState | null, commit: () => T): T {
+    try {
+      return commit();
+    } catch (error: unknown) {
+      if (state !== null && !this.headersSent && this.#allows()) {
+        this[kRestoreFraming](state);
+        this.#remove("Content-Length", "Transfer-Encoding", "Content-Range");
+        this.#forget();
+      }
+      throw error;
+    }
   }
 
   /**
