@@ -26,8 +26,6 @@ interface IReport {
  * are integrated: each must still have a finding
  */
 const integrating: readonly string[] = [
-  // The default error reply of a cookie that fails as it is committed
-  "binden:BindenResponse#cookies=>.add() | 0 ",
   // Values that the fixtures bind next: kept by Node.js
   "binden:new BindenRequest() | 0:",
   "binden:new BindenResponse() | 0:",

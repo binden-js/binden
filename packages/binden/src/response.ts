@@ -29,6 +29,7 @@ import {
   type IRepresentation,
   type IRepresentationNegotiator,
   type IResponseOperation,
+  cookieGuards,
   kCancel,
   kCancelling,
   kDiscardWrite,
@@ -1872,19 +1873,51 @@ export class BindenResponse<
       return super.writeHead(code, fields);
     };
     return this.#restoring(() => {
+      const values = this.#serialized();
+      // None, or each has been dropped
       if (this.cookies.size === 0) {
         return write(given);
       }
       // Not sent when Node.js refuses the head (e.g. an invalid status code):
       // the next attempt adds them
       const [explicit, rest] = BindenResponse.#takeSetCookie(given);
-      const values = [...this.cookies].map((cookie) => cookie.toString());
       this.setHeader("Set-Cookie", [
         ...(explicit ?? BindenResponse.#values(this.getHeader("Set-Cookie"))),
         ...values,
       ]);
       return write(rest);
     });
+  }
+
+  /**
+   * The `Set-Cookie` values of the cookies, read as the head is committed:
+   * what their `toString()` gives. While the framework replies an error (see
+   * `cookieGuards`), each is read once, in its own guard, and converted once
+   * as Node.js converts it in the head (e.g. a number, or a symbol, which
+   * throws): a cookie whose `toString()` throws (e.g. of a revoked proxy, or
+   * of an object derived from a `Cookie`), or gives a value that Node.js
+   * refuses in a header (e.g. with a line break), is dropped from the cookies
+   * and its error reported, and the others are sent
+   */
+  #serialized(): string[] {
+    const cookies = [...this.cookies];
+    const report = cookieGuards.get(this);
+    if (typeof report === "undefined") {
+      return cookies.map((cookie) => cookie.toString());
+    }
+    const values: string[] = [];
+    for (const cookie of cookies) {
+      try {
+        const value: unknown = cookie.toString();
+        const text = typeof value === "string" ? value : `${value as string}`;
+        validateHeaderValue("Set-Cookie", text);
+        values.push(text);
+      } catch (error: unknown) {
+        this.cookies.delete(cookie);
+        report(error);
+      }
+    }
+    return values;
   }
 
   /**

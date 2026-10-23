@@ -34,6 +34,7 @@ import {
 import { type IMiddleware, Middleware } from "./middleware.js";
 import {
   bodyHeaders,
+  cookieGuards,
   kCancel,
   kCancelling,
   kFramework,
@@ -1275,6 +1276,7 @@ export class Binden<
     // With the reason phrase of its status (see `#defaultErrorHandler()`)
     context.response.statusMessage = "";
     context.response.status(status);
+    this.#guardCookies(context, status);
     try {
       await context.response.send();
     } catch (error: unknown) {
@@ -1282,6 +1284,20 @@ export class Binden<
       this.#logFailure(context, "debug", message, error, "send");
       Binden.#unsent(context);
     }
+  }
+
+  /**
+   * Has the cookies of a reply of the framework to an error serialised each
+   * in its own guard from now on (see `cookieGuards`): a cookie that fails
+   * (e.g. one whose `toString()` throws, which has failed the reply of the
+   * application already) is dropped and logged, and the error is still
+   * replied, with the other cookies
+   */
+  #guardCookies(context: Context, status: number): void {
+    cookieGuards.set(context.response, (error: unknown) => {
+      const message = "A cookie has not been sent with the error reply";
+      this.#logFailure(context, "warn", message, error, "send", status);
+    });
   }
 
   /**
@@ -1349,7 +1365,8 @@ export class Binden<
     // does not read the rest of it, which would stall the connection
     Binden.#closeUnread(context);
 
-    // Sent like any other response: with its cookies, framed by its status
+    // Sent like any other response: with its cookies (but those that fail,
+    // see `#guardCookies()`), framed by its status
     const reply = (): Promise<void> => {
       const expose = Boolean(property(error, "expose"));
       const json = property(error, "json");
@@ -1388,6 +1405,7 @@ export class Binden<
         .send(message);
     };
 
+    this.#guardCookies(context, status);
     try {
       await reply();
     } catch (failure: unknown) {

@@ -49,6 +49,17 @@ export const kCancelling: unique symbol = Symbol("binden.cancelling");
 export const kFramework: unique symbol = Symbol("binden.framework");
 
 /**
+ * The reports of the cookies that fail as the head of a response is
+ * committed, by response, once the framework replies an error (see
+ * `Binden`): a response that has one serialises each cookie in its own
+ * guard, and drops and reports one that fails (see `cookies` of
+ * `BindenResponse`). Not part of the public API.
+ *
+ * @internal
+ */
+export const cookieGuards = new WeakMap<object, (error: unknown) => void>();
+
+/**
  * The key of the internal method that adds an observer of an event of a
  * response for the framework (or a library of binden), which runs once by
  * default: `response[kListen](event, listener, { once })` returns what
