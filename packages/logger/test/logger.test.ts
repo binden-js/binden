@@ -503,7 +503,7 @@ describe("Logger", () => {
     deepEqual(Object.fromEntries(reads), { target: 1, step: 1, nested: 1 });
   });
 
-  it("refuses a stream given as `transport` as `pino` does: what it reads to tell one (also inherited, or not enumerable) and the prototype are those of `transport`, read once each", () => {
+  it("refuses a stream given as `transport` as `pino` does, by what it reads to tell one (also inherited, or not enumerable): each read once, also its own ones, which `pino` reads again as it spreads them", () => {
     const target = new URL("fixtures/discard.mjs", import.meta.url).href;
     const stream =
       "option.transport do not allow stream, please pass to option directly. e.g. pino(transport)";
@@ -566,11 +566,242 @@ describe("Logger", () => {
     new Logger({
       transport: Object.setPrototypeOf({ target }, prototype) as never,
     }).info("discarded");
+    // Its own (which `pino` reads again as it spreads them): reused
+    new Logger({
+      transport: countedIn(reads, "own", {
+        writable: false,
+        _writableState: null,
+        targets: 0,
+        target,
+      }),
+    }).info("discarded");
     deepEqual(Object.fromEntries(reads), {
       "prototype.writable": 1,
       "prototype._writableState": 1,
       "prototype.targets": 1,
+      "own.writable": 1,
+      "own._writableState": 1,
+      "own.targets": 1,
+      "own.target": 1,
     });
+  });
+
+  it("reads `transport` in the order of `pino`, as `pino` itself does: whether it is a `SonicBoom`, its `writable`, its `_writableState`, its `targets`, then its own properties, nothing after what refuses it or throws", () => {
+    const target = new URL("fixtures/discard.mjs", import.meta.url).href;
+    const sonic = Object.getPrototypeOf(
+      pino.destination({ dest: 1, sync: true }),
+    ) as object;
+    // A proxy that logs what is read of it: its prototype, its keys, the
+    // descriptors and the values of its properties
+    const traced = (trace: string[], name: string, object: object): object =>
+      new Proxy(object, {
+        getPrototypeOf: (from): object | null => {
+          trace.push(`${name}: prototype`);
+          return Reflect.getPrototypeOf(from);
+        },
+        ownKeys: (from): (string | symbol)[] => {
+          trace.push(`${name}: keys`);
+          return Reflect.ownKeys(from);
+        },
+        getOwnPropertyDescriptor: (
+          from,
+          key,
+        ): PropertyDescriptor | undefined => {
+          trace.push(`${name}: descriptor of ${String(key)}`);
+          return Reflect.getOwnPropertyDescriptor(from, key);
+        },
+        get: (from, key, receiver): unknown => {
+          trace.push(`${name}: ${String(key)}`);
+          return Reflect.get(from, key, receiver) as unknown;
+        },
+      });
+    const throwing = (message: string): PropertyDescriptor => ({
+      get: (): never => {
+        throw new Error(message);
+      },
+    });
+    // Never read: `pino` has refused the transport (or thrown) before
+    const unread = {
+      writable: throwing("writable is read"),
+      _writableState: throwing("_writableState is read"),
+      targets: throwing("targets is read"),
+      target: { ...throwing("target is read"), enumerable: true },
+    };
+    const falsy = {
+      writable: { value: false },
+      _writableState: { value: null },
+      targets: { value: 0 },
+    };
+    // A transport whose properties are inherited (from a prototype that
+    // derives from `base`), or its own, not enumerable (the spread ones are
+    // its own, enumerable)
+    const transport =
+      (
+        properties: PropertyDescriptorMap,
+        {
+          base = Object.prototype,
+          inherited = false,
+        }: { base?: object; inherited?: boolean } = {},
+      ) =>
+      (trace: string[]): object => {
+        const { target: spread, ...read } = {
+          ...unread,
+          ...properties,
+        };
+        const parent = traced(
+          trace,
+          "prototype",
+          Object.create(base, inherited ? read : {}) as object,
+        );
+        return traced(
+          trace,
+          "transport",
+          Object.create(parent, {
+            ...(inherited ? {} : read),
+            target: spread,
+          }) as object,
+        );
+      };
+    const stream =
+      "Error: option.transport do not allow stream, please pass to option directly. e.g. pino(transport)";
+    // A prototype that cannot be read
+    const { proxy: revoked, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const cases: [string, (trace: string[]) => object, string][] = [];
+    for (const inherited of [true, false]) {
+      const at = inherited ? "inherited" : "own";
+      cases.push(
+        [
+          `${at}: a SonicBoom`,
+          transport({}, { base: sonic, inherited }),
+          stream,
+        ],
+        [
+          `${at}: a prototype that throws`,
+          transport(
+            {},
+            {
+              base: revoked,
+              inherited,
+            },
+          ),
+          "",
+        ],
+        [
+          `${at}: a writable`,
+          transport({ writable: { value: 1 } }, { inherited }),
+          stream,
+        ],
+        [
+          `${at}: a writable that throws`,
+          transport(
+            { writable: throwing("writable has failed") },
+            { inherited },
+          ),
+          "Error: writable has failed",
+        ],
+        [
+          `${at}: a _writableState`,
+          transport(
+            { writable: falsy.writable, _writableState: { value: {} } },
+            { inherited },
+          ),
+          stream,
+        ],
+        [
+          `${at}: a _writableState that throws`,
+          transport(
+            {
+              writable: falsy.writable,
+              _writableState: throwing("_writableState has failed"),
+            },
+            { inherited },
+          ),
+          "Error: _writableState has failed",
+        ],
+        [
+          `${at}: targets that throw`,
+          transport(
+            { ...falsy, targets: throwing("targets has failed") },
+            { inherited },
+          ),
+          "Error: targets has failed",
+        ],
+        [
+          `${at}: an own property that throws`,
+          transport(
+            {
+              ...falsy,
+              target: { ...throwing("target has failed"), enumerable: true },
+            },
+            { inherited },
+          ),
+          "Error: target has failed",
+        ],
+        [
+          `${at}: accepted`,
+          transport(
+            { ...falsy, target: { value: target, enumerable: true } },
+            { inherited },
+          ),
+          "accepted",
+        ],
+      );
+    }
+    // What is read, in order, and the outcome
+    const outcome = (
+      create: (transport: object) => unknown,
+      make: (trace: string[]) => object,
+    ): [string[], string] => {
+      const trace: string[] = [];
+      const given = make(trace);
+      try {
+        create(given);
+        return [trace, "accepted"];
+      } catch (error: unknown) {
+        return [trace, `${(error as Error).name}: ${(error as Error).message}`];
+      }
+    };
+    for (const [name, make, expected] of cases) {
+      const native = outcome(
+        (given) => pino({ transport: given as never }),
+        make,
+      );
+      const copied = outcome(
+        (given) => new Logger({ transport: given as never }),
+        make,
+      );
+      deepEqual(copied, native, name);
+      // The revoked prototype: the `TypeError` of V8, whose message varies
+      ok(
+        expected === ""
+          ? native[1].startsWith("TypeError: ")
+          : native[1] === expected,
+        `${name}: ${native[1]}`,
+      );
+    }
+  });
+
+  it("refuses a `SonicBoom` given as `transport` where its class cannot be resolved (e.g. in a bundle): by the prototype that the copy keeps, as `pino` does", () => {
+    const { status, stdout, stderr } = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        join(import.meta.dirname, "fixtures", "unresolved.ts"),
+      ],
+      { encoding: "utf8", timeout: 30_000 },
+    );
+    const stream =
+      "option.transport do not allow stream, please pass to option directly. e.g. pino(transport)";
+    deepEqual(
+      { status, stdout, stderr },
+      {
+        status: 0,
+        stdout: `${["unresolved", stream, stream, stream, stream, "accepted"].join("\n")}\n`,
+        stderr: "",
+      },
+    );
   });
 
   it("reads a `customLevels` that is a function as an object: each of its levels once", () => {

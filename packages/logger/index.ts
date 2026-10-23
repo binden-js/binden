@@ -6,6 +6,7 @@ import pino, {
   type LoggerOptions as PinoLoggerOptions,
 } from "pino";
 import { constants } from "node:os";
+import { createRequire } from "node:module";
 
 /** The options of a `Logger` */
 export interface LoggerOptions extends PinoLoggerOptions {
@@ -387,32 +388,114 @@ function withCopies(
 }
 
 /**
- * `transport`, copied as `pino` reads it: its own enumerable properties,
- * which it spreads (with copies of its `targets` and its `pipeline`, see
- * `copyTarget()` and `copyStep()`), and what it reads as it is to refuse a
- * stream and a `level` formatter with `targets`: its `writable`, its
- * `_writableState` and its `targets` (also inherited, or not enumerable),
- * each once, which the copy has as its own, not enumerable (`pino` never
- * spreads them), and its prototype (by which it refuses a `SonicBoom`),
- * through which `pino` then reads nothing else. A function is copied as an
- * object.
+ * The class of the streams of `pino` (`SonicBoom`, a function of CommonJS), by
+ * which it refuses one given as `transport`
+ */
+type SonicBoomClass = (...args: never) => unknown;
+
+// eslint-disable-next-line init-declarations -- resolved when it is first needed (see `sonicBoom()`)
+let sonicBoomClass: SonicBoomClass | null | undefined;
+
+/**
+ * The `SonicBoom` class of `pino`, resolved from `pino` as `pino` resolves
+ * it (the same class), once, when a `transport` is first given, or `null`
+ * where it cannot be resolved (e.g. in a bundle): `pino` then tells one by the
+ * prototype that the copy of `transport` keeps (see `copyTransport()`)
+ */
+function sonicBoom(): SonicBoomClass | null {
+  if (typeof sonicBoomClass === "undefined") {
+    try {
+      sonicBoomClass = createRequire(import.meta.resolve("pino"))(
+        "sonic-boom",
+      ) as SonicBoomClass;
+    } catch {
+      sonicBoomClass = null;
+    }
+  }
+  return sonicBoomClass;
+}
+
+/**
+ * `object`, with each of `values` that is not its own property yet as one, not
+ * enumerable (see `hide()`): `pino` reads them, but never spreads them
+ */
+function hiding(
+  object: Record<PropertyKey, unknown>,
+  values: ReadonlyMap<string, unknown>,
+): Record<PropertyKey, unknown> {
+  for (const [key, value] of values) {
+    if (!Object.hasOwn(object, key)) {
+      hide(object, key, value);
+    }
+  }
+  return object;
+}
+
+/**
+ * `transport`, copied as `pino` reads it, in its order. First what it reads
+ * to refuse a stream, each only while it has not refused it: whether it is a
+ * `SonicBoom` (by its prototype chain), then its `writable`, then its
+ * `_writableState` (also inherited, or not enumerable). A refused one is
+ * copied as what `pino` refuses (a `SonicBoom`, or what it has read), and
+ * nothing else is read. Then its `targets` (also inherited, or not
+ * enumerable), which it reads to refuse a `level` formatter with them, and
+ * its own enumerable properties, which it spreads (with copies of its
+ * `targets` and its `pipeline`, see `copyTarget()` and `copyStep()`), reusing
+ * those read before: each is read once. The copy has what `pino` reads as it
+ * is but never spreads as its own properties, not enumerable, and no
+ * prototype, through which `pino` would read the transport again (but where
+ * the class of `SonicBoom` cannot be resolved, see `sonicBoom()`). A function
+ * is copied as an object.
  */
 function copyTransport(
   transport: Record<PropertyKey, unknown>,
 ): Record<PropertyKey, unknown> {
-  const copy = withCopies(
-    withCopies({ ...transport }, "targets", copyTarget),
-    "pipeline",
-    copyStep,
-  );
-  for (const key of ["writable", "_writableState", "targets"]) {
-    if (!Object.hasOwn(copy, key)) {
-      hide(copy, key, Reflect.get(transport, key));
+  const SonicBoom = sonicBoom();
+  if (SonicBoom !== null && transport instanceof SonicBoom) {
+    return Object.create(SonicBoom.prototype as object) as Record<
+      PropertyKey,
+      unknown
+    >;
+  }
+  // Without the class, the copy keeps the prototype, by which `pino` tells a
+  // `SonicBoom` itself
+  const prototype =
+    SonicBoom === null
+      ? (Object.getPrototypeOf(transport) as object | null)
+      : null;
+  const copy = Object.create(null) as Record<PropertyKey, unknown>;
+  const read = new Map<string, unknown>();
+  for (const key of ["writable", "_writableState"]) {
+    const value: unknown = Reflect.get(transport, key);
+    read.set(key, value);
+    // A truthy one: `pino` refuses a stream
+    const refused = Boolean(value);
+    if (refused) {
+      return hiding(copy, read);
+    }
+  }
+  read.set("targets", Reflect.get(transport, "targets"));
+  // Spread as `pino` spreads it: for each of its own keys, its descriptor,
+  // then the value of an enumerable one
+  for (const key of Reflect.ownKeys(transport)) {
+    if (Reflect.getOwnPropertyDescriptor(transport, key)?.enumerable === true) {
+      Object.defineProperty(copy, key, {
+        value:
+          typeof key === "string" && read.has(key)
+            ? read.get(key)
+            : Reflect.get(transport, key),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
   }
   return Object.setPrototypeOf(
-    copy,
-    Object.getPrototypeOf(transport) as object | null,
+    hiding(
+      withCopies(withCopies(copy, "targets", copyTarget), "pipeline", copyStep),
+      read,
+    ),
+    prototype,
   ) as Record<PropertyKey, unknown>;
 }
 
