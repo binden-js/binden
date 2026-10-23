@@ -522,7 +522,7 @@ export class BodyParser<T = unknown> extends Middleware {
       await this.#complete(context, started);
     } catch (error: unknown) {
       // Also what the context gives throws once something has been awaited
-      // (e.g. its logger, its signal or the setter of `request.body`)
+      // (e.g. its signal or the setter of `request.body`)
       throw formatStack(error as Error);
     }
   }
@@ -587,9 +587,21 @@ export class BodyParser<T = unknown> extends Middleware {
    */
   #start(context: Context): IStarted | null {
     const { request, signal } = context;
-    // Read as it is (see `run()`), and made by the private path of binden:
-    // never a `child()` (nor a method) that the application has replaced
-    const log = childLogger(context.log, { middleware: BodyParser.name });
+    // Read once (see `run()`): what getting it throws (e.g. a `log` getter of
+    // a subclass of `Context`) drops the records of the parse, never the
+    // parse, as binden drops its own (a logger of binden over nothing drops
+    // them)
+    let parent: unknown = null;
+    try {
+      parent = context.log;
+    } catch {
+      // Dropped
+    }
+    // Made by the private path of binden: never a `child()` (nor a method)
+    // that the application has replaced
+    const log = childLogger(parent as Context["log"], {
+      middleware: BodyParser.name,
+    });
     const { method = "GET", content_type } = request;
 
     if (BodyParser.#methods.has(method)) {

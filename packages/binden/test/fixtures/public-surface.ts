@@ -1585,6 +1585,15 @@ interface IFixtureOptions {
    */
   readonly infallible?: Readonly<Record<string, string>> | undefined;
   /**
+   * Whether a call reads the `log` of the context that it is given in a
+   * guard (see `contextHostiles`), as documented (e.g. the parsers of
+   * @binden/body and @binden/multipart): what that getter throws drops the
+   * records of the call only, so that the call settles as it does without
+   * them, never with the error of the test (one that does is a finding, and
+   * so is a fixture that sets it, but whose calls no getter has failed)
+   */
+  readonly dropsLog?: boolean | undefined;
+  /**
    * The indexes of its calls that send a view of the test (see `viewOf()`):
    * in the `detaching` state, the writer of the application loses its bytes,
    * and the call must reject (and cut the response)
@@ -3842,8 +3851,9 @@ const context = call(async (env) => [(await env.exchange()).context]);
  */
 function parsing(over: IBody, within: IBody): IFixture {
   return probed(
-    // The body over the limits is refused
-    { io: true, throws: [1] },
+    // The body over the limits is refused, and what getting the logger of
+    // the context throws drops the records of the parse only (README)
+    { io: true, throws: [1], dropsLog: true },
     async (env) => [(await env.exchange()).context],
     async (env) => [(await env.exchange(over)).context],
     async (env) => [(await env.exchange(within)).context],
@@ -4600,14 +4610,31 @@ function evaluate(
       return [];
     case "thrown":
     case "rejected":
-    default:
-      return judged(
-        outcome.kind === "thrown" ? "throws" : "rejects with",
-        outcome.error,
-        given,
-        path === null && !may,
-        path === null,
-      );
+    default: {
+      const how = outcome.kind === "thrown" ? "throws" : "rejects with";
+      // A `log` getter whose failure the call drops (see `dropsLog`): it
+      // settles as without the records, never with the error of the test
+      const drops =
+        fixture.dropsLog === true &&
+        given !== null &&
+        contextHostiles.has(given.name);
+      return [
+        ...judged(
+          how,
+          outcome.error,
+          drops ? null : given,
+          path === null && !may,
+          path === null,
+        ),
+        ...(drops &&
+        !isProxy(outcome.error) &&
+        outcome.error instanceof OwnError
+          ? [
+              `${how} the error of its \`log\` getter, which it drops (\`dropsLog\`)`,
+            ]
+          : []),
+      ];
+    }
   }
 }
 
@@ -4622,6 +4649,11 @@ const converting = new Set<string>();
  * function of the test has been called later
  */
 const calledBack = new Set<string>();
+/**
+ * The entry points whose calls a `log` getter of the test has failed, which
+ * they drop (see `dropsLog`)
+ */
+const droppedLog = new Set<string>();
 
 const Context = binden.Context as IFunction;
 
@@ -5039,6 +5071,14 @@ async function probe(
         ),
         ...infallibly(fixture, "call", outcome),
       );
+      if (
+        fixture.dropsLog === true &&
+        given !== null &&
+        contextHostiles.has(given.name) &&
+        trapped > 0
+      ) {
+        droppedLog.add(entry.id);
+      }
       const succeeded =
         outcome.kind === "returned" || outcome.kind === "resolved";
       if (
@@ -6069,6 +6109,13 @@ async function run(entry: IEntry, fixture: IFixture): Promise<void> {
           ]
       ).map((what) => ({ entry: entry.id, probe: position, what })),
     );
+  }
+  if (fixture.dropsLog === true && !droppedLog.has(entry.id)) {
+    findings.push({
+      entry: entry.id,
+      probe: "dropsLog",
+      what: "drops what the `log` getter of a context throws (`dropsLog`), but no getter of the test has failed in its calls",
+    });
   }
   for (const reader of fixture.logs ?? []) {
     if (!loggedBy.has(`${entry.id} ${reader}`)) {

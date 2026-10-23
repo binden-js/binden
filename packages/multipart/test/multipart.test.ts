@@ -1,5 +1,5 @@
 import { Agent, request as httpRequest } from "node:http";
-import { Binden, BindenError, type Context } from "binden";
+import { Binden, BindenError, Context } from "binden";
 import {
   RecordingLogger,
   body,
@@ -565,6 +565,74 @@ describe("Multipart", () => {
         ({ message, bindings }) =>
           message === "The multipart body has been refused" &&
           bindings.middleware === "Multipart",
+      ),
+    );
+  });
+
+  it("a `log` getter of the context that throws (also of a subclass of `Context`): the parse settles as without it, and its records are dropped", async (t) => {
+    const logger = new RecordingLogger();
+    let reads = 0;
+    class Unlogged extends Context {
+      // eslint-disable-next-line class-methods-use-this -- a getter that fails
+      public override get log(): Context["log"] {
+        reads += 1;
+        throw new Error("No logger");
+      }
+    }
+    const changes = {
+      getter: (context: Context): void => {
+        Object.defineProperty(context, "log", {
+          get: (): never => {
+            reads += 1;
+            throw new Error("No logger");
+          },
+        });
+      },
+      // The next context
+      subclass: ({ request, response }: Context): Context =>
+        new Unlogged({ request, response }),
+    };
+    const outcomes: unknown[] = [];
+    for (const [name, change] of Object.entries(changes)) {
+      const { url } = await serve(
+        t,
+        [
+          change,
+          multipart({ config: { limits: { fields: 1 } } }),
+          async (context: Context): Promise<void> => {
+            const form = context.request.body;
+            await (form instanceof FormData
+              ? context.json(await entries(form))
+              : context.send("skipped"));
+          },
+        ],
+        { logger },
+      );
+      const parsed = await post(url, body(part('name="a"', "1")));
+      const refused = await post(
+        url,
+        body(part('name="a"', "1"), part('name="b"', "2")),
+      );
+      const skipped = await send(url, {
+        headers: { "Content-Type": "text/plain" },
+      });
+      outcomes.push([
+        name,
+        parsed.status,
+        parsed.body,
+        refused.status,
+        skipped.status,
+      ]);
+    }
+    deepEqual(outcomes, [
+      ["getter", 200, '[["a","1"]]', 413, 200],
+      ["subclass", 200, '[["a","1"]]', 413, 200],
+    ]);
+    ok(reads > 0);
+    // Through no logger: dropped
+    ok(
+      logger.records.every(
+        ({ message }) => message !== "The multipart body has been refused",
       ),
     );
   });

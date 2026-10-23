@@ -1,4 +1,10 @@
-import { Binden, type Context, ct_json, ct_text } from "binden";
+import {
+  Binden,
+  Context,
+  type IFunctionMiddleware,
+  ct_json,
+  ct_text,
+} from "binden";
 import { type IBody, Recorder, echo, listen, send } from "./helpers.js";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import { suite, test } from "node:test";
@@ -79,10 +85,17 @@ suite("BodyParser (logging)", () => {
     ok(logger.messages("error").includes("The body has already been read"));
   });
 
-  test("a logger of the context whose methods and `child()` are replaced by ones that throw: the parse settles as without them, and none of them runs (a `log` getter that throws fails it)", async () => {
+  test("a logger of the context whose methods and `child()` are replaced by ones that throw: the parse settles as without them, and none of them runs (a `log` getter that throws, also of a subclass of `Context`, drops the records only)", async () => {
     const calls: string[] = [];
     const methods = ["fatal", "error", "warn", "info", "debug", "trace"];
-    const changes: Record<string, (context: Context) => void> = {
+    class Unlogged extends Context {
+      // eslint-disable-next-line class-methods-use-this -- a getter that fails
+      public override get log(): Context["log"] {
+        calls.push("log");
+        throw new Error("No logger");
+      }
+    }
+    const changes: Record<string, IFunctionMiddleware> = {
       replaced: (context) => {
         for (const method of [...methods, "child"]) {
           Object.assign(context.log, {
@@ -101,6 +114,8 @@ suite("BodyParser (logging)", () => {
           },
         });
       },
+      // The next context
+      subclass: ({ request, response }) => new Unlogged({ request, response }),
     };
     const outcomes: unknown[] = [];
     for (const [name, change] of Object.entries(changes)) {
@@ -133,9 +148,10 @@ suite("BodyParser (logging)", () => {
       // Through the private path of the logger of the context
       ["replaced", 200, { type: "json", value: { a: 1 } }, 400, 200, true],
       // Read as the parse starts, as the other properties of the context:
-      // what it throws fails the parse (and the records of binden through it
-      // are dropped)
-      ["getter", 500, null, 500, 500, false],
+      // what it throws drops the records of the parse (as those of binden
+      // through it), never the parse
+      ["getter", 200, { type: "json", value: { a: 1 } }, 400, 200, false],
+      ["subclass", 200, { type: "json", value: { a: 1 } }, 400, 200, false],
     ]);
     // Only the getter, as the framework and the parser get the logger
     ok(calls.every((call) => call === "log"));

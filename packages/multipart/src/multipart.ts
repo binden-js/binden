@@ -697,9 +697,20 @@ export class Multipart extends Middleware {
   #start(context: Context): Promise<null> | null {
     // Each property of the context is read once
     const { request } = context;
-    // Read as it is (see `run()`), and made by the private path of binden:
-    // never a `child()` (nor a method) that the application has replaced
-    const log = childLogger(context.log, { middleware: Multipart.name });
+    // What getting it throws (e.g. a `log` getter of a subclass of `Context`)
+    // drops the records of the parse, never the parse, as binden drops its
+    // own (a logger of binden over nothing drops them)
+    let parent: unknown = null;
+    try {
+      parent = context.log;
+    } catch {
+      // Dropped
+    }
+    // Made by the private path of binden: never a `child()` (nor a method)
+    // that the application has replaced
+    const log = childLogger(parent as Context["log"], {
+      middleware: Multipart.name,
+    });
     const { method = "GET", headers } = request;
     const type = mediaType(headers["content-type"]);
 
