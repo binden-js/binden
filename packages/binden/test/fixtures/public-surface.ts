@@ -2404,7 +2404,7 @@ define("binden:", {
       },
       kept: {
         0: {
-          why: "the options, read once, but the functions and the logger that they hold",
+          why: "the options, read once, and kept by the closure of the constructor, which the classes of its requests and responses share: what a request uses later is what they hold (its functions and its logger)",
           later: "request()",
         },
         "0.error_handler": {
