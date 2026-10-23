@@ -25,7 +25,11 @@
 // or read) by the call, unless its fixture says why it is not: one whose valid
 // value is a function or an object that the call keeps names the reader that
 // uses it later, which must run with a hostile value there and use it, or an
-// alternative check, which must run (see `IUntouched`). A logger of binden
+// alternative check, which must run (see `IUntouched`), and so does each one
+// where the call accepts a hostile value, but keeps its valid value, a
+// function or an object (told by its retention, see `retainedBy()` and
+// `kept`), whose reader must also tell each hostile function whose result is
+// hostile from the valid one (see `IKept`). A logger of binden
 // never runs a method that the application has replaced on it for a record of
 // its own (see `replaced` and `wrapping()`), and binden never takes a value of
 // the test for one of its objects (see `privateFailures`). An allowance that
@@ -2756,9 +2760,11 @@ define("binden:Context#", {
     () => [true],
   ),
   // A reply once the deadline has passed is late
-  "setTimeout()": probed({ readers: { "a late reply": lateReply } }, () => [
-    1000,
-  ]),
+  "setTimeout()": probed(
+    // Its deadline passes as the reader waits (also on a loaded machine)
+    { io: true, readers: { "a late reply": lateReply } },
+    () => [1000],
+  ),
   // Its cleanup runs once the response is closed
   "onCleanup()": probed(
     {
