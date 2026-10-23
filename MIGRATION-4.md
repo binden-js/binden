@@ -203,7 +203,11 @@ not been received in full (`request.complete`).
 
 The default error reply is sent with the cookies of the response and the `headers` of a
 `BindenError`, without the headers of the body that it replaces (`Content-Length`,
-`Content-Encoding`, `ETag`, …). When a reply has started, the error cuts it by closing the
+`Content-Encoding`, `ETag`, …). Each cookie is serialised once, in its own guard (also for the
+empty `500` of a failed error handler): one that fails (its `toString()` throws, or Node.js
+refuses its value) is dropped from `response.cookies` and logged at `warn`, and the error is
+replied with the others. binden 2.0.4 sent the error reply without the cookies (by an `end()`,
+which added none), so that it never read them. When a reply has started, the error cuts it by closing the
 connection, so that the client knows that it is incomplete (it was ended as if it were complete),
 and a reply that has ended is left as it is (its request was destroyed).
 

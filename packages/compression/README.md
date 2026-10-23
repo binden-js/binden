@@ -48,10 +48,14 @@ one throws before anything is decided or changed:
   would leave it corked, and the next reply stalled), also once the response has been replaced
   (`406`) or ended through its compressor: it throws as for a response that has not ended, rather
   than the `error` event that Node.js emits for an ended one (a response that the application has
-  ended as it is answers as without a compression);
+  ended as it is answers as without a compression, also one destroyed before its headers were
+  committed, e.g. `end(1)` after `destroy()` and `end()`, which Node.js ignores);
 - an unknown encoding (or `buffer` for a string) throws `ERR_UNKNOWN_ENCODING`, described without
-  being converted (e.g. "Unknown encoding: (an object)"), but for a response without a body (to
-  `HEAD`, or with a 1xx, 204 or 304 status), whose chunks Node.js ignores;
+  being converted (e.g. "Unknown encoding: (an object)"), but for a response whose chunks Node.js
+  ignores. These are one without a body (to `HEAD`, or with a 1xx, 204 or 304 status), one that is
+  destroyed, and one that the application has ended (compressed, replaced with `406`, or as it
+  is); their status is then neither converted nor stored, as without a compression. A replaced
+  response that the application has not ended still checks it, as one that has not ended;
 - a string in `hex`, `base64` or `base64url` (the name in any case) is written as the bytes that
   `Buffer.from()` decodes from it: Node.js only estimates its length, which may be more than it
   writes (e.g. for invalid digits). The decision (the `threshold`) and the framing of the body
