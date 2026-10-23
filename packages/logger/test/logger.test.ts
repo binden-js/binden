@@ -782,6 +782,44 @@ describe("Logger", () => {
     }
   });
 
+  it("does not read a `transport` given with a `destination` that is a path: `pino` refuses both before it reads anything of it", () => {
+    const traps: string[] = [];
+    // Every trap is logged
+    const handler = new Proxy(
+      {},
+      {
+        get:
+          (_handler, trap: keyof typeof Reflect) =>
+          (...args: never[]): unknown => {
+            traps.push(trap);
+            return (Reflect[trap] as (...all: never[]) => unknown)(...args);
+          },
+      },
+    );
+    // Typed as a stream: `pino` takes a path too
+    const destination = join(
+      import.meta.dirname,
+      "missing",
+      "never.log",
+    ) as never;
+    const refusal = {
+      message: "only one of option.transport or stream can be specified",
+    };
+    throws(
+      () => pino({ transport: new Proxy({}, handler) as never }, destination),
+      refusal,
+    );
+    throws(
+      () =>
+        new Logger({
+          transport: new Proxy({}, handler) as never,
+          destination,
+        }),
+      refusal,
+    );
+    deepEqual(traps, []);
+  });
+
   it("refuses a `SonicBoom` given as `transport` where its class cannot be resolved (e.g. in a bundle): by the prototype that the copy keeps, as `pino` does", () => {
     const { status, stdout, stderr } = spawnSync(
       process.execPath,

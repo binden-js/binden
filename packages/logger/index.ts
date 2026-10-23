@@ -594,7 +594,7 @@ export class Logger implements ILogger {
     }
     // Read once (see `#copy()`): the checks and `pino` read the copy (no
     // level is combined with `logger`)
-    const copied = Logger.#copy(options);
+    const copied = Logger.#copy(options, destination);
     Logger.#checkNested(copied);
     if (typeof copied.level !== "undefined") {
       const { customLevels = {}, useOnlyCustomLevels = false } = copied;
@@ -617,9 +617,14 @@ export class Logger implements ILogger {
    * (each level of `customLevels`, which the check of `level` reads too, the
    * `hooks`, the paths of `redact`, and the targets and steps of
    * `transport`), made as `pino` reads them: each is read once, so that a
-   * getter of the application runs once
+   * getter of the application runs once. A `transport` given with a
+   * `destination` that is a path is not read: `pino` refuses them before it
+   * reads anything of it
    */
-  static #copy(options: PinoLoggerOptions): PinoLoggerOptions {
+  static #copy(
+    options: PinoLoggerOptions,
+    destination: unknown,
+  ): PinoLoggerOptions {
     const copied: Record<string, unknown> = { ...options };
     const { customLevels, hooks, redact, transport } = copied;
     if (hasProperties(customLevels)) {
@@ -643,7 +648,7 @@ export class Logger implements ILogger {
         remove,
       };
     }
-    if (hasProperties(transport)) {
+    if (hasProperties(transport) && typeof destination !== "string") {
       copied.transport = copyTransport(transport);
     }
     return copied;
